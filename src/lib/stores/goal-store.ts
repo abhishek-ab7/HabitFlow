@@ -23,7 +23,7 @@ interface GoalState {
   error: string | null;
   statusFilter: GoalStatus[];
   areaFilter: AreaOfLife[];
-  
+
   // Actions
   loadGoals: () => Promise<void>;
   loadAllMilestones: () => Promise<void>;
@@ -37,7 +37,7 @@ interface GoalState {
   toggleMilestoneComplete: (id: string) => Promise<void>;
   setStatusFilter: (statuses: GoalStatus[]) => void;
   setAreaFilter: (areas: AreaOfLife[]) => void;
-  
+
   // Computed
   getGoalStats: (goalId: string) => ReturnType<typeof calculateGoalStats>;
   getGoalMilestones: (goalId: string) => Milestone[];
@@ -77,11 +77,12 @@ export const useGoalStore = create<GoalState>((set, get) => ({
 
   addGoal: async (data: GoalFormData) => {
     const { milestones: milestoneTitles, ...goalData } = data;
-    
+
     const goal = await createGoal({
       ...goalData,
       status: 'not_started',
       isFocus: false,
+      archived: false,
     });
 
     // Create milestones
@@ -115,11 +116,11 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   editGoal: async (id: string, data: Partial<Goal>) => {
     await updateGoal(id, data);
     const updatedGoal = get().goals.find(g => g.id === id);
-    
+
     set(state => ({
       goals: state.goals.map(g => g.id === id ? { ...g, ...data } : g),
     }));
-    
+
     // Sync to cloud
     if (updatedGoal) {
       try {
@@ -137,7 +138,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       goals: state.goals.filter(g => g.id !== id),
       milestones: state.milestones.filter(m => m.goalId !== id),
     }));
-    
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -153,9 +154,9 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       ...g,
       isFocus: g.id === goalId,
     }));
-    
+
     set({ goals: updatedGoals });
-    
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -172,7 +173,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     set(state => ({
       milestones: [...state.milestones, milestone],
     }));
-    
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -180,18 +181,18 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     } catch (error) {
       console.error('Failed to sync milestone:', error);
     }
-    
+
     return milestone;
   },
 
   editMilestone: async (id: string, data: Partial<Milestone>) => {
     await updateMilestone(id, data);
     const updatedMilestone = get().milestones.find(m => m.id === id);
-    
+
     set(state => ({
       milestones: state.milestones.map(m => m.id === id ? { ...m, ...data } : m),
     }));
-    
+
     // Sync to cloud
     if (updatedMilestone) {
       try {
@@ -208,7 +209,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     set(state => ({
       milestones: state.milestones.filter(m => m.id !== id),
     }));
-    
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -224,7 +225,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       set(state => ({
         milestones: state.milestones.map(m => m.id === id ? updated : m),
       }));
-      
+
       // Sync to cloud
       try {
         const syncEngine = getSyncEngine();
@@ -281,18 +282,18 @@ export const useGoalStore = create<GoalState>((set, get) => ({
 
   getFilteredGoals: () => {
     const { goals, statusFilter, areaFilter } = get();
-    
+
     return goals.filter(goal => {
       if (goal.archived) return false;
-      
+
       if (statusFilter.length > 0 && !statusFilter.includes(goal.status)) {
         return false;
       }
-      
+
       if (areaFilter.length > 0 && !areaFilter.includes(goal.areaOfLife)) {
         return false;
       }
-      
+
       return true;
     });
   },
@@ -304,7 +305,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   getUpcomingDeadlines: (days: number = 7) => {
     const today = new Date();
     const futureDate = new Date(today.getTime() + days * 24 * 60 * 60 * 1000);
-    
+
     return get().goals.filter(goal => {
       if (goal.archived || goal.status === 'completed') return false;
       const deadline = new Date(goal.deadline);
