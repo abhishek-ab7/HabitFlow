@@ -17,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DashboardPage() {
   const router = useRouter();
-  
+
   // Habit store
   const {
     habits,
@@ -29,6 +29,7 @@ export default function DashboardPage() {
     getTodayProgress,
     getMonthlyProgress,
     getCurrentStreaks,
+    toggle,
   } = useHabitStore();
 
   // Goal store
@@ -52,14 +53,14 @@ export default function DashboardPage() {
       await loadHabits();
       await loadGoals();
       await loadAllMilestones();
-      
+
       // Load completions for current and previous month
       const today = new Date();
       const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
       const end = format(endOfMonth(today), 'yyyy-MM-dd');
       await loadCompletions(start, end);
     };
-    
+
     init();
   }, [loadHabits, loadGoals, loadAllMilestones, loadCompletions]);
 
@@ -112,12 +113,12 @@ export default function DashboardPage() {
     return (
       <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
         <HeroSection />
-        
+
         <div className="flex flex-col items-center justify-center py-16">
           <div className="text-center max-w-md">
             <h2 className="text-2xl font-bold mb-4">Welcome to Habit Tracker!</h2>
             <p className="text-muted-foreground mb-8">
-              Start building better habits and achieving your goals. 
+              Start building better habits and achieving your goals.
               Would you like to see how the app works with some demo data?
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -162,7 +163,7 @@ export default function DashboardPage() {
   return (
     <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
       <HeroSection />
-      
+
       <MetricCards
         todayCompleted={todayProgress.completed}
         todayTotal={todayProgress.total}
@@ -175,7 +176,7 @@ export default function DashboardPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <HabitOverview habits={habits} completions={completions} />
+        <HabitOverview habits={habits} completions={completions} onToggle={toggle} />
         <FocusGoal
           goal={focusGoal}
           milestones={focusGoalMilestones}

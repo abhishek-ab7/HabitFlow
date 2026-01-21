@@ -16,11 +16,12 @@ import type { Habit, HabitCompletion, Category } from '@/lib/types';
 interface HabitOverviewProps {
   habits: Habit[];
   completions: HabitCompletion[];
+  onToggle?: (habitId: string, date: string) => Promise<void>;
 }
 
-export function HabitOverview({ habits, completions }: HabitOverviewProps) {
+export function HabitOverview({ habits, completions, onToggle }: HabitOverviewProps) {
   const today = new Date();
-  
+
   // Generate last 10 days
   const last10Days = useMemo(() => {
     return Array.from({ length: 10 }, (_, i) => {
@@ -76,16 +77,16 @@ export function HabitOverview({ habits, completions }: HabitOverviewProps) {
         </CardHeader>
         <CardContent>
           {/* Header row with dates */}
-          <div className="flex items-center mb-4 overflow-x-auto pb-2">
-            <div className="w-32 md:w-40 flex-shrink-0" />
-            <div className="flex gap-1">
+          <div className="flex items-center mb-4 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="w-24 sm:w-32 md:w-40 flex-shrink-0" />
+            <div className="flex gap-0.5 sm:gap-1">
               {last10Days.map(({ dateStr, dayLabel, isToday }) => (
                 <div
                   key={dateStr}
                   className={cn(
-                    "w-8 h-8 flex items-center justify-center text-xs font-medium rounded-md",
-                    isToday 
-                      ? "bg-primary text-primary-foreground" 
+                    "w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-xs font-medium rounded-md",
+                    isToday
+                      ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground"
                   )}
                 >
@@ -103,16 +104,16 @@ export function HabitOverview({ habits, completions }: HabitOverviewProps) {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="flex items-center overflow-x-auto pb-1"
+                className="flex items-center overflow-x-auto pb-1 scrollbar-hide"
               >
                 {/* Habit info */}
-                <div className="w-32 md:w-40 flex-shrink-0 flex items-center gap-2 pr-3">
-                  {habit.icon && <span className="text-lg">{habit.icon}</span>}
+                <div className="w-24 sm:w-32 md:w-40 flex-shrink-0 flex items-center gap-2 pr-2 sm:pr-3">
+                  {habit.icon && <span className="text-base sm:text-lg">{habit.icon}</span>}
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{habit.name}</p>
-                    <Badge 
-                      variant="secondary" 
-                      className={cn("text-xs px-1.5 py-0", getCategoryBg(habit.category))}
+                    <p className="text-xs sm:text-sm font-medium truncate">{habit.name}</p>
+                    <Badge
+                      variant="secondary"
+                      className={cn("text-xs px-1.5 py-0 hidden sm:inline-flex", getCategoryBg(habit.category))}
                     >
                       <span className={getCategoryColor(habit.category)}>
                         {habit.category}
@@ -122,20 +123,27 @@ export function HabitOverview({ habits, completions }: HabitOverviewProps) {
                 </div>
 
                 {/* Day indicators */}
-                <div className="flex gap-1">
+                <div className="flex gap-0.5 sm:gap-1">
                   {last10Days.map(({ dateStr, isToday }) => {
                     const isCompleted = getCompletionStatus(habit.id, dateStr);
                     const isFuture = new Date(dateStr) > today;
 
                     return (
-                      <div
+                      <button
                         key={dateStr}
+                        onClick={async () => {
+                          if (!isFuture && onToggle) {
+                            await onToggle(habit.id, dateStr);
+                          }
+                        }}
+                        disabled={isFuture || !onToggle}
                         className={cn(
-                          "w-8 h-8 rounded-lg flex items-center justify-center transition-all",
-                          isCompleted 
-                            ? "bg-success/20 text-success" 
+                          "w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-all",
+                          !isFuture && onToggle && "cursor-pointer hover:scale-105 active:scale-95",
+                          isCompleted
+                            ? "bg-success/20 text-success"
                             : isFuture
-                              ? "bg-muted/30 opacity-50"
+                              ? "bg-muted/30 opacity-50 cursor-not-allowed"
                               : isToday
                                 ? "bg-muted border-2 border-dashed border-muted-foreground/30"
                                 : "bg-muted/50"
@@ -150,7 +158,7 @@ export function HabitOverview({ habits, completions }: HabitOverviewProps) {
                             <Check className="h-4 w-4" />
                           </motion.div>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

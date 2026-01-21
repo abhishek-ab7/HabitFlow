@@ -46,7 +46,7 @@ export function MetricCards({
   const isStreakMilestone = [7, 14, 21, 30, 60, 90, 100, 365].includes(currentStreak);
 
   return (
-    <StaggerContainer className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+    <StaggerContainer className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-8">
       {/* Today's Habits */}
       <StaggerItem>
         <Card className="relative overflow-hidden hover-lift">
@@ -62,9 +62,9 @@ export function MetricCards({
                   <span className="text-muted-foreground text-lg">/ {todayTotal}</span>
                 </div>
               </div>
-              <ProgressRing 
-                progress={todayPercentage} 
-                size={60} 
+              <ProgressRing
+                progress={todayPercentage}
+                size={60}
                 strokeWidth={6}
               >
                 <span className="text-xs font-semibold">{todayPercentage}%</span>
@@ -93,15 +93,15 @@ export function MetricCards({
               </div>
               <div className={cn(
                 "flex items-center justify-center w-12 h-12 rounded-xl",
-                monthlyPercentage >= 80 ? "bg-success/20" : 
-                monthlyPercentage >= 60 ? "bg-chart-2/20" :
-                monthlyPercentage >= 40 ? "bg-warning/20" : "bg-destructive/20"
+                monthlyPercentage >= 80 ? "bg-success/20" :
+                  monthlyPercentage >= 60 ? "bg-chart-2/20" :
+                    monthlyPercentage >= 40 ? "bg-warning/20" : "bg-destructive/20"
               )}>
                 <CheckCircle2 className={cn(
                   "h-6 w-6",
-                  monthlyPercentage >= 80 ? "text-success" : 
-                  monthlyPercentage >= 60 ? "text-chart-2" :
-                  monthlyPercentage >= 40 ? "text-warning" : "text-destructive"
+                  monthlyPercentage >= 80 ? "text-success" :
+                    monthlyPercentage >= 60 ? "text-chart-2" :
+                      monthlyPercentage >= 40 ? "text-warning" : "text-destructive"
                 )} />
               </div>
             </div>
@@ -139,7 +139,7 @@ export function MetricCards({
                   Best: {bestStreak} days
                 </p>
               </div>
-              <motion.div 
+              <motion.div
                 className="flex items-center justify-center w-12 h-12 rounded-xl bg-warning/20"
                 animate={isStreakMilestone ? { scale: [1, 1.1, 1] } : {}}
                 transition={{ duration: 1, repeat: isStreakMilestone ? Infinity : 0 }}
