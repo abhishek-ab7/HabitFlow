@@ -1,0 +1,274 @@
+import Dexie, { type EntityTable } from 'dexie';
+import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData } from './types';
+
+// Define the database schema
+const db = new Dexie('HabitFlowDB') as Dexie & {
+  habits: EntityTable<Habit, 'id'>;
+  completions: EntityTable<HabitCompletion, 'id'>;
+  goals: EntityTable<Goal, 'id'>;
+  milestones: EntityTable<Milestone, 'id'>;
+  userSettings: EntityTable<UserSettings, 'id'>;
+};
+
+// Schema version 1
+db.version(1).stores({
+  habits: 'id, name, category, archived, order, createdAt',
+  completions: 'id, habitId, date, completed',
+  goals: 'id, title, areaOfLife, status, archived, isFocus, deadline, createdAt',
+  milestones: 'id, goalId, completed, order',
+  userSettings: 'id, userId',
+});
+
+// ==================
+// HABIT FUNCTIONS
+// ==================
+
+export async function getHabits(): Promise<Habit[]> {
+  return db.habits.filter(h => !h.archived).sortBy('order');
+}
+
+export async function createHabit(data: HabitFormData): Promise<Habit> {
+  const habit: Habit = {
+    id: crypto.randomUUID(),
+    name: data.name,
+    icon: data.icon || '✓',
+    category: data.category,
+    targetDaysPerWeek: data.targetDaysPerWeek,
+    archived: false,
+    order: await db.habits.count(),
+    createdAt: new Date().toISOString(),
+  };
+
+  await db.habits.add(habit);
+  return habit;
+}
+
+export async function updateHabit(id: string, data: Partial<Habit>): Promise<void> {
+  await db.habits.update(id, data);
+}
+
+export async function deleteHabit(id: string): Promise<void> {
+  await db.habits.delete(id);
+  await db.completions.where('habitId').equals(id).delete();
+}
+
+export async function reorderHabits(orderedIds: string[]): Promise<void> {
+  await db.transaction('rw', db.habits, async () => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db.habits.update(orderedIds[i], { order: i });
+    }
+  });
+}
+
+// ==================
+// COMPLETION FUNCTIONS
+// ==================
+
+export async function toggleCompletion(habitId: string, date: string): Promise<HabitCompletion | null> {
+  const existing = await db.completions
+    .where('[habitId+date]')
+    .equals([habitId, date])
+    .first();
+
+  if (existing) {
+    await db.completions.delete(existing.id);
+    return null;
+  } else {
+    const completion: HabitCompletion = {
+      id: crypto.randomUUID(),
+      habitId,
+      date,
+      completed: true,
+    };
+    await db.completions.add(completion);
+    return completion;
+  }
+}
+
+export async function getAllCompletionsInRange(startDate: string, endDate: string): Promise<HabitCompletion[]> {
+  return db.completions
+    .where('date')
+    .between(startDate, endDate, true, true)
+    .toArray();
+}
+
+// ==================
+// GOAL FUNCTIONS
+// ==================
+
+export async function getGoals(): Promise<Goal[]> {
+  return db.goals.filter(g => !g.archived).toArray();
+}
+
+export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDate'>): Promise<Goal> {
+  const goal: Goal = {
+    id: crypto.randomUUID(),
+    ...data,
+    createdAt: new Date().toISOString(),
+    startDate: new Date().toISOString(),
+  };
+
+  await db.goals.add(goal);
+  return goal;
+}
+
+export async function updateGoal(id: string, data: Partial<Goal>): Promise<void> {
+  await db.goals.update(id, data);
+}
+
+export async function deleteGoal(id: string): Promise<void> {
+  await db.goals.delete(id);
+  await db.milestones.where('goalId').equals(id).delete();
+}
+
+export async function setFocusGoal(goalId: string): Promise<void> {
+  await db.transaction('rw', db.goals, async () => {
+    await db.goals.toCollection().modify({ isFocus: false });
+    await db.goals.update(goalId, { isFocus: true });
+  });
+}
+
+// ==================
+// MILESTONE FUNCTIONS
+// ==================
+
+export async function getMilestones(goalId: string): Promise<Milestone[]> {
+  return db.milestones.where('goalId').equals(goalId).sortBy('order');
+}
+
+export async function createMilestone(data: Omit<Milestone, 'id' | 'completed' | 'order'>): Promise<Milestone> {
+  const count = await db.milestones.where('goalId').equals(data.goalId).count();
+
+  const milestone: Milestone = {
+    id: crypto.randomUUID(),
+    ...data,
+    completed: false,
+    order: count,
+  };
+
+  await db.milestones.add(milestone);
+  return milestone;
+}
+
+export async function updateMilestone(id: string, data: Partial<Milestone>): Promise<void> {
+  await db.milestones.update(id, data);
+}
+
+export async function deleteMilestone(id: string): Promise<void> {
+  await db.milestones.delete(id);
+}
+
+export async function toggleMilestone(id: string): Promise<Milestone | null> {
+  const milestone = await db.milestones.get(id);
+  if (!milestone) return null;
+
+  const updated: Milestone = {
+    ...milestone,
+    completed: !milestone.completed,
+    completedAt: !milestone.completed ? new Date().toISOString() : undefined,
+  };
+
+  await db.milestones.update(id, updated);
+  return updated;
+}
+
+// ==================
+// USER SETTINGS FUNCTIONS
+// ==================
+
+export async function getSettings(): Promise<UserSettings | undefined> {
+  return db.userSettings.toArray().then(settings => settings[0]);
+}
+
+export async function updateSettings(data: Partial<UserSettings>): Promise<void> {
+  const existing = await getSettings();
+
+  if (existing) {
+    await db.userSettings.update(existing.id, data);
+  } else {
+    const settings: UserSettings = {
+      id: crypto.randomUUID(),
+      theme: data.theme || 'system',
+      userName: data.userName,
+      weekStartsOn: data.weekStartsOn ?? 0,
+      showMotivationalQuotes: data.showMotivationalQuotes ?? true,
+      defaultCategory: data.defaultCategory || 'health',
+      createdAt: new Date().toISOString(),
+    };
+    await db.userSettings.add(settings);
+  }
+}
+
+// ==================
+// DEMO DATA
+// ==================
+
+export async function seedDemoData(): Promise<void> {
+  // Clear existing data
+  await db.habits.clear();
+  await db.completions.clear();
+  await db.goals.clear();
+  await db.milestones.clear();
+
+  // Create demo habits
+  const demoHabits: Habit[] = [
+    {
+      id: crypto.randomUUID(),
+      name: 'Morning Exercise',
+      icon: '🏃',
+      category: 'health',
+      targetDaysPerWeek: 5,
+      archived: false,
+      order: 0,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: crypto.randomUUID(),
+      name: 'Read for 30 minutes',
+      icon: '📚',
+      category: 'learning',
+      targetDaysPerWeek: 7,
+      archived: false,
+      order: 1,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: crypto.randomUUID(),
+      name: 'Meditate',
+      icon: '🧘',
+      category: 'health',
+      targetDaysPerWeek: 7,
+      archived: false,
+      order: 2,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  await db.habits.bulkAdd(demoHabits);
+
+  // Create demo completions for the past week
+  const today = new Date();
+  const completions: HabitCompletion[] = [];
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+
+    demoHabits.forEach((habit, index) => {
+      // Random completion pattern
+      if (Math.random() > 0.3) {
+        completions.push({
+          id: crypto.randomUUID(),
+          habitId: habit.id,
+          date: dateStr,
+          completed: true,
+        });
+      }
+    });
+  }
+
+  await db.completions.bulkAdd(completions);
+}
+
+export { db };
