@@ -6,10 +6,10 @@ import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 
 import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
@@ -55,13 +55,13 @@ export function HabitGrid({
   const days = useMemo(() => {
     const daysInMonth = getDaysInMonth(selectedMonth);
     const firstDayOfWeek = getDay(startOfMonth(selectedMonth));
-    
+
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const date = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), day);
       const dateStr = format(date, 'yyyy-MM-dd');
       const dayOfWeek = (firstDayOfWeek + i) % 7;
-      
+
       return {
         day,
         dateStr,
@@ -87,11 +87,11 @@ export function HabitGrid({
   // Handle cell click with animation
   const handleCellClick = (habitId: string, dateStr: string, isFutureDate: boolean) => {
     if (isFutureDate) return;
-    
+
     const cellKey = `${habitId}-${dateStr}`;
     setRippleCell(cellKey);
     onToggle(habitId, dateStr);
-    
+
     setTimeout(() => setRippleCell(null), 500);
   };
 
@@ -119,7 +119,7 @@ export function HabitGrid({
   }
 
   return (
-    <div className="overflow-x-auto pb-4">
+    <div className="overflow-x-auto pb-4 scrollbar-hide">
       <div className="min-w-[800px]">
         {/* Header row with days */}
         <div className="flex items-center sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-2 border-b">
@@ -178,15 +178,15 @@ export function HabitGrid({
                       <span className="font-medium text-sm truncate">{habit.name}</span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <Badge 
-                        variant="secondary" 
+                      <Badge
+                        variant="secondary"
                         className={cn("text-[10px] px-1.5 py-0 h-4", CATEGORY_COLORS[habit.category])}
                       >
                         {habit.category}
                       </Badge>
                       {streak > 0 && (
-                        <Badge 
-                          variant="secondary" 
+                        <Badge
+                          variant="secondary"
                           className={cn(
                             "text-[10px] px-1.5 py-0 h-4 gap-0.5",
                             getStreakStyle(streak)
@@ -198,13 +198,13 @@ export function HabitGrid({
                       )}
                     </div>
                   </div>
-                  
+
                   {/* Actions menu */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <MoreHorizontal className="h-4 w-4" />
@@ -220,7 +220,7 @@ export function HabitGrid({
                         Archive
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         onClick={() => onDelete(habit.id)}
                         className="text-destructive focus:text-destructive"
                       >
@@ -269,7 +269,7 @@ export function HabitGrid({
                             </motion.div>
                           )}
                         </AnimatePresence>
-                        
+
                         <SuccessRipple trigger={showRipple} />
                       </motion.button>
                     );
