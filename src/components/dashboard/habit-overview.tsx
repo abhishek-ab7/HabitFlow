@@ -22,10 +22,10 @@ interface HabitOverviewProps {
 export function HabitOverview({ habits, completions, onToggle }: HabitOverviewProps) {
   const today = new Date();
 
-  // Generate last 10 days
-  const last10Days = useMemo(() => {
-    return Array.from({ length: 10 }, (_, i) => {
-      const date = subDays(today, 9 - i);
+  // Generate last 7 days
+  const last7Days = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = subDays(today, 6 - i);
       return {
         date,
         dateStr: format(date, 'yyyy-MM-dd'),
@@ -80,7 +80,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
           <div className="flex items-center mb-4 overflow-x-auto pb-2 scrollbar-hide">
             <div className="w-24 sm:w-32 md:w-40 flex-shrink-0" />
             <div className="flex gap-0.5 sm:gap-1">
-              {last10Days.map(({ dateStr, dayLabel, isToday }) => (
+              {last7Days.map(({ dateStr, dayLabel, isToday }) => (
                 <div
                   key={dateStr}
                   className={cn(
@@ -124,7 +124,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
 
                 {/* Day indicators */}
                 <div className="flex gap-0.5 sm:gap-1">
-                  {last10Days.map(({ dateStr, isToday }) => {
+                  {last7Days.map(({ dateStr, isToday }) => {
                     const isCompleted = getCompletionStatus(habit.id, dateStr);
                     const isFuture = new Date(dateStr) > today;
 
