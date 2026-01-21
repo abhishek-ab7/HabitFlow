@@ -10,10 +10,10 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   userSettings: EntityTable<UserSettings, 'id'>;
 };
 
-// Schema version 1
-db.version(1).stores({
+// Schema version 2 - Added compound index for completions
+db.version(2).stores({
   habits: 'id, name, category, archived, order, createdAt',
-  completions: 'id, habitId, date, completed',
+  completions: 'id, habitId, date, [habitId+date]',
   goals: 'id, title, areaOfLife, status, archived, isFocus, deadline, createdAt',
   milestones: 'id, goalId, completed, order',
   userSettings: 'id, userId',
