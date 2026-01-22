@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Plus,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -331,6 +332,17 @@ export function GoalCard({
                       />
                     </motion.div>
                   ))}
+                  
+                  {/* Add milestone button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onAddMilestone(goal.id)}
+                    className="w-full gap-1 mt-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Milestone
+                  </Button>
                 </div>
               </motion.div>
             )}

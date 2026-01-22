@@ -23,7 +23,8 @@ interface GoalFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: GoalFormData) => void;
-  goal?: Goal; // If provided, we're editing (no milestones on edit)
+  goal?: Goal;
+  existingMilestones?: string[]; // Existing milestone titles for editing
 }
 
 const AREAS: { value: AreaOfLife; label: string; emoji: string }[] = [
@@ -46,6 +47,7 @@ export function GoalFormModal({
   onOpenChange,
   onSubmit,
   goal,
+  existingMilestones = [],
 }: GoalFormModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -69,7 +71,7 @@ export function GoalFormModal({
         setPriority(goal.priority);
         setStartDate(format(new Date(goal.startDate), 'yyyy-MM-dd'));
         setDeadline(format(new Date(goal.deadline), 'yyyy-MM-dd'));
-        setMilestones(['']); // Can't edit milestones here
+        setMilestones(existingMilestones.length > 0 ? existingMilestones : ['']);
         setIsFocus(goal.isFocus);
       } else {
         setTitle('');
@@ -276,15 +278,14 @@ export function GoalFormModal({
               </div>
             </div>
 
-            {/* Milestones (only for new goals) */}
-            {!isEditing && (
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Milestones (optional)
-                </label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Break down your goal into smaller, achievable steps.
-                </p>
+            {/* Milestones */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Milestones (optional)
+              </label>
+              <p className="text-xs text-muted-foreground mb-3">
+                Break down your goal into smaller, achievable steps.
+              </p>
                 <div className="space-y-2">
                   {milestones.map((milestone, index) => (
                     <div key={index} className="flex gap-2">
@@ -317,8 +318,7 @@ export function GoalFormModal({
                     Add Milestone
                   </Button>
                 </div>
-              </div>
-            )}
+            </div>
           </div>
 
           <DialogFooter>

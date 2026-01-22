@@ -60,6 +60,8 @@ export default function GoalsPage() {
     removeGoal,
     setFocus,
     toggleMilestoneComplete,
+    addMilestone,
+    removeMilestone,
     statusFilter,
     areaFilter,
     setStatusFilter,
@@ -121,6 +123,7 @@ export default function GoalsPage() {
 
   const handleEditGoal = async (data: GoalFormData) => {
     if (editingGoal) {
+      // Update goal details
       await editGoal(editingGoal.id, {
         title: data.title,
         description: data.description,
@@ -129,6 +132,23 @@ export default function GoalsPage() {
         startDate: data.startDate,
         deadline: data.deadline,
       });
+
+      // Handle milestones - add new ones
+      const existingMilestones = getGoalMilestones(editingGoal.id);
+      const existingTitles = existingMilestones.map(m => m.title);
+      const newTitles = data.milestones.filter(title => 
+        title.trim() && !existingTitles.includes(title.trim())
+      );
+
+      // Add new milestones
+      for (const title of newTitles) {
+        await addMilestone(editingGoal.id, { title: title.trim() });
+      }
+
+      // Note: We're not deleting removed milestones to preserve history
+      // If needed, that could be added as a separate feature
+      
+      await loadAllMilestones(); // Reload to get updated milestones
     }
   };
 
@@ -434,6 +454,11 @@ export default function GoalsPage() {
         onOpenChange={handleCloseModal}
         onSubmit={editingGoal ? handleEditGoal : handleCreateGoal}
         goal={editingGoal}
+        existingMilestones={
+          editingGoal
+            ? getGoalMilestones(editingGoal.id).map(m => m.title)
+            : []
+        }
       />
     </div>
   );
