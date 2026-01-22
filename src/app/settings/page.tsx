@@ -28,6 +28,7 @@ import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { db, getSettings, updateSettings } from '@/lib/db';
+import { cleanupDuplicateCompletions, countDuplicateCompletions } from '@/lib/cleanup';
 import { cn } from '@/lib/utils';
 import type { UserSettings, Category } from '@/lib/types';
 
@@ -54,6 +55,8 @@ export default function SettingsPage() {
   const [userName, setUserName] = useState('');
   const [showClearDataDialog, setShowClearDataDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -76,9 +79,28 @@ export default function SettingsPage() {
 
       setSettings(s);
       setUserName(s.userName || '');
+
+      // Check for duplicate completions
+      const count = await countDuplicateCompletions();
+      setDuplicateCount(count);
     };
     loadSettings();
   }, []);
+
+  const handleCleanupDuplicates = async () => {
+    setIsCleaning(true);
+    try {
+      const removed = await cleanupDuplicateCompletions();
+      toast.success(`Removed ${removed} duplicate completion(s)`);
+      setDuplicateCount(0);
+      // Refresh the page to update counts
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      toast.error('Failed to cleanup duplicates');
+    } finally {
+      setIsCleaning(false);
+    }
+  };
 
   const handleSaveUserName = async () => {
     if (settings) {
@@ -332,6 +354,30 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
+
+              {/* Cleanup Duplicates */}
+              {duplicateCount !== null && duplicateCount > 0 && (
+                <>
+                  <Separator />
+                  <div className="pt-2">
+                    <h4 className="text-sm font-medium text-warning mb-1">Database Cleanup</h4>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Found {duplicateCount} duplicate habit completion{duplicateCount !== 1 ? 's' : ''}.
+                      This may cause incorrect habit counts.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={handleCleanupDuplicates}
+                      disabled={isCleaning}
+                      className="gap-2 border-warning text-warning hover:bg-warning/10"
+                    >
+                      <Database className="h-4 w-4" />
+                      {isCleaning ? 'Cleaning...' : 'Remove Duplicates'}
+                    </Button>
+                  </div>
+                </>
+              )}
+
               <Separator />
               <div className="pt-2">
                 <h4 className="text-sm font-medium text-destructive mb-1">Danger Zone</h4>
