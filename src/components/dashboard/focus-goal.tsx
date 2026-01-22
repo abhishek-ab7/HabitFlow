@@ -44,43 +44,43 @@ function SingleGoalCard({ goal, milestones, stats, onToggleMilestone }: SingleGo
   };
 
   return (
-    <div className="relative overflow-hidden rounded-lg border bg-card p-3">
+    <div className="relative overflow-hidden rounded-lg border bg-card p-5">
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-chart-4/5" />
 
-      <div className="relative flex flex-col md:flex-row gap-3">
+      <div className="relative flex flex-col md:flex-row gap-5">
         {/* Progress Ring */}
         <div className="flex-shrink-0 flex justify-center md:justify-start">
           <ProgressRing
             progress={progress}
-            size={80}
-            strokeWidth={6}
+            size={100}
+            strokeWidth={8}
           >
             <div className="text-center">
-              <span className="text-xl font-bold">
+              <span className="text-2xl font-bold">
                 <CountUp value={progress} />
               </span>
-              <span className="text-xs text-muted-foreground">%</span>
+              <span className="text-sm text-muted-foreground">%</span>
             </div>
           </ProgressRing>
         </div>
 
         {/* Goal Info */}
         <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold mb-1 truncate">{goal.title}</h3>
+          <h3 className="text-lg font-semibold mb-1 truncate">{goal.title}</h3>
 
           {/* Deadline */}
           <div className={cn(
-            "flex items-center gap-1.5 mb-2",
+            "flex items-center gap-2 mb-3",
             getDeadlineColorClass(deadlineInfo.color)
           )}>
-            <Calendar className="h-3.5 w-3.5" />
-            <span className="text-xs font-medium">{deadlineInfo.label}</span>
+            <Calendar className="h-4 w-4" />
+            <span className="text-sm font-medium">{deadlineInfo.label}</span>
           </div>
 
           {/* Milestones */}
           {nextMilestones.length > 0 && (
-            <div className="space-y-1">
+            <div className="space-y-2">
               {nextMilestones.map((milestone) => (
                 <motion.div
                   key={milestone.id}
@@ -91,12 +91,12 @@ function SingleGoalCard({ goal, milestones, stats, onToggleMilestone }: SingleGo
                     id={milestone.id}
                     checked={milestone.completed}
                     onCheckedChange={() => onToggleMilestone(milestone.id)}
-                    className="data-[state=checked]:bg-success data-[state=checked]:border-success h-3.5 w-3.5"
+                    className="data-[state=checked]:bg-success data-[state=checked]:border-success h-4 w-4"
                   />
                   <label
                     htmlFor={milestone.id}
                     className={cn(
-                      "text-xs cursor-pointer transition-colors truncate",
+                      "text-sm cursor-pointer transition-colors truncate",
                       milestone.completed && "line-through text-muted-foreground"
                     )}
                   >
@@ -109,14 +109,14 @@ function SingleGoalCard({ goal, milestones, stats, onToggleMilestone }: SingleGo
 
           {/* Stats */}
           {stats && (
-            <div className="flex items-center gap-3 mt-2 pt-2 border-t">
-              <div className="flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                <span className="text-xs">
+            <div className="flex items-center gap-4 mt-4 pt-4 border-t">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-success" />
+                <span className="text-sm">
                   {stats.milestonesCompleted}/{stats.milestonesTotal} milestones
                 </span>
               </div>
-              <Badge variant={stats.isOnTrack ? 'default' : 'destructive'} className="text-xs py-0 h-5">
+              <Badge variant={stats.isOnTrack ? 'default' : 'destructive'} className="text-xs">
                 {stats.isOnTrack ? 'On Track' : 'Behind'}
               </Badge>
             </div>
@@ -172,7 +172,7 @@ export function FocusGoal({ goals, getMilestones, getStats, onToggleMilestone }:
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-6">
           {goals.map((goal) => (
             <SingleGoalCard
               key={goal.id}
