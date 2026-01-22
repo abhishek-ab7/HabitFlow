@@ -76,7 +76,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
           </Button>
         </CardHeader>
         <CardContent className="flex-1">
-          {/* Header row with dates */
+          {/* Header row with dates */}
           <div className="flex items-center mb-4 overflow-x-auto pb-2 scrollbar-hide">
             <div className="w-24 sm:w-32 md:w-40 flex-shrink-0" />
             <div className="flex gap-0.5 sm:gap-1">

@@ -45,7 +45,7 @@ function SingleGoalCard({ goal, milestones, stats, onToggleMilestone }: SingleGo
 
   return (
     <div className="relative overflow-hidden rounded-lg border bg-card p-6 min-h-[165px]">
-      {/* Background gradient */
+      {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-chart-4/5" />
 
       <div className="relative flex flex-col md:flex-row gap-6 h-full">
