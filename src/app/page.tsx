@@ -174,7 +174,7 @@ export default function DashboardPage() {
       />
 
 
-      <div className="grid gap-6 lg:grid-cols-2 lg:min-h-[600px]">
+      <div className="grid gap-6 lg:grid-cols-2">
         <HabitOverview habits={habits} completions={completions} onToggle={toggle} />
         <FocusGoal
           goals={focusGoals}
