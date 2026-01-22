@@ -4,7 +4,7 @@ import {
   createGoal,
   updateGoal,
   deleteGoal,
-  updateGoalIsFocus,
+  setFocusGoal,
   getMilestones,
   createMilestone,
   updateMilestone,
@@ -41,6 +41,7 @@ interface GoalState {
   // Computed
   getGoalStats: (goalId: string) => ReturnType<typeof calculateGoalStats>;
   getGoalMilestones: (goalId: string) => Milestone[];
+  getFocusGoal: () => Goal | undefined;
   getFocusGoals: () => Goal[];
   getGoalDeadlineStatus: (goalId: string) => ReturnType<typeof getDeadlineStatus>;
   getFilteredGoals: () => Goal[];
@@ -158,54 +159,19 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   },
 
   setFocus: async (goalId: string) => {
-    const { goals } = get();
-    const targetGoal = goals.find(g => g.id === goalId);
-    if (!targetGoal) return;
-
-    const isCurrentlyFocus = targetGoal.isFocus;
-    const newIsFocus = !isCurrentlyFocus;
-
-    let goalsToUpdate: { id: string, isFocus: boolean }[] = [];
-
-    if (newIsFocus) {
-      // Trying to set as focus
-      const currentFocusGoals = goals.filter(g => g.isFocus && g.id !== goalId);
-
-      if (currentFocusGoals.length < 2) {
-        // Space available
-        goalsToUpdate.push({ id: goalId, isFocus: true });
-      } else {
-        // Limit reached, replace the first one
-        const goalToUnset = currentFocusGoals[0];
-        goalsToUpdate.push({ id: goalToUnset.id, isFocus: false });
-        goalsToUpdate.push({ id: goalId, isFocus: true });
-      }
-    } else {
-      // Unsetting focus
-      goalsToUpdate.push({ id: goalId, isFocus: false });
-    }
-
-    // Apply updates to DB
-    for (const update of goalsToUpdate) {
-      await updateGoalIsFocus(update.id, update.isFocus);
-    }
-
-    // Apply updates to store
-    const updatedGoals = goals.map(g => {
-      const update = goalsToUpdate.find(u => u.id === g.id);
-      return update ? { ...g, isFocus: update.isFocus } : g;
-    });
+    await setFocusGoal(goalId);
+    const updatedGoals = get().goals.map(g => ({
+      ...g,
+      isFocus: g.id === goalId,
+    }));
 
     set({ goals: updatedGoals });
 
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
-      for (const update of goalsToUpdate) {
-        const updatedGoal = updatedGoals.find(g => g.id === update.id);
-        if (updatedGoal) {
-          await syncEngine.pushGoal(updatedGoal);
-        }
+      for (const goal of updatedGoals) {
+        await syncEngine.pushGoal(goal);
       }
     } catch (error) {
       console.error('Failed to sync focus goal:', error);
@@ -312,8 +278,21 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       .sort((a, b) => a.order - b.order);
   },
 
+  getFocusGoal: () => {
+    return get().goals.find(g => g.isFocus && !g.archived);
+  },
+
   getFocusGoals: () => {
-    return get().goals.filter(g => g.isFocus && !g.archived);
+    // Return up to 2 focus goals, sorted by priority (high first) then deadline (earliest first)
+    const focusGoals = get().goals.filter(g => g.isFocus && !g.archived);
+    return focusGoals
+      .sort((a, b) => {
+        const priorityOrder = { high: 0, medium: 1, low: 2 };
+        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
+        if (priorityDiff !== 0) return priorityDiff;
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      })
+      .slice(0, 2);
   },
 
   getGoalDeadlineStatus: (goalId: string) => {

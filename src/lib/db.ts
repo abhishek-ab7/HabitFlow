@@ -121,8 +121,11 @@ export async function deleteGoal(id: string): Promise<void> {
   await db.milestones.where('goalId').equals(id).delete();
 }
 
-export async function updateGoalIsFocus(goalId: string, isFocus: boolean): Promise<void> {
-  await db.goals.update(goalId, { isFocus });
+export async function setFocusGoal(goalId: string): Promise<void> {
+  await db.transaction('rw', db.goals, async () => {
+    await db.goals.toCollection().modify({ isFocus: false });
+    await db.goals.update(goalId, { isFocus: true });
+  });
 }
 
 // ==================

@@ -69,7 +69,6 @@ export default function DashboardPage() {
   const monthlyProgress = getMonthlyProgress();
   const streaks = getCurrentStreaks();
   const focusGoals = getFocusGoals();
-  // We'll calculate stats/milestones for each goal inside the component or pass necessary data
   const activeGoalsCount = getActiveGoalsCount();
   const upcomingDeadlines = getUpcomingDeadlines(7);
 
@@ -178,8 +177,8 @@ export default function DashboardPage() {
         <HabitOverview habits={habits} completions={completions} onToggle={toggle} />
         <FocusGoal
           goals={focusGoals}
-          getStats={getGoalStats}
           getMilestones={getGoalMilestones}
+          getStats={getGoalStats}
           onToggleMilestone={handleToggleMilestone}
         />
       </div>
