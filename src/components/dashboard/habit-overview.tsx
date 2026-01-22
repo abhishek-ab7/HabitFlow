@@ -65,7 +65,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
 
   return (
     <FadeIn delay={0.2}>
-      <Card>
+      <Card className="h-full flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
           <Button variant="ghost" size="sm" asChild>
@@ -75,8 +75,8 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
             </Link>
           </Button>
         </CardHeader>
-        <CardContent>
-          {/* Header row with dates */}
+        <CardContent className="flex-1">
+          {/* Header row with dates */
           <div className="flex items-center mb-4 overflow-x-auto pb-2 scrollbar-hide">
             <div className="w-24 sm:w-32 md:w-40 flex-shrink-0" />
             <div className="flex gap-0.5 sm:gap-1">

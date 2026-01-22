@@ -27,6 +27,7 @@ import { FadeIn, StaggerContainer, StaggerItem } from '@/components/motion';
 import { GoalCard, GoalFormModal, EmptyGoals } from '@/components/goals';
 import { useGoalStore } from '@/lib/stores';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import type { Goal, GoalFormData, GoalStatus, AreaOfLife } from '@/lib/types';
 
 const STATUS_OPTIONS: { value: GoalStatus; label: string }[] = [
@@ -146,6 +147,23 @@ export default function GoalsPage() {
   const handleArchiveGoal = async (goalId: string) => {
     await editGoal(goalId, { archived: true });
   };
+
+  const handleSetFocus = async (goalId: string) => {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal) return;
+
+    // If trying to set as focus and already have 2 focus goals
+    if (!goal.isFocus) {
+      const currentFocusCount = goals.filter(g => g.isFocus && !g.archived).length;
+      if (currentFocusCount >= 2) {
+        toast.error('Maximum of 2 focus goals allowed');
+        return;
+      }
+    }
+
+    await setFocus(goalId);
+  };
+
 
   const handleToggleStatus = (status: GoalStatus) => {
     const newStatuses = statusFilter.includes(status)
@@ -397,7 +415,7 @@ export default function GoalsPage() {
                   onEdit={handleOpenEditModal}
                   onDelete={removeGoal}
                   onArchive={handleArchiveGoal}
-                  onSetFocus={setFocus}
+                  onSetFocus={handleSetFocus}
                   onToggleMilestone={toggleMilestoneComplete}
                   onAddMilestone={() => {
                     // Could open a separate milestone modal - for now just open edit

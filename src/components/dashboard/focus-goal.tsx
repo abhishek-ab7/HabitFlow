@@ -44,8 +44,8 @@ function SingleGoalCard({ goal, milestones, stats, onToggleMilestone }: SingleGo
   };
 
   return (
-    <div className="relative overflow-hidden rounded-lg border bg-card p-6 min-h-[180px]">
-      {/* Background gradient */}
+    <div className="relative overflow-hidden rounded-lg border bg-card p-6 min-h-[165px]">
+      {/* Background gradient */
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-chart-4/5" />
 
       <div className="relative flex flex-col md:flex-row gap-6 h-full">
@@ -158,7 +158,7 @@ export function FocusGoal({ goals, getMilestones, getStats, onToggleMilestone }:
 
   return (
     <FadeIn delay={0.3}>
-      <Card className="h-full">
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
@@ -174,7 +174,7 @@ export function FocusGoal({ goals, getMilestones, getStats, onToggleMilestone }:
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 flex-1">
           {goals.map((goal) => (
             <SingleGoalCard
               key={goal.id}

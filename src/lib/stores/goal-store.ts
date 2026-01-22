@@ -162,6 +162,18 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     const currentGoal = get().goals.find(g => g.id === goalId);
     if (!currentGoal) return;
 
+    // If trying to set as focus (currently not focus)
+    if (!currentGoal.isFocus) {
+      // Check how many focus goals we already have
+      const currentFocusCount = get().goals.filter(g => g.isFocus && !g.archived).length;
+
+      // If we already have 2 focus goals, don't allow setting another
+      if (currentFocusCount >= 2) {
+        console.warn('Maximum of 2 focus goals allowed');
+        return;
+      }
+    }
+
     await setFocusGoal(goalId);
 
     // Toggle the focus status in the store
