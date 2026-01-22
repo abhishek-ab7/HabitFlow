@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { format, addDays } from 'date-fns';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Star } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import type { Goal, GoalFormData, AreaOfLife, Priority } from '@/lib/types';
 
@@ -53,6 +54,7 @@ export function GoalFormModal({
   const [startDate, setStartDate] = useState('');
   const [deadline, setDeadline] = useState('');
   const [milestones, setMilestones] = useState<string[]>(['']);
+  const [isFocus, setIsFocus] = useState(false);
   const [errors, setErrors] = useState<{ title?: string; deadline?: string }>({});
 
   const isEditing = !!goal;
@@ -68,6 +70,7 @@ export function GoalFormModal({
         setStartDate(format(new Date(goal.startDate), 'yyyy-MM-dd'));
         setDeadline(format(new Date(goal.deadline), 'yyyy-MM-dd'));
         setMilestones(['']); // Can't edit milestones here
+        setIsFocus(goal.isFocus);
       } else {
         setTitle('');
         setDescription('');
@@ -76,6 +79,7 @@ export function GoalFormModal({
         setStartDate(format(new Date(), 'yyyy-MM-dd'));
         setDeadline(format(addDays(new Date(), 30), 'yyyy-MM-dd'));
         setMilestones(['']);
+        setIsFocus(false);
       }
       setErrors({});
     }
@@ -97,7 +101,7 @@ export function GoalFormModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate
     const newErrors: typeof errors = {};
     if (!title.trim()) {
@@ -120,6 +124,7 @@ export function GoalFormModal({
       startDate,
       deadline,
       milestones: milestones.filter(m => m.trim() !== ''),
+      isFocus,
     });
 
     onOpenChange(false);
@@ -132,8 +137,8 @@ export function GoalFormModal({
           <DialogHeader>
             <DialogTitle>{isEditing ? 'Edit Goal' : 'Create New Goal'}</DialogTitle>
             <DialogDescription>
-              {isEditing 
-                ? 'Update your goal details.' 
+              {isEditing
+                ? 'Update your goal details.'
                 : 'Define a meaningful goal with milestones to track your progress.'}
             </DialogDescription>
           </DialogHeader>
@@ -185,7 +190,7 @@ export function GoalFormModal({
                     onClick={() => setAreaOfLife(area.value)}
                     className={cn(
                       "px-3 py-1.5 rounded-full text-sm font-medium border transition-all",
-                      areaOfLife === area.value 
+                      areaOfLife === area.value
                         ? "bg-primary text-primary-foreground border-primary"
                         : "bg-muted text-muted-foreground border-transparent hover:bg-muted/80"
                     )}
@@ -250,6 +255,27 @@ export function GoalFormModal({
               </div>
             </div>
 
+            {/* Focus Goal Option */}
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is-focus"
+                checked={isFocus}
+                onCheckedChange={(checked) => setIsFocus(checked as boolean)}
+              />
+              <div className="grid gap-1.5 leading-none">
+                <label
+                  htmlFor="is-focus"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Star className="h-4 w-4 text-primary" />
+                  Set as Focus Goal
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  This goal will be pinned to your dashboard.
+                </p>
+              </div>
+            </div>
+
             {/* Milestones (only for new goals) */}
             {!isEditing && (
               <div>
@@ -296,9 +322,9 @@ export function GoalFormModal({
           </div>
 
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="ghost" 
+            <Button
+              type="button"
+              variant="ghost"
               onClick={() => onOpenChange(false)}
             >
               Cancel

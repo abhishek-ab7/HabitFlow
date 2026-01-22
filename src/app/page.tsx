@@ -39,7 +39,7 @@ export default function DashboardPage() {
     isLoading: goalsLoading,
     loadGoals,
     loadAllMilestones,
-    getFocusGoal,
+    getFocusGoals,
     getGoalStats,
     getGoalMilestones,
     getActiveGoalsCount,
@@ -68,9 +68,8 @@ export default function DashboardPage() {
   const todayProgress = getTodayProgress();
   const monthlyProgress = getMonthlyProgress();
   const streaks = getCurrentStreaks();
-  const focusGoal = getFocusGoal();
-  const focusGoalStats = focusGoal ? getGoalStats(focusGoal.id) : undefined;
-  const focusGoalMilestones = focusGoal ? getGoalMilestones(focusGoal.id) : [];
+  const focusGoals = getFocusGoals();
+  // We'll calculate stats/milestones for each goal inside the component or pass necessary data
   const activeGoalsCount = getActiveGoalsCount();
   const upcomingDeadlines = getUpcomingDeadlines(7);
 
@@ -178,9 +177,9 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <HabitOverview habits={habits} completions={completions} onToggle={toggle} />
         <FocusGoal
-          goal={focusGoal}
-          milestones={focusGoalMilestones}
-          stats={focusGoalStats}
+          goals={focusGoals}
+          getStats={getGoalStats}
+          getMilestones={getGoalMilestones}
           onToggleMilestone={handleToggleMilestone}
         />
       </div>

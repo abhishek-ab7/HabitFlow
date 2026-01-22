@@ -3,7 +3,7 @@
 // ============================================
 
 // Categories for habits
-export type Category = 
+export type Category =
   | 'health'
   | 'work'
   | 'learning'
@@ -12,7 +12,7 @@ export type Category =
   | 'relationships';
 
 // Areas of life for goals
-export type AreaOfLife = 
+export type AreaOfLife =
   | 'career'
   | 'health'
   | 'relationships'
@@ -198,6 +198,7 @@ export interface GoalFormData {
   startDate: string;
   deadline: string;
   milestones: string[]; // Just titles for initial creation
+  isFocus?: boolean;
 }
 
 export interface MilestoneFormData {

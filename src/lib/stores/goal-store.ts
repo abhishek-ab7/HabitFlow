@@ -4,7 +4,7 @@ import {
   createGoal,
   updateGoal,
   deleteGoal,
-  setFocusGoal,
+  updateGoalIsFocus,
   getMilestones,
   createMilestone,
   updateMilestone,
@@ -41,7 +41,7 @@ interface GoalState {
   // Computed
   getGoalStats: (goalId: string) => ReturnType<typeof calculateGoalStats>;
   getGoalMilestones: (goalId: string) => Milestone[];
-  getFocusGoal: () => Goal | undefined;
+  getFocusGoals: () => Goal[];
   getGoalDeadlineStatus: (goalId: string) => ReturnType<typeof getDeadlineStatus>;
   getFilteredGoals: () => Goal[];
   getActiveGoalsCount: () => number;
@@ -76,12 +76,14 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   },
 
   addGoal: async (data: GoalFormData) => {
-    const { milestones: milestoneTitles, ...goalData } = data;
+    const { milestones: milestoneTitles, isFocus, ...goalData } = data;
 
     const goal = await createGoal({
       ...goalData,
       status: 'not_started',
-      isFocus: false,
+      isFocus: isFocus || false, // Should be initially false if we're going to set it via setFocus to handle unsetting others, but createGoal needs a value. 
+      // Actually, createGoal doesn't handle the "exclusive" logic, setFocus does.
+      // Let's rely on setFocus to ensure exclusivity.
       archived: false,
     });
 
@@ -99,6 +101,11 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       milestones: [...state.milestones, ...createdMilestones],
     }));
 
+    // If isFocus is true, we need to update the store and DB to reflect this exclusive status
+    if (isFocus) {
+      await get().setFocus(goal.id);
+    }
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -106,6 +113,8 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       for (const milestone of createdMilestones) {
         await syncEngine.pushMilestone(milestone);
       }
+      // If we called setFocus, we might need to sync the updates to other goals (unsetting their focus)
+      // setFocus action handles syncing of the updated goals, so we are good there.
     } catch (error) {
       console.error('Failed to sync goal:', error);
     }
@@ -149,19 +158,54 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   },
 
   setFocus: async (goalId: string) => {
-    await setFocusGoal(goalId);
-    const updatedGoals = get().goals.map(g => ({
-      ...g,
-      isFocus: g.id === goalId,
-    }));
+    const { goals } = get();
+    const targetGoal = goals.find(g => g.id === goalId);
+    if (!targetGoal) return;
+
+    const isCurrentlyFocus = targetGoal.isFocus;
+    const newIsFocus = !isCurrentlyFocus;
+
+    let goalsToUpdate: { id: string, isFocus: boolean }[] = [];
+
+    if (newIsFocus) {
+      // Trying to set as focus
+      const currentFocusGoals = goals.filter(g => g.isFocus && g.id !== goalId);
+
+      if (currentFocusGoals.length < 2) {
+        // Space available
+        goalsToUpdate.push({ id: goalId, isFocus: true });
+      } else {
+        // Limit reached, replace the first one
+        const goalToUnset = currentFocusGoals[0];
+        goalsToUpdate.push({ id: goalToUnset.id, isFocus: false });
+        goalsToUpdate.push({ id: goalId, isFocus: true });
+      }
+    } else {
+      // Unsetting focus
+      goalsToUpdate.push({ id: goalId, isFocus: false });
+    }
+
+    // Apply updates to DB
+    for (const update of goalsToUpdate) {
+      await updateGoalIsFocus(update.id, update.isFocus);
+    }
+
+    // Apply updates to store
+    const updatedGoals = goals.map(g => {
+      const update = goalsToUpdate.find(u => u.id === g.id);
+      return update ? { ...g, isFocus: update.isFocus } : g;
+    });
 
     set({ goals: updatedGoals });
 
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
-      for (const goal of updatedGoals) {
-        await syncEngine.pushGoal(goal);
+      for (const update of goalsToUpdate) {
+        const updatedGoal = updatedGoals.find(g => g.id === update.id);
+        if (updatedGoal) {
+          await syncEngine.pushGoal(updatedGoal);
+        }
       }
     } catch (error) {
       console.error('Failed to sync focus goal:', error);
@@ -268,8 +312,8 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       .sort((a, b) => a.order - b.order);
   },
 
-  getFocusGoal: () => {
-    return get().goals.find(g => g.isFocus && !g.archived);
+  getFocusGoals: () => {
+    return get().goals.filter(g => g.isFocus && !g.archived);
   },
 
   getGoalDeadlineStatus: (goalId: string) => {
