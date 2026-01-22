@@ -389,7 +389,7 @@ export default function GoalsPage() {
         >
           <AnimatePresence mode="popLayout">
             {displayGoals.map((goal, index) => (
-              <StaggerItem key={goal.id}>
+              <StaggerItem key={goal.id} className={cn(viewMode === 'grid' && "h-full")}>
                 <GoalCard
                   goal={goal}
                   milestones={getGoalMilestones(goal.id)}

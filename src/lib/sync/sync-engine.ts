@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { db } from '@/lib/db';
+import { db, cleanupDuplicateCompletions } from '@/lib/db';
 import type { Habit, HabitCompletion, Goal, Milestone } from '@/lib/types';
 
 export class SyncEngine {
@@ -69,6 +69,9 @@ export class SyncEngine {
         this.syncGoals(),
         this.syncMilestones(),
       ]);
+
+      // Clean up any duplicate completions after sync
+      await cleanupDuplicateCompletions();
 
       this.notifyStatus({ type: 'success', message: 'All data synced' });
     } catch (error) {
@@ -213,15 +216,23 @@ export class SyncEngine {
 
     // Update local with remote completions
     for (const remote of (remoteCompletions || []) as any[]) {
-      // Check if a completion with this habitId+date already exists locally
-      const existing = await db.completions
+      // Check if completions with this habitId+date already exist locally
+      const existingCompletions = await db.completions
         .where('[habitId+date]')
         .equals([remote.habit_id, remote.date])
-        .first();
+        .toArray();
 
-      if (existing) {
-        // Update the existing completion with remote data
-        await db.completions.update(existing.id, {
+      if (existingCompletions.length > 0) {
+        // Keep the first one and update it, delete any duplicates
+        const [first, ...duplicates] = existingCompletions;
+        
+        // Delete duplicates
+        for (const dup of duplicates) {
+          await db.completions.delete(dup.id);
+        }
+        
+        // Update the first one with remote data (prefer remote as source of truth)
+        await db.completions.update(first.id, {
           completed: remote.completed,
           note: remote.notes || undefined,
         });

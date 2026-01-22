@@ -92,6 +92,31 @@ export async function getAllCompletionsInRange(startDate: string, endDate: strin
     .toArray();
 }
 
+export async function cleanupDuplicateCompletions(): Promise<number> {
+  // Find and remove duplicate completions (same habitId + date)
+  const allCompletions = await db.completions.toArray();
+  const seen = new Map<string, string>(); // key: habitId-date, value: first completion id
+  const duplicates: string[] = [];
+
+  for (const completion of allCompletions) {
+    const key = `${completion.habitId}-${completion.date}`;
+    if (seen.has(key)) {
+      // This is a duplicate, mark for deletion
+      duplicates.push(completion.id);
+    } else {
+      // First occurrence, keep it
+      seen.set(key, completion.id);
+    }
+  }
+
+  // Delete duplicates
+  if (duplicates.length > 0) {
+    await db.completions.bulkDelete(duplicates);
+  }
+
+  return duplicates.length;
+}
+
 // ==================
 // GOAL FUNCTIONS
 // ==================

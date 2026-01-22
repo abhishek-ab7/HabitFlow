@@ -9,6 +9,7 @@ import {
   getAllCompletionsInRange,
   reorderHabits,
   seedDemoData,
+  cleanupDuplicateCompletions,
 } from '../db';
 import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
 import { calculateHabitStats } from '../calculations';
@@ -64,6 +65,9 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
   loadCompletions: async (startDate: string, endDate: string) => {
     try {
+      // Clean up any duplicate completions first
+      await cleanupDuplicateCompletions();
+      
       const completions = await getAllCompletionsInRange(startDate, endDate);
       set({ completions });
     } catch (error) {
@@ -224,7 +228,9 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       c => c.date === today && c.completed && activeHabits.some(h => h.id === c.habitId)
     );
     
-    const completed = todayCompletions.length;
+    // Deduplicate by habitId - only count each habit once
+    const uniqueHabitIds = new Set(todayCompletions.map(c => c.habitId));
+    const completed = uniqueHabitIds.size;
     const total = activeHabits.length;
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
     

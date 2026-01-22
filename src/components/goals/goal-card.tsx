@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, differenceInDays } from 'date-fns';
-import { 
-  Calendar, 
-  Flag, 
-  Star, 
-  MoreHorizontal, 
-  Pencil, 
-  Trash2, 
+import {
+  Calendar,
+  Flag,
+  Star,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
   Archive,
   CheckCircle2,
   ChevronDown,
@@ -109,9 +109,9 @@ export function GoalCard({
   };
 
   return (
-    <ScaleOnHover scale={1.01} lift>
+    <ScaleOnHover scale={1.01} lift className="h-full">
       <Card className={cn(
-        "relative overflow-hidden transition-shadow",
+        "relative overflow-hidden transition-shadow h-full flex flex-col",
         goal.isFocus && "ring-2 ring-primary/50"
       )}>
         {/* Focus indicator */}
@@ -123,16 +123,16 @@ export function GoalCard({
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               {/* Area badge */}
-              <Badge 
-                variant="secondary" 
+              <Badge
+                variant="secondary"
                 className={cn("mb-2", areaStyle.bg, areaStyle.text)}
               >
                 {areaStyle.icon} {goal.areaOfLife.replace('_', ' ')}
               </Badge>
-              
+
               {/* Title */}
               <h3 className="text-lg font-semibold truncate">{goal.title}</h3>
-              
+
               {/* Description */}
               {goal.description && (
                 <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
@@ -143,8 +143,8 @@ export function GoalCard({
 
             <div className="flex items-center gap-2">
               {/* Status badge */}
-              <Badge 
-                variant="secondary" 
+              <Badge
+                variant="secondary"
                 className={cn(statusStyle.bg, statusStyle.text)}
               >
                 {statusStyle.label}
@@ -175,7 +175,7 @@ export function GoalCard({
                     Archive
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     onClick={() => onDelete(goal.id)}
                     className="text-destructive focus:text-destructive"
                   >
@@ -188,7 +188,7 @@ export function GoalCard({
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 flex-1">
           {/* Progress section */}
           <div className="flex items-center gap-4">
             <ProgressRing progress={stats.progress} size={80} strokeWidth={6}>
@@ -234,12 +234,12 @@ export function GoalCard({
             </div>
             <div className="relative h-2 bg-muted rounded-full overflow-hidden">
               {/* Elapsed time */}
-              <div 
+              <div
                 className="absolute inset-y-0 left-0 bg-muted-foreground/30"
                 style={{ width: `${elapsedPercentage}%` }}
               />
               {/* Progress */}
-              <motion.div 
+              <motion.div
                 className="absolute inset-y-0 left-0 bg-primary"
                 initial={{ width: 0 }}
                 animate={{ width: `${stats.progress}%` }}
@@ -247,7 +247,7 @@ export function GoalCard({
               />
               {/* Today marker */}
               {stats.daysRemaining > 0 && stats.daysElapsed > 0 && (
-                <div 
+                <div
                   className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-foreground rounded-full"
                   style={{ left: `${elapsedPercentage}%`, transform: 'translateX(-50%) translateY(-50%)' }}
                 />
@@ -326,8 +326,8 @@ export function GoalCard({
                           {format(new Date(milestone.completedAt), 'MMM d')}
                         </span>
                       )}
-                      <SuccessRipple 
-                        trigger={rippleMilestone === milestone.id && milestone.completed} 
+                      <SuccessRipple
+                        trigger={rippleMilestone === milestone.id && milestone.completed}
                       />
                     </motion.div>
                   ))}
