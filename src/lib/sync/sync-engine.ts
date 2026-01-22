@@ -20,10 +20,10 @@ export class SyncEngine {
     // Listen for auth changes
     this.supabase.auth.onAuthStateChange((event, session) => {
       const newUserId = session?.user?.id || null;
-      
+
       if (newUserId !== this.userId) {
         this.userId = newUserId;
-        
+
         if (newUserId) {
           // User logged in - sync data
           this.syncAll();
@@ -113,7 +113,7 @@ export class SyncEngine {
           icon: local.icon || '✓',
           color: '#6366f1',
           category: local.category,
-          frequency: { type: 'daily', days: [0,1,2,3,4,5,6] },
+          frequency: { type: 'daily', days: [0, 1, 2, 3, 4, 5, 6] },
           target_days: local.targetDaysPerWeek,
           reminder_time: null,
           is_archived: local.archived,
@@ -124,20 +124,20 @@ export class SyncEngine {
 
     // Update local with remote habits
     for (const remote of (remoteHabits || []) as any[]) {
-        const localHabit: Habit = {
-          id: remote.id,
-          name: remote.name,
-          icon: remote.icon,
-          category: remote.category as any,
-          targetDaysPerWeek: remote.target_days,
-          archived: remote.is_archived,
-          order: remote.order_index,
-          createdAt: remote.created_at,
-        };
+      const localHabit: Habit = {
+        id: remote.id,
+        name: remote.name,
+        icon: remote.icon,
+        category: remote.category as any,
+        targetDaysPerWeek: remote.target_days,
+        archived: remote.is_archived,
+        order: remote.order_index,
+        createdAt: remote.created_at,
+      };
 
-        await db.habits.put(localHabit);
-      }
+      await db.habits.put(localHabit);
     }
+  }
 
   async pushHabit(habit: Habit) {
     if (!this.userId) return;
@@ -150,7 +150,7 @@ export class SyncEngine {
       icon: habit.icon || '✓',
       color: '#6366f1',
       category: habit.category,
-      frequency: { type: 'daily', days: [0,1,2,3,4,5,6] },
+      frequency: { type: 'daily', days: [0, 1, 2, 3, 4, 5, 6] },
       target_days: habit.targetDaysPerWeek,
       reminder_time: null,
       is_archived: habit.archived,
@@ -213,6 +213,20 @@ export class SyncEngine {
 
     // Update local with remote completions
     for (const remote of (remoteCompletions || []) as any[]) {
+      // Check if a completion with this habitId+date already exists locally
+      const existing = await db.completions
+        .where('[habitId+date]')
+        .equals([remote.habit_id, remote.date])
+        .first();
+
+      if (existing) {
+        // Update the existing completion with remote data
+        await db.completions.update(existing.id, {
+          completed: remote.completed,
+          note: remote.notes || undefined,
+        });
+      } else {
+        // Add new completion
         const localCompletion: HabitCompletion = {
           id: remote.id,
           habitId: remote.habit_id,
@@ -220,10 +234,10 @@ export class SyncEngine {
           completed: remote.completed,
           note: remote.notes || undefined,
         };
-
         await db.completions.put(localCompletion);
       }
     }
+  }
 
   async pushCompletion(completion: HabitCompletion) {
     if (!this.userId) return;
@@ -282,23 +296,23 @@ export class SyncEngine {
 
     // Update local with remote
     for (const remote of (remoteGoals || []) as any[]) {
-        const localGoal: Goal = {
-          id: remote.id,
-          title: remote.title,
-          description: remote.description || undefined,
-          areaOfLife: remote.category as any,
-          priority: remote.priority as any,
-          status: remote.status as any,
-          deadline: remote.target_date,
-          isFocus: remote.is_focus,
-          archived: remote.is_archived,
-          createdAt: remote.created_at,
-          startDate: remote.created_at,
-        };
+      const localGoal: Goal = {
+        id: remote.id,
+        title: remote.title,
+        description: remote.description || undefined,
+        areaOfLife: remote.category as any,
+        priority: remote.priority as any,
+        status: remote.status as any,
+        deadline: remote.target_date,
+        isFocus: remote.is_focus,
+        archived: remote.is_archived,
+        createdAt: remote.created_at,
+        startDate: remote.created_at,
+      };
 
-        await db.goals.put(localGoal);
-      }
+      await db.goals.put(localGoal);
     }
+  }
 
   async pushGoal(goal: Goal) {
     if (!this.userId) return;
@@ -357,18 +371,18 @@ export class SyncEngine {
 
     // Update local with remote
     for (const remote of (remoteMilestones || []) as any[]) {
-        const localMilestone: Milestone = {
-          id: remote.id,
-          goalId: remote.goal_id,
-          title: remote.title,
-          completed: remote.is_completed,
-          completedAt: remote.completed_at || undefined,
-          order: remote.order_index,
-        };
+      const localMilestone: Milestone = {
+        id: remote.id,
+        goalId: remote.goal_id,
+        title: remote.title,
+        completed: remote.is_completed,
+        completedAt: remote.completed_at || undefined,
+        order: remote.order_index,
+      };
 
-        await db.milestones.put(localMilestone);
-      }
+      await db.milestones.put(localMilestone);
     }
+  }
 
   async pushMilestone(milestone: Milestone) {
     if (!this.userId) return;
@@ -429,7 +443,7 @@ export class SyncEngine {
   }
 }
 
-export type SyncStatus = 
+export type SyncStatus =
   | { type: 'idle'; message?: string }
   | { type: 'syncing'; message: string }
   | { type: 'success'; message: string }

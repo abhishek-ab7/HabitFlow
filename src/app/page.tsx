@@ -173,7 +173,8 @@ export default function DashboardPage() {
         upcomingDeadlines={upcomingDeadlines.length}
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+
+      <div className="grid gap-6 lg:grid-cols-2 lg:min-h-[600px]">
         <HabitOverview habits={habits} completions={completions} onToggle={toggle} />
         <FocusGoal
           goals={focusGoals}

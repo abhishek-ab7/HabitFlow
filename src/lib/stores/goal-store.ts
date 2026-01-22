@@ -159,19 +159,24 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   },
 
   setFocus: async (goalId: string) => {
+    const currentGoal = get().goals.find(g => g.id === goalId);
+    if (!currentGoal) return;
+
     await setFocusGoal(goalId);
-    const updatedGoals = get().goals.map(g => ({
-      ...g,
-      isFocus: g.id === goalId,
-    }));
+
+    // Toggle the focus status in the store
+    const updatedGoals = get().goals.map(g =>
+      g.id === goalId ? { ...g, isFocus: !g.isFocus } : g
+    );
 
     set({ goals: updatedGoals });
 
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
-      for (const goal of updatedGoals) {
-        await syncEngine.pushGoal(goal);
+      const updatedGoal = updatedGoals.find(g => g.id === goalId);
+      if (updatedGoal) {
+        await syncEngine.pushGoal(updatedGoal);
       }
     } catch (error) {
       console.error('Failed to sync focus goal:', error);

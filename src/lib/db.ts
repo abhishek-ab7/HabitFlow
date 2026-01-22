@@ -122,10 +122,11 @@ export async function deleteGoal(id: string): Promise<void> {
 }
 
 export async function setFocusGoal(goalId: string): Promise<void> {
-  await db.transaction('rw', db.goals, async () => {
-    await db.goals.toCollection().modify({ isFocus: false });
-    await db.goals.update(goalId, { isFocus: true });
-  });
+  const goal = await db.goals.get(goalId);
+  if (goal) {
+    // Toggle the focus status
+    await db.goals.update(goalId, { isFocus: !goal.isFocus });
+  }
 }
 
 // ==================

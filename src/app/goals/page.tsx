@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Target, 
-  Plus, 
+import {
+  Target,
+  Plus,
   Filter,
   SortAsc,
   LayoutGrid,
@@ -109,10 +109,10 @@ export default function GoalsPage() {
     }
   });
 
-  // Put focus goal first
-  const focusGoal = sortedGoals.find(g => g.isFocus);
+  // Put focus goals first
+  const focusGoals = sortedGoals.filter(g => g.isFocus);
   const otherGoals = sortedGoals.filter(g => !g.isFocus);
-  const displayGoals = focusGoal ? [focusGoal, ...otherGoals] : sortedGoals;
+  const displayGoals = [...focusGoals, ...otherGoals];
 
   const handleCreateGoal = async (data: GoalFormData) => {
     await addGoal(data);
@@ -201,7 +201,7 @@ export default function GoalsPage() {
                 : 'Set meaningful goals and track your progress'}
             </p>
           </div>
-          
+
           <Button onClick={() => setFormModalOpen(true)} size="lg" className="gap-2">
             <Plus className="h-5 w-5" />
             New Goal
@@ -333,8 +333,8 @@ export default function GoalsPage() {
                   onClick={() => setViewMode('grid')}
                   className={cn(
                     "p-1.5 rounded-md transition-colors",
-                    viewMode === 'grid' 
-                      ? "bg-background shadow-sm" 
+                    viewMode === 'grid'
+                      ? "bg-background shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -344,8 +344,8 @@ export default function GoalsPage() {
                   onClick={() => setViewMode('list')}
                   className={cn(
                     "p-1.5 rounded-md transition-colors",
-                    viewMode === 'list' 
-                      ? "bg-background shadow-sm" 
+                    viewMode === 'list'
+                      ? "bg-background shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -382,8 +382,8 @@ export default function GoalsPage() {
         <StaggerContainer
           className={cn(
             "grid gap-6",
-            viewMode === 'grid' 
-              ? "md:grid-cols-2 lg:grid-cols-3" 
+            viewMode === 'grid'
+              ? "md:grid-cols-2 lg:grid-cols-3"
               : "grid-cols-1 max-w-3xl"
           )}
         >
