@@ -1,6 +1,8 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
@@ -13,12 +15,12 @@ export async function GET(request: NextRequest) {
   // Handle OAuth errors from provider
   if (error) {
     console.error('OAuth error:', error, errorDescription);
-    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error`);
+    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=${encodeURIComponent(errorDescription || error)}`);
   }
 
   if (!code) {
     console.error('No code provided in callback');
-    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error`);
+    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=No+code+provided`);
   }
 
   try {
@@ -64,12 +66,12 @@ export async function GET(request: NextRequest) {
 
     if (exchangeError) {
       console.error('Exchange error:', exchangeError.message);
-      return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error`);
+      return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=${encodeURIComponent(exchangeError.message)}`);
     }
 
     if (!data.session) {
       console.error('No session after exchange');
-      return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error`);
+      return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=No+session+after+exchange`);
     }
 
     console.log('Session exchange successful, user:', data.session.user.email);
@@ -78,6 +80,6 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (err) {
     console.error('Callback error:', err);
-    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error`);
+    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=Callback+error`);
   }
 }
