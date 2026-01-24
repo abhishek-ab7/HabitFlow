@@ -174,7 +174,7 @@ export function AuthForm() {
           </form>
 
           {/* Divider */}
-          {mode !== 'reset' && (
+          {false && mode !== 'reset' && (
             <>
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
@@ -185,7 +185,7 @@ export function AuthForm() {
                 </div>
               </div>
 
-              {/* Google Sign In */}
+              {/* Google Sign In - HIDDEN (change false to true to re-enable) */}
               <Button
                 type="button"
                 variant="outline"
