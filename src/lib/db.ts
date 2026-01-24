@@ -117,6 +117,106 @@ export async function cleanupDuplicateCompletions(): Promise<number> {
   return duplicates.length;
 }
 
+export async function cleanupDuplicateHabits(): Promise<number> {
+  // Find and remove duplicate habits (same name + category)
+  const allHabits = await db.habits.toArray();
+  const seen = new Map<string, Habit>(); // key: name-category, value: first habit
+  const duplicates: string[] = [];
+  const completionUpdates: Array<{ id: string; habitId: string }> = [];
+
+  for (const habit of allHabits) {
+    const key = `${habit.name}-${habit.category}`;
+    const existing = seen.get(key);
+    
+    if (existing) {
+      // This is a duplicate
+      // Keep the one with earlier creation date
+      if (new Date(habit.createdAt) < new Date(existing.createdAt)) {
+        // Current habit is older, keep it and delete existing
+        duplicates.push(existing.id);
+        
+        // Mark completions for update from existing to current
+        const comps = await db.completions.where('habitId').equals(existing.id).toArray();
+        comps.forEach(c => completionUpdates.push({ id: c.id, habitId: habit.id }));
+        
+        seen.set(key, habit);
+      } else {
+        // Existing is older, delete current
+        duplicates.push(habit.id);
+        
+        // Mark completions for update from current to existing
+        const comps = await db.completions.where('habitId').equals(habit.id).toArray();
+        comps.forEach(c => completionUpdates.push({ id: c.id, habitId: existing.id }));
+      }
+    } else {
+      // First occurrence, keep it
+      seen.set(key, habit);
+    }
+  }
+
+  // Update completions to point to the kept habit
+  for (const update of completionUpdates) {
+    await db.completions.update(update.id, { habitId: update.habitId });
+  }
+
+  // Delete duplicate habits
+  if (duplicates.length > 0) {
+    await db.habits.bulkDelete(duplicates);
+  }
+
+  return duplicates.length;
+}
+
+export async function cleanupDuplicateGoals(): Promise<number> {
+  // Find and remove duplicate goals (same title, case-insensitive)
+  const allGoals = await db.goals.toArray();
+  const seen = new Map<string, Goal>(); // key: title (lowercase), value: first goal
+  const duplicates: string[] = [];
+  const milestoneUpdates: Array<{ id: string; goalId: string }> = [];
+
+  for (const goal of allGoals) {
+    const key = goal.title.toLowerCase();
+    const existing = seen.get(key);
+    
+    if (existing) {
+      // This is a duplicate
+      // Keep the one with earlier creation date
+      if (new Date(goal.createdAt) < new Date(existing.createdAt)) {
+        // Current goal is older, keep it and delete existing
+        duplicates.push(existing.id);
+        
+        // Mark milestones for update from existing to current
+        const miles = await db.milestones.where('goalId').equals(existing.id).toArray();
+        miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: goal.id }));
+        
+        seen.set(key, goal);
+      } else {
+        // Existing is older, delete current
+        duplicates.push(goal.id);
+        
+        // Mark milestones for update from current to existing
+        const miles = await db.milestones.where('goalId').equals(goal.id).toArray();
+        miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: existing.id }));
+      }
+    } else {
+      // First occurrence, keep it
+      seen.set(key, goal);
+    }
+  }
+
+  // Update milestones to point to the kept goal
+  for (const update of milestoneUpdates) {
+    await db.milestones.update(update.id, { goalId: update.goalId });
+  }
+
+  // Delete duplicate goals
+  if (duplicates.length > 0) {
+    await db.goals.bulkDelete(duplicates);
+  }
+
+  return duplicates.length;
+}
+
 // ==================
 // GOAL FUNCTIONS
 // ==================

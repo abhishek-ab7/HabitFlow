@@ -28,7 +28,7 @@ import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { db, getSettings, updateSettings } from '@/lib/db';
-import { cleanupDuplicateCompletions, countDuplicateCompletions } from '@/lib/cleanup';
+import { cleanupAllDuplicates, countAllDuplicates } from '@/lib/cleanup';
 import { cn } from '@/lib/utils';
 import type { UserSettings, Category } from '@/lib/types';
 
@@ -56,7 +56,11 @@ export default function SettingsPage() {
   const [showClearDataDialog, setShowClearDataDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
-  const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
+  const [duplicateCounts, setDuplicateCounts] = useState<{
+    habits: number;
+    goals: number;
+    completions: number;
+  } | null>(null);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -80,9 +84,9 @@ export default function SettingsPage() {
       setSettings(s);
       setUserName(s.userName || '');
 
-      // Check for duplicate completions
-      const count = await countDuplicateCompletions();
-      setDuplicateCount(count);
+      // Check for duplicates
+      const counts = await countAllDuplicates();
+      setDuplicateCounts(counts);
     };
     loadSettings();
   }, []);
@@ -90,9 +94,18 @@ export default function SettingsPage() {
   const handleCleanupDuplicates = async () => {
     setIsCleaning(true);
     try {
-      const removed = await cleanupDuplicateCompletions();
-      toast.success(`Removed ${removed} duplicate completion(s)`);
-      setDuplicateCount(0);
+      const removed = await cleanupAllDuplicates();
+      const total = removed.habits + removed.goals + removed.completions;
+      
+      if (total > 0) {
+        toast.success(
+          `Cleaned up ${total} duplicate(s): ${removed.habits} habits, ${removed.goals} goals, ${removed.completions} completions`
+        );
+      } else {
+        toast.success('No duplicates found!');
+      }
+      
+      setDuplicateCounts({ habits: 0, goals: 0, completions: 0 });
       // Refresh the page to update counts
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
@@ -244,17 +257,19 @@ export default function SettingsPage() {
                     <Cloud className="h-5 w-5 text-primary" />
                     <CardTitle className="text-lg">Cloud Sync</CardTitle>
                   </div>
-                  <Badge variant={syncStatus.type === 'success' ? 'default' : 'secondary'}>
-                    {syncStatus.type === 'success' ? 'Synced' : 'Ready'}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={syncStatus.type === 'success' ? 'default' : syncStatus.type === 'error' ? 'destructive' : 'secondary'}>
+                      {syncStatus.type === 'success' ? 'Synced' : syncStatus.type === 'error' ? 'Error' : syncStatus.type === 'syncing' ? 'Syncing' : 'Ready'}
+                    </Badge>
+                  </div>
                 </div>
                 <CardDescription>Your data is being backed up to the cloud</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <p className="text-sm text-muted-foreground">
-                    {isSyncing ? 'Synchronizing your changes...' : `Status: ${syncStatus.message || 'Connected'}`}
-                  </p>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>{isSyncing ? 'Synchronizing your changes...' : `Status: ${syncStatus.message || 'Connected'}`}</p>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -356,14 +371,17 @@ export default function SettingsPage() {
               </div>
 
               {/* Cleanup Duplicates */}
-              {duplicateCount !== null && duplicateCount > 0 && (
+              {duplicateCounts && (duplicateCounts.habits > 0 || duplicateCounts.goals > 0 || duplicateCounts.completions > 0) && (
                 <>
                   <Separator />
                   <div className="pt-2">
                     <h4 className="text-sm font-medium text-warning mb-1">Database Cleanup</h4>
                     <p className="text-sm text-muted-foreground mb-3">
-                      Found {duplicateCount} duplicate habit completion{duplicateCount !== 1 ? 's' : ''}.
-                      This may cause incorrect habit counts.
+                      Found {duplicateCounts.habits + duplicateCounts.goals + duplicateCounts.completions} duplicate(s):
+                      {duplicateCounts.habits > 0 && ` ${duplicateCounts.habits} habit(s)`}
+                      {duplicateCounts.goals > 0 && ` ${duplicateCounts.goals} goal(s)`}
+                      {duplicateCounts.completions > 0 && ` ${duplicateCounts.completions} completion(s)`}.
+                      This may cause issues with your data.
                     </p>
                     <Button
                       variant="outline"
@@ -372,7 +390,7 @@ export default function SettingsPage() {
                       className="gap-2 border-warning text-warning hover:bg-warning/10"
                     >
                       <Database className="h-4 w-4" />
-                      {isCleaning ? 'Cleaning...' : 'Remove Duplicates'}
+                      {isCleaning ? 'Cleaning...' : 'Remove All Duplicates'}
                     </Button>
                   </div>
                 </>
