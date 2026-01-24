@@ -19,6 +19,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Public routes that don't require authentication
+  const publicRoutes = ['/login', '/auth/callback', '/auth/auth-code-error'];
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
+
+  if (isPublicRoute) {
+    return NextResponse.next();
+  }
+
   // Create a response object
   let response = NextResponse.next({
     request: {
@@ -57,10 +65,6 @@ export async function middleware(request: NextRequest) {
   if (error) {
     console.error('Middleware session error:', error.message);
   }
-
-  // Public routes that don't require authentication
-  const publicRoutes = ['/login', '/auth/callback', '/auth/auth-code-error'];
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
   // If not authenticated and trying to access protected route, redirect to login
   if (!session && !isPublicRoute) {

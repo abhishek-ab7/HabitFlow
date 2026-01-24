@@ -23,6 +23,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=No+code+provided`);
   }
 
+  // Debug: Log all cookies to verify presence of code verifier
+  const allCookies = request.cookies.getAll();
+  console.log('Cookies in callback:', allCookies.map(c => c.name));
+  const verifierCookies = allCookies.filter(c => c.name.endsWith('-code-verifier'));
+  if (verifierCookies.length === 0) {
+    console.error('No code verifier cookie found!');
+  } else {
+    console.log('Found verifier cookies:', verifierCookies.map(c => c.name));
+  }
+
   try {
     // Determine the redirect origin
     const forwardedHost = request.headers.get('x-forwarded-host');
