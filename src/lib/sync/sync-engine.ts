@@ -101,14 +101,62 @@ export class SyncEngine {
     // Get local habits
     const localHabits = await db.habits.toArray();
 
-    // Merge: Remote wins for now (simple conflict resolution)
+    // Create maps for efficient lookup
     const remoteMap = new Map((remoteHabits || []).map((h: any) => [h.id, h]));
-    const localMap = new Map(localHabits.map(h => [h.id, h]));
+    // Map by name+category to detect duplicates
+    const remoteByNameCategory = new Map(
+      (remoteHabits || []).map((h: any) => [`${h.name}-${h.category}`, h])
+    );
 
-    // Push local habits that don't exist remotely
+    // Process local habits
     for (const local of localHabits) {
-      if (!remoteMap.has(local.id) && !local.archived) {
-        await this.supabase.from('habits').insert({
+      if (local.archived) continue;
+
+      const nameKey = `${local.name}-${local.category}`;
+      const existingRemote = remoteByNameCategory.get(nameKey);
+
+      if (existingRemote) {
+        // This habit already exists remotely (by name+category)
+        // Update local to use the remote ID to prevent duplicates
+        if (local.id !== existingRemote.id) {
+          // Delete the local duplicate and replace with remote version
+          await db.habits.delete(local.id);
+          // Migrate completions to use the remote habit ID
+          const localCompletions = await db.completions
+            .where('habitId')
+            .equals(local.id)
+            .toArray();
+          
+          for (const completion of localCompletions) {
+            // Check if completion already exists for this date with remote habit ID
+            const existing = await db.completions
+              .where('[habitId+date]')
+              .equals([existingRemote.id, completion.date])
+              .first();
+            
+            if (!existing) {
+              // Update to use remote habit ID
+              await db.completions.update(completion.id, {
+                habitId: existingRemote.id,
+              });
+              // Also push to remote
+              await this.supabase.from('completions').upsert({
+                id: completion.id,
+                user_id: this.userId!,
+                habit_id: existingRemote.id,
+                date: completion.date,
+                completed: completion.completed,
+                notes: completion.note || null,
+              } as any);
+            } else {
+              // Delete duplicate completion
+              await db.completions.delete(completion.id);
+            }
+          }
+        }
+      } else if (!remoteMap.has(local.id)) {
+        // Push new local habit that doesn't exist remotely
+        await this.supabase.from('habits').upsert({
           id: local.id,
           user_id: this.userId!,
           name: local.name,
@@ -122,10 +170,13 @@ export class SyncEngine {
           is_archived: local.archived,
           order_index: local.order,
         } as any);
+        
+        // Add to remote map to track it
+        remoteByNameCategory.set(nameKey, { id: local.id, name: local.name, category: local.category });
       }
     }
 
-    // Update local with remote habits
+    // Update local with remote habits (only non-duplicate ones)
     for (const remote of (remoteHabits || []) as any[]) {
       const localHabit: Habit = {
         id: remote.id,
@@ -285,11 +336,44 @@ export class SyncEngine {
 
     const localGoals = await db.goals.toArray();
     const remoteMap = new Map((remoteGoals || []).map((g: any) => [g.id, g]));
+    // Map by title to detect duplicates
+    const remoteByTitle = new Map(
+      (remoteGoals || []).map((g: any) => [g.title.toLowerCase(), g])
+    );
 
-    // Push local goals
+    // Process local goals
     for (const local of localGoals) {
-      if (!remoteMap.has(local.id) && !local.archived) {
-        await this.supabase.from('goals').insert({
+      if (local.archived) continue;
+
+      const existingRemote = remoteByTitle.get(local.title.toLowerCase());
+
+      if (existingRemote && existingRemote.id !== local.id) {
+        // This goal already exists remotely - delete local duplicate
+        await db.goals.delete(local.id);
+        // Migrate milestones to use the remote goal ID
+        const localMilestones = await db.milestones
+          .where('goalId')
+          .equals(local.id)
+          .toArray();
+        
+        for (const milestone of localMilestones) {
+          await db.milestones.update(milestone.id, {
+            goalId: existingRemote.id,
+          });
+          // Push to remote
+          await this.supabase.from('milestones').upsert({
+            id: milestone.id,
+            user_id: this.userId!,
+            goal_id: existingRemote.id,
+            title: milestone.title,
+            is_completed: milestone.completed,
+            completed_at: milestone.completedAt,
+            order_index: milestone.order,
+          } as any);
+        }
+      } else if (!remoteMap.has(local.id)) {
+        // Push new local goal that doesn't exist remotely
+        await this.supabase.from('goals').upsert({
           id: local.id,
           user_id: this.userId!,
           title: local.title,
@@ -302,6 +386,8 @@ export class SyncEngine {
           is_focus: local.isFocus,
           is_archived: local.archived,
         } as any);
+        
+        remoteByTitle.set(local.title.toLowerCase(), { id: local.id, title: local.title });
       }
     }
 
