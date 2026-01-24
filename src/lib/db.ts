@@ -28,6 +28,7 @@ export async function getHabits(): Promise<Habit[]> {
 }
 
 export async function createHabit(data: HabitFormData): Promise<Habit> {
+  const now = new Date().toISOString();
   const habit: Habit = {
     id: crypto.randomUUID(),
     name: data.name,
@@ -36,7 +37,8 @@ export async function createHabit(data: HabitFormData): Promise<Habit> {
     targetDaysPerWeek: data.targetDaysPerWeek,
     archived: false,
     order: await db.habits.count(),
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
 
   await db.habits.add(habit);
@@ -44,12 +46,18 @@ export async function createHabit(data: HabitFormData): Promise<Habit> {
 }
 
 export async function updateHabit(id: string, data: Partial<Habit>): Promise<void> {
-  await db.habits.update(id, data);
+  await db.habits.update(id, { ...data, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteHabit(id: string): Promise<void> {
-  await db.habits.delete(id);
-  await db.completions.where('habitId').equals(id).delete();
+  // Soft delete - mark as archived with timestamp
+  const now = new Date().toISOString();
+  await db.habits.update(id, { 
+    archived: true, 
+    archivedAt: now,
+    updatedAt: now 
+  });
+  // Note: We keep completions for history
 }
 
 export async function reorderHabits(orderedIds: string[]): Promise<void> {

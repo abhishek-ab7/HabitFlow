@@ -370,22 +370,26 @@ export class SyncEngine {
       const remoteByKey_ = remoteByKey.get(habitKey);
 
       if (remoteById_) {
-        // Same ID exists remotely - merge based on timestamp
+        // Same ID exists remotely - use Last Write Wins based on updatedAt
         processedRemoteIds.add(remoteById_.id);
-        const localUpdated = new Date(local.createdAt).getTime();
+        
+        const localUpdated = new Date(local.updatedAt || local.createdAt).getTime();
         const remoteUpdated = new Date(remoteById_.updated_at || remoteById_.created_at).getTime();
 
         if (localUpdated > remoteUpdated) {
+          // Local is newer - push to remote (including archived status)
           await this.pushHabitToRemote(local);
-        } else {
+        } else if (localUpdated < remoteUpdated) {
+          // Remote is newer - update local (including archived status)
           await this.updateLocalHabit(remoteById_);
         }
+        // If equal timestamps, do nothing (already in sync)
       } else if (remoteByKey_ && remoteByKey_.id !== local.id) {
         // Different ID but same name+category - merge (remote wins for ID)
         processedRemoteIds.add(remoteByKey_.id);
         await this.mergeHabitToRemote(local, remoteByKey_);
-      } else if (!local.archived) {
-        // Local only and not archived - push to remote
+      } else {
+        // Local only - push to remote (even if archived, for sync)
         await this.pushHabitToRemote(local);
       }
     }
@@ -393,11 +397,14 @@ export class SyncEngine {
     // Process remote habits not yet seen (pull to local)
     for (const remote of (remoteHabits || []) as any[]) {
       if (!processedRemoteIds.has(remote.id) && !localById.has(remote.id)) {
-        if (!remote.is_archived) {
-          await this.updateLocalHabit(remote);
-        }
+        // Remote only - pull to local (even if archived)
+        await this.updateLocalHabit(remote);
       }
     }
+
+    // Clean up archived habits that have been synced and are old (optional)
+    // This permanently removes habits that have been archived for more than 30 days
+    await this.cleanupOldArchivedHabits();
   }
 
   private async pushHabitToRemote(habit: Habit) {
@@ -415,8 +422,9 @@ export class SyncEngine {
       target_days: habit.targetDaysPerWeek,
       reminder_time: null,
       is_archived: habit.archived,
+      archived_at: habit.archivedAt || null,
       order_index: habit.order,
-      updated_at: new Date().toISOString(),
+      updated_at: habit.updatedAt || habit.createdAt,
     } as any);
 
     if (error) throw error;
@@ -430,6 +438,8 @@ export class SyncEngine {
       category: remote.category,
       targetDaysPerWeek: remote.target_days || 7,
       archived: remote.is_archived || false,
+      archivedAt: remote.archived_at || undefined,
+      updatedAt: remote.updated_at || remote.created_at,
       order: remote.order_index || 0,
       createdAt: remote.created_at,
     };
@@ -509,18 +519,77 @@ export class SyncEngine {
   async deleteHabit(habitId: string) {
     if (!this.userId) return;
 
+    const now = new Date().toISOString();
+
     if (!this.isOnline) {
       this.queueOperation({
-        type: 'delete',
+        type: 'update',
         table: 'habits',
-        data: { id: habitId },
+        data: { 
+          id: habitId,
+          user_id: this.userId,
+          is_archived: true,
+          archived_at: now,
+          updated_at: now,
+        },
       });
       return;
     }
 
-    // Delete habit and its completions
-    await this.supabase.from('completions').delete().eq('habit_id', habitId);
-    await this.supabase.from('habits').delete().eq('id', habitId);
+      // Soft delete - mark as archived with timestamp
+    await this.supabase.from('habits').update({
+      is_archived: true,
+      archived_at: now,
+      updated_at: now,
+    } as any).eq('id', habitId).eq('user_id', this.userId);
+  }
+
+  /**
+   * Remove habits that have been archived for more than 30 days
+   * This helps keep the database clean and performant
+   */
+  private async cleanupOldArchivedHabits() {
+    if (!this.userId) return;
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    try {
+      // Find locally archived habits older than 30 days
+      const oldArchivedHabits = await db.habits
+        .where('archived')
+        .equals(1)
+        .and(h => {
+          if (!h.archivedAt) return false;
+          return new Date(h.archivedAt) < thirtyDaysAgo;
+        })
+        .toArray();
+
+      if (oldArchivedHabits.length === 0) return;
+
+      // Delete from local DB
+      const habitIds = oldArchivedHabits.map(h => h.id);
+      await db.habits.bulkDelete(habitIds);
+
+      // Delete from remote
+      await this.supabase
+        .from('habits')
+        .delete()
+        .in('id', habitIds)
+        .eq('user_id', this.userId);
+
+      // Delete related completions
+      await db.completions.where('habitId').anyOf(habitIds).delete();
+      await this.supabase
+        .from('completions')
+        .delete()
+        .in('habit_id', habitIds)
+        .eq('user_id', this.userId);
+
+      console.log(`Cleaned up ${habitIds.length} old archived habits`);
+    } catch (error) {
+      console.error('Error cleaning up old archived habits:', error);
+    }
   }
 
   // ===================

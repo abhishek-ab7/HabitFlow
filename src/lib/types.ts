@@ -40,6 +40,8 @@ export interface Habit {
   targetDaysPerWeek: number; // 1-7
   createdAt: string; // ISO date string
   archived: boolean;
+  archivedAt?: string; // ISO date string - when habit was archived/deleted
+  updatedAt?: string; // ISO date string - last modification time
   order: number; // For drag-and-drop ordering
   icon?: string; // Optional emoji or icon name
 }
