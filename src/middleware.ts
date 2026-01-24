@@ -26,7 +26,7 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Create Supabase client
+  // Create Supabase client with proper cookie handling
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -37,15 +37,26 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value, options);
+            response.cookies.set({
+              name,
+              value,
+              ...options,
+              sameSite: 'lax',
+              secure: true,
+              path: '/',
+            });
           });
         },
       },
     }
   );
 
-  // Refresh session if expired - required for Server Components
-  const { data: { session } } = await supabase.auth.getSession();
+  // Get session - this will also refresh if needed
+  const { data: { session }, error } = await supabase.auth.getSession();
+
+  if (error) {
+    console.error('Middleware session error:', error.message);
+  }
 
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/auth/callback', '/auth/auth-code-error'];
