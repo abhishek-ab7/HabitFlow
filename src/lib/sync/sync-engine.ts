@@ -536,12 +536,15 @@ export class SyncEngine {
       return;
     }
 
-      // Soft delete - mark as archived with timestamp
-    await this.supabase.from('habits').update({
+    // Soft delete - mark as archived with timestamp
+    // @ts-ignore - Supabase type issue with update
+    const { error } = await this.supabase.from('habits').update({
       is_archived: true,
       archived_at: now,
       updated_at: now,
-    } as any).eq('id', habitId).eq('user_id', this.userId);
+    }).eq('id', habitId).eq('user_id', this.userId);
+    
+    if (error) throw error;
   }
 
   /**
