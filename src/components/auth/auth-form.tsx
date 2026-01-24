@@ -56,6 +56,8 @@ export function AuthForm() {
           toast.error(error.message);
         } else {
           toast.success('Welcome back!');
+          router.refresh();
+          router.push(redirectedFrom);
         }
       }
     } catch {
