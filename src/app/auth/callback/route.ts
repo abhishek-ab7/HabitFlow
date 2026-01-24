@@ -18,8 +18,12 @@ export async function GET(request: NextRequest) {
   if (code) {
     const cookieStore = await cookies();
     
-    // Create a response that we can modify
-    const response = NextResponse.redirect(`${requestUrl.origin}${next}`);
+    // Determine the redirect origin
+    const forwardedHost = request.headers.get('x-forwarded-host');
+    const origin = forwardedHost ? `https://${forwardedHost}` : requestUrl.origin;
+    
+    // Create a response that we can modify - this is the response we will return
+    const response = NextResponse.redirect(`${origin}${next}`);
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,32 +36,30 @@ export async function GET(request: NextRequest) {
           setAll(cookiesToSet) {
             try {
               cookiesToSet.forEach(({ name, value, options }) => {
-                cookieStore.set(name, value, options);
-                // Also set on response for immediate availability
+                // Set cookie on the response object that will be returned
                 response.cookies.set(name, value, options);
               });
-            } catch (error) {
-              // Handle Server Component context
-              console.error('Error setting cookies:', error);
+            } catch (err) {
+              console.error('Error setting cookies:', err);
             }
           },
         },
       }
     );
 
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (!exchangeError) {
-      // Successful authentication - use the origin from the request
-      const forwardedHost = request.headers.get('x-forwarded-host');
-      const origin = forwardedHost ? `https://${forwardedHost}` : requestUrl.origin;
-      
-      return NextResponse.redirect(`${origin}${next}`);
+    if (!exchangeError && data.session) {
+      console.log('Session exchange successful, redirecting to:', `${origin}${next}`);
+      // Return the response with cookies already set
+      return response;
     }
 
     console.error('Exchange error:', exchangeError);
+    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error`);
   }
 
-  // Return the user to an error page with instructions
+  // No code provided
+  console.error('No code provided in callback');
   return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error`);
 }

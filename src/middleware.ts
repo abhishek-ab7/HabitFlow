@@ -4,6 +4,21 @@ import { NextResponse, type NextRequest } from 'next/server';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Skip middleware for static files - this is a safety check
+  if (
+    pathname === '/manifest.json' ||
+    pathname === '/sw.js' ||
+    pathname.startsWith('/icons/') ||
+    pathname.endsWith('.ico') ||
+    pathname.endsWith('.png') ||
+    pathname.endsWith('.svg') ||
+    pathname.endsWith('.jpg') ||
+    pathname.endsWith('.jpeg') ||
+    pathname.endsWith('.webp')
+  ) {
+    return NextResponse.next();
+  }
+
   // Create a response object
   let response = NextResponse.next({
     request: {
@@ -58,12 +73,11 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder files (manifest.json, sw.js, icons, etc.)
+     * - _next (static files, image optimization)
+     * - favicon.ico
      * - api routes
+     * Note: We also check for static files in the middleware function itself
      */
-    '/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|js|json)$|api).*)',
+    '/((?!_next|favicon\\.ico|api).*)',
   ],
 };

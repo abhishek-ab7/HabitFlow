@@ -3,6 +3,16 @@
     "outputDirectory": ".next",
     "framework": "nextjs",
     "installCommand": "npm install",
+    "rewrites": [
+        {
+            "source": "/manifest.json",
+            "destination": "/manifest.json"
+        },
+        {
+            "source": "/sw.js",
+            "destination": "/sw.js"
+        }
+    ],
     "headers": [
         {
             "source": "/manifest.json",
