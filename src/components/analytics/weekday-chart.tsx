@@ -58,18 +58,20 @@ export function WeekdayChart({ data }: WeekdayChartProps) {
               />
               <XAxis 
                 dataKey="name"
-                stroke="hsl(var(--muted-foreground))"
+                stroke="hsl(var(--foreground))"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
+                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
               />
               <YAxis
-                stroke="hsl(var(--muted-foreground))"
+                stroke="hsl(var(--foreground))"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 domain={[0, 100]}
                 tickFormatter={value => `${value}%`}
+                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
               />
               <Tooltip
                 content={({ active, payload }) => {

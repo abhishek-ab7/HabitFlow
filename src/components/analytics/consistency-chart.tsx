@@ -101,21 +101,23 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
               />
               <XAxis 
                 dataKey="dateLabel"
-                stroke="hsl(var(--muted-foreground))"
+                stroke="hsl(var(--foreground))"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 dy={10}
                 interval="preserveStartEnd"
+                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
               />
               <YAxis
-                stroke="hsl(var(--muted-foreground))"
+                stroke="hsl(var(--foreground))"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 domain={[0, 100]}
                 tickFormatter={value => `${value}%`}
                 dx={-10}
+                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
               />
               <Tooltip
                 content={({ active, payload }) => {
@@ -143,8 +145,9 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
                 label={{
                   value: 'Avg',
                   position: 'right',
-                  fill: 'hsl(var(--muted-foreground))',
-                  fontSize: 10,
+                  fill: 'hsl(var(--foreground))',
+                  fontSize: 11,
+                  fontWeight: 500,
                 }}
               />
               <Line
