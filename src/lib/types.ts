@@ -33,12 +33,17 @@ export type Trend = 'up' | 'down' | 'stable';
 // HABIT MODELS
 // ============================================
 
+// ============================================
+// HABIT MODELS
+// ============================================
+
 export interface Habit {
   id: string;
+  userId: string; // Added for data isolation
   name: string;
   category: Category;
   targetDaysPerWeek: number; // 1-7
-  createdAt: string; // ISO date string
+  createdAt: string; // ISO date string or timestamp
   archived: boolean;
   archivedAt?: string; // ISO date string - when habit was archived/deleted
   updatedAt?: string; // ISO date string - last modification time
@@ -48,6 +53,7 @@ export interface Habit {
 
 export interface HabitCompletion {
   id: string;
+  userId: string; // Added for data isolation
   habitId: string;
   date: string; // YYYY-MM-DD format
   completed: boolean;
@@ -72,6 +78,7 @@ export interface HabitStats {
 
 export interface Goal {
   id: string;
+  userId: string; // Added for data isolation
   title: string;
   description?: string;
   areaOfLife: AreaOfLife;
@@ -87,6 +94,7 @@ export interface Goal {
 
 export interface Milestone {
   id: string;
+  userId: string; // Added for data isolation
   goalId: string;
   title: string;
   completed: boolean;
@@ -114,6 +122,7 @@ export interface GoalStats {
 
 export interface UserSettings {
   id: string;
+  userId: string; // Added for data isolation
   theme: 'light' | 'dark' | 'system';
   userName?: string;
   weekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sunday, 1 = Monday, etc.

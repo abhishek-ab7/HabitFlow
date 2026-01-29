@@ -10,12 +10,12 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   userSettings: EntityTable<UserSettings, 'id'>;
 };
 
-// Schema version 2 - Added compound index for completions
-db.version(2).stores({
-  habits: 'id, name, category, archived, order, createdAt',
-  completions: 'id, habitId, date, [habitId+date]',
-  goals: 'id, title, areaOfLife, status, archived, isFocus, deadline, createdAt',
-  milestones: 'id, goalId, completed, order',
+// Schema version 3 - Added userId to all tables for isolation
+db.version(3).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt',
+  completions: 'id, userId, habitId, date, [habitId+date]',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt',
+  milestones: 'id, userId, goalId, completed, order',
   userSettings: 'id, userId',
 });
 
@@ -23,20 +23,21 @@ db.version(2).stores({
 // HABIT FUNCTIONS
 // ==================
 
-export async function getHabits(): Promise<Habit[]> {
-  return db.habits.filter(h => !h.archived).sortBy('order');
+export async function getHabits(userId: string): Promise<Habit[]> {
+  return db.habits.where('userId').equals(userId).filter(h => !h.archived).sortBy('order');
 }
 
-export async function createHabit(data: HabitFormData): Promise<Habit> {
+export async function createHabit(data: HabitFormData & { userId: string }): Promise<Habit> {
   const now = new Date().toISOString();
   const habit: Habit = {
     id: crypto.randomUUID(),
+    userId: data.userId, // Explicitly set
     name: data.name,
     icon: data.icon || '✓',
     category: data.category,
     targetDaysPerWeek: data.targetDaysPerWeek,
     archived: false,
-    order: await db.habits.count(),
+    order: await db.habits.where('userId').equals(data.userId).count(),
     createdAt: now,
     updatedAt: now,
   };
@@ -52,10 +53,10 @@ export async function updateHabit(id: string, data: Partial<Habit>): Promise<voi
 export async function deleteHabit(id: string): Promise<void> {
   // Soft delete - mark as archived with timestamp
   const now = new Date().toISOString();
-  await db.habits.update(id, { 
-    archived: true, 
+  await db.habits.update(id, {
+    archived: true,
     archivedAt: now,
-    updatedAt: now 
+    updatedAt: now
   });
   // Note: We keep completions for history
 }
@@ -72,7 +73,7 @@ export async function reorderHabits(orderedIds: string[]): Promise<void> {
 // COMPLETION FUNCTIONS
 // ==================
 
-export async function toggleCompletion(habitId: string, date: string): Promise<HabitCompletion | null> {
+export async function toggleCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion | null> {
   const existing = await db.completions
     .where('[habitId+date]')
     .equals([habitId, date])
@@ -84,6 +85,7 @@ export async function toggleCompletion(habitId: string, date: string): Promise<H
   } else {
     const completion: HabitCompletion = {
       id: crypto.randomUUID(),
+      userId,
       habitId,
       date,
       completed: true,
@@ -93,10 +95,11 @@ export async function toggleCompletion(habitId: string, date: string): Promise<H
   }
 }
 
-export async function getAllCompletionsInRange(startDate: string, endDate: string): Promise<HabitCompletion[]> {
+export async function getAllCompletionsInRange(startDate: string, endDate: string, userId: string): Promise<HabitCompletion[]> {
   return db.completions
     .where('date')
     .between(startDate, endDate, true, true)
+    .filter(c => c.userId === userId)
     .toArray();
 }
 
@@ -135,23 +138,23 @@ export async function cleanupDuplicateHabits(): Promise<number> {
   for (const habit of allHabits) {
     const key = `${habit.name}-${habit.category}`;
     const existing = seen.get(key);
-    
+
     if (existing) {
       // This is a duplicate
       // Keep the one with earlier creation date
       if (new Date(habit.createdAt) < new Date(existing.createdAt)) {
         // Current habit is older, keep it and delete existing
         duplicates.push(existing.id);
-        
+
         // Mark completions for update from existing to current
         const comps = await db.completions.where('habitId').equals(existing.id).toArray();
         comps.forEach(c => completionUpdates.push({ id: c.id, habitId: habit.id }));
-        
+
         seen.set(key, habit);
       } else {
         // Existing is older, delete current
         duplicates.push(habit.id);
-        
+
         // Mark completions for update from current to existing
         const comps = await db.completions.where('habitId').equals(habit.id).toArray();
         comps.forEach(c => completionUpdates.push({ id: c.id, habitId: existing.id }));
@@ -185,23 +188,23 @@ export async function cleanupDuplicateGoals(): Promise<number> {
   for (const goal of allGoals) {
     const key = goal.title.toLowerCase();
     const existing = seen.get(key);
-    
+
     if (existing) {
       // This is a duplicate
       // Keep the one with earlier creation date
       if (new Date(goal.createdAt) < new Date(existing.createdAt)) {
         // Current goal is older, keep it and delete existing
         duplicates.push(existing.id);
-        
+
         // Mark milestones for update from existing to current
         const miles = await db.milestones.where('goalId').equals(existing.id).toArray();
         miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: goal.id }));
-        
+
         seen.set(key, goal);
       } else {
         // Existing is older, delete current
         duplicates.push(goal.id);
-        
+
         // Mark milestones for update from current to existing
         const miles = await db.milestones.where('goalId').equals(goal.id).toArray();
         miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: existing.id }));
@@ -229,11 +232,11 @@ export async function cleanupDuplicateGoals(): Promise<number> {
 // GOAL FUNCTIONS
 // ==================
 
-export async function getGoals(): Promise<Goal[]> {
-  return db.goals.filter(g => !g.archived).toArray();
+export async function getGoals(userId: string): Promise<Goal[]> {
+  return db.goals.where('userId').equals(userId).filter(g => !g.archived).toArray();
 }
 
-export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDate'>): Promise<Goal> {
+export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDate'> & { userId: string }): Promise<Goal> {
   const goal: Goal = {
     id: crypto.randomUUID(),
     ...data,
@@ -310,18 +313,19 @@ export async function toggleMilestone(id: string): Promise<Milestone | null> {
 // USER SETTINGS FUNCTIONS
 // ==================
 
-export async function getSettings(): Promise<UserSettings | undefined> {
-  return db.userSettings.toArray().then(settings => settings[0]);
+export async function getSettings(userId: string): Promise<UserSettings | undefined> {
+  return db.userSettings.where('userId').equals(userId).first();
 }
 
-export async function updateSettings(data: Partial<UserSettings>): Promise<void> {
-  const existing = await getSettings();
+export async function updateSettings(data: Partial<UserSettings> & { userId: string }): Promise<void> {
+  const existing = await getSettings(data.userId);
 
   if (existing) {
     await db.userSettings.update(existing.id, data);
   } else {
     const settings: UserSettings = {
       id: crypto.randomUUID(),
+      userId: data.userId, // Explicitly set
       theme: data.theme || 'system',
       userName: data.userName,
       weekStartsOn: data.weekStartsOn ?? 0,
@@ -337,17 +341,18 @@ export async function updateSettings(data: Partial<UserSettings>): Promise<void>
 // DEMO DATA
 // ==================
 
-export async function seedDemoData(): Promise<void> {
-  // Clear existing data
-  await db.habits.clear();
-  await db.completions.clear();
-  await db.goals.clear();
-  await db.milestones.clear();
+export async function seedDemoData(userId: string): Promise<void> {
+  // Clear existing data for this user
+  await db.habits.where('userId').equals(userId).delete();
+  await db.completions.where('userId').equals(userId).delete();
+  // Note: We might want to keep goals/milestones or clear them too if they are demo data
+  // For now, let's strictly clear what we are about to seed to avoid duplicates if run multiple times
 
   // Create demo habits
   const demoHabits: Habit[] = [
     {
       id: crypto.randomUUID(),
+      userId: userId,
       name: 'Morning Exercise',
       icon: '🏃',
       category: 'health',
@@ -358,6 +363,7 @@ export async function seedDemoData(): Promise<void> {
     },
     {
       id: crypto.randomUUID(),
+      userId: userId,
       name: 'Read for 30 minutes',
       icon: '📚',
       category: 'learning',
@@ -368,6 +374,7 @@ export async function seedDemoData(): Promise<void> {
     },
     {
       id: crypto.randomUUID(),
+      userId: userId,
       name: 'Meditate',
       icon: '🧘',
       category: 'health',
@@ -394,6 +401,7 @@ export async function seedDemoData(): Promise<void> {
       if (Math.random() > 0.3) {
         completions.push({
           id: crypto.randomUUID(),
+          userId: userId,
           habitId: habit.id,
           date: dateStr,
           completed: true,

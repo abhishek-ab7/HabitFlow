@@ -1,9 +1,9 @@
 import { create } from 'zustand';
-import { 
-  db, 
-  getHabits, 
-  createHabit, 
-  updateHabit, 
+import {
+  db,
+  getHabits,
+  createHabit,
+  updateHabit,
   deleteHabit,
   toggleCompletion,
   getAllCompletionsInRange,
@@ -11,6 +11,7 @@ import {
   seedDemoData,
   cleanupDuplicateCompletions,
 } from '../db';
+import { getSupabaseClient } from '../supabase/client';
 import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
 import { calculateHabitStats } from '../calculations';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
@@ -23,7 +24,7 @@ interface HabitState {
   error: string | null;
   selectedMonth: Date;
   categoryFilter: Category[];
-  
+
   // Actions
   loadHabits: () => Promise<void>;
   loadCompletions: (startDate: string, endDate: string) => Promise<void>;
@@ -36,7 +37,7 @@ interface HabitState {
   setSelectedMonth: (date: Date) => void;
   setCategoryFilter: (categories: Category[]) => void;
   initializeWithDemoData: () => Promise<void>;
-  
+
   // Computed
   getHabitStats: (habitId: string) => ReturnType<typeof calculateHabitStats> | null;
   getCompletionForDate: (habitId: string, date: string) => HabitCompletion | undefined;
@@ -56,7 +57,15 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   loadHabits: async () => {
     set({ isLoading: true, error: null });
     try {
-      const habits = await getHabits();
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user?.id) {
+        set({ habits: [], isLoading: false });
+        return;
+      }
+
+      const habits = await getHabits(session.user.id);
       set({ habits, isLoading: false });
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
@@ -67,8 +76,16 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     try {
       // Clean up any duplicate completions first
       await cleanupDuplicateCompletions();
-      
-      const completions = await getAllCompletionsInRange(startDate, endDate);
+
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user?.id) {
+        set({ completions: [] });
+        return;
+      }
+
+      const completions = await getAllCompletionsInRange(startDate, endDate, session.user.id);
       set({ completions });
     } catch (error) {
       set({ error: (error as Error).message });
@@ -85,9 +102,13 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   },
 
   addHabit: async (data: HabitFormData) => {
-    const habit = await createHabit(data);
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+
+    const habit = await createHabit({ ...data, userId: session.user.id });
     set(state => ({ habits: [...state.habits, habit] }));
-    
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -95,18 +116,18 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     } catch (error) {
       console.error('Failed to sync habit:', error);
     }
-    
+
     return habit;
   },
 
   editHabit: async (id: string, data: Partial<Habit>) => {
     await updateHabit(id, data);
     const updatedHabit = get().habits.find(h => h.id === id);
-    
+
     set(state => ({
       habits: state.habits.map(h => h.id === id ? { ...h, ...data } : h),
     }));
-    
+
     // Sync to cloud
     if (updatedHabit) {
       try {
@@ -124,7 +145,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       habits: state.habits.filter(h => h.id !== id),
       completions: state.completions.filter(c => c.habitId !== id),
     }));
-    
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -135,19 +156,23 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   },
 
   toggle: async (habitId: string, date: string) => {
-    const result = await toggleCompletion(habitId, date);
-    
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+
+    const result = await toggleCompletion(habitId, date, session.user.id);
+
     set(state => {
       const filtered = state.completions.filter(
         c => !(c.habitId === habitId && c.date === date)
       );
-      
+
       if (result) {
         return { completions: [...filtered, result] };
       }
       return { completions: filtered };
     });
-    
+
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
@@ -174,7 +199,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
         const habit = state.habits.find(h => h.id === id);
         return habit ? { ...habit, order: index } : null;
       }).filter(Boolean) as Habit[];
-      
+
       // Sync all reordered habits to cloud
       try {
         const syncEngine = getSyncEngine();
@@ -182,7 +207,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       } catch (error) {
         console.error('Failed to sync habit reorder:', error);
       }
-      
+
       return { habits: reordered };
     });
   },
@@ -197,15 +222,21 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
   initializeWithDemoData: async () => {
     set({ isLoading: true });
-    await seedDemoData();
-    await get().loadHabits();
-    
-    // Load completions for current and previous month
-    const today = new Date();
-    const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
-    const end = format(endOfMonth(today), 'yyyy-MM-dd');
-    await get().loadCompletions(start, end);
-    
+
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session?.user?.id) {
+      await seedDemoData(session.user.id);
+      await get().loadHabits();
+
+      // Load completions for current and previous month
+      const today = new Date();
+      const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
+      const end = format(endOfMonth(today), 'yyyy-MM-dd');
+      await get().loadCompletions(start, end);
+    }
+
     set({ isLoading: false });
   },
 
@@ -227,13 +258,13 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     const todayCompletions = completions.filter(
       c => c.date === today && c.completed && activeHabits.some(h => h.id === c.habitId)
     );
-    
+
     // Deduplicate by habitId - only count each habit once
     const uniqueHabitIds = new Set(todayCompletions.map(c => c.habitId));
     const completed = uniqueHabitIds.size;
     const total = activeHabits.length;
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-    
+
     return { completed, total, percentage };
   },
 
@@ -241,33 +272,33 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     const { habits, completions, selectedMonth } = get();
     const start = startOfMonth(selectedMonth);
     const end = new Date() < endOfMonth(selectedMonth) ? new Date() : endOfMonth(selectedMonth);
-    
+
     const activeHabits = habits.filter(h => !h.archived);
     const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const total = activeHabits.length * days;
-    
+
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd');
-    
+
     const monthCompletions = completions.filter(
       c => c.date >= startStr && c.date <= endStr && c.completed
     );
-    
+
     const completed = monthCompletions.length;
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
-    
+
     return { completed, total, percentage };
   },
 
   getCurrentStreaks: () => {
     const { habits, completions } = get();
     const streaks = new Map<string, number>();
-    
+
     for (const habit of habits) {
       const stats = calculateHabitStats(habit, completions);
       streaks.set(habit.id, stats.currentStreak);
     }
-    
+
     return streaks;
   },
 }));

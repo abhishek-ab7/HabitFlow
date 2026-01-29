@@ -12,6 +12,7 @@ import {
   toggleMilestone,
   db,
 } from '../db';
+import { getSupabaseClient } from '../supabase/client';
 import type { Goal, Milestone, GoalFormData, MilestoneFormData, GoalStatus, AreaOfLife, Priority } from '../types';
 import { calculateGoalStats, getDeadlineStatus } from '../calculations';
 import { getSyncEngine } from '../sync';
@@ -60,7 +61,15 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   loadGoals: async () => {
     set({ isLoading: true, error: null });
     try {
-      const goals = await getGoals();
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user?.id) {
+        set({ goals: [], isLoading: false });
+        return;
+      }
+
+      const goals = await getGoals(session.user.id);
       set({ goals, isLoading: false });
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
@@ -69,7 +78,15 @@ export const useGoalStore = create<GoalState>((set, get) => ({
 
   loadAllMilestones: async () => {
     try {
-      const milestones = await db.milestones.toArray();
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user?.id) {
+        set({ milestones: [] });
+        return;
+      }
+
+      const milestones = await db.milestones.where('userId').equals(session.user.id).toArray();
       set({ milestones });
     } catch (error) {
       set({ error: (error as Error).message });
@@ -79,8 +96,14 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   addGoal: async (data: GoalFormData) => {
     const { milestones: milestoneTitles, isFocus, ...goalData } = data;
 
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+    const userId = session.user.id;
+
     const goal = await createGoal({
       ...goalData,
+      userId,
       status: 'not_started',
       isFocus: isFocus || false, // Should be initially false if we're going to set it via setFocus to handle unsetting others, but createGoal needs a value. 
       // Actually, createGoal doesn't handle the "exclusive" logic, setFocus does.
@@ -92,7 +115,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     const createdMilestones: Milestone[] = [];
     for (const title of milestoneTitles) {
       if (title.trim()) {
-        const milestone = await createMilestone({ goalId: goal.id, title: title.trim() });
+        const milestone = await createMilestone({ goalId: goal.id, title: title.trim(), userId: userId });
         createdMilestones.push(milestone);
       }
     }
@@ -196,7 +219,11 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   },
 
   addMilestone: async (goalId: string, data: MilestoneFormData) => {
-    const milestone = await createMilestone({ goalId, ...data });
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+
+    const milestone = await createMilestone({ goalId, ...data, userId: session.user.id });
     set(state => ({
       milestones: [...state.milestones, milestone],
     }));
