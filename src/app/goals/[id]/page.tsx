@@ -77,7 +77,7 @@ export default function GoalDetailsPage() {
 
     const handleTaskComplete = async (taskId: string) => {
         setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done' } : t))
-        await supabase.from("tasks").update({ status: 'done' }).eq("id", taskId)
+        await (supabase.from("tasks") as any).update({ status: 'done' }).eq("id", taskId)
     }
 
     if (loading) {

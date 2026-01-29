@@ -42,7 +42,7 @@ export function TodayTasksWidget() {
 
     const handleTaskComplete = async (id: string) => {
         setTasks(prev => prev.filter(t => t.id !== id))
-        await supabase.from("tasks").update({ status: 'done' }).eq("id", id)
+        await (supabase.from("tasks") as any).update({ status: 'done' }).eq("id", id)
     }
 
     if (loading) return (

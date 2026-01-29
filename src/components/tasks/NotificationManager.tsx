@@ -26,7 +26,7 @@ export function NotificationManager() {
             if (!user) return
 
             const { data: tasks } = await supabase
-                .from("tasks")
+                .from("tasks" as any)
                 .select("*")
                 .eq("user_id", user.id)
                 .neq("status", "done")

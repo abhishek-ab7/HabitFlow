@@ -45,8 +45,7 @@ export default function TasksPage() {
             t.id === id ? { ...t, status: 'done' } : t
         ))
 
-        const { error } = await supabase
-            .from("tasks")
+        const { error } = await (supabase.from("tasks") as any)
             .update({ status: 'done', updated_at: new Date().toISOString() } as any)
             .eq("id", id)
 
@@ -64,8 +63,7 @@ export default function TasksPage() {
             t.id === updatedTask.id ? updatedTask : t
         ))
 
-        const { error } = await supabase
-            .from("tasks")
+        const { error } = await (supabase.from("tasks") as any)
             .update({ status: updatedTask.status, updated_at: new Date().toISOString() } as any)
             .eq("id", updatedTask.id)
 

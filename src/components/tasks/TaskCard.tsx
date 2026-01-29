@@ -14,6 +14,7 @@ interface TaskCardProps {
     task: Task
     onComplete?: (id: string) => void
     onUpdate?: (task: Task) => void
+    isOverlay?: boolean
 }
 
 export function TaskCard({ task, onComplete }: TaskCardProps) {

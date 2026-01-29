@@ -104,7 +104,7 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
 
         setLoading(true)
         try {
-            const { error } = await supabase.from("tasks").insert({
+            const { error } = await (supabase.from("tasks") as any).insert({
                 title,
                 description,
                 priority,

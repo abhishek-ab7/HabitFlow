@@ -134,7 +134,7 @@ export class SyncEngine {
   private log(level: 'info' | 'warn' | 'error', message: string, data?: any) {
     const prefix = `[SyncEngine]`;
     const timestamp = new Date().toISOString();
-    
+
     if (process.env.NODE_ENV === 'development') {
       switch (level) {
         case 'info':
@@ -213,7 +213,7 @@ export class SyncEngine {
       }
 
       this.notifyStatus({ type: 'syncing', message: 'Syncing completions...', progress: 50 });
-      
+
       // Sync completions and milestones (depends on habits/goals)
       await Promise.allSettled([
         this.syncCompletionsWithRetry(),
@@ -226,19 +226,19 @@ export class SyncEngine {
       await this.cleanupLocalDuplicates();
 
       this.lastSyncAt = new Date();
-      this.notifyStatus({ 
-        type: 'success', 
+      this.notifyStatus({
+        type: 'success',
         message: 'All data synced',
-        syncedAt: this.lastSyncAt 
+        syncedAt: this.lastSyncAt
       });
 
       this.log('info', 'Sync completed successfully');
     } catch (error) {
       this.log('error', 'Sync failed', error);
-      this.notifyStatus({ 
-        type: 'error', 
+      this.notifyStatus({
+        type: 'error',
         message: 'Sync failed - will retry',
-        retryable: true 
+        retryable: true
       });
     } finally {
       this.syncLock = false;
@@ -252,20 +252,20 @@ export class SyncEngine {
     maxRetries = MAX_RETRY_ATTEMPTS
   ): Promise<T> {
     let lastError: any;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
       } catch (error: any) {
         lastError = error;
         this.log('warn', `${name} failed (attempt ${attempt}/${maxRetries})`, error?.message);
-        
+
         if (attempt < maxRetries) {
           await this.delay(RETRY_DELAY_MS * attempt);
         }
       }
     }
-    
+
     throw lastError;
   }
 
@@ -322,7 +322,7 @@ export class SyncEngine {
       timestamp: Date.now(),
       retryCount: 0,
     };
-    
+
     this.pendingOperations.set(operation.id, operation);
     this.savePendingOperations();
 
@@ -372,7 +372,7 @@ export class SyncEngine {
       if (remoteById_) {
         // Same ID exists remotely - use Last Write Wins based on updatedAt
         processedRemoteIds.add(remoteById_.id);
-        
+
         const localUpdated = new Date(local.updatedAt || local.createdAt).getTime();
         const remoteUpdated = new Date(remoteById_.updated_at || remoteById_.created_at).getTime();
 
@@ -433,6 +433,7 @@ export class SyncEngine {
   private async updateLocalHabit(remote: any) {
     const localHabit: Habit = {
       id: remote.id,
+      userId: this.userId || remote.user_id,
       name: remote.name,
       icon: remote.icon || '✓',
       category: remote.category,
@@ -449,7 +450,7 @@ export class SyncEngine {
 
   private async mergeHabitToRemote(local: Habit, remote: any) {
     this.log('info', `Merging duplicate habit: "${local.name}" (local: ${local.id}, remote: ${remote.id})`);
-    
+
     // Remote wins for the ID - migrate all completions from local to remote
     const completions = await db.completions
       .where('habitId')
@@ -466,7 +467,7 @@ export class SyncEngine {
       if (!existing) {
         // Update local completion to use remote habit ID
         await db.completions.update(completion.id, { habitId: remote.id });
-        
+
         // Also push to remote
         if (this.userId) {
           await this.supabase.from('completions').upsert({
@@ -493,7 +494,7 @@ export class SyncEngine {
 
   async pushHabit(habit: Habit) {
     if (!this.userId) return;
-    
+
     if (!this.isOnline) {
       this.queueOperation({
         type: 'update',
@@ -525,7 +526,7 @@ export class SyncEngine {
       this.queueOperation({
         type: 'update',
         table: 'habits',
-        data: { 
+        data: {
           id: habitId,
           user_id: this.userId,
           is_archived: true,
@@ -543,7 +544,7 @@ export class SyncEngine {
       archived_at: now,
       updated_at: now,
     }).eq('id', habitId).eq('user_id', this.userId);
-    
+
     if (error) throw error;
   }
 
@@ -654,6 +655,7 @@ export class SyncEngine {
       if (!localMap.has(key)) {
         toUpsertLocal.push({
           id: remote.id,
+          userId: this.userId || remote.user_id,
           habitId: remote.habit_id,
           date: remote.date,
           completed: remote.completed,
@@ -787,6 +789,7 @@ export class SyncEngine {
   private async updateLocalGoal(remote: any) {
     const localGoal: Goal = {
       id: remote.id,
+      userId: this.userId || remote.user_id,
       title: remote.title,
       description: remote.description || undefined,
       areaOfLife: remote.category,
@@ -804,7 +807,7 @@ export class SyncEngine {
 
   private async mergeGoalToRemote(local: Goal, remote: any) {
     this.log('info', `Merging duplicate goal: "${local.title}" (local: ${local.id}, remote: ${remote.id})`);
-    
+
     // Migrate milestones from local to remote
     const milestones = await db.milestones
       .where('goalId')
@@ -813,7 +816,7 @@ export class SyncEngine {
 
     for (const milestone of milestones) {
       await db.milestones.update(milestone.id, { goalId: remote.id });
-      
+
       if (this.userId) {
         await this.supabase.from('milestones').upsert({
           id: milestone.id,
@@ -829,14 +832,14 @@ export class SyncEngine {
 
     // Delete the local duplicate goal
     await db.goals.delete(local.id);
-    
+
     // Update local with remote version
     await this.updateLocalGoal(remote);
   }
 
   async pushGoal(goal: Goal) {
     if (!this.userId) return;
-    
+
     if (!this.isOnline) {
       this.queueOperation({
         type: 'update',
@@ -926,6 +929,7 @@ export class SyncEngine {
       if (!localMap.has(remote.id)) {
         toUpsertLocal.push({
           id: remote.id,
+          userId: this.userId || remote.user_id,
           goalId: remote.goal_id,
           title: remote.title,
           completed: remote.is_completed || false,
@@ -1017,7 +1021,7 @@ export class SyncEngine {
 
     this.syncDebounceTimer = setTimeout(async () => {
       this.log('info', `Realtime change detected in ${table}, syncing...`);
-      
+
       try {
         switch (table) {
           case 'habits':
@@ -1033,7 +1037,7 @@ export class SyncEngine {
             await this.syncMilestonesWithRetry();
             break;
         }
-        
+
         this.notifyStatus({ type: 'success', message: 'Data updated' });
       } catch (error) {
         this.log('error', `Realtime sync failed for ${table}`, error);
@@ -1074,18 +1078,18 @@ export class SyncEngine {
       // Cleanup duplicate habits (same name + category)
       const habits = await db.habits.toArray();
       const habitKeys = new Map<string, Habit>();
-      
+
       for (const habit of habits) {
         const key = `${habit.name.toLowerCase()}-${habit.category}`;
         const existing = habitKeys.get(key);
-        
+
         if (existing) {
           // Keep the one with earlier creation date
           const keepHabit = new Date(habit.createdAt) < new Date(existing.createdAt) ? habit : existing;
           const deleteHabit = keepHabit === habit ? existing : habit;
-          
+
           this.log('info', `Cleaning up duplicate habit: ${deleteHabit.name}`);
-          
+
           // Migrate completions
           const completions = await db.completions.where('habitId').equals(deleteHabit.id).toArray();
           for (const c of completions) {
@@ -1099,7 +1103,7 @@ export class SyncEngine {
               await db.completions.delete(c.id);
             }
           }
-          
+
           await db.habits.delete(deleteHabit.id);
           habitKeys.set(key, keepHabit);
         } else {
@@ -1110,23 +1114,23 @@ export class SyncEngine {
       // Cleanup duplicate goals (same title)
       const goals = await db.goals.toArray();
       const goalKeys = new Map<string, Goal>();
-      
+
       for (const goal of goals) {
         const key = goal.title.toLowerCase();
         const existing = goalKeys.get(key);
-        
+
         if (existing) {
           const keepGoal = new Date(goal.createdAt) < new Date(existing.createdAt) ? goal : existing;
           const deleteGoal = keepGoal === goal ? existing : goal;
-          
+
           this.log('info', `Cleaning up duplicate goal: ${deleteGoal.title}`);
-          
+
           // Migrate milestones
           const milestones = await db.milestones.where('goalId').equals(deleteGoal.id).toArray();
           for (const m of milestones) {
             await db.milestones.update(m.id, { goalId: keepGoal.id });
           }
-          
+
           await db.goals.delete(deleteGoal.id);
           goalKeys.set(key, keepGoal);
         } else {
@@ -1137,7 +1141,7 @@ export class SyncEngine {
       // Cleanup duplicate completions (same habitId + date)
       const completions = await db.completions.toArray();
       const completionKeys = new Map<string, HabitCompletion>();
-      
+
       for (const completion of completions) {
         const key = `${completion.habitId}-${completion.date}`;
         if (completionKeys.has(key)) {

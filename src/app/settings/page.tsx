@@ -49,7 +49,7 @@ const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { isSyncing, triggerSync, syncStatus } = useSync();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [userName, setUserName] = useState('');
@@ -64,12 +64,15 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const loadSettings = async () => {
-      let s = await getSettings();
+      if (!user?.id) return;
+
+      let s = await getSettings(user.id);
 
       // Create default settings if none exist
       if (!s) {
         const defaultSettings: UserSettings = {
           id: crypto.randomUUID(),
+          userId: user.id,
           theme: 'system',
           userName: '',
           weekStartsOn: 0,
@@ -88,15 +91,18 @@ export default function SettingsPage() {
       const counts = await countAllDuplicates();
       setDuplicateCounts(counts);
     };
-    loadSettings();
-  }, []);
+
+    if (isAuthenticated) {
+      loadSettings();
+    }
+  }, [user, isAuthenticated]);
 
   const handleCleanupDuplicates = async () => {
     setIsCleaning(true);
     try {
       const removed = await cleanupAllDuplicates();
       const total = removed.habits + removed.goals + removed.completions;
-      
+
       if (total > 0) {
         toast.success(
           `Cleaned up ${total} duplicate(s): ${removed.habits} habits, ${removed.goals} goals, ${removed.completions} completions`
@@ -104,7 +110,7 @@ export default function SettingsPage() {
       } else {
         toast.success('No duplicates found!');
       }
-      
+
       setDuplicateCounts({ habits: 0, goals: 0, completions: 0 });
       // Refresh the page to update counts
       setTimeout(() => window.location.reload(), 1500);
@@ -116,25 +122,25 @@ export default function SettingsPage() {
   };
 
   const handleSaveUserName = async () => {
-    if (settings) {
-      await updateSettings({ userName: userName.trim() || undefined });
+    if (settings && user?.id) {
+      await updateSettings({ userId: user.id, userName: userName.trim() || undefined });
       setSettings({ ...settings, userName: userName.trim() || undefined });
       toast.success('Name updated');
     }
   };
 
   const handleWeekStartChange = async (value: number) => {
-    if (settings) {
+    if (settings && user?.id) {
       const weekStartsOn = value as 0 | 1 | 6;
-      await updateSettings({ weekStartsOn });
+      await updateSettings({ userId: user.id, weekStartsOn });
       setSettings({ ...settings, weekStartsOn });
       toast.success('Week start day updated');
     }
   };
 
   const handleDefaultCategoryChange = async (category: Category) => {
-    if (settings) {
-      await updateSettings({ defaultCategory: category });
+    if (settings && user?.id) {
+      await updateSettings({ userId: user.id, defaultCategory: category });
       setSettings({ ...settings, defaultCategory: category });
       toast.success('Default category updated');
     }

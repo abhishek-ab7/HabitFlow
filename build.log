@@ -1,37 +1,35 @@
-
-> habit-flow@0.1.0 build
-> next build
-
 ▲ Next.js 16.1.4 (Turbopack)
 - Environments: .env.local
 
 ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
   Creating an optimized production build ...
+✓ Compiled successfully in 3.2s
+  Running TypeScript ...
+  Collecting page data using 13 workers ...
+  Generating static pages using 13 workers (0/12) ...
+  Generating static pages using 13 workers (3/12) 
+  Generating static pages using 13 workers (6/12) 
+  Generating static pages using 13 workers (9/12) 
+✓ Generating static pages using 13 workers (12/12) in 217.6ms
+  Finalizing page optimization ...
 
-> Build error occurred
-Error: Turbopack build failed with 1 errors:
-./src/components/dashboard/habit-overview.tsx:99:16
-Parsing ecmascript source code failed
-[0m [90m  97 |[39m           [33m<[39m[33m/[39m[33mdiv[39m[33m>[39m
- [90m  98 |[39m
-[31m[1m>[22m[39m[90m  99 |[39m           [33m<[39m[33mdiv[39m className[33m=[39m[32m"space-y-3"[39m[33m>[39m
- [90m     |[39m                [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m
- [90m 100 |[39m             {[90m/* Habit rows */[39m}
- [90m 101 |[39m             {habits[33m.[39mslice([35m0[39m[33m,[39m [35m5[39m)[33m.[39mmap((habit[33m,[39m index) [33m=>[39m (
- [90m 102 |[39m               [33m<[39m[33mmotion[39m[33m.[39mdiv[0m
-
-Expected '</', got 'className'
-
-Import traces:
-  Client Component Browser:
-    ./src/components/dashboard/habit-overview.tsx [Client Component Browser]
-    ./src/app/page.tsx [Client Component Browser]
-    ./src/app/page.tsx [Server Component]
-
-  Client Component SSR:
-    ./src/components/dashboard/habit-overview.tsx [Client Component SSR]
-    ./src/app/page.tsx [Client Component SSR]
-    ./src/app/page.tsx [Server Component]
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /analytics
+├ ƒ /api/ai/generate-subtasks
+├ ○ /auth/auth-code-error
+├ ƒ /auth/callback
+├ ○ /goals
+├ ƒ /goals/[id]
+├ ○ /habits
+├ ○ /login
+├ ○ /settings
+└ ○ /tasks
 
 
-    at <unknown> (./src/components/dashboard/habit-overview.tsx:99:16)
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
