@@ -3,3 +3,5 @@ export { MetricCards } from './metric-cards';
 export { HabitOverview } from './habit-overview';
 export { FocusGoal } from './focus-goal';
 export { QuickActions } from './quick-actions';
+export { TodayTasksWidget } from './TodayTasksWidget';
+export { AICoachWidget } from './AICoachWidget';

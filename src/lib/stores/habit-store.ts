@@ -10,12 +10,16 @@ import {
   reorderHabits,
   seedDemoData,
   cleanupDuplicateCompletions,
+  getRoutinesForHabit,
+  linkHabitToRoutine,
+  unlinkHabitFromRoutine,
 } from '../db';
 import { getSupabaseClient } from '../supabase/client';
-import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
+import type { Habit, HabitCompletion, HabitFormData, Category, Routine } from '../types';
 import { calculateHabitStats } from '../calculations';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { getSyncEngine } from '../sync';
+import { useGamificationStore, XP_PER_HABIT } from './gamification-store';
 
 interface HabitState {
   habits: Habit[];
@@ -37,6 +41,12 @@ interface HabitState {
   setSelectedMonth: (date: Date) => void;
   setCategoryFilter: (categories: Category[]) => void;
   initializeWithDemoData: () => Promise<void>;
+
+  // Routine management
+  getHabitRoutines: (habitId: string) => Promise<Routine[]>;
+  getHabitCompletions: (habitId: string) => HabitCompletion[];
+  linkToRoutine: (habitId: string, routineId: string) => Promise<void>;
+  unlinkFromRoutine: (habitId: string, routineId: string) => Promise<void>;
 
   // Computed
   getHabitStats: (habitId: string) => ReturnType<typeof calculateHabitStats> | null;
@@ -161,6 +171,13 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     if (!session?.user?.id) throw new Error("User not authenticated");
 
     const result = await toggleCompletion(habitId, date, session.user.id);
+
+    if (result) {
+      const today = new Date().toISOString().split('T')[0];
+      if (date === today) {
+        useGamificationStore.getState().addXp(XP_PER_HABIT);
+      }
+    }
 
     set(state => {
       const filtered = state.completions.filter(
@@ -300,5 +317,21 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
 
     return streaks;
+  },
+
+  getHabitRoutines: async (habitId: string) => {
+    return getRoutinesForHabit(habitId);
+  },
+
+  getHabitCompletions: (habitId: string) => {
+    return get().completions.filter(c => c.habitId === habitId);
+  },
+
+  linkToRoutine: async (habitId: string, routineId: string) => {
+    await linkHabitToRoutine(habitId, routineId);
+  },
+
+  unlinkFromRoutine: async (habitId: string, routineId: string) => {
+    await unlinkHabitFromRoutine(habitId, routineId);
   },
 }));

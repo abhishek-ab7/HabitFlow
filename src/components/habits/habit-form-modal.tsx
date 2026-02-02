@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, ChevronDown, Link2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -14,8 +14,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { Habit, HabitFormData, Category } from '@/lib/types';
+import type { Habit, HabitFormData, Category, Routine } from '@/lib/types';
+import { useRoutineStore } from '@/lib/stores/routine-store';
+import { useHabitStore } from '@/lib/stores/habit-store';
 
 interface HabitFormModalProps {
   open: boolean;
@@ -55,28 +58,54 @@ export function HabitFormModal({
   const [targetDays, setTargetDays] = useState(7);
   const [icon, setIcon] = useState('');
   const [errors, setErrors] = useState<{ name?: string }>({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [selectedRoutineIds, setSelectedRoutineIds] = useState<Set<string>>(new Set());
+  const [loadingRoutines, setLoadingRoutines] = useState(false);
+
+  const { routines, loadRoutines } = useRoutineStore();
+  const { linkToRoutine, unlinkFromRoutine, getHabitRoutines } = useHabitStore();
 
   const isEditing = !!habit;
 
-  // Reset form when opening or habit changes
+  // Load routines and current habit routines
   useEffect(() => {
     if (open) {
+      loadRoutines();
+      
       if (habit) {
         setName(habit.name);
         setCategory(habit.category);
         setTargetDays(habit.targetDaysPerWeek);
         setIcon(habit.icon || '');
+        
+        // Load routines this habit belongs to
+        setLoadingRoutines(true);
+        getHabitRoutines(habit.id).then(habitRoutines => {
+          setSelectedRoutineIds(new Set(habitRoutines.map(r => r.id)));
+          setLoadingRoutines(false);
+        });
       } else {
         setName('');
         setCategory('personal');
         setTargetDays(7);
         setIcon('');
+        setSelectedRoutineIds(new Set());
       }
       setErrors({});
     }
-  }, [open, habit]);
+  }, [open, habit, loadRoutines, getHabitRoutines]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleRoutineToggle = (routineId: string) => {
+    const newSet = new Set(selectedRoutineIds);
+    if (newSet.has(routineId)) {
+      newSet.delete(routineId);
+    } else {
+      newSet.add(routineId);
+    }
+    setSelectedRoutineIds(newSet);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validate
@@ -85,6 +114,7 @@ export function HabitFormModal({
       return;
     }
 
+    // First, submit the habit
     onSubmit({
       name: name.trim(),
       category,
@@ -92,12 +122,33 @@ export function HabitFormModal({
       icon: icon || undefined,
     });
 
+    // If editing, update routine links
+    if (habit) {
+      // Get current routines
+      const currentRoutines = await getHabitRoutines(habit.id);
+      const currentRoutineIds = new Set(currentRoutines.map(r => r.id));
+
+      // Link new routines
+      for (const routineId of selectedRoutineIds) {
+        if (!currentRoutineIds.has(routineId)) {
+          await linkToRoutine(habit.id, routineId);
+        }
+      }
+
+      // Unlink removed routines
+      for (const routineId of currentRoutineIds) {
+        if (!selectedRoutineIds.has(routineId)) {
+          await unlinkFromRoutine(habit.id, routineId);
+        }
+      }
+    }
+
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{isEditing ? 'Edit Habit' : 'Create New Habit'}</DialogTitle>
@@ -204,6 +255,62 @@ export function HabitFormModal({
                   ? 'Daily habit' 
                   : `${targetDays} days per week`}
               </p>
+            </div>
+
+            {/* Advanced Options */}
+            <div className="pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronDown className={cn("w-4 h-4 transition-transform", showAdvanced && "rotate-180")} />
+                Advanced Options
+              </button>
+
+              {showAdvanced && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mt-4 space-y-3"
+                >
+                  <div>
+                    <label className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Link2 className="w-4 h-4" />
+                      Link to Routines (optional)
+                    </label>
+                    <div className="border rounded-md p-3 space-y-2 max-h-32 overflow-y-auto bg-muted/30">
+                      {routines.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No routines available. Create a routine to link habits.
+                        </p>
+                      ) : loadingRoutines ? (
+                        <p className="text-sm text-muted-foreground">Loading...</p>
+                      ) : (
+                        routines.map((routine) => (
+                          <div key={routine.id} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`routine-${routine.id}`}
+                              checked={selectedRoutineIds.has(routine.id)}
+                              onCheckedChange={() => handleRoutineToggle(routine.id)}
+                            />
+                            <label
+                              htmlFor={`routine-${routine.id}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                            >
+                              {routine.title}
+                            </label>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      This habit can belong to multiple routines
+                    </p>
+                  </div>
+                </motion.div>
+              )}
             </div>
           </div>
 

@@ -6,6 +6,8 @@ import { SyncProvider } from '@/providers/sync-provider';
 import { Header } from '@/components/layout';
 import { ServiceWorkerRegistration } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
+import { LevelUpModal } from '@/components/gamification/LevelUpModal';
+import { RoutineTriggerWatcher } from '@/components/routines/RoutineTriggerWatcher';
 import './globals.css';
 
 const geistSans = Geist({
@@ -72,6 +74,8 @@ export default function RootLayout({
                   {children}
                 </main>
               </div>
+              <LevelUpModal />
+              <RoutineTriggerWatcher />
               <Toaster richColors position="bottom-right" />
             </SyncProvider>
           </AuthProvider>

@@ -14,7 +14,8 @@ import {
   Database,
   User as UserIcon,
   Palette,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  Calendar,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -79,6 +80,10 @@ export default function SettingsPage() {
           showMotivationalQuotes: true,
           defaultCategory: 'health',
           createdAt: new Date().toISOString(),
+          xp: 0,
+          level: 1,
+          gems: 0,
+          streakShield: 0,
         };
         await db.userSettings.add(defaultSettings);
         s = defaultSettings;
@@ -349,6 +354,32 @@ export default function SettingsPage() {
                     <span className="text-sm font-medium">{option.label}</span>
                   </button>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        </StaggerItem>
+
+        {/* Integrations */}
+        <StaggerItem>
+          <Card>
+            <CardHeader>
+              <CardTitle>Integrations</CardTitle>
+              <CardDescription>Connect with other services</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                    <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium">Google Calendar</h4>
+                    <p className="text-sm text-muted-foreground">Sync habits as events</p>
+                  </div>
+                </div>
+                <Button variant="outline" onClick={() => toast.info('Two-way sync coming soon!')}>
+                  Connect
+                </Button>
               </div>
             </CardContent>
           </Card>

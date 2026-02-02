@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { 
-  LayoutDashboard, 
-  CheckSquare, 
-  Target, 
-  BarChart3, 
-  Sun, 
+import {
+  LayoutDashboard,
+  CheckSquare,
+  ListTodo,
+  Target,
+  BarChart3,
+  Sun,
   Moon,
   Menu,
   X,
@@ -17,7 +18,8 @@ import {
   LogOut,
   Cloud,
   CloudOff,
-  Loader2
+  Loader2,
+  Workflow // Routine icon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
@@ -25,9 +27,12 @@ import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { UserStatusHUD } from '@/components/gamification/UserStatusHUD';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/tasks', label: 'Tasks', icon: ListTodo },
+  { href: '/routines', label: 'Routines', icon: Workflow },
   { href: '/habits', label: 'Habits', icon: CheckSquare },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -73,7 +78,7 @@ export function Header() {
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
-            
+
             return (
               <Link
                 key={item.href}
@@ -83,8 +88,8 @@ export function Header() {
                 <span
                   className={cn(
                     'flex items-center gap-2 text-sm font-medium transition-colors',
-                    isActive 
-                      ? 'text-foreground' 
+                    isActive
+                      ? 'text-foreground'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
@@ -110,6 +115,7 @@ export function Header() {
 
         {/* Right side actions */}
         <div className="flex items-center gap-2">
+          {isAuthenticated && <UserStatusHUD />}
           {/* Sync Status Indicator */}
           {isAuthenticated && (
             <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground mr-2">
@@ -212,7 +218,7 @@ export function Header() {
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               const Icon = item.icon;
-              
+
               return (
                 <Link
                   key={item.href}
@@ -220,8 +226,8 @@ export function Header() {
                   onClick={() => setMobileMenuOpen(false)}
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors',
-                    isActive 
-                      ? 'bg-muted text-foreground' 
+                    isActive
+                      ? 'bg-muted text-foreground'
                       : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   )}
                 >

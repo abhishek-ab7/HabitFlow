@@ -49,6 +49,7 @@ export interface Habit {
   updatedAt?: string; // ISO date string - last modification time
   order: number; // For drag-and-drop ordering
   icon?: string; // Optional emoji or icon name
+  routineId?: string | null; // For linking to routines
 }
 
 export interface HabitCompletion {
@@ -117,6 +118,53 @@ export interface GoalStats {
 }
 
 // ============================================
+// ROUTINE MODELS
+// ============================================
+
+export interface Routine {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  triggerType: 'manual' | 'time' | 'location';
+  triggerValue?: string;
+  isActive: boolean;
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Junction table for many-to-many habit-routine relationship
+export interface HabitRoutine {
+  id: string;
+  habitId: string;
+  routineId: string;
+  orderIndex: number; // Order of habit within the routine
+  createdAt: string;
+}
+
+// ============================================
+// TASK MODELS
+// ============================================
+
+export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'archived';
+
+export interface Task {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  priority: Priority;
+  due_date?: string | null;
+  goal_id?: string | null;
+  tags?: string[];
+  metadata?: Record<string, any>; // For flexibility
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================
 // USER SETTINGS
 // ============================================
 
@@ -129,6 +177,11 @@ export interface UserSettings {
   showMotivationalQuotes: boolean;
   defaultCategory: Category;
   createdAt: string;
+  // Gamification fields
+  xp: number;
+  level: number;
+  gems: number;
+  streakShield: number;
 }
 
 // ============================================
@@ -215,6 +268,15 @@ export interface GoalFormData {
 export interface MilestoneFormData {
   title: string;
   deadline?: string;
+}
+
+export interface TaskFormData {
+  title: string;
+  description?: string;
+  priority: Priority;
+  due_date?: string;
+  goal_id?: string;
+  tags?: string[];
 }
 
 // ============================================

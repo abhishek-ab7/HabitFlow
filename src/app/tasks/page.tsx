@@ -1,79 +1,64 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
-import { TaskCard } from "@/components/tasks/TaskCard"
-import { CreateTaskModal } from "@/components/tasks/CreateTaskModal"
-import { KanbanBoard } from "@/components/tasks/KanbanBoard"
-import { motion } from "framer-motion"
+import { TaskCard, CreateTaskModal, KanbanBoard, SmartTaskInput } from "@/components/tasks"
 import { Loader2, Inbox } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import type { Database } from "@/lib/supabase/types"
-
-type Task = Database['public']['Tables']['tasks']['Row']
+import { useTaskStore } from "@/lib/stores/task-store"
+import type { Task } from "@/lib/types"
 
 export default function TasksPage() {
-    const [tasks, setTasks] = useState<Task[]>([])
-    const [loading, setLoading] = useState(true)
+    const { tasks, loadTasks, isLoading, toggleTaskComplete, editTask, addTask } = useTaskStore()
     const [view, setView] = useState<'list' | 'board'>('list')
-    const supabase = createClient()
 
+    // Initial load
     useEffect(() => {
-        fetchTasks()
-    }, [])
-
-    const fetchTasks = async () => {
-        setLoading(true)
-        const { data, error } = await supabase
-            .from("tasks")
-            .select("*")
-            .neq("status", "archived")
-            .order("created_at", { ascending: false })
-
-        if (error) {
-            toast.error("Failed to load tasks")
-        } else {
-            setTasks(data || [])
-        }
-        setLoading(false)
-    }
+        loadTasks()
+    }, [loadTasks])
 
     const handleTaskComplete = async (id: string) => {
-        // Optimistic update
-        setTasks(prev => prev.map(t =>
-            t.id === id ? { ...t, status: 'done' } : t
-        ))
-
-        const { error } = await (supabase.from("tasks") as any)
-            .update({ status: 'done', updated_at: new Date().toISOString() } as any)
-            .eq("id", id)
-
-        if (error) {
+        try {
+            await toggleTaskComplete(id)
+            toast.success("Task updated")
+        } catch (error) {
             toast.error("Failed to update task")
-            fetchTasks() // Revert on error
-        } else {
-            toast.success("Task completed!")
         }
     }
 
     const handleTaskUpdate = async (updatedTask: Task) => {
-        // Optimistic update
-        setTasks(prev => prev.map(t =>
-            t.id === updatedTask.id ? updatedTask : t
-        ))
-
-        const { error } = await (supabase.from("tasks") as any)
-            .update({ status: updatedTask.status, updated_at: new Date().toISOString() } as any)
-            .eq("id", updatedTask.id)
-
-        if (error) {
+        try {
+            await editTask(updatedTask.id, {
+                status: updatedTask.status,
+                priority: updatedTask.priority,
+                due_date: updatedTask.due_date,
+                description: updatedTask.description,
+                title: updatedTask.title,
+                goal_id: updatedTask.goal_id,
+                tags: updatedTask.tags
+            })
+        } catch (error) {
             toast.error("Failed to update task status")
-            fetchTasks() // Revert
         }
     }
 
-    const activeTasks = tasks.filter(t => t.status !== 'done')
+    const handleQuickAddTask = async (task: { title: string; dueDate?: Date; tags?: string[] }) => {
+        try {
+            await addTask({
+                title: task.title,
+                priority: 'medium',
+                due_date: task.dueDate?.toISOString(),
+                tags: task.tags || []
+            });
+            toast.success("Task created");
+            // No need to reload, store updates
+        } catch (error) {
+            toast.error("Failed to create task");
+            console.error(error);
+        }
+    };
+
+    const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'archived')
     const completedTasks = tasks.filter(t => t.status === 'done')
 
     return (
@@ -103,17 +88,24 @@ export default function TasksPage() {
                             Board
                         </button>
                     </div>
-                    <CreateTaskModal onTaskCreated={fetchTasks} />
+                    {/* Note: CreateTaskModal calls onTaskCreated. Since we use store, we can just reload or let store update. 
+                        Usually store updates state immediately. But refreshing is safe. */}
+                    <CreateTaskModal onTaskCreated={loadTasks} />
                 </div>
             </div>
 
             {/* Content */}
-            <div className="flex-1 min-h-0">
-                {loading ? (
+            <div className="flex-1 min-h-0 space-y-6">
+                {/* Quick Add Input */}
+                <div className="max-w-3xl mx-auto w-full">
+                    <SmartTaskInput onAddTask={handleQuickAddTask} />
+                </div>
+
+                {isLoading && tasks.length === 0 ? (
                     <div className="flex items-center justify-center h-64">
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
-                ) : tasks.length === 0 ? (
+                ) : tasks.filter(t => t.status !== 'archived').length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
                         <div className="p-4 rounded-full bg-muted/50">
                             <Inbox className="h-8 w-8 text-muted-foreground" />
@@ -124,7 +116,7 @@ export default function TasksPage() {
                         </div>
                     </div>
                 ) : view === 'board' ? (
-                    <KanbanBoard tasks={tasks} onTaskUpdate={handleTaskUpdate} />
+                    <KanbanBoard tasks={activeTasks} onTaskUpdate={handleTaskUpdate} />
                 ) : (
                     <div className="space-y-8 overflow-y-auto h-full pr-2">
                         {/* Active Tasks */}
@@ -154,7 +146,8 @@ export default function TasksPage() {
                                         <TaskCard
                                             key={task.id}
                                             task={task}
-                                        // No onComplete handler for already completed (unless uncheck supported later)
+                                            // TaskCard might not have 'onComplete' enabled for completed items, or re-toggle
+                                            onComplete={handleTaskComplete}
                                         />
                                     ))}
                                 </div>

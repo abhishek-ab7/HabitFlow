@@ -24,9 +24,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { TaskCard } from "./TaskCard"
 import { cn } from "@/lib/utils"
-import type { Database } from "@/lib/supabase/types"
-
-type Task = Database['public']['Tables']['tasks']['Row']
+import type { Task } from "@/lib/types"
 
 interface KanbanBoardProps {
     tasks: Task[]
@@ -102,7 +100,7 @@ export function KanbanBoard({ tasks, onTaskUpdate }: KanbanBoardProps) {
 
         if (COLUMNS.some(col => col.id === overId)) {
             // Dropped on a column header/container
-            newStatus = overId
+            newStatus = overId as TaskStatus
         } else {
             // Dropped on another task
             const overTask = tasks.find(t => t.id === overId)

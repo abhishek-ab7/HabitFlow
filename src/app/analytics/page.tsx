@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { subDays, subMonths, subYears } from 'date-fns';
+import { subDays, subMonths, subYears, format } from 'date-fns';
 import { BarChart3, TrendingUp, Target, Flame, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
@@ -12,8 +12,9 @@ import {
   WeekdayChart,
   HeatmapCalendar,
   InsightsCards,
+  CorrelationChart,
 } from '@/components/analytics';
-import { useHabitStore, useGoalStore } from '@/lib/stores';
+import { useHabitStore, useGoalStore, useTaskStore } from '@/lib/stores';
 import {
   calculateDailyStats,
   calculateCategoryBreakdown,
@@ -26,23 +27,30 @@ import type { TimeRange, DailyStats, WeekdayStats, Insight, Trend } from '@/lib/
 import { DAYS_OF_WEEK } from '@/lib/types';
 
 export default function AnalyticsPage() {
-  const { habits, completions, loadHabits, loadAllCompletions, isLoading: habitsLoading } = useHabitStore();
+  const { habits, completions, loadHabits, loadCompletions, isLoading: habitsLoading } = useHabitStore();
   const { goals, loadGoals, isLoading: goalsLoading } = useGoalStore();
-  
+  const { tasks, loadTasks, isLoading: tasksLoading } = useTaskStore();
+
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
 
   // Load data on mount
   useEffect(() => {
     loadHabits();
-    loadAllCompletions();
     loadGoals();
-  }, [loadHabits, loadAllCompletions, loadGoals]);
+    loadTasks();
+
+    // Load last year of data for heatmap + analytics
+    // This is much faster than loading ALL history
+    const end = new Date();
+    const start = subYears(end, 1);
+    loadCompletions(format(start, 'yyyy-MM-dd'), format(end, 'yyyy-MM-dd'));
+  }, [loadHabits, loadCompletions, loadGoals, loadTasks]);
 
   // Calculate date range based on selection
   const dateRange = useMemo(() => {
     const today = new Date();
     let startDate: Date;
-    
+
     switch (timeRange) {
       case 'week':
         startDate = subDays(today, 7);
@@ -59,7 +67,7 @@ export default function AnalyticsPage() {
       default:
         startDate = subDays(today, 30);
     }
-    
+
     return { startDate, endDate: today };
   }, [timeRange]);
 
@@ -95,7 +103,7 @@ export default function AnalyticsPage() {
         ? dayCompletions.reduce((sum, d) => sum + d.completionRate, 0) / dayCompletions.length
         : 0;
       const totalCompletions = dayCompletions.reduce((sum, d) => sum + d.completedHabits, 0);
-      
+
       return {
         dayOfWeek,
         dayName,
@@ -113,6 +121,28 @@ export default function AnalyticsPage() {
     const currentStreak = calculateCurrentStreak(completions);
     const activeGoals = goals.filter(g => !g.archived && g.status !== 'completed').length;
 
+    // Correlation Data
+    const correlationData = dailyStats.map(stat => {
+      const dateStr = stat.date; // YYYY-MM-DD
+      const tasksCompletedThatDay = tasks.filter(t => {
+        // Assuming task completions are updated_at or we need a better tracking of completion date.
+        // For now, if tasks have 'due_date' = dateStr and are done? 
+        // Or better, we need a completion history for tasks. 
+        // Since we don't track task completion history separate from status, 
+        // we'll try to use 'due_date' as proxy for "schedueled tasks" 
+        // and filter by status='done'. Or just count tasks created?
+        // Simplification: Count tasks with due_date = dateStr AND status = 'done'.
+        if (t.status !== 'done') return false;
+        return t.due_date && t.due_date.startsWith(dateStr);
+      }).length;
+
+      return {
+        date: dateStr,
+        tasksCompleted: tasksCompletedThatDay,
+        habitCompletionRate: stat.completionRate
+      };
+    });
+
     return {
       dailyStats,
       avgCompletionRate,
@@ -125,17 +155,18 @@ export default function AnalyticsPage() {
       currentStreak,
       activeGoals,
       activeHabits: activeHabits.length,
+      correlationData, // ADDED
     };
-  }, [habits, completions, goals, dateRange]);
+  }, [habits, completions, goals, tasks, dateRange]);
 
   // Generate insights based on data
   const insights = useMemo((): Insight[] => {
     const result: Insight[] = [];
-    const { 
-      avgCompletionRate, 
-      trend, 
-      weekdayStats, 
-      currentStreak, 
+    const {
+      avgCompletionRate,
+      trend,
+      weekdayStats,
+      currentStreak,
       bestStreak,
       categoryBreakdown,
     } = analyticsData;
@@ -237,7 +268,7 @@ export default function AnalyticsPage() {
     return result.sort((a, b) => a.priority - b.priority);
   }, [analyticsData, habits]);
 
-  const isLoading = habitsLoading || goalsLoading;
+  const isLoading = habitsLoading || goalsLoading || tasksLoading;
 
   if (isLoading) {
     return (
@@ -270,7 +301,7 @@ export default function AnalyticsPage() {
               Discover patterns and insights in your habits
             </p>
           </div>
-          
+
           <TimeRangeTabs value={timeRange} onChange={setTimeRange} />
         </div>
       </FadeIn>
@@ -391,6 +422,11 @@ export default function AnalyticsPage() {
             {/* Insights */}
             <FadeIn delay={0.5}>
               <InsightsCards insights={insights} />
+            </FadeIn>
+
+            {/* Correlation Chart */}
+            <FadeIn delay={0.55}>
+              <CorrelationChart data={analyticsData.correlationData} />
             </FadeIn>
           </div>
 

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData } from './types';
+import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, Routine, HabitRoutine } from './types';
 
 // Define the database schema
 const db = new Dexie('HabitFlowDB') as Dexie & {
@@ -8,15 +8,37 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   goals: EntityTable<Goal, 'id'>;
   milestones: EntityTable<Milestone, 'id'>;
   userSettings: EntityTable<UserSettings, 'id'>;
+  tasks: EntityTable<Task, 'id'>;
+  routines: EntityTable<Routine, 'id'>;
+  habitRoutines: EntityTable<HabitRoutine, 'id'>;
 };
 
-// Schema version 3 - Added userId to all tables for isolation
-db.version(3).stores({
-  habits: 'id, userId, name, category, archived, order, createdAt',
+// Schema version 5 - Added HabitRoutines junction table for many-to-many
+db.version(5).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, routineId',
   completions: 'id, userId, habitId, date, [habitId+date]',
   goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt',
   milestones: 'id, userId, goalId, completed, order',
   userSettings: 'id, userId',
+  tasks: 'id, userId, status, priority, due_date, created_at',
+  routines: 'id, userId, isActive, orderIndex',
+  habitRoutines: 'id, habitId, routineId, [habitId+routineId]',
+}).upgrade(async tx => {
+  // Migrate existing routineId data to habitRoutines junction table
+  const habits = await tx.table('habits').toArray();
+  const habitRoutines = habits
+    .filter((h: any) => h.routineId)
+    .map((h: any) => ({
+      id: crypto.randomUUID(),
+      habitId: h.id,
+      routineId: h.routineId,
+      orderIndex: 0,
+      createdAt: new Date().toISOString(),
+    }));
+  
+  if (habitRoutines.length > 0) {
+    await tx.table('habitRoutines').bulkAdd(habitRoutines);
+  }
 });
 
 // ==================
@@ -332,6 +354,10 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: str
       showMotivationalQuotes: data.showMotivationalQuotes ?? true,
       defaultCategory: data.defaultCategory || 'health',
       createdAt: new Date().toISOString(),
+      xp: 0,
+      level: 1,
+      gems: 0,
+      streakShield: 0,
     };
     await db.userSettings.add(settings);
   }
@@ -411,6 +437,121 @@ export async function seedDemoData(userId: string): Promise<void> {
   }
 
   await db.completions.bulkAdd(completions);
+}
+
+// ==================
+// TASK FUNCTIONS
+// ==================
+
+export async function getTasks(userId: string): Promise<Task[]> {
+  return db.tasks.where('userId').equals(userId).filter(t => t.status !== 'archived').reverse().sortBy('created_at');
+}
+
+export async function createTask(data: TaskFormData & { userId: string }): Promise<Task> {
+  const now = new Date().toISOString();
+  const task: Task = {
+    id: crypto.randomUUID(),
+    userId: data.userId,
+    title: data.title,
+    description: data.description || null,
+    status: 'todo',
+    priority: data.priority,
+    due_date: data.due_date || null,
+    goal_id: data.goal_id || null,
+    tags: data.tags || [],
+    metadata: {},
+    created_at: now,
+    updated_at: now,
+  };
+
+  await db.tasks.add(task);
+  return task;
+}
+
+export async function updateTask(id: string, data: Partial<Task>): Promise<void> {
+  await db.tasks.update(id, { ...data, updated_at: new Date().toISOString() });
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  // Soft delete
+  await db.tasks.update(id, { status: 'archived', updated_at: new Date().toISOString() });
+}
+
+// ==================
+// HABIT-ROUTINE JUNCTION FUNCTIONS
+// ==================
+
+export async function linkHabitToRoutine(habitId: string, routineId: string, orderIndex: number = 0): Promise<HabitRoutine> {
+  // Check if link already exists
+  const existing = await db.habitRoutines
+    .where('[habitId+routineId]')
+    .equals([habitId, routineId])
+    .first();
+  
+  if (existing) {
+    return existing;
+  }
+
+  const link: HabitRoutine = {
+    id: crypto.randomUUID(),
+    habitId,
+    routineId,
+    orderIndex,
+    createdAt: new Date().toISOString(),
+  };
+
+  await db.habitRoutines.add(link);
+  return link;
+}
+
+export async function unlinkHabitFromRoutine(habitId: string, routineId: string): Promise<void> {
+  const link = await db.habitRoutines
+    .where('[habitId+routineId]')
+    .equals([habitId, routineId])
+    .first();
+  
+  if (link) {
+    await db.habitRoutines.delete(link.id);
+  }
+}
+
+export async function getRoutinesForHabit(habitId: string): Promise<Routine[]> {
+  const links = await db.habitRoutines.where('habitId').equals(habitId).toArray();
+  const routineIds = links.map(link => link.routineId);
+  
+  const routines = await db.routines.where('id').anyOf(routineIds).toArray();
+  return routines;
+}
+
+export async function getHabitsForRoutine(routineId: string): Promise<Habit[]> {
+  const links = await db.habitRoutines
+    .where('routineId')
+    .equals(routineId)
+    .sortBy('orderIndex');
+  
+  const habitIds = links.map(link => link.habitId);
+  const habits = await db.habits.where('id').anyOf(habitIds).toArray();
+  
+  // Sort habits according to the order in the routine
+  const habitMap = new Map(habits.map(h => [h.id, h]));
+  return links.map(link => habitMap.get(link.habitId)).filter(Boolean) as Habit[];
+}
+
+export async function updateHabitRoutineOrder(habitId: string, routineId: string, newOrderIndex: number): Promise<void> {
+  const link = await db.habitRoutines
+    .where('[habitId+routineId]')
+    .equals([habitId, routineId])
+    .first();
+  
+  if (link) {
+    await db.habitRoutines.update(link.id, { orderIndex: newOrderIndex });
+  }
+}
+
+export async function unlinkAllHabitsFromRoutine(routineId: string): Promise<void> {
+  const links = await db.habitRoutines.where('routineId').equals(routineId).toArray();
+  const linkIds = links.map(link => link.id);
+  await db.habitRoutines.bulkDelete(linkIds);
 }
 
 export { db };

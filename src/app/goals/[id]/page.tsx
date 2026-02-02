@@ -13,8 +13,9 @@ import { motion } from "framer-motion"
 import { toast } from "sonner"
 import type { Database } from "@/lib/supabase/types"
 
+import type { Task } from "@/lib/types"
+
 type Goal = Database['public']['Tables']['goals']['Row']
-type Task = Database['public']['Tables']['tasks']['Row']
 type Milestone = Database['public']['Tables']['milestones']['Row']
 
 export default function GoalDetailsPage() {
@@ -55,7 +56,14 @@ export default function GoalDetailsPage() {
                 .order("priority", { ascending: false })
 
             if (taskError) throw taskError
-            setTasks(taskData || [])
+            if (taskError) throw taskError
+
+            const mappedTasks: Task[] = (taskData || []).map((t: any) => ({
+                ...t,
+                userId: t.user_id,
+                // Ensure other fields match if needed
+            }))
+            setTasks(mappedTasks)
 
             // Fetch Milestones
             const { data: milestoneData, error: milestoneError } = await supabase

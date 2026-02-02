@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive } from 'lucide-react';
+import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +17,8 @@ import { SuccessRipple } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import { colors } from '@/lib/design-tokens';
 import { STREAK_MILESTONES, CATEGORY_LABELS } from '@/lib/types';
-import type { Habit, HabitCompletion, Category } from '@/lib/types';
+import type { Habit, HabitCompletion, Category, Routine } from '@/lib/types';
+import { useHabitStore } from '@/lib/stores/habit-store';
 
 interface HabitGridProps {
   habits: Habit[];
@@ -50,6 +51,23 @@ export function HabitGrid({
   streaks,
 }: HabitGridProps) {
   const [rippleCell, setRippleCell] = useState<string | null>(null);
+  const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
+  const { getHabitRoutines } = useHabitStore();
+
+  // Load routines for all habits
+  useEffect(() => {
+    const loadRoutines = async () => {
+      const routinesMap = new Map<string, Routine[]>();
+      for (const habit of habits) {
+        const routines = await getHabitRoutines(habit.id);
+        if (routines.length > 0) {
+          routinesMap.set(habit.id, routines);
+        }
+      }
+      setHabitRoutines(routinesMap);
+    };
+    loadRoutines();
+  }, [habits, getHabitRoutines]);
 
   // Generate days for the month
   const days = useMemo(() => {
@@ -177,7 +195,7 @@ export function HabitGrid({
                       {habit.icon && <span className="text-lg">{habit.icon}</span>}
                       <span className="font-medium text-sm truncate">{habit.name}</span>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                       <Badge
                         variant="secondary"
                         className={cn("text-[10px] px-1.5 py-0 h-4", CATEGORY_COLORS[habit.category])}
@@ -196,6 +214,17 @@ export function HabitGrid({
                           {streak}
                         </Badge>
                       )}
+                      {habitRoutines.get(habit.id)?.map((routine) => (
+                        <Badge
+                          key={routine.id}
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-0 h-4 gap-0.5 bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300"
+                          title={`Part of routine: ${routine.title}`}
+                        >
+                          <Link2 className="h-2 w-2" />
+                          {routine.title.length > 8 ? routine.title.substring(0, 8) + '...' : routine.title}
+                        </Badge>
+                      ))}
                     </div>
                   </div>
 

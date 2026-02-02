@@ -12,6 +12,8 @@ import {
   HabitOverview,
   FocusGoal,
   QuickActions,
+  TodayTasksWidget,
+  AICoachWidget,
 } from '@/components/dashboard';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -137,6 +139,10 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        <div className="mt-8">
+          <TodayTasksWidget />
+        </div>
       </div>
     );
   }
@@ -162,6 +168,10 @@ export default function DashboardPage() {
     <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
       <HeroSection />
 
+      <div className="mb-6">
+        <AICoachWidget />
+      </div>
+
       <MetricCards
         todayCompleted={todayProgress.completed}
         todayTotal={todayProgress.total}
@@ -173,6 +183,9 @@ export default function DashboardPage() {
         upcomingDeadlines={upcomingDeadlines.length}
       />
 
+      <div className="mb-8">
+        <TodayTasksWidget />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <HabitOverview habits={habits} completions={completions} onToggle={toggle} />

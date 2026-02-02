@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { db } from '@/lib/db';
+import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions } from '@/lib/db';
 import type { Habit, HabitCompletion, Goal, Milestone } from '@/lib/types';
 
 // ===================
@@ -204,6 +204,7 @@ export class SyncEngine {
       const results = await Promise.allSettled([
         this.syncHabitsWithRetry(),
         this.syncGoalsWithRetry(),
+        this.syncTasksWithRetry(),
       ]);
 
       // Check for failures
@@ -351,7 +352,7 @@ export class SyncEngine {
 
     if (error) throw error;
 
-    const localHabits = await db.habits.toArray();
+    const localHabits = await db.habits.where('userId').equals(this.userId).toArray();
 
     // Create lookup maps - use lowercase for case-insensitive matching
     const remoteById = new Map((remoteHabits || []).map((h: any) => [h.id, h]));
@@ -538,7 +539,7 @@ export class SyncEngine {
     }
 
     // Soft delete - mark as archived with timestamp
-    // @ts-ignore - Supabase type issue with update
+    // @ts-expect-error - Supabase type issue with update
     const { error } = await this.supabase.from('habits').update({
       is_archived: true,
       archived_at: now,
@@ -620,6 +621,7 @@ export class SyncEngine {
     const localCompletions = await db.completions
       .where('date')
       .aboveOrEqual(startDate)
+      .filter(c => c.userId === this.userId!)
       .toArray();
 
     // Create lookup maps using habitId-date as unique key
@@ -727,7 +729,7 @@ export class SyncEngine {
 
     if (error) throw error;
 
-    const localGoals = await db.goals.toArray();
+    const localGoals = await db.goals.where('userId').equals(this.userId).toArray();
 
     const remoteById = new Map((remoteGoals || []).map((g: any) => [g.id, g]));
     const remoteByTitle = new Map(
@@ -981,6 +983,147 @@ export class SyncEngine {
   }
 
   // ===================
+  // TASKS SYNC
+  // ===================
+
+  private async syncTasksWithRetry() {
+    return this.withRetry(() => this.syncTasks(), 'Tasks sync');
+  }
+
+  private async syncTasks() {
+    if (!this.userId) return;
+
+    const { data: remoteTasks, error } = await this.supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) throw error;
+
+    const localTasks = await db.tasks.where('userId').equals(this.userId).toArray();
+    const remoteById = new Map((remoteTasks || []).map((t: any) => [t.id, t]));
+    const localById = new Map(localTasks.map(t => [t.id, t]));
+
+    // Push local tasks not in remote
+    const toInsertRemote: any[] = [];
+    for (const local of localTasks) {
+      if (!remoteById.has(local.id)) {
+        // If not archived locally, or archived but we want to sync deletion state
+        toInsertRemote.push({
+          id: local.id,
+          user_id: this.userId,
+          title: local.title,
+          description: local.description,
+          status: local.status,
+          priority: local.priority,
+          due_date: local.due_date,
+          goal_id: local.goal_id,
+          tags: local.tags,
+          created_at: local.created_at,
+          updated_at: local.updated_at,
+        });
+      } else {
+        // Exists in remote, check timestamp
+        const remote = remoteById.get(local.id);
+        const localUpdated = new Date(local.updated_at).getTime();
+        const remoteUpdated = new Date(remote.updated_at || remote.created_at).getTime();
+
+        if (localUpdated > remoteUpdated) {
+          await this.pushTaskToRemote(local);
+        } else if (remoteUpdated > localUpdated) {
+          await this.updateLocalTask(remote);
+        }
+      }
+    }
+
+    if (toInsertRemote.length > 0) {
+      await this.batchUpsert('tasks', toInsertRemote);
+    }
+
+    // Pull remote tasks not in local
+    const toUpsertLocal: any[] = [];
+    for (const remote of (remoteTasks || []) as any[]) {
+      if (!localById.has(remote.id)) {
+        toUpsertLocal.push(remote);
+      }
+    }
+
+    if (toUpsertLocal.length > 0) {
+      for (const remote of toUpsertLocal) {
+        await this.updateLocalTask(remote);
+      }
+    }
+  }
+
+  private async pushTaskToRemote(task: any) {
+    if (!this.userId) return;
+
+    await this.supabase.from('tasks').upsert({
+      id: task.id,
+      user_id: this.userId,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      due_date: task.due_date,
+      goal_id: task.goal_id,
+      tags: task.tags,
+      created_at: task.created_at,
+      updated_at: task.updated_at,
+    } as any);
+  }
+
+  private async updateLocalTask(remote: any) {
+    await db.tasks.put({
+      id: remote.id,
+      userId: this.userId!,
+      title: remote.title,
+      description: remote.description,
+      status: remote.status,
+      priority: remote.priority,
+      due_date: remote.due_date,
+      goal_id: remote.goal_id,
+      tags: remote.tags || [],
+      metadata: {},
+      created_at: remote.created_at,
+      updated_at: remote.updated_at || remote.created_at,
+    });
+  }
+
+  async pushTask(task: any) {
+    if (!this.userId) return;
+
+    if (!this.isOnline) {
+      this.queueOperation({
+        type: 'update',
+        table: 'tasks' as any,
+        data: {
+          ...task,
+          user_id: this.userId,
+        },
+      });
+      return;
+    }
+
+    await this.pushTaskToRemote(task);
+  }
+
+  async deleteTask(taskId: string) {
+    if (!this.userId) return;
+
+    if (!this.isOnline) {
+      this.queueOperation({
+        type: 'delete',
+        table: 'tasks' as any,
+        data: { id: taskId },
+      });
+      return;
+    }
+
+    await this.supabase.from('tasks').delete().eq('id', taskId);
+  }
+
+  // ===================
   // REALTIME SYNC
   // ===================
 
@@ -1003,6 +1146,11 @@ export class SyncEngine {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'goals', filter: `user_id=eq.${this.userId}` },
         () => this.debouncedSync('goals')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('tasks')
       )
       .on(
         'postgres_changes',
@@ -1032,6 +1180,9 @@ export class SyncEngine {
             break;
           case 'goals':
             await this.syncGoalsWithRetry();
+            break;
+          case 'tasks':
+            await this.syncTasksWithRetry();
             break;
           case 'milestones':
             await this.syncMilestonesWithRetry();
@@ -1074,9 +1225,11 @@ export class SyncEngine {
   }
 
   private async cleanupLocalDuplicates() {
+    if (!this.userId) return;
+
     try {
       // Cleanup duplicate habits (same name + category)
-      const habits = await db.habits.toArray();
+      const habits = await db.habits.where('userId').equals(this.userId).toArray();
       const habitKeys = new Map<string, Habit>();
 
       for (const habit of habits) {
@@ -1111,47 +1264,18 @@ export class SyncEngine {
         }
       }
 
-      // Cleanup duplicate goals (same title)
-      const goals = await db.goals.toArray();
-      const goalKeys = new Map<string, Goal>();
+      // Cleanup duplicate goals
+      await cleanupDuplicateGoals();
 
-      for (const goal of goals) {
-        const key = goal.title.toLowerCase();
-        const existing = goalKeys.get(key);
+      // Cleanup duplicate completions
+      await cleanupDuplicateCompletions();
 
-        if (existing) {
-          const keepGoal = new Date(goal.createdAt) < new Date(existing.createdAt) ? goal : existing;
-          const deleteGoal = keepGoal === goal ? existing : goal;
+      // Cleanup duplicate tasks (same title + created within 1s? or just let ID handle it?)
+      // For tasks, duplicates usually come from ID collisions or double creates.
+      // We'll rely on ID uniqueness for now, but maybe same title?
 
-          this.log('info', `Cleaning up duplicate goal: ${deleteGoal.title}`);
-
-          // Migrate milestones
-          const milestones = await db.milestones.where('goalId').equals(deleteGoal.id).toArray();
-          for (const m of milestones) {
-            await db.milestones.update(m.id, { goalId: keepGoal.id });
-          }
-
-          await db.goals.delete(deleteGoal.id);
-          goalKeys.set(key, keepGoal);
-        } else {
-          goalKeys.set(key, goal);
-        }
-      }
-
-      // Cleanup duplicate completions (same habitId + date)
-      const completions = await db.completions.toArray();
-      const completionKeys = new Map<string, HabitCompletion>();
-
-      for (const completion of completions) {
-        const key = `${completion.habitId}-${completion.date}`;
-        if (completionKeys.has(key)) {
-          await db.completions.delete(completion.id);
-        } else {
-          completionKeys.set(key, completion);
-        }
-      }
     } catch (error) {
-      this.log('error', 'Failed to cleanup duplicates', error);
+      this.log('error', 'Cleanup failed', error);
     }
   }
 
