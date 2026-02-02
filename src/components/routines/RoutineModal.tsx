@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,9 +18,10 @@ import {
 import { useRoutineStore } from "@/lib/stores/routine-store"
 import { useHabitStore } from "@/lib/stores/habit-store"
 import { Routine } from "@/lib/types"
-import { Loader2, MapPin } from "lucide-react"
+import { Loader2, MapPin, Clock, Play, CheckCircle2, X } from "lucide-react"
 import { toast } from "sonner"
 import { getCurrentPosition } from "@/lib/location"
+import { cn } from "@/lib/utils"
 
 interface RoutineModalProps {
     isOpen: boolean
@@ -31,6 +33,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
     const { addRoutine, updateRoutine, getRoutineHabits, linkHabit, unlinkHabit } = useRoutineStore()
     const { habits, loadHabits } = useHabitStore()
     const [loading, setLoading] = useState(false)
+    const [loadingHabits, setLoadingHabits] = useState(false)
     const [formData, setFormData] = useState<Partial<Routine>>({
         title: '',
         description: '',
@@ -41,8 +44,13 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
     const [selectedHabitIds, setSelectedHabitIds] = useState<Set<string>>(new Set());
 
     useEffect(() => {
-        loadHabits();
-    }, []); // Only load on mount
+        if (isOpen) {
+            loadHabits().catch(err => {
+                console.error('Failed to load habits:', err);
+                toast.error('Failed to load habits');
+            });
+        }
+    }, [isOpen, loadHabits]);
 
     useEffect(() => {
         if (routine && isOpen) {
@@ -53,8 +61,14 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                 triggerValue: routine.triggerValue || '',
             })
             // Pre-select habits that belong to this routine using junction table
+            setLoadingHabits(true)
             getRoutineHabits(routine.id).then(routineHabits => {
                 setSelectedHabitIds(new Set(routineHabits.map(h => h.id)));
+                setLoadingHabits(false)
+            }).catch(err => {
+                console.error('Failed to load routine habits:', err);
+                toast.error('Failed to load routine habits');
+                setLoadingHabits(false)
             });
         } else if (!routine && isOpen) {
             setFormData({
@@ -65,21 +79,14 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
             })
             setSelectedHabitIds(new Set());
         }
-    }, [routine?.id, isOpen]); // Stabilize dependencies
-
-    const handleHabitToggle = (habitId: string) => {
-        const newSet = new Set(Array.from(selectedHabitIds));
-        if (newSet.has(habitId)) {
-            newSet.delete(habitId);
-        } else {
-            newSet.add(habitId);
-        }
-        setSelectedHabitIds(newSet);
-    };
+    }, [routine, isOpen, getRoutineHabits]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!formData.title) return
+        if (!formData.title) {
+            toast.error('Please enter a routine title');
+            return;
+        }
 
         setLoading(true)
         try {
@@ -97,29 +104,39 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
 
             // Update habit-routine links using junction table
             if (routineId) {
-                // Get current links
-                const currentHabits = await getRoutineHabits(routineId);
-                const currentHabitIds = new Set(currentHabits.map(h => h.id));
-                const selectedSet = selectedHabitIds;
+                try {
+                    // Get current links
+                    const currentHabits = await getRoutineHabits(routineId);
+                    const currentHabitIds = new Set(currentHabits.map(h => h.id));
+                    const selectedSet = selectedHabitIds;
 
-                // Link newly selected habits
-                for (const habitId of Array.from(selectedSet)) {
-                    if (!currentHabitIds.has(habitId)) {
-                        await linkHabit(habitId, routineId);
+                    // Link newly selected habits
+                    const linkPromises = [];
+                    for (const habitId of Array.from(selectedSet)) {
+                        if (!currentHabitIds.has(habitId)) {
+                            linkPromises.push(linkHabit(habitId, routineId));
+                        }
                     }
-                }
+                    await Promise.all(linkPromises);
 
-                // Unlink deselected habits
-                for (const habitId of Array.from(currentHabitIds)) {
-                    if (!selectedSet.has(habitId)) {
-                        await unlinkHabit(habitId, routineId);
+                    // Unlink deselected habits
+                    const unlinkPromises = [];
+                    for (const habitId of Array.from(currentHabitIds)) {
+                        if (!selectedSet.has(habitId)) {
+                            unlinkPromises.push(unlinkHabit(habitId, routineId));
+                        }
                     }
+                    await Promise.all(unlinkPromises);
+
+                } catch (linkError) {
+                    console.error('Error linking habits:', linkError);
+                    toast.error('Routine saved but failed to link some habits');
                 }
             }
 
             onClose()
         } catch (error) {
-            toast.error("Failed to save routine")
+            toast.error("Failed to save routine: " + (error instanceof Error ? error.message : 'Unknown error'))
             console.error(error)
         } finally {
             setLoading(false)
@@ -131,167 +148,246 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent showCloseButton={true} className="sm:max-w-[500px] flex flex-col h-[85vh] p-0 overflow-hidden bg-background/80 backdrop-blur-xl border-border/40 shadow-2xl ring-1 ring-white/10">
-                <DialogHeader className="p-6 pb-2 shrink-0 border-b border-border/10 bg-muted/5">
-                    <DialogTitle className="text-2xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">
-                        {routine ? "Edit Routine" : "Create New Routine"}
-                    </DialogTitle>
-                    <DialogDescription className="text-sm text-muted-foreground">
-                        {routine ? "Modify your routine settings and habits." : "Set up a new sequence of habits to follow."}
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="flex-1 overflow-y-auto p-6 pt-2">
-                    <form id="routine-form" onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-3">
-                            <Label htmlFor="title" className="text-base">Title</Label>
-                            <Input
-                                id="title"
-                                placeholder="e.g. Morning Focus"
-                                value={formData.title}
-                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                required
-                                className="h-12 text-lg"
-                            />
-                        </div>
+            <DialogContent showCloseButton={false} className="sm:max-w-[600px] flex flex-col h-[85vh] md:h-auto md:max-h-[85vh] p-0 overflow-hidden bg-background/60 backdrop-blur-2xl border-white/10 dark:border-white/5 shadow-2xl ring-1 ring-white/20 dark:ring-white/10 !rounded-3xl">
 
-                        <div className="space-y-3">
-                            <Label htmlFor="description">Description (Optional)</Label>
-                            <Textarea
-                                id="description"
-                                placeholder="What is this routine for?"
-                                value={formData.description}
-                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                className="resize-none h-24"
-                            />
-                        </div>
+                {/* Header with Gradient */}
+                <div className="relative p-8 pb-6 shrink-0 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
+                    <div className="absolute top-4 right-4">
+                        <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-white/10 hover:text-foreground">
+                            <X className="w-5 h-5 text-muted-foreground" />
+                        </Button>
+                    </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                    <DialogHeader className="space-y-2">
+                        <DialogTitle className="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500">
+                            {routine ? "Edit Routine" : "Design New Routine"}
+                        </DialogTitle>
+                        <DialogDescription className="text-base text-muted-foreground font-medium">
+                            {routine ? "Fine-tune your habit sequence." : "Chain habits together to build powerful momentum."}
+                        </DialogDescription>
+                    </DialogHeader>
+                </div>
+
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar">
+                    <form id="routine-form" onSubmit={handleSubmit} className="space-y-8">
+
+                        {/* Basic Info Section */}
+                        <div className="space-y-5">
                             <div className="space-y-2">
-                                <Label htmlFor="triggerType">Trigger Type</Label>
+                                <Label htmlFor="title" className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Name</Label>
+                                <Input
+                                    id="title"
+                                    placeholder="e.g. Morning Focus Protocol"
+                                    value={formData.title}
+                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                    required
+                                    className="h-14 text-lg bg-white/5 border-white/10 focus:border-indigo-500/50 focus:ring-indigo-500/20 rounded-xl transition-all"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="description" className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Purpose</Label>
+                                <Textarea
+                                    id="description"
+                                    placeholder="What is the goal of this routine?"
+                                    value={formData.description}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    className="resize-none h-24 bg-white/5 border-white/10 focus:border-indigo-500/50 focus:ring-indigo-500/20 rounded-xl transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Trigger Section */}
+                        <div className="space-y-2">
+                            <Label className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Activation Trigger</Label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <Select
                                     value={formData.triggerType}
                                     onValueChange={(val: any) => setFormData({ ...formData, triggerType: val })}
                                 >
-                                    <SelectTrigger className="h-10">
+                                    <SelectTrigger className="h-12 bg-white/5 border-white/10 rounded-xl">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="manual">Manual Start</SelectItem>
-                                        <SelectItem value="time">Time of Day</SelectItem>
-                                        <SelectItem value="location">Location</SelectItem>
+                                        <SelectItem value="manual">
+                                            <div className="flex items-center gap-2">
+                                                <Play className="w-4 h-4 text-orange-500" />
+                                                <span>Manual Start</span>
+                                            </div>
+                                        </SelectItem>
+                                        <SelectItem value="time">
+                                            <div className="flex items-center gap-2">
+                                                <Clock className="w-4 h-4 text-blue-500" />
+                                                <span>Time of Day</span>
+                                            </div>
+                                        </SelectItem>
+                                        <SelectItem value="location">
+                                            <div className="flex items-center gap-2">
+                                                <MapPin className="w-4 h-4 text-purple-500" />
+                                                <span>Location</span>
+                                            </div>
+                                        </SelectItem>
                                     </SelectContent>
                                 </Select>
+
+                                {formData.triggerType === 'time' && (
+                                    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
+                                        <Input
+                                            type="time"
+                                            value={formData.triggerValue}
+                                            onChange={(e) => setFormData({ ...formData, triggerValue: e.target.value })}
+                                            required
+                                            className="h-12 bg-white/5 border-white/10 rounded-xl"
+                                        />
+                                    </motion.div>
+                                )}
                             </div>
 
-                            {formData.triggerType === 'time' && (
-                                <div className="space-y-2">
-                                    <Label htmlFor="triggerValue">At Time</Label>
+                            {formData.triggerType === 'location' && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    className="mt-2 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl space-y-3"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-purple-300">Target Coordinates</Label>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={async () => {
+                                                try {
+                                                    const pos = await getCurrentPosition();
+                                                    setFormData({
+                                                        ...formData,
+                                                        triggerValue: `${pos.latitude.toFixed(6)}, ${pos.longitude.toFixed(6)}`
+                                                    });
+                                                    toast.success("Location captured");
+                                                } catch (e) {
+                                                    toast.error("Could not get location");
+                                                }
+                                            }}
+                                            className="h-8 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-300"
+                                        >
+                                            <MapPin className="w-3 h-3 mr-1.5" />
+                                            Use Current Location
+                                        </Button>
+                                    </div>
                                     <Input
-                                        id="triggerValue"
-                                        type="time"
-                                        value={formData.triggerValue}
-                                        onChange={(e) => setFormData({ ...formData, triggerValue: e.target.value })}
-                                        required
-                                        className="h-10"
-                                    />
-                                </div>
-                            )}
-                        </div>
-
-                        {formData.triggerType === 'location' && (
-                            <div className="space-y-2 bg-muted/30 p-3 rounded-lg border border-border/50">
-                                <Label htmlFor="triggerValue">Location Coordinates</Label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        id="triggerValue"
                                         placeholder="lat, lng"
                                         value={formData.triggerValue}
                                         onChange={(e) => setFormData({ ...formData, triggerValue: e.target.value })}
                                         required
+                                        className="h-10 bg-black/20 border-purple-500/30 text-purple-100 placeholder:text-purple-300/30"
                                     />
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="icon"
-                                        onClick={async () => {
-                                            try {
-                                                const pos = await getCurrentPosition();
-                                                setFormData({
-                                                    ...formData,
-                                                    triggerValue: `${pos.latitude.toFixed(6)}, ${pos.longitude.toFixed(6)}`
-                                                });
-                                                toast.success("Location captured");
-                                            } catch (e) {
-                                                toast.error("Could not get location");
-                                            }
-                                        }}
-                                        title="Use Current Location"
-                                    >
-                                        <MapPin className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                    Click map pin to use current location.
-                                </p>
-                            </div>
-                        )}
+                                </motion.div>
+                            )}
+                        </div>
 
-                        <div className="space-y-3 pt-2">
-                            <Label className="text-base">Included Habits</Label>
-                            <div className="border rounded-xl p-1 bg-muted/20 space-y-1 max-h-60 overflow-y-auto">
-                                {activeHabits.length === 0 ? (
-                                    <div className="p-8 text-center text-muted-foreground">
-                                        <p>No active habits found.</p>
-                                        <p className="text-xs mt-1">Create a habit first to add it here.</p>
+                        {/* Habits Selection */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between px-1">
+                                <Label className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Habit Stack</Label>
+                                <span className="text-xs text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded-full">
+                                    {selectedHabitIds.size} selected
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                {loadingHabits ? (
+                                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-muted-foreground">
+                                        <Loader2 className="w-8 h-8 animate-spin mb-3 opacity-50" />
+                                        <p className="text-sm font-medium">Loading habits...</p>
+                                    </div>
+                                ) : activeHabits.length === 0 ? (
+                                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-muted-foreground bg-muted/5 rounded-xl border border-dashed border-border/50">
+                                        <p className="text-sm font-medium">No active habits found</p>
+                                        <p className="text-xs mt-1 opacity-70">Create some habits first to build a routine</p>
                                     </div>
                                 ) : (
-                                    activeHabits.map((habit) => (
-                                        <div
-                                            key={habit.id}
-                                            className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                                        >
-                                            <Checkbox
-                                                id={`habit-${habit.id}`}
-                                                checked={selectedHabitIds.has(habit.id)}
-                                                onCheckedChange={(checked) => {
+                                    activeHabits.map((habit) => {
+                                        const isSelected = selectedHabitIds.has(habit.id);
+                                        return (
+                                            <motion.div
+                                                key={habit.id}
+                                                whileHover={{ scale: 1.02, backgroundColor: "rgba(255,255,255,0.08)" }}
+                                                whileTap={{ scale: 0.98 }}
+                                                onClick={() => {
                                                     const newSet = new Set(Array.from(selectedHabitIds));
-                                                    if (checked) {
-                                                        newSet.add(habit.id);
-                                                    } else {
-                                                        newSet.delete(habit.id);
-                                                    }
+                                                    if (isSelected) newSet.delete(habit.id);
+                                                    else newSet.add(habit.id);
                                                     setSelectedHabitIds(newSet);
                                                 }}
-                                            />
-                                            <label
-                                                htmlFor={`habit-${habit.id}`}
-                                                className="text-sm font-medium leading-none cursor-pointer flex-1 flex items-center gap-2"
+                                                className={cn(
+                                                    "cursor-pointer relative flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 group",
+                                                    isSelected
+                                                        ? "bg-indigo-500/10 border-indigo-500/50 shadow-[0_0_15px_-5px_hsl(var(--primary)/0.3)]"
+                                                        : "bg-white/5 border-white/5 hover:border-white/20"
+                                                )}
                                             >
-                                                <span className="text-xl bg-background rounded-md w-8 h-8 flex items-center justify-center border shadow-sm">
+                                                <div className={cn(
+                                                    "w-10 h-10 rounded-lg flex items-center justify-center text-xl shadow-inner transition-colors",
+                                                    isSelected ? "bg-indigo-500/20" : "bg-black/20 group-hover:bg-black/30"
+                                                )}>
                                                     {habit.icon || '📝'}
-                                                </span>
-                                                {habit.name}
-                                            </label>
-                                        </div>
-                                    ))
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={cn(
+                                                        "font-medium truncate transition-colors",
+                                                        isSelected ? "text-indigo-700 dark:text-indigo-200" : "text-foreground group-hover:text-foreground/90"
+                                                    )}>
+                                                        {habit.name}
+                                                    </p>
+                                                </div>
+                                                <div className={cn(
+                                                    "w-5 h-5 rounded-full border flex items-center justify-center transition-all",
+                                                    isSelected
+                                                        ? "bg-indigo-500 border-indigo-500 scale-100"
+                                                        : "border-white/20 scale-90 opacity-50 group-hover:opacity-100"
+                                                )}>
+                                                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })
                                 )}
                             </div>
-                            <p className="text-xs text-muted-foreground px-1">
-                                These habits will be played in sequence.
-                            </p>
                         </div>
                     </form>
                 </div>
-                <div className="p-6 border-t border-border/10 bg-muted/30 flex justify-end gap-3 shrink-0 backdrop-blur-sm">
-                    <Button type="button" variant="ghost" onClick={onClose} className="h-11 px-6 hover:bg-background/80 transition-all">
+
+                {/* Footer */}
+                <div className="p-6 border-t border-white/5 bg-background/40 backdrop-blur-md flex justify-end gap-3 shrink-0">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={onClose}
+                        className="h-12 px-6 rounded-xl hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
+                    >
                         Cancel
                     </Button>
-                    <Button type="submit" form="routine-form" disabled={loading || !formData.title} className="h-11 px-8 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/25 border-none transform transition-all active:scale-95">
-                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {routine ? "Update Routine" : "Launch Routine"}
+                    <Button
+                        type="submit"
+                        form="routine-form"
+                        disabled={loading || !formData.title}
+                        className={cn(
+                            "h-12 px-8 rounded-xl font-semibold shadow-lg transition-all duration-300",
+                            "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:via-purple-500 hover:to-pink-500",
+                            "text-white border-0 shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-[0.98]",
+                            "disabled:opacity-50 disabled:pointer-events-none"
+                        )}
+                    >
+                        {loading ? (
+                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                        ) : routine ? (
+                            "Save Changes"
+                        ) : (
+                            "Create Routine"
+                        )}
                     </Button>
                 </div>
             </DialogContent>
-        </Dialog >
+        </Dialog>
     )
 }
