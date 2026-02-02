@@ -249,17 +249,23 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                         <div
                                             key={habit.id}
                                             className="flex items-center space-x-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                                            onClick={() => handleHabitToggle(habit.id)}
                                         >
                                             <Checkbox
                                                 id={`habit-${habit.id}`}
                                                 checked={selectedHabitIds.has(habit.id)}
-                                                onCheckedChange={() => handleHabitToggle(habit.id)}
+                                                onCheckedChange={(checked) => {
+                                                    const newSet = new Set(Array.from(selectedHabitIds));
+                                                    if (checked) {
+                                                        newSet.add(habit.id);
+                                                    } else {
+                                                        newSet.delete(habit.id);
+                                                    }
+                                                    setSelectedHabitIds(newSet);
+                                                }}
                                             />
                                             <label
                                                 htmlFor={`habit-${habit.id}`}
                                                 className="text-sm font-medium leading-none cursor-pointer flex-1 flex items-center gap-2"
-                                                onClick={(e) => e.stopPropagation()}
                                             >
                                                 <span className="text-xl bg-background rounded-md w-8 h-8 flex items-center justify-center border shadow-sm">
                                                     {habit.icon || '📝'}
