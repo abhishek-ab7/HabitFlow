@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import {
   Moon,
   Sun,
@@ -9,13 +8,11 @@ import {
   Download,
   Upload,
   Trash2,
-  Cloud,
   RefreshCw,
   Database,
-  Calendar,
-  LogOut,
   Palette,
   ShieldAlert,
+  CloudCog,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -28,17 +25,17 @@ import { db, getSettings, updateSettings } from '@/lib/db';
 import { cleanupAllDuplicates, countAllDuplicates } from '@/lib/cleanup';
 import { forcePushAllHabits, forcePullAllHabits } from '@/lib/force-sync';
 import { cn } from '@/lib/utils';
-import type { UserSettings, Category } from '@/lib/types';
+import type { UserSettings } from '@/lib/types';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
-import { ProfileStatsCard } from '@/components/settings/ProfileStatsCard';
+import { SettingsHero } from '@/components/settings/SettingsHero';
 import { AvatarSelector } from '@/components/settings/AvatarSelector';
 import { Avatar } from '@/lib/avatars';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
-  const { isAuthenticated, user, signOut } = useAuth(); // Added signOut if available, or I might need to implement/check
-  const { isSyncing, triggerSync, syncStatus } = useSync();
+  const { isAuthenticated, user } = useAuth();
+  const { isSyncing } = useSync();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showClearDataDialog, setShowClearDataDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -69,6 +66,7 @@ export default function SettingsPage() {
           showMotivationalQuotes: true,
           defaultCategory: 'health',
           createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           xp: 0,
           level: 1,
           gems: 0,
@@ -255,39 +253,51 @@ export default function SettingsPage() {
   const hasDuplicates = duplicateCounts && (duplicateCounts.habits > 0 || duplicateCounts.goals > 0 || duplicateCounts.completions > 0);
 
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto space-y-8">
-      <FadeIn>
-        <BentoGrid>
-          {/* 1. Profile Hero Section */}
-          <ProfileStatsCard
-            userName={settings.userName || ''}
-            avatarId={settings.avatarId}
-            level={settings.level}
-            xp={settings.xp}
-            streakShield={settings.streakShield}
-            onUpdateName={handleUpdateName}
-            onAvatarClick={() => setShowAvatarSelector(true)}
-          />
+    <div className="container relative min-h-screen px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto space-y-8">
+      {/* Visual Ambience */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+        <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
+      </div>
 
-          {/* 2. Theme Selector */}
+      <FadeIn>
+        {/* ROW 1: HERO (Span 3) */}
+        <SettingsHero
+          userName={settings.userName || ''}
+          avatarId={settings.avatarId || 'avatar-1'}
+          level={settings.level}
+          xp={settings.xp}
+          streakShield={settings.streakShield}
+          onUpdateName={handleUpdateName}
+          onAvatarClick={() => setShowAvatarSelector(true)}
+          className="mb-8"
+        />
+
+        <BentoGrid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-auto">
+
+          {/* ROW 2: APPEARANCE (Span 1) & SYNC (Span 2) */}
           <BentoGridItem
             title="Appearance"
             icon={<Palette className="h-5 w-5 text-purple-500" />}
-            className="bg-gradient-to-br from-violet-50 to-indigo-50 dark:from-violet-900/20 dark:to-indigo-900/20"
+            span={1}
+            className="md:col-span-1"
           >
-            <div className="flex gap-2 mt-2">
+            <div className="grid grid-cols-3 gap-2 mt-4">
               {[
-                { value: 'light', icon: Sun },
-                { value: 'dark', icon: Moon },
-                { value: 'system', icon: Monitor },
+                { value: 'light', icon: Sun, label: 'Light' },
+                { value: 'dark', icon: Moon, label: 'Dark' },
+                { value: 'system', icon: Monitor, label: 'Auto' },
               ].map((opt) => (
                 <button
                   key={opt.value}
-                  onClick={() => setTheme(opt.value as any)}
+                  onClick={() => setTheme(opt.value as 'light' | 'dark' | 'system')}
                   className={cn(
-                    "flex-1 p-3 rounded-xl flex items-center justify-center transition-all bg-white/50 dark:bg-black/20 hover:scale-105",
-                    theme === opt.value ? "ring-2 ring-primary shadow-lg bg-primary/10 text-primary" : "text-muted-foreground hover:bg-white/80 dark:hover:bg-black/40"
+                    "p-3 rounded-xl flex items-center justify-center transition-all border",
+                    theme === opt.value
+                      ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/25"
+                      : "bg-background/50 hover:bg-background border-border text-muted-foreground hover:text-foreground"
                   )}
+                  title={opt.label}
                 >
                   <opt.icon className="w-5 h-5" />
                 </button>
@@ -295,121 +305,140 @@ export default function SettingsPage() {
             </div>
           </BentoGridItem>
 
-          {/* 3. Sync Status Panel */}
           {isAuthenticated && (
             <BentoGridItem
               span={2}
-              title=""
-              icon={<></>}
-              className="p-0 border-none shadow-none bg-transparent hover:bg-transparent"
+              title={
+                <div className="flex items-center gap-2">
+                  <span>Cloud Sync</span>
+                  {isSyncing && <span className="text-xs text-muted-foreground animate-pulse">(Syncing...)</span>}
+                </div>
+              }
+              icon={<CloudCog className="h-5 w-5 text-blue-500" />}
+              className="md:col-span-2 lg:col-span-2"
             >
-              <SyncStatusPanel />
+              <div className="mt-2">
+                <SyncStatusPanel />
+              </div>
             </BentoGridItem>
           )}
 
-          {/* 3.5 Force Sync Debug Panel (DEV ONLY) */}
+          {/* ROW 3: DATA VAULT (1), DEBUG (1), DANGER (1) */}
+          <BentoGridItem
+            title="Data Vault"
+            icon={<Database className="h-5 w-5 text-emerald-500" />}
+            span={1}
+            description="Manage local backups"
+            className="md:col-span-1"
+          >
+            <div className="flex flex-col gap-3 mt-4">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportData}
+                  disabled={isExporting}
+                  className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/50"
+                  title="Backup to JSON"
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0" />
+                  <span>Backup</span>
+                </Button>
+
+                <div className="relative w-full">
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportData}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-600 hover:border-blue-500/50"
+                    title="Restore from JSON"
+                  >
+                    <Upload className="h-3.5 w-3.5 shrink-0" />
+                    <span>Restore</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Duplicate Maintenance */}
+              {hasDuplicates && (
+                <div className="mt-2 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-600">
+                    <ShieldAlert className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{duplicateCounts.habits + duplicateCounts.goals} duplicates</span>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={handleCleanupDuplicates} disabled={isCleaning} className="h-7 text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 w-full">
+                    Fix Now
+                  </Button>
+                </div>
+              )}
+            </div>
+          </BentoGridItem>
+
           {isAuthenticated && (
             <BentoGridItem
-              span={2}
-              title="🔧 Force Sync (Debug)"
-              icon={<Database className="h-5 w-5 text-red-500" />}
-              className="bg-red-50/30 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30"
+              title="Debug Tools"
+              icon={<RefreshCw className="h-5 w-5 text-orange-500" />}
+              span={1}
+              description="Force sync actions"
+              className="md:col-span-1"
             >
-              <div className="space-y-2 mt-2">
-                <p className="text-xs text-muted-foreground">
-                  Use these tools to manually sync data when auto-sync fails.
-                </p>
+              <div className="flex flex-col gap-3 mt-4">
                 <div className="grid grid-cols-2 gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleForcePush}
                     disabled={isForceSyncing}
-                    className="h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600"
+                    className="w-full justify-center gap-1.5 h-9 px-2 text-xs hover:bg-orange-500/10 hover:text-orange-600"
+                    title="Overwrite Cloud Data"
                   >
-                    <Upload className="h-4 w-4" />
-                    <span className="text-xs">Push Local → Cloud</span>
+                    <Upload className="h-3.5 w-3.5 shrink-0" />
+                    <span>Push</span>
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleForcePull}
                     disabled={isForceSyncing}
-                    className="h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600"
+                    className="w-full justify-center gap-1.5 h-9 px-2 text-xs hover:bg-blue-500/10 hover:text-blue-600"
+                    title="Overwrite Local Data"
                   >
-                    <Download className="h-4 w-4" />
-                    <span className="text-xs">Pull Cloud → Local</span>
+                    <Download className="h-3.5 w-3.5 shrink-0" />
+                    <span>Pull</span>
                   </Button>
                 </div>
-                <p className="text-xs text-red-600 dark:text-red-400 font-medium">
-                  ⚠️ Force Push will overwrite cloud data with local habits.
+                <p className="text-[10px] text-muted-foreground text-center">
+                  ⚠️ Advanced tools - use with caution
                 </p>
               </div>
             </BentoGridItem>
           )}
 
-          {/* 4. Integrations Placeholder */}
-          <BentoGridItem
-            title="Connect"
-            icon={<Calendar className="h-5 w-5 text-orange-500" />}
-            description="Link Google Calendar"
-            onClick={() => toast.info('Integration coming soon')}
-          />
-
-          {/* 5. Data Management (Span 2) */}
-          <BentoGridItem
-            span={2}
-            title="Data Vault"
-            icon={<Database className="h-5 w-5 text-emerald-600" />}
-            className=""
-          >
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <Button variant="outline" onClick={handleExportData} disabled={isExporting} className="h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600">
-                <Download className="h-4 w-4" />
-                <span className="text-xs">Backup JSON</span>
-              </Button>
-
-              <div className="relative">
-                <input type="file" accept=".json" onChange={handleImportData} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                <Button variant="outline" className="w-full h-full h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600">
-                  <Upload className="h-4 w-4" />
-                  <span className="text-xs">Restore JSON</span>
-                </Button>
-              </div>
-            </div>
-
-            {/* Duplicate Warning */}
-            {hasDuplicates && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-between"
-              >
-                <div className="text-xs text-amber-700 dark:text-amber-400 flex flex-col">
-                  <span className="font-bold flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Maintenance Required</span>
-                  <span>{duplicateCounts.habits + duplicateCounts.goals + duplicateCounts.completions} duplicate items found.</span>
-                </div>
-                <Button size="sm" variant="ghost" onClick={handleCleanupDuplicates} disabled={isCleaning} className="text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-100">
-                  {isCleaning ? 'Fixing...' : 'Fix Now'}
-                </Button>
-              </motion.div>
-            )}
-          </BentoGridItem>
-
           {/* 6. Danger Zone */}
           <BentoGridItem
             title="Danger Zone"
             icon={<Trash2 className="h-5 w-5 text-red-500" />}
-            className="bg-red-50/30 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30"
+            span={1}
+            className="border-red-500/20 bg-red-500/5 hover:bg-red-500/10 md:col-span-1"
           >
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setShowClearDataDialog(true)}
-              className="w-full mt-2"
-            >
-              Reset Everything
-            </Button>
+            <div className="mt-4">
+              <p className="text-xs text-muted-foreground mb-4">
+                Permanently delete all local data
+              </p>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setShowClearDataDialog(true)}
+                className="w-full"
+              >
+                Reset All
+              </Button>
+            </div>
           </BentoGridItem>
 
           {/* 7. Sign Out (If auth supported in future properly) */}

@@ -42,13 +42,16 @@ export const BentoGridItem = ({
 }: BentoGridItemProps) => {
     return (
         <motion.div
-            whileHover={{ y: -5 }}
+            whileHover={{ y: -5, scale: 1.01 }}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClick}
             className={cn(
-                'row-span-1 rounded-3xl group/bento hover:shadow-2xl transition duration-200 shadow-input dark:shadow-none p-4 dark:bg-black/40 dark:border-white/10 bg-white border border-transparent justify-between flex flex-col space-y-4 backdrop-blur-xl',
+                'rounded-3xl group/bento hover:shadow-2xl transition duration-200 shadow-input dark:shadow-none p-6 row-span-1',
+                // Premium Glass Styles
+                'bg-white/40 dark:bg-black/20 backdrop-blur-xl border border-white/20 dark:border-white/10',
+                'hover:bg-white/50 dark:hover:bg-black/30',
                 onClick && 'cursor-pointer',
                 span === 2 && 'md:col-span-2',
                 span === 3 && 'md:col-span-3',
@@ -56,17 +59,21 @@ export const BentoGridItem = ({
             )}
         >
             {header}
-            <div className="group-hover/bento:translate-x-2 transition duration-200">
-                <div className="flex items-center gap-2 mb-2">
-                    {icon}
-                    {title && <div className="font-bold text-neutral-600 dark:text-neutral-200">{title}</div>}
-                </div>
+            <div className="group-hover/bento:translate-x-2 transition duration-200 h-full flex flex-col">
+                {(icon || title) && (
+                    <div className="flex items-center gap-3 mb-2">
+                        {icon}
+                        {title && <div className="font-bold text-neutral-800 dark:text-neutral-100 text-lg">{title}</div>}
+                    </div>
+                )}
                 {description && (
-                    <div className="font-normal text-neutral-600 text-xs dark:text-neutral-300">
+                    <div className="font-sans font-normal text-neutral-600 text-sm dark:text-neutral-400 mb-2">
                         {description}
                     </div>
                 )}
-                {children}
+                <div className="flex-1">
+                    {children}
+                </div>
             </div>
         </motion.div>
     );

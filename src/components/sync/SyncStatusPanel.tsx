@@ -4,9 +4,11 @@ import React from 'react';
 import { useSyncStatusStore, SyncEntityStatus } from '@/lib/stores/sync-status-store';
 import { Check, RefreshCw, AlertCircle, Clock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useSync } from '@/providers/sync-provider';
 
 export function SyncStatusPanel() {
     const { isSyncing, lastSyncTime, syncError, entityStatus, pendingChanges } = useSyncStatusStore();
+    const { triggerSync } = useSync();
 
     const getEntityIcon = (status: SyncEntityStatus) => {
         switch (status) {
@@ -35,89 +37,56 @@ export function SyncStatusPanel() {
         return labels[entity] || entity;
     };
 
+    const getStatusColor = () => {
+        if (syncError) return 'bg-red-500 shadow-red-500/50';
+        if (isSyncing) return 'bg-blue-500 shadow-blue-500/50 animate-pulse';
+        if (pendingChanges > 0) return 'bg-amber-500 shadow-amber-500/50';
+        return 'bg-emerald-500 shadow-emerald-500/50';
+    };
+
+    const getStatusText = () => {
+        if (syncError) return 'Sync Error';
+        if (isSyncing) return 'Syncing...';
+        if (pendingChanges > 0) return 'Changes Pending';
+        return 'All Synced';
+    };
+
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Sync Status
-            </h3>
-
-            {/* Overall Status */}
-            <div className="mb-6 p-4 rounded-lg bg-gray-50 dark:bg-gray-900/50">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Overall Status
-                    </span>
-                    <span className={`
-            text-sm font-semibold
-            ${syncError ? 'text-red-600 dark:text-red-400' : ''}
-            ${isSyncing ? 'text-blue-600 dark:text-blue-400' : ''}
-            ${!syncError && !isSyncing ? 'text-green-600 dark:text-green-400' : ''}
-          `}>
-                        {syncError ? 'Error' : isSyncing ? 'Syncing...' : 'Synced'}
-                    </span>
+        <div className="flex items-center justify-between gap-4 h-full w-full px-2">
+            {/* Left: Status Visuals */}
+            <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 shrink-0 rounded-full shadow-[0_0_15px_rgba(0,0,0,0.2)] ${getStatusColor()} transition-all duration-500 flex items-center justify-center ring-2 ring-white/10`}>
+                    {isSyncing ? (
+                        <RefreshCw className="w-5 h-5 text-white animate-spin" />
+                    ) : syncError ? (
+                        <AlertCircle className="w-5 h-5 text-white" />
+                    ) : (
+                        <Check className="w-5 h-5 text-white" />
+                    )}
                 </div>
-
-                {lastSyncTime && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Last synced {formatDistanceToNow(lastSyncTime, { addSuffix: true })}
+                <div className="flex flex-col text-left">
+                    <h3 className="text-sm font-bold dark:text-white text-gray-900 leading-none mb-1">{getStatusText()}</h3>
+                    <p className="text-[10px] text-muted-foreground whitespace-nowrap leading-none">
+                        {lastSyncTime ? formatDistanceToNow(lastSyncTime, { addSuffix: true }) : 'Not synced'}
                     </p>
-                )}
-
-                {pendingChanges > 0 && (
-                    <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                        {pendingChanges} pending change{pendingChanges !== 1 ? 's' : ''}
-                    </p>
-                )}
-
-                {syncError && (
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-2">
-                        {syncError}
-                    </p>
-                )}
+                </div>
             </div>
 
-            {/* Entity Status */}
-            <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-                    Data Entities
-                </h4>
-                {Object.entries(entityStatus).map(([entity, status]) => (
-                    <div
-                        key={entity}
-                        className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900/50"
-                    >
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
-                            {getEntityLabel(entity)}
-                        </span>
-                        <div className="flex items-center gap-2">
-                            {getEntityIcon(status)}
-                            <span className="text-xs text-gray-500 dark:text-gray-400 capitalize">
-                                {status}
-                            </span>
-                        </div>
-                    </div>
-                ))}
-            </div>
+            {/* Error Message (Central/Hidden if small) */}
+            {syncError && (
+                <div className="hidden md:block text-red-500 text-[10px] text-center px-2">
+                    {syncError}
+                </div>
+            )}
 
-            {/* Manual Sync Button */}
+            {/* Right: Action Button */}
             <button
-                onClick={() => {
-                    // Trigger manual sync
-                    if (typeof window !== 'undefined') {
-                        window.location.reload(); // Simple approach - reload to trigger sync
-                    }
-                }}
+                onClick={() => triggerSync()}
                 disabled={isSyncing}
-                className="
-          mt-6 w-full flex items-center justify-center gap-2 px-4 py-2
-          bg-blue-600 hover:bg-blue-700
-          disabled:bg-gray-400 disabled:cursor-not-allowed
-          text-white font-medium rounded-lg
-          transition-colors
-        "
+                className="shrink-0 flex items-center justify-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded-lg shadow-md shadow-primary/20 transition-all text-xs border border-primary/20"
             >
-                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                {isSyncing ? 'Syncing...' : 'Sync Now'}
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Syncing...' : 'Sync'}
             </button>
         </div>
     );
