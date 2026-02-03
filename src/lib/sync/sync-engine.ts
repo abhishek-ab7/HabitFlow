@@ -16,7 +16,7 @@ export type SyncStatus =
 interface PendingOperation {
   id: string;
   type: 'create' | 'update' | 'delete';
-  table: 'habits' | 'completions' | 'goals' | 'milestones';
+  table: 'habits' | 'completions' | 'goals' | 'milestones' | 'tasks' | 'routines' | 'user_settings' | 'habit_routines';
   data: any;
   timestamp: number;
   retryCount: number;
@@ -205,7 +205,8 @@ export class SyncEngine {
         this.syncHabitsWithRetry(),
         this.syncGoalsWithRetry(),
         this.syncTasksWithRetry(),
-        this.syncRoutinesWithRetry(), // NEW: Add routine sync
+        this.syncRoutinesWithRetry(),
+        this.syncUserSettingsWithRetry(), // NEW: Add user settings sync
       ]);
 
       // Check for failures
@@ -220,6 +221,7 @@ export class SyncEngine {
       await Promise.allSettled([
         this.syncCompletionsWithRetry(),
         this.syncMilestonesWithRetry(),
+        this.syncHabitRoutinesWithRetry(), // NEW: Add habit-routines junction sync
       ]);
 
       this.notifyStatus({ type: 'syncing', message: 'Cleaning up...', progress: 80 });
@@ -1253,6 +1255,264 @@ export class SyncEngine {
   }
 
   // ===================
+  // USER SETTINGS SYNC
+  // ===================
+
+  private async syncUserSettingsWithRetry() {
+    return this.withRetry(() => this.syncUserSettings(), 'User settings sync');
+  }
+
+  private async syncUserSettings() {
+    if (!this.userId) return;
+
+    this.log('info', '🔄 Starting user settings sync...');
+
+    // Pull settings from Supabase
+    const { data: remoteSettings, error } = await this.supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', this.userId)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    const localSettings = await db.userSettings.where('userId').equals(this.userId).first();
+
+    this.log('info', `📊 Settings: Local=${!!localSettings}, Remote=${!!remoteSettings}`);
+
+    if (!localSettings && !remoteSettings) {
+      // No settings anywhere - create defaults locally
+      this.log('info', 'Creating default user settings');
+      await db.userSettings.add({
+        id: crypto.randomUUID(),
+        userId: this.userId,
+        theme: 'system',
+        weekStartsOn: 0,
+        showMotivationalQuotes: true,
+        defaultCategory: 'health',
+        createdAt: new Date().toISOString(),
+        xp: 0,
+        level: 1,
+        gems: 0,
+        streakShield: 0,
+        avatarId: 'avatar-1',
+      });
+      return;
+    }
+
+    if (!remoteSettings && localSettings) {
+      // Local only - push to remote
+      await this.pushUserSettingsToRemote(localSettings);
+    } else if (remoteSettings && !localSettings) {
+      // Remote only - pull to local
+      await this.updateLocalUserSettings(remoteSettings);
+    } else if (remoteSettings && localSettings) {
+      // Both exist - use last write wins based on updated_at
+      const localUpdated = new Date(localSettings.createdAt).getTime(); // Settings don't have updatedAt currently
+      const remoteUpdated = new Date((remoteSettings as any).updated_at || (remoteSettings as any).created_at).getTime();
+
+      if (localUpdated > remoteUpdated) {
+        // Local is newer - push to remote
+        await this.pushUserSettingsToRemote(localSettings);
+      } else if (localUpdated < remoteUpdated) {
+        // Remote is newer - update local
+        await this.updateLocalUserSettings(remoteSettings);
+      }
+      // If equal, do nothing (already in sync)
+    }
+  }
+
+  private async pushUserSettingsToRemote(settings: any) {
+    if (!this.userId) return;
+
+    const { error } = await this.supabase.from('user_settings').upsert({
+      user_id: this.userId,
+      user_name: settings.userName || null,
+      week_start_day: settings.weekStartsOn || 0,
+      default_category: settings.defaultCategory || 'health',
+      xp: settings.xp || 0,
+      level: settings.level || 1,
+      gems: settings.gems || 0,
+      streak_shield: settings.streakShield || 0,
+      updated_at: new Date().toISOString(),
+    } as any);
+
+    if (error) throw error;
+    this.log('info', '✅ User settings pushed to remote');
+  }
+
+  private async updateLocalUserSettings(remote: any) {
+    const localSettings = {
+      id: crypto.randomUUID(),
+      userId: this.userId!,
+      theme: 'system' as const,
+      userName: remote.user_name,
+      weekStartsOn: remote.week_start_day || 0,
+      showMotivationalQuotes: true,
+      defaultCategory: remote.default_category || 'health',
+      createdAt: remote.created_at,
+      xp: remote.xp || 0,
+      level: remote.level || 1,
+      gems: remote.gems || 0,
+      streakShield: remote.streak_shield || 0,
+      avatarId: 'avatar-1',
+    };
+
+    // Check if settings exist for this user
+    const existing = await db.userSettings.where('userId').equals(this.userId!).first();
+    
+    if (existing) {
+      await db.userSettings.update(existing.id, localSettings);
+    } else {
+      await db.userSettings.add(localSettings);
+    }
+
+    this.log('info', '✅ User settings pulled from remote');
+  }
+
+  async pushUserSettings(settings: any) {
+    if (!this.userId) return;
+
+    if (!this.isOnline) {
+      this.queueOperation({
+        type: 'update',
+        table: 'user_settings' as any,
+        data: {
+          user_id: this.userId,
+          user_name: settings.userName,
+          week_start_day: settings.weekStartsOn,
+          default_category: settings.defaultCategory,
+          xp: settings.xp,
+          level: settings.level,
+          gems: settings.gems,
+          streak_shield: settings.streakShield,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
+    await this.pushUserSettingsToRemote(settings);
+  }
+
+  // ===================
+  // HABIT-ROUTINES JUNCTION SYNC
+  // ===================
+
+  private async syncHabitRoutinesWithRetry() {
+    return this.withRetry(() => this.syncHabitRoutines(), 'Habit-routines sync');
+  }
+
+  private async syncHabitRoutines() {
+    if (!this.userId) return;
+
+    this.log('info', '🔄 Starting habit-routines junction sync...');
+
+    // Get all habit IDs for this user to filter junction table
+    const userHabits = await db.habits.where('userId').equals(this.userId).toArray();
+    const userHabitIds = userHabits.map(h => h.id);
+
+    if (userHabitIds.length === 0) {
+      this.log('info', 'No habits found, skipping habit-routines sync');
+      return;
+    }
+
+    // Pull junction records from Supabase (filtered by user's habits)
+    const { data: remoteLinks, error } = await this.supabase
+      .from('habit_routines')
+      .select('*')
+      .in('habit_id', userHabitIds);
+
+    if (error) throw error;
+
+    const localLinks = await db.habitRoutines.toArray();
+    
+    // Filter local links to only those belonging to user's habits
+    const userLocalLinks = localLinks.filter(link => userHabitIds.includes(link.habitId));
+
+    this.log('info', `📊 Habit-Routines: Local=${userLocalLinks.length}, Remote=${remoteLinks?.length || 0}`);
+
+    const remoteMap = new Map((remoteLinks || []).map((l: any) => [`${l.habit_id}-${l.routine_id}`, l]));
+    const localMap = new Map(userLocalLinks.map(l => [`${l.habitId}-${l.routineId}`, l]));
+
+    // Push local links not in remote
+    const toInsertRemote: any[] = [];
+    for (const local of userLocalLinks) {
+      const key = `${local.habitId}-${local.routineId}`;
+      if (!remoteMap.has(key)) {
+        toInsertRemote.push({
+          id: local.id,
+          habit_id: local.habitId,
+          routine_id: local.routineId,
+          order_index: local.orderIndex,
+          created_at: local.createdAt,
+        });
+      }
+    }
+
+    if (toInsertRemote.length > 0) {
+      await this.batchUpsert('habit_routines', toInsertRemote);
+      this.log('info', `✅ Pushed ${toInsertRemote.length} habit-routine links to remote`);
+    }
+
+    // Pull remote links not in local
+    const toUpsertLocal: any[] = [];
+    for (const remote of (remoteLinks || []) as any[]) {
+      const key = `${remote.habit_id}-${remote.routine_id}`;
+      if (!localMap.has(key)) {
+        toUpsertLocal.push({
+          id: remote.id,
+          habitId: remote.habit_id,
+          routineId: remote.routine_id,
+          orderIndex: remote.order_index || 0,
+          createdAt: remote.created_at,
+        });
+      }
+    }
+
+    if (toUpsertLocal.length > 0) {
+      await db.habitRoutines.bulkPut(toUpsertLocal);
+      this.log('info', `✅ Pulled ${toUpsertLocal.length} habit-routine links from remote`);
+    }
+  }
+
+  async pushHabitRoutine(link: any) {
+    if (!this.userId) return;
+
+    const data = {
+      id: link.id,
+      habit_id: link.habitId,
+      routine_id: link.routineId,
+      order_index: link.orderIndex,
+      created_at: link.createdAt,
+    };
+
+    if (!this.isOnline) {
+      this.queueOperation({ type: 'update', table: 'habit_routines' as any, data });
+      return;
+    }
+
+    await this.supabase.from('habit_routines').upsert(data as any);
+  }
+
+  async deleteHabitRoutine(linkId: string) {
+    if (!this.userId) return;
+
+    if (!this.isOnline) {
+      this.queueOperation({
+        type: 'delete',
+        table: 'habit_routines' as any,
+        data: { id: linkId },
+      });
+      return;
+    }
+
+    await this.supabase.from('habit_routines').delete().eq('id', linkId);
+  }
+
+  // ===================
   // REALTIME SYNC
   // ===================
 
@@ -1286,6 +1546,21 @@ export class SyncEngine {
         { event: '*', schema: 'public', table: 'milestones', filter: `user_id=eq.${this.userId}` },
         () => this.debouncedSync('milestones')
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'routines', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('routines')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_settings', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('user_settings')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'habit_routines' },
+        () => this.debouncedSync('habit_routines')
+      )
       .subscribe((status) => {
         this.log('info', `Realtime subscription status: ${status}`);
       });
@@ -1315,6 +1590,15 @@ export class SyncEngine {
             break;
           case 'milestones':
             await this.syncMilestonesWithRetry();
+            break;
+          case 'routines':
+            await this.syncRoutinesWithRetry();
+            break;
+          case 'user_settings':
+            await this.syncUserSettingsWithRetry();
+            break;
+          case 'habit_routines':
+            await this.syncHabitRoutinesWithRetry();
             break;
         }
 
