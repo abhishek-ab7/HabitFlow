@@ -174,7 +174,8 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     const result = await toggleCompletion(habitId, date, session.user.id);
 
-    if (result) {
+    // If completed is true, add XP
+    if (result.completed) {
       const today = new Date().toISOString().split('T')[0];
       if (date === today) {
         useGamificationStore.getState().addXp(XP_PER_HABIT);
@@ -182,30 +183,22 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
 
     set(state => {
+      // Remove existing for this habit/date
       const filtered = state.completions.filter(
         c => !(c.habitId === habitId && c.date === date)
       );
 
-      if (result) {
-        return { completions: [...filtered, result] };
-      }
-      return { completions: filtered };
+      // Add updated result (whether true or false)
+      // We keep 'false' completions in store so UI knows they exist (and synced)
+      // Filters in UI should check c.completed
+      return { completions: [...filtered, result] };
     });
 
     // Sync to cloud
     try {
       const syncEngine = getSyncEngine();
-      if (result) {
-        await syncEngine.pushCompletion(result);
-      } else {
-        // Deletion - find the completion ID
-        const completion = get().completions.find(
-          c => c.habitId === habitId && c.date === date
-        );
-        if (completion) {
-          await syncEngine.deleteCompletion(completion.id);
-        }
-      }
+      // Always push the update (whether true or false)
+      await syncEngine.pushCompletion(result);
     } catch (error) {
       console.error('Failed to sync completion:', error);
     }

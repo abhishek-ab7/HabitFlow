@@ -54,63 +54,63 @@ db.version(6).stores({
 }).upgrade(async tx => {
   // Backfill updatedAt = createdAt for existing records (Option A)
   const now = new Date().toISOString();
-  
+
   // Completions
   const completions = await tx.table('completions').toArray();
   for (const c of completions) {
     if (!c.updatedAt) {
-      await tx.table('completions').update(c.id, { 
-        updatedAt: c.createdAt || now 
+      await tx.table('completions').update(c.id, {
+        updatedAt: c.createdAt || now
       });
     }
   }
-  
+
   // Milestones
   const milestones = await tx.table('milestones').toArray();
   for (const m of milestones) {
     if (!m.updatedAt) {
-      await tx.table('milestones').update(m.id, { 
-        updatedAt: m.createdAt || now 
+      await tx.table('milestones').update(m.id, {
+        updatedAt: m.createdAt || now
       });
     }
   }
-  
+
   // Goals
   const goals = await tx.table('goals').toArray();
   for (const g of goals) {
     if (!g.updatedAt) {
-      await tx.table('goals').update(g.id, { 
-        updatedAt: g.createdAt || now 
+      await tx.table('goals').update(g.id, {
+        updatedAt: g.createdAt || now
       });
     }
   }
-  
+
   // UserSettings
   const settings = await tx.table('userSettings').toArray();
   for (const s of settings) {
     if (!s.updatedAt) {
-      await tx.table('userSettings').update(s.id, { 
-        updatedAt: s.createdAt || now 
+      await tx.table('userSettings').update(s.id, {
+        updatedAt: s.createdAt || now
       });
     }
   }
-  
+
   // Routines
   const routines = await tx.table('routines').toArray();
   for (const r of routines) {
     if (!r.updatedAt) {
-      await tx.table('routines').update(r.id, { 
-        updatedAt: r.createdAt || now 
+      await tx.table('routines').update(r.id, {
+        updatedAt: r.createdAt || now
       });
     }
   }
-  
+
   // HabitRoutines
   const habitRoutines = await tx.table('habitRoutines').toArray();
   for (const hr of habitRoutines) {
     if (!hr.updatedAt) {
-      await tx.table('habitRoutines').update(hr.id, { 
-        updatedAt: hr.createdAt || now 
+      await tx.table('habitRoutines').update(hr.id, {
+        updatedAt: hr.createdAt || now
       });
     }
   }
@@ -170,7 +170,7 @@ export async function reorderHabits(orderedIds: string[]): Promise<void> {
 // COMPLETION FUNCTIONS
 // ==================
 
-export async function toggleCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion | null> {
+export async function toggleCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion> {
   const existing = await db.completions
     .where('[habitId+date]')
     .equals([habitId, date])
@@ -179,9 +179,16 @@ export async function toggleCompletion(habitId: string, date: string, userId: st
   const now = new Date().toISOString();
 
   if (existing) {
-    await db.completions.delete(existing.id);
-    return null;
+    // Soft delete / Toggle - update status instead of deleting
+    const updated = {
+      ...existing,
+      completed: !existing.completed,
+      updatedAt: now
+    };
+    await db.completions.update(existing.id, updated);
+    return updated;
   } else {
+    // Create new
     const completion: HabitCompletion = {
       id: crypto.randomUUID(),
       userId,
@@ -364,9 +371,9 @@ export async function setFocusGoal(goalId: string): Promise<void> {
   const goal = await db.goals.get(goalId);
   if (goal) {
     // Toggle the focus status
-    await db.goals.update(goalId, { 
+    await db.goals.update(goalId, {
       isFocus: !goal.isFocus,
-      updatedAt: new Date().toISOString() 
+      updatedAt: new Date().toISOString()
     });
   }
 }
@@ -621,16 +628,16 @@ export async function getRoutinesForHabit(habitId: string): Promise<Routine[]> {
 export async function getRoutinesForHabits(habitIds: string[]): Promise<Map<string, Routine[]>> {
   // Load all habit-routine links for these habits in one query
   const links = await db.habitRoutines.where('habitId').anyOf(habitIds).toArray();
-  
+
   // Get unique routine IDs
   const routineIds = [...new Set(links.map(link => link.routineId))];
-  
+
   // Load all routines in one query
   const routines = await db.routines.where('id').anyOf(routineIds).toArray();
-  
+
   // Create a map of routineId -> Routine for fast lookup
   const routineMap = new Map(routines.map(r => [r.id, r]));
-  
+
   // Group routines by habitId
   const result = new Map<string, Routine[]>();
   for (const link of links) {
@@ -640,7 +647,7 @@ export async function getRoutinesForHabits(habitIds: string[]): Promise<Map<stri
       result.set(link.habitId, [...existing, routine]);
     }
   }
-  
+
   return result;
 }
 
@@ -665,9 +672,9 @@ export async function updateHabitRoutineOrder(habitId: string, routineId: string
     .first();
 
   if (link) {
-    await db.habitRoutines.update(link.id, { 
+    await db.habitRoutines.update(link.id, {
       orderIndex: newOrderIndex,
-      updatedAt: new Date().toISOString() 
+      updatedAt: new Date().toISOString()
     });
   }
 }
