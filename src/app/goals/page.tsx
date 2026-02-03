@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Target,
@@ -83,39 +83,43 @@ export default function GoalsPage() {
     loadAllMilestones();
   }, [loadGoals, loadAllMilestones]);
 
-  // Filter and sort goals
-  const filteredGoals = getFilteredGoals().filter(goal => {
-    if (!searchQuery) return true;
-    return (
-      goal.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      goal.description?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  });
+  // Filter, sort and organize goals - memoized to avoid recalculation on every render
+  const displayGoals = useMemo(() => {
+    // Filter by search query
+    const filteredGoals = getFilteredGoals().filter(goal => {
+      if (!searchQuery) return true;
+      return (
+        goal.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        goal.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    });
 
-  const sortedGoals = [...filteredGoals].sort((a, b) => {
-    switch (sortBy) {
-      case 'deadline':
-        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-      case 'priority': {
-        const priorityOrder = { high: 0, medium: 1, low: 2 };
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
+    // Sort goals
+    const sortedGoals = [...filteredGoals].sort((a, b) => {
+      switch (sortBy) {
+        case 'deadline':
+          return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+        case 'priority': {
+          const priorityOrder = { high: 0, medium: 1, low: 2 };
+          return priorityOrder[a.priority] - priorityOrder[b.priority];
+        }
+        case 'progress': {
+          const aStats = getGoalStats(a.id);
+          const bStats = getGoalStats(b.id);
+          return bStats.progress - aStats.progress;
+        }
+        case 'created':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        default:
+          return 0;
       }
-      case 'progress': {
-        const aStats = getGoalStats(a.id);
-        const bStats = getGoalStats(b.id);
-        return bStats.progress - aStats.progress;
-      }
-      case 'created':
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      default:
-        return 0;
-    }
-  });
+    });
 
-  // Put focus goals first
-  const focusGoals = sortedGoals.filter(g => g.isFocus);
-  const otherGoals = sortedGoals.filter(g => !g.isFocus);
-  const displayGoals = [...focusGoals, ...otherGoals];
+    // Put focus goals first
+    const focusGoals = sortedGoals.filter(g => g.isFocus);
+    const otherGoals = sortedGoals.filter(g => !g.isFocus);
+    return [...focusGoals, ...otherGoals];
+  }, [getFilteredGoals, searchQuery, sortBy, getGoalStats]);
 
   const handleCreateGoal = async (data: GoalFormData) => {
     await addGoal(data);

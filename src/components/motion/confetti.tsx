@@ -34,7 +34,7 @@ interface ConfettiProps {
 export function Confetti({
   trigger,
   onComplete,
-  particleCount = 50,
+  particleCount = 25, // Reduced from 50 for better performance
   duration = 2000,
 }: ConfettiProps) {
   const [pieces, setPieces] = useState<ConfettiPiece[]>([]);

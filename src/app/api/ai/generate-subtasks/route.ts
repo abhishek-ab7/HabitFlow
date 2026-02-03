@@ -1,39 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
+import { getAIService } from '@/lib/ai/service';
+import { subtaskGenerationSchema } from '@/lib/ai/schemas';
+import { buildSubtaskPrompt } from '@/lib/ai/prompts';
+import type { SubtaskGenerationInput, SubtaskGenerationOutput } from '@/lib/ai/types';
 
 export async function POST(req: NextRequest) {
-    try {
-        const { title, description } = await req.json();
-
-        if (!process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
-            return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
-        }
-
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-
-        const prompt = `
-      Break down the following task into 3-5 actionable subtasks.
-      Task Title: ${title}
-      Task Description: ${description || ''}
-      
-      Return ONLY a JSON array of strings, e.g., ["Subtask 1", "Subtask 2"].
-      Do not include markdown formatting or backticks.
-    `;
-
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-
-        // Clean up if markdown is returned despite instructions
-        const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        const subtasks = JSON.parse(cleanedText);
-
-        return NextResponse.json({ subtasks });
-    } catch (error: any) {
-        console.error('AI Generation Error:', error);
-        return NextResponse.json({ error: 'Failed to generate subtasks' }, { status: 500 });
+  try {
+    // Check if AI features are enabled
+    if (process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES !== 'true') {
+      return NextResponse.json(
+        { error: 'AI features are currently disabled' },
+        { status: 503 }
+      );
     }
+
+    const { title, description } = await req.json() as SubtaskGenerationInput;
+
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
+    }
+
+    const ai = getAIService();
+    const prompt = buildSubtaskPrompt({ title, description });
+
+    console.log(`[AI Subtasks] Generating for task: "${title}"`);
+
+    // No caching for subtasks - each task is unique
+    const result = await ai.generate<SubtaskGenerationOutput>(
+      'generate-subtasks',
+      prompt,
+      subtaskGenerationSchema
+    );
+
+    return NextResponse.json(result);
+  } catch (error: any) {
+    console.error('AI Generation Error:', error);
+    
+    const isRateLimit = error.message?.includes('429') || 
+                        error.message?.includes('quota') ||
+                        error.message?.includes('rate limit');
+
+    return NextResponse.json(
+      { 
+        error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to generate subtasks',
+        details: error.message 
+      }, 
+      { status: isRateLimit ? 429 : 500 }
+    );
+  }
 }

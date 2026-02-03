@@ -35,7 +35,7 @@ db.version(5).stores({
       orderIndex: 0,
       createdAt: new Date().toISOString(),
     }));
-  
+
   if (habitRoutines.length > 0) {
     await tx.table('habitRoutines').bulkAdd(habitRoutines);
   }
@@ -358,6 +358,7 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: str
       level: 1,
       gems: 0,
       streakShield: 0,
+      avatarId: 'avatar-1',
     };
     await db.userSettings.add(settings);
   }
@@ -487,7 +488,7 @@ export async function linkHabitToRoutine(habitId: string, routineId: string, ord
     .where('[habitId+routineId]')
     .equals([habitId, routineId])
     .first();
-  
+
   if (existing) {
     return existing;
   }
@@ -509,7 +510,7 @@ export async function unlinkHabitFromRoutine(habitId: string, routineId: string)
     .where('[habitId+routineId]')
     .equals([habitId, routineId])
     .first();
-  
+
   if (link) {
     await db.habitRoutines.delete(link.id);
   }
@@ -518,9 +519,36 @@ export async function unlinkHabitFromRoutine(habitId: string, routineId: string)
 export async function getRoutinesForHabit(habitId: string): Promise<Routine[]> {
   const links = await db.habitRoutines.where('habitId').equals(habitId).toArray();
   const routineIds = links.map(link => link.routineId);
-  
+
   const routines = await db.routines.where('id').anyOf(routineIds).toArray();
   return routines;
+}
+
+// Batch version to avoid N+1 queries - loads routines for multiple habits at once
+export async function getRoutinesForHabits(habitIds: string[]): Promise<Map<string, Routine[]>> {
+  // Load all habit-routine links for these habits in one query
+  const links = await db.habitRoutines.where('habitId').anyOf(habitIds).toArray();
+  
+  // Get unique routine IDs
+  const routineIds = [...new Set(links.map(link => link.routineId))];
+  
+  // Load all routines in one query
+  const routines = await db.routines.where('id').anyOf(routineIds).toArray();
+  
+  // Create a map of routineId -> Routine for fast lookup
+  const routineMap = new Map(routines.map(r => [r.id, r]));
+  
+  // Group routines by habitId
+  const result = new Map<string, Routine[]>();
+  for (const link of links) {
+    const routine = routineMap.get(link.routineId);
+    if (routine) {
+      const existing = result.get(link.habitId) || [];
+      result.set(link.habitId, [...existing, routine]);
+    }
+  }
+  
+  return result;
 }
 
 export async function getHabitsForRoutine(routineId: string): Promise<Habit[]> {
@@ -528,10 +556,10 @@ export async function getHabitsForRoutine(routineId: string): Promise<Habit[]> {
     .where('routineId')
     .equals(routineId)
     .sortBy('orderIndex');
-  
+
   const habitIds = links.map(link => link.habitId);
   const habits = await db.habits.where('id').anyOf(habitIds).toArray();
-  
+
   // Sort habits according to the order in the routine
   const habitMap = new Map(habits.map(h => [h.id, h]));
   return links.map(link => habitMap.get(link.habitId)).filter(Boolean) as Habit[];
@@ -542,7 +570,7 @@ export async function updateHabitRoutineOrder(habitId: string, routineId: string
     .where('[habitId+routineId]')
     .equals([habitId, routineId])
     .first();
-  
+
   if (link) {
     await db.habitRoutines.update(link.id, { orderIndex: newOrderIndex });
   }

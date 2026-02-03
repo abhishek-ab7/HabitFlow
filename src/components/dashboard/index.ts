@@ -5,3 +5,5 @@ export { FocusGoal } from './focus-goal';
 export { QuickActions } from './quick-actions';
 export { TodayTasksWidget } from './TodayTasksWidget';
 export { AICoachWidget } from './AICoachWidget';
+export { BurnoutAlert } from './BurnoutAlert';
+export { PersonalizedQuote } from './PersonalizedQuote';

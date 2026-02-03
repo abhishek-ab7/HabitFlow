@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Settings,
   Moon,
   Sun,
   Monitor,
@@ -12,19 +12,15 @@ import {
   Cloud,
   RefreshCw,
   Database,
-  User as UserIcon,
-  Palette,
-  Settings as SettingsIcon,
   Calendar,
+  LogOut,
+  Palette,
+  ShieldAlert,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/motion';
+import { FadeIn } from '@/components/motion';
 import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
@@ -32,28 +28,16 @@ import { db, getSettings, updateSettings } from '@/lib/db';
 import { cleanupAllDuplicates, countAllDuplicates } from '@/lib/cleanup';
 import { cn } from '@/lib/utils';
 import type { UserSettings, Category } from '@/lib/types';
-
-const WEEK_START_OPTIONS = [
-  { value: 0, label: 'Sunday' },
-  { value: 1, label: 'Monday' },
-  { value: 6, label: 'Saturday' },
-];
-
-const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
-  { value: 'health', label: 'Health' },
-  { value: 'work', label: 'Work' },
-  { value: 'learning', label: 'Learning' },
-  { value: 'personal', label: 'Personal' },
-  { value: 'finance', label: 'Finance' },
-  { value: 'relationships', label: 'Relationships' },
-];
+import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
+import { ProfileStatsCard } from '@/components/settings/ProfileStatsCard';
+import { AvatarSelector } from '@/components/settings/AvatarSelector';
+import { Avatar } from '@/lib/avatars';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, signOut } = useAuth(); // Added signOut if available, or I might need to implement/check
   const { isSyncing, triggerSync, syncStatus } = useSync();
   const [settings, setSettings] = useState<UserSettings | null>(null);
-  const [userName, setUserName] = useState('');
   const [showClearDataDialog, setShowClearDataDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
@@ -62,6 +46,8 @@ export default function SettingsPage() {
     goals: number;
     completions: number;
   } | null>(null);
+
+  const [showAvatarSelector, setShowAvatarSelector] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -84,13 +70,13 @@ export default function SettingsPage() {
           level: 1,
           gems: 0,
           streakShield: 0,
+          avatarId: 'avatar-1',
         };
         await db.userSettings.add(defaultSettings);
         s = defaultSettings;
       }
 
       setSettings(s);
-      setUserName(s.userName || '');
 
       // Check for duplicates
       const counts = await countAllDuplicates();
@@ -102,6 +88,23 @@ export default function SettingsPage() {
     }
   }, [user, isAuthenticated]);
 
+  const handleUpdateName = async (name: string) => {
+    if (settings && user?.id) {
+      await updateSettings({ userId: user.id, userName: name });
+      setSettings({ ...settings, userName: name });
+      toast.success('Name updated');
+    }
+  };
+
+  const handleUpdateAvatar = async (avatar: Avatar) => {
+    if (settings && user?.id) {
+      await updateSettings({ userId: user.id, avatarId: avatar.id });
+      setSettings({ ...settings, avatarId: avatar.id });
+      setShowAvatarSelector(false);
+      toast.success('Avatar updated');
+    }
+  };
+
   const handleCleanupDuplicates = async () => {
     setIsCleaning(true);
     try {
@@ -110,44 +113,18 @@ export default function SettingsPage() {
 
       if (total > 0) {
         toast.success(
-          `Cleaned up ${total} duplicate(s): ${removed.habits} habits, ${removed.goals} goals, ${removed.completions} completions`
+          `Cleaned up ${total} duplicate(s)`
         );
       } else {
         toast.success('No duplicates found!');
       }
 
       setDuplicateCounts({ habits: 0, goals: 0, completions: 0 });
-      // Refresh the page to update counts
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
       toast.error('Failed to cleanup duplicates');
     } finally {
       setIsCleaning(false);
-    }
-  };
-
-  const handleSaveUserName = async () => {
-    if (settings && user?.id) {
-      await updateSettings({ userId: user.id, userName: userName.trim() || undefined });
-      setSettings({ ...settings, userName: userName.trim() || undefined });
-      toast.success('Name updated');
-    }
-  };
-
-  const handleWeekStartChange = async (value: number) => {
-    if (settings && user?.id) {
-      const weekStartsOn = value as 0 | 1 | 6;
-      await updateSettings({ userId: user.id, weekStartsOn });
-      setSettings({ ...settings, weekStartsOn });
-      toast.success('Week start day updated');
-    }
-  };
-
-  const handleDefaultCategoryChange = async (category: Category) => {
-    if (settings && user?.id) {
-      await updateSettings({ userId: user.id, defaultCategory: category });
-      setSettings({ ...settings, defaultCategory: category });
-      toast.success('Default category updated');
     }
   };
 
@@ -233,219 +210,163 @@ export default function SettingsPage() {
 
   if (!settings) {
     return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-3xl mx-auto">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-muted rounded w-32" />
-          <div className="h-48 bg-muted rounded-xl" />
-          <div className="h-48 bg-muted rounded-xl" />
+      <div className="container px-4 py-8 max-w-7xl mx-auto flex items-center justify-center min-h-[50vh]">
+        <div className="animate-pulse space-y-4 text-center">
+          <div className="w-16 h-16 rounded-full bg-muted mx-auto" />
+          <div className="h-4 w-32 bg-muted rounded mx-auto" />
+          <span className="text-muted-foreground">Loading Profile...</span>
         </div>
       </div>
     );
   }
 
+  // Calculate stats for duplicate warning
+  const hasDuplicates = duplicateCounts && (duplicateCounts.habits > 0 || duplicateCounts.goals > 0 || duplicateCounts.completions > 0);
+
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-3xl mx-auto">
+    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto space-y-8">
       <FadeIn>
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-            <Settings className="h-8 w-8 text-primary" />
-            Settings
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Customize your Habit Flow experience
-          </p>
-        </div>
+        <BentoGrid>
+          {/* 1. Profile Hero Section */}
+          <ProfileStatsCard
+            userName={settings.userName || ''}
+            avatarId={settings.avatarId}
+            level={settings.level}
+            xp={settings.xp}
+            streakShield={settings.streakShield}
+            onUpdateName={handleUpdateName}
+            onAvatarClick={() => setShowAvatarSelector(true)}
+          />
+
+          {/* 2. Theme Selector */}
+          <BentoGridItem
+            title="Appearance"
+            icon={<Palette className="h-5 w-5 text-purple-500" />}
+            className="bg-gradient-to-br from-violet-50 to-indigo-50 dark:from-violet-900/20 dark:to-indigo-900/20"
+          >
+            <div className="flex gap-2 mt-2">
+              {[
+                { value: 'light', icon: Sun },
+                { value: 'dark', icon: Moon },
+                { value: 'system', icon: Monitor },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setTheme(opt.value as any)}
+                  className={cn(
+                    "flex-1 p-3 rounded-xl flex items-center justify-center transition-all bg-white/50 dark:bg-black/20 hover:scale-105",
+                    theme === opt.value ? "ring-2 ring-primary shadow-lg bg-primary/10 text-primary" : "text-muted-foreground hover:bg-white/80 dark:hover:bg-black/40"
+                  )}
+                >
+                  <opt.icon className="w-5 h-5" />
+                </button>
+              ))}
+            </div>
+          </BentoGridItem>
+
+          {/* 3. Sync Status */}
+          {isAuthenticated && (
+            <BentoGridItem
+              title="Cloud Sync"
+              icon={<Cloud className={cn("h-5 w-5 text-blue-500", isSyncing && "animate-pulse")} />}
+              description={isSyncing ? "Syncing changes..." : `Status: ${syncStatus.message || 'Connected'}`}
+              className={cn(
+                "border-l-4",
+                syncStatus.type === 'error' ? "border-l-red-500 bg-red-50/50 dark:bg-red-900/10" : "border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10"
+              )}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => triggerSync()}
+                disabled={isSyncing}
+                className="w-full mt-2 bg-white/50 dark:bg-black/20 hover:bg-white/80 dark:hover:bg-black/40 text-xs"
+              >
+                <RefreshCw className={cn("h-3 w-3 mr-2", isSyncing && "animate-spin")} />
+                {isSyncing ? 'Syncing...' : 'Sync Now'}
+              </Button>
+            </BentoGridItem>
+          )}
+
+          {/* 4. Integrations Placeholder */}
+          <BentoGridItem
+            title="Connect"
+            icon={<Calendar className="h-5 w-5 text-orange-500" />}
+            description="Link Google Calendar"
+            onClick={() => toast.info('Integration coming soon')}
+          />
+
+          {/* 5. Data Management (Span 2) */}
+          <BentoGridItem
+            span={2}
+            title="Data Vault"
+            icon={<Database className="h-5 w-5 text-emerald-600" />}
+            className=""
+          >
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <Button variant="outline" onClick={handleExportData} disabled={isExporting} className="h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600">
+                <Download className="h-4 w-4" />
+                <span className="text-xs">Backup JSON</span>
+              </Button>
+
+              <div className="relative">
+                <input type="file" accept=".json" onChange={handleImportData} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                <Button variant="outline" className="w-full h-full h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600">
+                  <Upload className="h-4 w-4" />
+                  <span className="text-xs">Restore JSON</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Duplicate Warning */}
+            {hasDuplicates && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 flex items-center justify-between"
+              >
+                <div className="text-xs text-amber-700 dark:text-amber-400 flex flex-col">
+                  <span className="font-bold flex items-center gap-1"><ShieldAlert className="w-3 h-3" /> Maintenance Required</span>
+                  <span>{duplicateCounts.habits + duplicateCounts.goals + duplicateCounts.completions} duplicate items found.</span>
+                </div>
+                <Button size="sm" variant="ghost" onClick={handleCleanupDuplicates} disabled={isCleaning} className="text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-100">
+                  {isCleaning ? 'Fixing...' : 'Fix Now'}
+                </Button>
+              </motion.div>
+            )}
+          </BentoGridItem>
+
+          {/* 6. Danger Zone */}
+          <BentoGridItem
+            title="Danger Zone"
+            icon={<Trash2 className="h-5 w-5 text-red-500" />}
+            className="bg-red-50/30 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30"
+          >
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowClearDataDialog(true)}
+              className="w-full mt-2"
+            >
+              Reset Everything
+            </Button>
+          </BentoGridItem>
+
+          {/* 7. Sign Out (If auth supported in future properly) */}
+          {/* <BentoGridItem 
+             title="Sign Out" 
+             icon={<LogOut className="h-5 w-5 text-neutral-500" />}
+             onClick={() => signOut()}
+           /> */}
+        </BentoGrid>
       </FadeIn>
 
-      <StaggerContainer className="space-y-6">
-        {/* Cloud Sync Status */}
-        {isAuthenticated && (
-          <StaggerItem>
-            <Card className="border-primary/20 bg-primary/5">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Cloud className="h-5 w-5 text-primary" />
-                    <CardTitle className="text-lg">Cloud Sync</CardTitle>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={syncStatus.type === 'success' ? 'default' : syncStatus.type === 'error' ? 'destructive' : 'secondary'}>
-                      {syncStatus.type === 'success' ? 'Synced' : syncStatus.type === 'error' ? 'Error' : syncStatus.type === 'syncing' ? 'Syncing' : 'Ready'}
-                    </Badge>
-                  </div>
-                </div>
-                <CardDescription>Your data is being backed up to the cloud</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="text-sm text-muted-foreground space-y-1">
-                    <p>{isSyncing ? 'Synchronizing your changes...' : `Status: ${syncStatus.message || 'Connected'}`}</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => triggerSync()}
-                    disabled={isSyncing}
-                    className="w-full sm:w-auto bg-background"
-                  >
-                    <RefreshCw className={cn("h-4 w-4 mr-2", isSyncing && "animate-spin")} />
-                    {isSyncing ? 'Syncing...' : 'Sync Now'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </StaggerItem>
-        )}
-
-        {/* Profile Settings */}
-        <StaggerItem>
-          <Card>
-            <CardHeader>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>Personalize your experience</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Your Name</label>
-                <div className="flex gap-2">
-                  <Input
-                    value={userName}
-                    onChange={(e) => setUserName(e.target.value)}
-                    placeholder="Enter your name"
-                    className="max-w-xs"
-                  />
-                  <Button onClick={handleSaveUserName} variant="secondary">
-                    Save
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </StaggerItem>
-
-        {/* Appearance */}
-        <StaggerItem>
-          <Card>
-            <CardHeader>
-              <CardTitle>Appearance</CardTitle>
-              <CardDescription>Choose your preferred theme</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                {[
-                  { value: 'light', label: 'Light', icon: Sun },
-                  { value: 'dark', label: 'Dark', icon: Moon },
-                  { value: 'system', label: 'System', icon: Monitor },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => setTheme(option.value as 'light' | 'dark' | 'system')}
-                    className={cn(
-                      "flex-1 flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
-                      theme === option.value
-                        ? "border-primary bg-primary/5"
-                        : "border-transparent bg-muted/50 hover:bg-muted"
-                    )}
-                  >
-                    <option.icon className={cn(
-                      "h-5 w-5",
-                      theme === option.value ? "text-primary" : "text-muted-foreground"
-                    )} />
-                    <span className="text-sm font-medium">{option.label}</span>
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </StaggerItem>
-
-        {/* Integrations */}
-        <StaggerItem>
-          <Card>
-            <CardHeader>
-              <CardTitle>Integrations</CardTitle>
-              <CardDescription>Connect with other services</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-                    <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <h4 className="font-medium">Google Calendar</h4>
-                    <p className="text-sm text-muted-foreground">Sync habits as events</p>
-                  </div>
-                </div>
-                <Button variant="outline" onClick={() => toast.info('Two-way sync coming soon!')}>
-                  Connect
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </StaggerItem>
-
-        {/* Data Management */}
-        <StaggerItem>
-          <Card>
-            <CardHeader>
-              <CardTitle>Data Management</CardTitle>
-              <CardDescription>Local backup and safety tools</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button variant="outline" onClick={handleExportData} disabled={isExporting} className="gap-2">
-                  <Download className="h-4 w-4" />
-                  Export JSON
-                </Button>
-                <div className="relative">
-                  <input type="file" accept=".json" onChange={handleImportData} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                  <Button variant="outline" className="gap-2 pointer-events-none">
-                    <Upload className="h-4 w-4" />
-                    Import JSON
-                  </Button>
-                </div>
-              </div>
-
-              {/* Cleanup Duplicates */}
-              {duplicateCounts && (duplicateCounts.habits > 0 || duplicateCounts.goals > 0 || duplicateCounts.completions > 0) && (
-                <>
-                  <Separator />
-                  <div className="pt-2">
-                    <h4 className="text-sm font-medium text-warning mb-1">Database Cleanup</h4>
-                    <p className="text-sm text-muted-foreground mb-3">
-                      Found {duplicateCounts.habits + duplicateCounts.goals + duplicateCounts.completions} duplicate(s):
-                      {duplicateCounts.habits > 0 && ` ${duplicateCounts.habits} habit(s)`}
-                      {duplicateCounts.goals > 0 && ` ${duplicateCounts.goals} goal(s)`}
-                      {duplicateCounts.completions > 0 && ` ${duplicateCounts.completions} completion(s)`}.
-                      This may cause issues with your data.
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={handleCleanupDuplicates}
-                      disabled={isCleaning}
-                      className="gap-2 border-warning text-warning hover:bg-warning/10"
-                    >
-                      <Database className="h-4 w-4" />
-                      {isCleaning ? 'Cleaning...' : 'Remove All Duplicates'}
-                    </Button>
-                  </div>
-                </>
-              )}
-
-              <Separator />
-              <div className="pt-2">
-                <h4 className="text-sm font-medium text-destructive mb-1">Danger Zone</h4>
-                <p className="text-sm text-muted-foreground mb-3">Permanently delete all local data.</p>
-                <Button variant="destructive" onClick={() => setShowClearDataDialog(true)} className="gap-2">
-                  <Trash2 className="h-4 w-4" />
-                  Clear All Data
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </StaggerItem>
-      </StaggerContainer>
+      <AvatarSelector
+        open={showAvatarSelector}
+        onOpenChange={setShowAvatarSelector}
+        selectedAvatarId={settings.avatarId}
+        onSelect={handleUpdateAvatar}
+      />
 
       <ConfirmDialog
         open={showClearDataDialog}

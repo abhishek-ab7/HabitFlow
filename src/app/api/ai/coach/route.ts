@@ -1,84 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI } from "@google/genai";
+import { getAIService } from '@/lib/ai/service';
+import { coachBriefingSchema } from '@/lib/ai/schemas';
+import { buildCoachPrompt } from '@/lib/ai/prompts';
+import type { CoachBriefingInput, CoachBriefingOutput } from '@/lib/ai/types';
 
 export async function POST(req: NextRequest) {
-    try {
-        let body;
-        try {
-            body = await req.json();
-        } catch (e) {
-            return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
-        }
-
-        const { userData, context } = body;
-        const apiKey = process.env.GEMINI_API_KEY;
-
-        if (!apiKey) {
-            return NextResponse.json(
-                { error: 'AI Coach is not configured.' },
-                { status: 500 }
-            );
-        }
-
-        const ai = new GoogleGenAI({ apiKey });
-
-        let prompt = `You are an expert Productivity Coach for a user named "${userData?.userName || 'Friend'}". 
-    Your goal is to provide a concise, motivating, and actionable daily briefing.
-    
-    Current Context:
-    - Time: ${new Date().toLocaleTimeString()}
-    - Day: ${new Date().toLocaleDateString()}
-    - Unfinished Tasks: ${context?.unfinishedTasks || 'None'}
-    - Habits: ${context?.todaysHabits || 'None'}
-    - XP Level: ${userData?.level || 1}
-    
-    Instructions:
-    1. Start with a short greeting.
-    2. Give 1 specific recommendation.
-    3. End with a 1-sentence motivational quote.
-    4. MUST respond in valid JSON.
-    
-    Format:
-    {
-      "greeting": "...",
-      "focus": "...",
-      "quote": "..."
-    }`;
-
-        if (context?.mode === 'suggestion') {
-            prompt = `You are an expert Habit Coach. The user wants to improve in the area of "${context.category || 'general productivity'}".
-        Suggest 3 small, atomic habits they could start today. Respond in JSON.`;
-        }
-
-        const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: [{ role: "user", parts: [{ text: prompt }] }]
-        });
-
-        const text = response.text || "";
-        console.log('Gemini 3 Response:', text);
-
-        try {
-            const data = JSON.parse(text);
-            return NextResponse.json(data);
-        } catch (parseError) {
-            console.error('JSON Parse Error:', text);
-            return NextResponse.json({ error: 'AI returned invalid format', details: text }, { status: 500 });
-        }
-
-    } catch (error: any) {
-        console.error('Gemini 3 API Error:', error);
-
-        // Check for rate limit error
-        const isRateLimit = error.message?.includes('429') || (typeof error.details === 'string' && error.details.includes('429'));
-
-        return NextResponse.json(
-            {
-                error: isRateLimit ? 'Daily AI quota exceeded' : 'AI Coach error',
-                details: error.message || 'Unknown error',
-                isRateLimit
-            },
-            { status: isRateLimit ? 429 : 500 }
-        );
+  try {
+    // Check if AI features are enabled
+    if (process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES !== 'true') {
+      return NextResponse.json(
+        { error: 'AI features are currently disabled' },
+        { status: 503 }
+      );
     }
+
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
+    const { userData, context } = body as CoachBriefingInput;
+    
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { error: 'AI Coach is not configured.' },
+        { status: 500 }
+      );
+    }
+
+    const ai = getAIService();
+    const prompt = buildCoachPrompt({ userData, context });
+    
+    // Generate cache key based on user and date
+    const cacheKey = `coach:${userData?.userId || 'anonymous'}:${new Date().toDateString()}:${context?.mode || 'briefing'}`;
+    const cacheTTL = 6 * 60 * 60; // 6 hours
+
+    console.log(`[AI Coach] Generating briefing for user ${userData?.userId}`);
+
+    const result = await ai.generate<CoachBriefingOutput>(
+      'coach',
+      prompt,
+      coachBriefingSchema,
+      cacheKey,
+      cacheTTL
+    );
+
+    return NextResponse.json(result);
+
+  } catch (error: any) {
+    console.error('AI Coach Route Error:', error);
+
+    // Check for rate limit error
+    const isRateLimit = error.message?.includes('429') || 
+                        error.message?.includes('quota') ||
+                        error.message?.includes('rate limit');
+
+    return NextResponse.json(
+      {
+        error: isRateLimit ? 'Daily AI quota exceeded. Try again later.' : 'AI Coach error',
+        details: error.message || 'Unknown error',
+        isRateLimit
+      },
+      { status: isRateLimit ? 429 : 500 }
+    );
+  }
 }

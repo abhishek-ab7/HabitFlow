@@ -2,9 +2,19 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { CheckCircle2, Circle, Calendar, Tag, AlertCircle } from "lucide-react"
+import { CheckCircle2, Circle, Calendar, Tag, AlertCircle, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { isAIEnabled } from "@/lib/ai-features-flag"
 import { format } from "date-fns"
+import { toast } from "sonner"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import type { Task } from "@/lib/types"
 
 interface TaskCardProps {
@@ -15,7 +25,16 @@ interface TaskCardProps {
     compact?: boolean
 }
 
+interface AIPriority {
+  suggestedPriority: string;
+  reasoning: string;
+  urgencyScore: number;
+}
+
 export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
+    const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
+    const [loadingPriority, setLoadingPriority] = useState(false);
+    
     const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done'
 
     const priorityStyles = {
@@ -30,6 +49,43 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
 
     const completedSubtasks = subtasks.filter((s: any) => s.completed).length
     const subtaskProgress = subtasks.length > 0 ? (completedSubtasks / subtasks.length) * 100 : 0
+
+    const getAIPriority = async () => {
+        setLoadingPriority(true);
+        try {
+            const response = await fetch('/api/ai/prioritize-task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    task: {
+                        id: task.id,
+                        title: task.title,
+                        description: task.description || '',
+                        due_date: task.due_date,
+                        priority: task.priority,
+                        tags: task.tags
+                    },
+                    userContext: {
+                        currentTime: new Date().toISOString()
+                    }
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setAIPriority(data);
+                toast.success('AI priority calculated!');
+            } else {
+                const error = await response.json();
+                toast.error(error.error || 'Failed to get AI priority');
+            }
+        } catch (error) {
+            console.error('AI priority error:', error);
+            toast.error('Failed to get AI priority');
+        } finally {
+            setLoadingPriority(false);
+        }
+    };
 
     return (
         <motion.div
@@ -102,15 +158,38 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                             {task.title}
                         </h3>
 
-                        {/* Enhanced Priority Badge */}
-                        {task.priority && (
-                            <span className={cn(
-                                "shrink-0 px-1.5 py-0.5 text-[8px] uppercase tracking-widest rounded-md border font-bold transition-all",
-                                priorityStyles[task.priority as keyof typeof priorityStyles] || priorityStyles.medium
-                            )}>
-                                {task.priority.charAt(0)}
-                            </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Enhanced Priority Badge */}
+                            {task.priority && (
+                                <span className={cn(
+                                    "px-1.5 py-0.5 text-[8px] uppercase tracking-widest rounded-md border font-bold transition-all",
+                                    priorityStyles[task.priority as keyof typeof priorityStyles] || priorityStyles.medium
+                                )}>
+                                    {task.priority.charAt(0)}
+                                </span>
+                            )}
+
+                            {/* AI Priority Badge */}
+                            {aiPriority && !compact && (
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Badge 
+                                                variant="outline" 
+                                                className="flex items-center gap-1 border-purple-500/50 bg-purple-500/10 text-purple-700 dark:text-purple-300 text-[8px] px-1.5 py-0.5"
+                                            >
+                                                <Sparkles className="h-2.5 w-2.5" />
+                                                AI: {aiPriority.suggestedPriority.charAt(0).toUpperCase()}
+                                                <span className="ml-0.5">({aiPriority.urgencyScore})</span>
+                                            </Badge>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-xs">
+                                            <p className="text-sm">{aiPriority.reasoning}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            )}
+                        </div>
                     </div>
 
                     {task.description && !compact && (
@@ -150,6 +229,20 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                     {task.tags.length > 1 && ` +${task.tags.length - 1}`}
                                 </span>
                             </div>
+                        )}
+
+                        {/* AI Priority Button */}
+                        {isAIEnabled() && !aiPriority && !compact && task.status !== 'done' && (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={getAIPriority}
+                                disabled={loadingPriority}
+                                className="h-6 px-2 text-[10px] gap-1 text-purple-600 hover:text-purple-700 hover:bg-purple-100 dark:hover:bg-purple-900/30"
+                            >
+                                <Sparkles className="h-3 w-3" />
+                                {loadingPriority ? 'Analyzing...' : 'AI Priority'}
+                            </Button>
                         )}
                     </div>
 

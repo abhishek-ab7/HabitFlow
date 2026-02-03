@@ -4,4 +4,4 @@ export { CategoryBreakdownChart } from './category-breakdown';
 export { WeekdayChart } from './weekday-chart';
 export { HeatmapCalendar } from './heatmap-calendar';
 export { InsightsCards } from './insights-cards';
-export { CorrelationChart } from './correlation-chart';
+

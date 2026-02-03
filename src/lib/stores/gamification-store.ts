@@ -16,9 +16,25 @@ interface GamificationState {
     isLoading: boolean;
     showLevelUp: boolean;
 
+    // State for UI
+    rulesModalOpen: boolean;
+    activeRulesTab: 'xp' | 'gems' | 'levels';
+
+    // Motivation Features
+    stats: {
+        discipline: number;
+        focus: number;
+        resilience: number;
+    };
+    motivationText: string;
+
     // Actions
     loadGamification: () => Promise<void>;
     closeLevelUp: () => void;
+    openRules: (tab?: 'xp' | 'gems' | 'levels') => void;
+    closeRules: () => void;
+    setActiveRulesTab: (tab: 'xp' | 'gems' | 'levels') => void;
+    updateMotivation: (text: string) => Promise<void>;
     addXp: (amount: number) => Promise<{ leveledUp: boolean; newLevel: number }>;
     spendGems: (amount: number) => Promise<boolean>;
     buyShield: () => Promise<boolean>;
@@ -32,6 +48,16 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
     streakShield: 0,
     isLoading: false,
     showLevelUp: false,
+    rulesModalOpen: false,
+    activeRulesTab: 'xp',
+
+    // Default Stats (Mock Data for now, could be calculated later)
+    stats: {
+        discipline: 65,
+        focus: 42,
+        resilience: 80
+    },
+    motivationText: '',
 
     loadGamification: async () => {
         set({ isLoading: true });
@@ -47,6 +73,8 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                         level: settings.level ?? 1,
                         gems: settings.gems ?? 0,
                         streakShield: settings.streakShield ?? 0,
+                        // If DB doesn't have these fields yet, use defaults or mock
+                        motivationText: (settings as any).motivation_text ?? '',
                     });
                 }
             }
@@ -54,6 +82,31 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
             console.error('Failed to load gamification data:', error);
         } finally {
             set({ isLoading: false });
+        }
+    },
+
+    openRules: (tab = 'xp') => set({ rulesModalOpen: true, activeRulesTab: tab }),
+    closeRules: () => set({ rulesModalOpen: false }),
+    setActiveRulesTab: (tab: 'xp' | 'gems' | 'levels') => set({ activeRulesTab: tab }),
+
+    updateMotivation: async (text: string) => {
+        set({ motivationText: text });
+        // Persist to DB
+        const supabase = getSupabaseClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            // Note: 'motivation_text' needs to be added to DB schema if not present.
+            // For now, we'll try to save it if the column exists, or rely on local state/mock.
+            // In a real scenario, we'd add a migration.
+            try {
+                await updateSettings({
+                    userId: session.user.id,
+                    // @ts-ignore - dynamic property
+                    motivation_text: text
+                });
+            } catch (e) {
+                console.warn("Failed to persist motivation text (column might be missing)", e);
+            }
         }
     },
 

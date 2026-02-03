@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { isAIEnabled } from "@/lib/ai-features-flag"
 import { TaskCard } from "@/components/tasks/TaskCard"
 import { CreateTaskModal } from "@/components/tasks/CreateTaskModal"
+import { MilestoneGenerator } from "@/components/goals"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { ArrowLeft, Calendar, Flag, Target, Loader2, Plus, Trophy } from "lucide-react"
@@ -12,6 +14,7 @@ import { format } from "date-fns"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import type { Database } from "@/lib/supabase/types"
+import type { GeneratedMilestone } from "@/lib/ai/types"
 
 import type { Task } from "@/lib/types"
 
@@ -86,6 +89,62 @@ export default function GoalDetailsPage() {
     const handleTaskComplete = async (taskId: string) => {
         setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done' } : t))
         await (supabase.from("tasks") as any).update({ status: 'done' }).eq("id", taskId)
+    }
+
+    const handleMilestonesAccepted = async (aiMilestones: GeneratedMilestone[]) => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) {
+                toast.error("You must be logged in to save milestones")
+                return
+            }
+
+            // Insert AI-generated milestones into milestones table
+            const milestonesToInsert = aiMilestones.map((m, index) => ({
+                goal_id: id as string,
+                user_id: user.id,
+                title: m.title,
+                description: m.description,
+                target_date: m.suggestedDeadline,
+                order_index: milestones.length + index,
+                is_completed: false
+            }))
+
+            const { data: insertedMilestones, error: insertError } = await (supabase
+                .from("milestones") as any)
+                .insert(milestonesToInsert)
+                .select()
+
+            if (insertError) throw insertError
+
+            // Insert metadata into ai_generated_milestones table for tracking
+            const metadataToInsert = aiMilestones.map((m, index) => ({
+                goal_id: id as string,
+                user_id: user.id,
+                milestone_id: insertedMilestones?.[index]?.id,
+                ai_title: m.title,
+                ai_description: m.description,
+                ai_target_date: m.suggestedDeadline,
+                difficulty: m.difficulty,
+                reasoning: m.reasoning,
+                is_accepted: true
+            }))
+
+            const { error: metadataError } = await (supabase
+                .from("ai_generated_milestones") as any)
+                .insert(metadataToInsert)
+
+            if (metadataError) {
+                console.error("Failed to save AI metadata:", metadataError)
+                // Don't throw - milestones are already saved
+            }
+
+            toast.success(`${aiMilestones.length} milestones added to your goal!`)
+            await fetchData() // Refresh to show new milestones
+        } catch (error) {
+            console.error("Error saving milestones:", error)
+            toast.error("Failed to save milestones. Please try again.")
+        }
     }
 
     if (loading) {
@@ -216,6 +275,27 @@ export default function GoalDetailsPage() {
                             </div>
                         )}
                     </div>
+
+                    {/* AI Milestone Generator */}
+                    {isAIEnabled() && (
+                        <MilestoneGenerator 
+                            goal={{
+                                id: goal.id,
+                                userId: goal.user_id,
+                                title: goal.title,
+                                description: goal.description || '',
+                                areaOfLife: (goal.category || 'personal') as any,
+                                priority: (goal.priority || 'medium') as any,
+                                status: (goal.status || 'in_progress') as any,
+                                startDate: goal.created_at || new Date().toISOString(),
+                                deadline: goal.target_date || '',
+                                isFocus: goal.is_focus || false,
+                                createdAt: goal.created_at || new Date().toISOString(),
+                                archived: false
+                            }}
+                            onMilestonesAccepted={handleMilestonesAccepted}
+                        />
+                    )}
                 </div>
             </div>
         </div>

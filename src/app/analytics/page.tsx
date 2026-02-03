@@ -1,19 +1,13 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useState, useMemo } from 'react';
 import { subDays, subMonths, subYears, format } from 'date-fns';
 import { BarChart3, TrendingUp, Target, Flame, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
-import {
-  TimeRangeTabs,
-  ConsistencyChart,
-  CategoryBreakdownChart,
-  WeekdayChart,
-  HeatmapCalendar,
-  InsightsCards,
-  CorrelationChart,
-} from '@/components/analytics';
+import { TimeRangeTabs } from '@/components/analytics';
 import { useHabitStore, useGoalStore, useTaskStore } from '@/lib/stores';
 import {
   calculateDailyStats,
@@ -25,6 +19,32 @@ import {
 } from '@/lib/calculations';
 import type { TimeRange, DailyStats, WeekdayStats, Insight, Trend } from '@/lib/types';
 import { DAYS_OF_WEEK } from '@/lib/types';
+
+// Dynamic imports for heavy chart components (reduces initial bundle by ~200KB)
+const ConsistencyChart = dynamic(
+  () => import('@/components/analytics').then(m => ({ default: m.ConsistencyChart })),
+  { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
+);
+
+const CategoryBreakdownChart = dynamic(
+  () => import('@/components/analytics').then(m => ({ default: m.CategoryBreakdownChart })),
+  { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
+);
+
+const WeekdayChart = dynamic(
+  () => import('@/components/analytics').then(m => ({ default: m.WeekdayChart })),
+  { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
+);
+
+const HeatmapCalendar = dynamic(
+  () => import('@/components/analytics').then(m => ({ default: m.HeatmapCalendar })),
+  { loading: () => <Skeleton className="h-48 w-full rounded-xl" />, ssr: false }
+);
+
+const InsightsCards = dynamic(
+  () => import('@/components/analytics').then(m => ({ default: m.InsightsCards })),
+  { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
+);
 
 export default function AnalyticsPage() {
   const { habits, completions, loadHabits, loadCompletions, isLoading: habitsLoading } = useHabitStore();
@@ -121,41 +141,18 @@ export default function AnalyticsPage() {
     const currentStreak = calculateCurrentStreak(completions);
     const activeGoals = goals.filter(g => !g.archived && g.status !== 'completed').length;
 
-    // Correlation Data
-    const correlationData = dailyStats.map(stat => {
-      const dateStr = stat.date; // YYYY-MM-DD
-      const tasksCompletedThatDay = tasks.filter(t => {
-        // Assuming task completions are updated_at or we need a better tracking of completion date.
-        // For now, if tasks have 'due_date' = dateStr and are done? 
-        // Or better, we need a completion history for tasks. 
-        // Since we don't track task completion history separate from status, 
-        // we'll try to use 'due_date' as proxy for "schedueled tasks" 
-        // and filter by status='done'. Or just count tasks created?
-        // Simplification: Count tasks with due_date = dateStr AND status = 'done'.
-        if (t.status !== 'done') return false;
-        return t.due_date && t.due_date.startsWith(dateStr);
-      }).length;
-
-      return {
-        date: dateStr,
-        tasksCompleted: tasksCompletedThatDay,
-        habitCompletionRate: stat.completionRate
-      };
-    });
-
     return {
       dailyStats,
       avgCompletionRate,
       trend,
-      categoryBreakdown,
       weekdayStats,
+      categoryBreakdown,
       heatmapData,
       totalCompletionsInRange,
-      bestStreak,
       currentStreak,
+      bestStreak,
       activeGoals,
       activeHabits: activeHabits.length,
-      correlationData, // ADDED
     };
   }, [habits, completions, goals, tasks, dateRange]);
 
@@ -422,11 +419,6 @@ export default function AnalyticsPage() {
             {/* Insights */}
             <FadeIn delay={0.5}>
               <InsightsCards insights={insights} />
-            </FadeIn>
-
-            {/* Correlation Chart */}
-            <FadeIn delay={0.55}>
-              <CorrelationChart data={analyticsData.correlationData} />
             </FadeIn>
           </div>
 

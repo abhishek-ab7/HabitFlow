@@ -149,8 +149,8 @@ export function HeatmapCalendar({ data, weeks = 20 }: HeatmapCalendarProps) {
                                 initial={{ scale: 0 }}
                                 animate={{ scale: 1 }}
                                 transition={{
-                                  delay: weekIndex * 0.01 + dayIndex * 0.005,
-                                  duration: 0.2,
+                                  delay: weekIndex * 0.005 + dayIndex * 0.002, // Reduced stagger for snappier animation
+                                  duration: 0.15, // Faster animation
                                 }}
                                 className={cn(
                                   "w-3 h-3 rounded-sm cursor-pointer transition-all hover:ring-2 hover:ring-primary/50",

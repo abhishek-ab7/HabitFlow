@@ -182,6 +182,7 @@ export interface UserSettings {
   level: number;
   gems: number;
   streakShield: number;
+  avatarId?: string;
 }
 
 // ============================================

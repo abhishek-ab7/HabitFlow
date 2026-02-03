@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
 import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2 } from 'lucide-react';
@@ -40,7 +40,7 @@ const CATEGORY_COLORS: Record<Category, string> = {
   relationships: 'bg-orange-500/20 text-orange-600 dark:text-orange-400',
 };
 
-export function HabitGrid({
+export const HabitGrid = memo(function HabitGrid({
   habits,
   completions,
   selectedMonth,
@@ -52,22 +52,22 @@ export function HabitGrid({
 }: HabitGridProps) {
   const [rippleCell, setRippleCell] = useState<string | null>(null);
   const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
-  const { getHabitRoutines } = useHabitStore();
+  const { getRoutinesForMultipleHabits } = useHabitStore();
 
-  // Load routines for all habits
+  // Load routines for all habits in a single batch query (avoids N+1 issue)
   useEffect(() => {
     const loadRoutines = async () => {
-      const routinesMap = new Map<string, Routine[]>();
-      for (const habit of habits) {
-        const routines = await getHabitRoutines(habit.id);
-        if (routines.length > 0) {
-          routinesMap.set(habit.id, routines);
-        }
+      if (habits.length === 0) {
+        setHabitRoutines(new Map());
+        return;
       }
+      
+      const habitIds = habits.map(h => h.id);
+      const routinesMap = await getRoutinesForMultipleHabits(habitIds);
       setHabitRoutines(routinesMap);
     };
     loadRoutines();
-  }, [habits, getHabitRoutines]);
+  }, [habits, getRoutinesForMultipleHabits]);
 
   // Generate days for the month
   const days = useMemo(() => {
@@ -326,4 +326,4 @@ export function HabitGrid({
       </div>
     </div>
   );
-}
+});

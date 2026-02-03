@@ -11,6 +11,7 @@ import {
   seedDemoData,
   cleanupDuplicateCompletions,
   getRoutinesForHabit,
+  getRoutinesForHabits,
   linkHabitToRoutine,
   unlinkHabitFromRoutine,
 } from '../db';
@@ -44,6 +45,7 @@ interface HabitState {
 
   // Routine management
   getHabitRoutines: (habitId: string) => Promise<Routine[]>;
+  getRoutinesForMultipleHabits: (habitIds: string[]) => Promise<Map<string, Routine[]>>;
   getHabitCompletions: (habitId: string) => HabitCompletion[];
   linkToRoutine: (habitId: string, routineId: string) => Promise<void>;
   unlinkFromRoutine: (habitId: string, routineId: string) => Promise<void>;
@@ -321,6 +323,10 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
   getHabitRoutines: async (habitId: string) => {
     return getRoutinesForHabit(habitId);
+  },
+
+  getRoutinesForMultipleHabits: async (habitIds: string[]) => {
+    return getRoutinesForHabits(habitIds);
   },
 
   getHabitCompletions: (habitId: string) => {

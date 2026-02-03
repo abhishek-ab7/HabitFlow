@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { Plus, Filter } from 'lucide-react';
@@ -9,7 +9,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useHabitStore } from '@/lib/stores/habit-store';
-import { MonthSelector, HabitGrid, HabitFormModal } from '@/components/habits';
+import { isAIEnabled } from '@/lib/ai-features-flag';
+import { MonthSelector, HabitGrid, HabitFormModal, HabitStackSuggestions } from '@/components/habits';
+import { HabitSuggestions } from '@/components/habits/HabitSuggestions';
 import { FadeIn } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitFormData, Category } from '@/lib/types';
@@ -56,80 +58,77 @@ function HabitsPageContent() {
     }
   }, [searchParams, router]);
 
-  // Load data
+  // Load data - OPTIMIZED: Single useEffect with parallel loading
   useEffect(() => {
     const init = async () => {
-      await loadHabits();
-      
+      // Calculate date range for completions
       const start = format(startOfMonth(subMonths(selectedMonth, 1)), 'yyyy-MM-dd');
       const end = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
-      await loadCompletions(start, end);
+      
+      // ⚡ OPTIMIZATION: Load habits and completions in parallel
+      await Promise.all([
+        loadHabits(),
+        loadCompletions(start, end)
+      ]);
     };
     
     init();
   }, [loadHabits, loadCompletions, selectedMonth]);
 
-  // Reload completions when month changes
-  useEffect(() => {
-    const loadMonthData = async () => {
-      const start = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
-      const end = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
-      await loadCompletions(start, end);
-    };
-    
-    loadMonthData();
-  }, [selectedMonth, loadCompletions]);
-
-  const handleMonthChange = (date: Date) => {
+  // Event handlers - OPTIMIZED: Wrapped in useCallback to prevent re-renders
+  const handleMonthChange = useCallback((date: Date) => {
     setSelectedMonth(date);
-  };
+  }, []);
 
-  const handleToggle = async (habitId: string, date: string) => {
+  const handleToggle = useCallback(async (habitId: string, date: string) => {
     await toggle(habitId, date);
-  };
+  }, [toggle]);
 
-  const handleCreateHabit = async (data: HabitFormData) => {
+  const handleCreateHabit = useCallback(async (data: HabitFormData) => {
     await addHabit(data);
     setEditingHabit(undefined);
-  };
+  }, [addHabit]);
 
-  const handleEditHabit = async (data: HabitFormData) => {
+  const handleEditHabit = useCallback(async (data: HabitFormData) => {
     if (editingHabit) {
       await editHabit(editingHabit.id, data);
       setEditingHabit(undefined);
     }
-  };
+  }, [editingHabit, editHabit]);
 
-  const handleOpenEdit = (habit: Habit) => {
+  const handleOpenEdit = useCallback((habit: Habit) => {
     setEditingHabit(habit);
     setShowModal(true);
-  };
+  }, []);
 
-  const handleArchive = async (habitId: string) => {
+  const handleArchive = useCallback(async (habitId: string) => {
     await editHabit(habitId, { archived: true });
-  };
+  }, [editHabit]);
 
-  const handleDelete = async (habitId: string) => {
+  const handleDelete = useCallback(async (habitId: string) => {
     if (confirm('Are you sure you want to delete this habit? All data will be lost.')) {
       await removeHabit(habitId);
     }
-  };
+  }, [removeHabit]);
 
-  const handleCategoryFilter = (category: Category) => {
+  const handleCategoryFilter = useCallback((category: Category) => {
     if (categoryFilter.includes(category)) {
       setCategoryFilter(categoryFilter.filter(c => c !== category));
     } else {
       setCategoryFilter([...categoryFilter, category]);
     }
-  };
+  }, [categoryFilter]);
 
-  // Get filtered habits
-  const filteredHabits = categoryFilter.length > 0 
-    ? habits.filter(h => categoryFilter.includes(h.category))
-    : habits;
+  // Get filtered habits - OPTIMIZED: Memoized
+  const filteredHabits = useMemo(() => 
+    categoryFilter.length > 0 
+      ? habits.filter(h => categoryFilter.includes(h.category))
+      : habits,
+    [habits, categoryFilter]
+  );
 
-  // Get streaks
-  const streaks = getCurrentStreaks();
+  // Get streaks - OPTIMIZED: Memoized
+  const streaks = useMemo(() => getCurrentStreaks(), [habits, completions]);
 
   if (isLoading && habits.length === 0) {
     return (
@@ -207,21 +206,33 @@ function HabitsPageContent() {
           </div>
         </div>
 
-        {/* Habit Grid */}
-        <Card>
-          <CardContent className="p-6">
-            <HabitGrid
-              habits={filteredHabits}
-              completions={completions}
-              selectedMonth={selectedMonth}
-              onToggle={handleToggle}
-              onEdit={handleOpenEdit}
-              onDelete={handleDelete}
-              onArchive={handleArchive}
-              streaks={streaks}
-            />
-          </CardContent>
-        </Card>
+        <div className="grid gap-6 lg:grid-cols-4">
+          {/* Habit Grid - Takes 3 columns */}
+          <div className="lg:col-span-3">
+            <Card>
+              <CardContent className="p-6">
+                <HabitGrid
+                  habits={filteredHabits}
+                  completions={completions}
+                  selectedMonth={selectedMonth}
+                  onToggle={handleToggle}
+                  onEdit={handleOpenEdit}
+                  onDelete={handleDelete}
+                  onArchive={handleArchive}
+                  streaks={streaks}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* AI Suggestions Sidebar - Takes 1 column */}
+          {isAIEnabled() && (
+            <div className="lg:col-span-1 space-y-6">
+              <HabitSuggestions />
+              <HabitStackSuggestions />
+            </div>
+          )}
+        </div>
 
         {/* Legend */}
         <div className="flex items-center justify-center gap-6 mt-6 text-sm text-muted-foreground">

@@ -7,6 +7,7 @@ import { Header } from '@/components/layout';
 import { ServiceWorkerRegistration } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { LevelUpModal } from '@/components/gamification/LevelUpModal';
+import { GamificationRulesModal } from '@/components/gamification/GamificationRulesModal';
 import { RoutineTriggerWatcher } from '@/components/routines/RoutineTriggerWatcher';
 import './globals.css';
 
@@ -75,6 +76,7 @@ export default function RootLayout({
                 </main>
               </div>
               <LevelUpModal />
+              <GamificationRulesModal />
               <RoutineTriggerWatcher />
               <Toaster richColors position="bottom-right" />
             </SyncProvider>

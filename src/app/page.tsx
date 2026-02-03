@@ -6,6 +6,7 @@ import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGoalStore } from '@/lib/stores/goal-store';
 import { calculateMomentum } from '@/lib/calculations';
+import { isAIEnabled } from '@/lib/ai-features-flag';
 import {
   HeroSection,
   MetricCards,
@@ -14,6 +15,8 @@ import {
   QuickActions,
   TodayTasksWidget,
   AICoachWidget,
+  BurnoutAlert,
+  PersonalizedQuote,
 } from '@/components/dashboard';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -49,26 +52,29 @@ export default function DashboardPage() {
     toggleMilestoneComplete,
   } = useGoalStore();
 
-  // Initialize data on mount
+  // Initialize data on mount - OPTIMIZED: Parallel loading
   useEffect(() => {
     const init = async () => {
-      await loadHabits();
-      await loadGoals();
-      await loadAllMilestones();
-
-      // Load completions for current and previous month
+      // Calculate date range once
       const today = new Date();
       const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
       const end = format(endOfMonth(today), 'yyyy-MM-dd');
-      await loadCompletions(start, end);
+
+      // ⚡ OPTIMIZATION: Load all data in parallel instead of sequential
+      await Promise.all([
+        loadHabits(),
+        loadGoals(),
+        loadAllMilestones(),
+        loadCompletions(start, end),
+      ]);
     };
 
     init();
   }, [loadHabits, loadGoals, loadAllMilestones, loadCompletions]);
 
-  // Computed values
-  const todayProgress = getTodayProgress();
-  const monthlyProgress = getMonthlyProgress();
+  // Computed values - OPTIMIZED: Memoized to prevent recalculation
+  const todayProgress = useMemo(() => getTodayProgress(), [habits, completions]);
+  const monthlyProgress = useMemo(() => getMonthlyProgress(), [habits, completions]);
   const streaks = getCurrentStreaks();
   const focusGoals = getFocusGoals();
   const activeGoalsCount = getActiveGoalsCount();
@@ -168,9 +174,15 @@ export default function DashboardPage() {
     <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
       <HeroSection />
 
-      <div className="mb-6">
-        <AICoachWidget />
-      </div>
+      {isAIEnabled() && <BurnoutAlert />}
+
+      {isAIEnabled() && <PersonalizedQuote />}
+
+      {isAIEnabled() && (
+        <div className="mb-6">
+          <AICoachWidget />
+        </div>
+      )}
 
       <MetricCards
         todayCompleted={todayProgress.completed}

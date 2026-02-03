@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { isAIEnabled } from "@/lib/ai-features-flag"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -226,17 +227,19 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                     <div className="space-y-3 pt-2 border-t border-border/50">
                         <div className="flex items-center justify-between">
                             <label className="text-sm font-medium">Subtasks</label>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={handleGenerateSubtasks}
-                                disabled={isGenerating || !title}
-                                className="h-7 text-xs gap-1.5 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/20 hover:border-purple-500/50"
-                            >
-                                {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-purple-500" />}
-                                Auto-Generate
-                            </Button>
+                            {isAIEnabled() && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleGenerateSubtasks}
+                                    disabled={isGenerating || !title}
+                                    className="h-7 text-xs gap-1.5 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/20 hover:border-purple-500/50"
+                                >
+                                    {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-purple-500" />}
+                                    Auto-Generate
+                                </Button>
+                            )}
                         </div>
 
                         <div className="space-y-2">
