@@ -30,6 +30,7 @@ import { forcePushAllHabits, forcePullAllHabits } from '@/lib/force-sync';
 import { cn } from '@/lib/utils';
 import type { UserSettings, Category } from '@/lib/types';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
+import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
 import { ProfileStatsCard } from '@/components/settings/ProfileStatsCard';
 import { AvatarSelector } from '@/components/settings/AvatarSelector';
 import { Avatar } from '@/lib/avatars';
@@ -294,27 +295,15 @@ export default function SettingsPage() {
             </div>
           </BentoGridItem>
 
-          {/* 3. Sync Status */}
+          {/* 3. Sync Status Panel */}
           {isAuthenticated && (
             <BentoGridItem
-              title="Cloud Sync"
-              icon={<Cloud className={cn("h-5 w-5 text-blue-500", isSyncing && "animate-pulse")} />}
-              description={isSyncing ? "Syncing changes..." : `Status: ${syncStatus.message || 'Connected'}`}
-              className={cn(
-                "border-l-4",
-                syncStatus.type === 'error' ? "border-l-red-500 bg-red-50/50 dark:bg-red-900/10" : "border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10"
-              )}
+              span={2}
+              title=""
+              icon={<></>}
+              className="p-0 border-none shadow-none bg-transparent hover:bg-transparent"
             >
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => triggerSync()}
-                disabled={isSyncing}
-                className="w-full mt-2 bg-white/50 dark:bg-black/20 hover:bg-white/80 dark:hover:bg-black/40 text-xs"
-              >
-                <RefreshCw className={cn("h-3 w-3 mr-2", isSyncing && "animate-spin")} />
-                {isSyncing ? 'Syncing...' : 'Sync Now'}
-              </Button>
+              <SyncStatusPanel />
             </BentoGridItem>
           )}
 

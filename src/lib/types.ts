@@ -149,6 +149,19 @@ export interface HabitRoutine {
   updatedAt?: string; // ISO timestamp - for conflict resolution
 }
 
+// Routine Completion (explicit tracking)
+export interface RoutineCompletion {
+  id: string;
+  userId: string;
+  routineId: string;
+  date: string; // YYYY-MM-DD format
+  completed: boolean;
+  completedAt?: string | null; // ISO timestamp when marked complete
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ============================================
 // TASK MODELS
 // ============================================
@@ -168,6 +181,9 @@ export interface Task {
   metadata?: Record<string, any>; // For flexibility
   created_at: string;
   updated_at: string;
+  parentTaskId?: string | null; // For sub-tasks
+  depth?: number; // Nesting level (0=root, 1=subtask, 2=sub-subtask, max 3)
+  subtasks?: Task[]; // For UI rendering (derived, not stored)
 }
 
 // ============================================

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, Routine, HabitRoutine } from './types';
+import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, Routine, HabitRoutine, RoutineCompletion } from './types';
 
 // Define the database schema
 const db = new Dexie('HabitFlowDB') as Dexie & {
@@ -11,6 +11,7 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   tasks: EntityTable<Task, 'id'>;
   routines: EntityTable<Routine, 'id'>;
   habitRoutines: EntityTable<HabitRoutine, 'id'>;
+  routineCompletions: EntityTable<RoutineCompletion, 'id'>;
 };
 
 // Schema version 5 - Added HabitRoutines junction table for many-to-many
@@ -111,6 +112,30 @@ db.version(6).stores({
     if (!hr.updatedAt) {
       await tx.table('habitRoutines').update(hr.id, {
         updatedAt: hr.createdAt || now
+      });
+    }
+  }
+});
+
+// Schema version 7 - Add sub-tasks and routine completions
+db.version(7).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, routineId',
+  completions: 'id, userId, habitId, date, [habitId+date], updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+  routines: 'id, userId, isActive, orderIndex, updatedAt',
+  habitRoutines: 'id, habitId, routineId, [habitId+routineId], updatedAt',
+  routineCompletions: 'id, userId, routineId, date, [routineId+date], updatedAt',
+}).upgrade(async tx => {
+  // Backfill depth = 0 for existing tasks
+  const tasks = await tx.table('tasks').toArray();
+  for (const task of tasks) {
+    if (task.depth === undefined) {
+      await tx.table('tasks').update(task.id, {
+        depth: 0,
+        parentTaskId: null
       });
     }
   }

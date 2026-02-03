@@ -2,6 +2,7 @@
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions } from '@/lib/db';
 import type { Habit, HabitCompletion, Goal, Milestone } from '@/lib/types';
+import { useSyncStatusStore } from '../stores/sync-status-store';
 import { resolveConflict, mergeGamificationFields } from './conflict-resolution';
 
 // ===================
@@ -170,6 +171,28 @@ export class SyncEngine {
         this.log('error', 'Status callback error', error);
       }
     });
+
+    // Update global store
+    try {
+      const store = useSyncStatusStore.getState();
+
+      if (status.type === 'syncing') {
+        store.setIsSyncing(true);
+        if (status.message) store.setSyncError(null);
+      } else if (status.type === 'success') {
+        store.setIsSyncing(false);
+        store.setLastSyncTime(status.syncedAt || new Date());
+        store.setSyncError(null);
+      } else if (status.type === 'error') {
+        store.setIsSyncing(false);
+        store.setSyncError(status.message);
+      } else {
+        store.setIsSyncing(false);
+      }
+    } catch (e) {
+      // Ignore store errors during sync to prevent crash
+      console.warn('Failed to update sync store', e);
+    }
   }
 
   // ===================
@@ -223,6 +246,7 @@ export class SyncEngine {
         this.syncCompletionsWithRetry(),
         this.syncMilestonesWithRetry(),
         this.syncHabitRoutinesWithRetry(), // NEW: Add habit-routines junction sync
+        this.syncRoutineCompletions(), // NEW: Routine completions sync
       ]);
 
       this.notifyStatus({ type: 'syncing', message: 'Cleaning up...', progress: 80 });
@@ -658,9 +682,9 @@ export class SyncEngine {
     for (const local of localCompletions) {
       const key = `${local.habitId}-${local.date}`;
       const remote = remoteMap.get(key);
-      
+
       processedKeys.add(key);
-      
+
       if (!remote) {
         // Local only - push to remote
         toInsertRemote.push({
@@ -675,20 +699,20 @@ export class SyncEngine {
       } else if (local.completed !== remote.completed || local.note !== remote.notes) {
         // Both exist but differ - use intelligent conflict resolution
         const resolution = resolveConflict(
-          { 
-            ...local, 
+          {
+            ...local,
             updatedAt: local.updatedAt || local.createdAt,
-            completed: local.completed 
+            completed: local.completed
           },
-          { 
-            ...remote, 
+          {
+            ...remote,
             updated_at: remote.updated_at,
             created_at: remote.created_at,
-            completed: remote.completed 
+            completed: remote.completed
           },
           { preferCompleted: true } // Completed always wins
         );
-        
+
         if (resolution.winner === 'local') {
           // Local wins - push to remote
           toUpdateRemote.push({
@@ -722,7 +746,7 @@ export class SyncEngine {
     // Pull remote completions that don't exist locally
     for (const remote of (remoteCompletions || []) as any[]) {
       const key = `${remote.habit_id}-${remote.date}`;
-      
+
       if (!processedKeys.has(key) && !localMap.has(key)) {
         toUpsertLocal.push({
           id: remote.id,
@@ -820,14 +844,14 @@ export class SyncEngine {
 
       if (remoteById_) {
         processedRemoteIds.add(remoteById_.id);
-        
+
         // Use conflict resolution with "completed status wins"
         const resolution = resolveConflict(
           { ...local, updatedAt: local.updatedAt || local.createdAt },
           { ...remoteById_ },
           { completedStatuses: ['completed'] }
         );
-        
+
         if (resolution.winner === 'local') {
           await this.pushGoalToRemote(local);
           this.log('info', `🔄 Goal conflict (${local.title}): ${resolution.reason}`);
@@ -998,7 +1022,7 @@ export class SyncEngine {
     // Process local milestones
     for (const local of localMilestones) {
       const remote = remoteMap.get(local.id);
-      
+
       if (!remote) {
         // Local only - push to remote
         toInsertRemote.push({
@@ -1015,15 +1039,15 @@ export class SyncEngine {
         // Both exist but differ - use conflict resolution with "completed always wins"
         const resolution = resolveConflict(
           { ...local, updatedAt: local.updatedAt || local.createdAt },
-          { 
-            ...remote, 
+          {
+            ...remote,
             completed: remote.is_completed,
             updated_at: remote.updated_at,
-            created_at: remote.created_at 
+            created_at: remote.created_at
           },
           { preferCompleted: true }
         );
-        
+
         if (resolution.winner === 'local') {
           toUpdateRemote.push({
             id: remote.id,
@@ -1146,9 +1170,12 @@ export class SyncEngine {
     const remoteById = new Map((remoteTasks || []).map((t: any) => [t.id, t]));
     const localById = new Map(localTasks.map(t => [t.id, t]));
 
+    // Sort tasks by depth to ensure parents sync before children
+    const sortedLocalTasks = [...localTasks].sort((a, b) => (a.depth || 0) - (b.depth || 0));
+
     // Push local tasks not in remote
     const toInsertRemote: any[] = [];
-    for (const local of localTasks) {
+    for (const local of sortedLocalTasks) {
       if (!remoteById.has(local.id)) {
         // If not archived locally, or archived but we want to sync deletion state
         toInsertRemote.push({
@@ -1160,6 +1187,8 @@ export class SyncEngine {
           priority: local.priority,
           due_date: local.due_date,
           goal_id: local.goal_id,
+          parent_task_id: local.parentTaskId || null,
+          depth: local.depth || 0,
           tags: local.tags,
           created_at: local.created_at,
           updated_at: local.updated_at,
@@ -1172,7 +1201,7 @@ export class SyncEngine {
           { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
           { completedStatuses: ['done'] }
         );
-        
+
         if (resolution.winner === 'local') {
           await this.pushTaskToRemote(local);
           this.log('info', `🔄 Task conflict (${local.title}): ${resolution.reason}`);
@@ -1215,6 +1244,8 @@ export class SyncEngine {
       priority: task.priority,
       due_date: task.due_date,
       goal_id: task.goal_id,
+      parent_task_id: task.parentTaskId || null,
+      depth: task.depth || 0,
       tags: task.tags,
       created_at: task.created_at,
       updated_at: task.updated_at,
@@ -1231,6 +1262,8 @@ export class SyncEngine {
       priority: remote.priority,
       due_date: remote.due_date,
       goal_id: remote.goal_id,
+      parentTaskId: remote.parent_task_id || null,
+      depth: remote.depth || 0,
       tags: remote.tags || [],
       metadata: {},
       created_at: remote.created_at,
@@ -1301,7 +1334,7 @@ export class SyncEngine {
 
       if (remote) {
         processedRemoteIds.add(remote.id);
-        
+
         const resolution = resolveConflict(
           { ...local, updatedAt: local.updatedAt || local.createdAt },
           { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
@@ -1459,20 +1492,20 @@ export class SyncEngine {
     } else if (remoteSettings && localSettings) {
       // Both exist - merge gamification fields (highest value wins) and use timestamp for other fields
       this.log('info', '🎮 Both settings exist, merging with conflict resolution...');
-      
+
       // First, merge gamification fields to ensure highest values
       const mergedGamification = mergeGamificationFields(
-        localSettings, 
+        localSettings,
         remoteSettings as any
       );
-      
+
       // Then use conflict resolution for other fields based on timestamp
       const resolution = resolveConflict(
         { ...localSettings, updatedAt: localSettings.updatedAt || localSettings.createdAt },
         { ...(remoteSettings as any) },
         {}
       );
-      
+
       // Merge: Take winner's data for non-gamification fields, but always use merged gamification values
       const winner = resolution.winner === 'local' ? localSettings : remoteSettings;
       const finalSettings = {
@@ -1482,11 +1515,11 @@ export class SyncEngine {
         gems: mergedGamification.gems,
         streakShield: mergedGamification.streakShield,
       };
-      
+
       // Push merged settings to both local and remote to ensure consistency
       await this.pushUserSettingsToRemote(finalSettings);
       await this.updateLocalUserSettings(finalSettings);
-      
+
       this.log('info', `🎮 Settings merged: XP=${finalSettings.xp}, Level=${finalSettings.level}, Gems=${finalSettings.gems}, Shield=${finalSettings.streakShield}`);
       this.log('info', `🔄 ${resolution.reason}`);
     }
@@ -1530,7 +1563,7 @@ export class SyncEngine {
 
     // Check if settings exist for this user
     const existing = await db.userSettings.where('userId').equals(this.userId!).first();
-    
+
     if (existing) {
       await db.userSettings.update(existing.id, localSettings);
     } else {
@@ -1596,7 +1629,7 @@ export class SyncEngine {
     if (error) throw error;
 
     const localLinks = await db.habitRoutines.toArray();
-    
+
     // Filter local links to only those belonging to user's habits
     const userLocalLinks = localLinks.filter(link => userHabitIds.includes(link.habitId));
 
@@ -1609,12 +1642,12 @@ export class SyncEngine {
     const toInsertRemote: any[] = [];
     const toUpdateRemote: any[] = [];
     const toUpsertLocal: any[] = [];
-    
+
     // Process local links
     for (const local of userLocalLinks) {
       const key = `${local.habitId}-${local.routineId}`;
       const remote = remoteMap.get(key);
-      
+
       if (!remote) {
         // Local only - push to remote
         toInsertRemote.push({
@@ -1632,7 +1665,7 @@ export class SyncEngine {
           { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
           {}
         );
-        
+
         if (resolution.winner === 'local') {
           toUpdateRemote.push({
             id: remote.id,
@@ -1720,6 +1753,98 @@ export class SyncEngine {
     }
 
     await this.supabase.from('habit_routines').delete().eq('id', linkId);
+  }
+
+  // ==================
+  // ROUTINE COMPLETIONS SYNC
+  // ==================
+
+  private async syncRoutineCompletions() {
+    if (!this.userId) return;
+
+    const { data: remoteCompletions, error } = await this.supabase
+      .from('routine_completions')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) throw error;
+
+    const localCompletions = await db.routineCompletions.where('userId').equals(this.userId).toArray();
+    const remoteById = new Map((remoteCompletions || []).map((c: any) => [c.id, c]));
+    const localById = new Map(localCompletions.map(c => [c.id, c]));
+
+    // Push local completions not in remote
+    const toInsertRemote: any[] = [];
+    for (const local of localCompletions) {
+      if (!remoteById.has(local.id)) {
+        toInsertRemote.push({
+          id: local.id,
+          user_id: this.userId,
+          routine_id: local.routineId,
+          date: local.date,
+          completed: local.completed,
+          completed_at: local.completedAt,
+          notes: local.notes,
+          created_at: local.createdAt,
+          updated_at: local.updatedAt,
+        });
+      } else {
+        // Conflict resolution: prefer completed = true
+        const remote = remoteById.get(local.id);
+        const resolution = resolveConflict(
+          { ...local, updatedAt: local.updatedAt },
+          { ...remote, updated_at: remote.updated_at },
+          { preferCompleted: true }
+        );
+
+        if (resolution.winner === 'local') {
+          await this.pushRoutineCompletionToRemote(local);
+        } else if (resolution.winner === 'remote') {
+          await this.updateLocalRoutineCompletion(remote);
+        }
+      }
+    }
+
+    if (toInsertRemote.length > 0) {
+      await this.batchUpsert('routine_completions', toInsertRemote);
+    }
+
+    // Pull remote completions not in local
+    for (const remote of (remoteCompletions || []) as any[]) {
+      if (!localById.has(remote.id)) {
+        await this.updateLocalRoutineCompletion(remote);
+      }
+    }
+  }
+
+  private async pushRoutineCompletionToRemote(completion: any) {
+    if (!this.userId) return;
+
+    await this.supabase.from('routine_completions').upsert({
+      id: completion.id,
+      user_id: this.userId,
+      routine_id: completion.routineId,
+      date: completion.date,
+      completed: completion.completed,
+      completed_at: completion.completedAt,
+      notes: completion.notes,
+      created_at: completion.createdAt,
+      updated_at: completion.updatedAt,
+    } as any);
+  }
+
+  private async updateLocalRoutineCompletion(remote: any) {
+    await db.routineCompletions.put({
+      id: remote.id,
+      userId: this.userId!,
+      routineId: remote.routine_id,
+      date: remote.date,
+      completed: remote.completed,
+      completedAt: remote.completed_at,
+      notes: remote.notes,
+      createdAt: remote.created_at,
+      updatedAt: remote.updated_at,
+    });
   }
 
   // ===================

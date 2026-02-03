@@ -171,6 +171,8 @@ export interface Database {
           priority: string;
           due_date: string | null;
           goal_id: string | null;
+          parent_task_id: string | null;
+          depth: number;
           tags: string[] | null;
           metadata: Json | null;
           created_at: string;
@@ -185,6 +187,8 @@ export interface Database {
           priority?: string;
           due_date?: string | null;
           goal_id?: string | null;
+          parent_task_id?: string | null;
+          depth?: number;
           tags?: string[] | null;
           metadata?: Json | null;
           created_at?: string;
@@ -199,8 +203,109 @@ export interface Database {
           priority?: string;
           due_date?: string | null;
           goal_id?: string | null;
+          parent_task_id?: string | null;
+          depth?: number;
           tags?: string[] | null;
           metadata?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      routine_completions: {
+        Row: {
+          id: string;
+          user_id: string;
+          routine_id: string;
+          date: string;
+          completed: boolean;
+          completed_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          routine_id: string;
+          date: string;
+          completed?: boolean;
+          completed_at?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          routine_id?: string;
+          date?: string;
+          completed?: boolean;
+          completed_at?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      routines: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          trigger_type: string;
+          trigger_value: string | null;
+          is_active: boolean;
+          order_index: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          trigger_type?: string;
+          trigger_value?: string | null;
+          is_active?: boolean;
+          order_index?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          description?: string | null;
+          trigger_type?: string;
+          trigger_value?: string | null;
+          is_active?: boolean;
+          order_index?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      habit_routines: {
+        Row: {
+          id: string;
+          habit_id: string;
+          routine_id: string;
+          order_index: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          habit_id: string;
+          routine_id: string;
+          order_index?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          habit_id?: string;
+          routine_id?: string;
+          order_index?: number;
           created_at?: string;
           updated_at?: string;
         };

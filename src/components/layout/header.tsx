@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
+import { SyncStatusBadge } from '@/components/sync/SyncStatusBadge';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { UserStatusHUD } from '@/components/gamification/UserStatusHUD';
@@ -116,32 +117,8 @@ export function Header() {
         {/* Right side actions */}
         <div className="flex items-center gap-2">
           {isAuthenticated && <UserStatusHUD />}
-          {/* Sync Status Indicator */}
-          {isAuthenticated && (
-            <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground mr-2">
-              {isSyncing ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span>Syncing...</span>
-                </>
-              ) : syncStatus.type === 'success' ? (
-                <>
-                  <Cloud className="h-3 w-3 text-green-600 dark:text-green-400" />
-                  <span>Synced</span>
-                </>
-              ) : syncStatus.type === 'error' ? (
-                <>
-                  <CloudOff className="h-3 w-3 text-destructive" />
-                  <span>Offline</span>
-                </>
-              ) : (
-                <>
-                  <Cloud className="h-3 w-3" />
-                  <span>Ready</span>
-                </>
-              )}
-            </div>
-          )}
+          {/* Sync Status Badge */}
+          {isAuthenticated && <SyncStatusBadge />}
 
           {/* User Menu */}
           {isAuthenticated ? (
