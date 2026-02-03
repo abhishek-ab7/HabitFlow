@@ -41,6 +41,81 @@ db.version(5).stores({
   }
 });
 
+// Schema version 6 - Add updatedAt timestamps for conflict resolution
+db.version(6).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, routineId',
+  completions: 'id, userId, habitId, date, [habitId+date], updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at',
+  routines: 'id, userId, isActive, orderIndex, updatedAt',
+  habitRoutines: 'id, habitId, routineId, [habitId+routineId], updatedAt',
+}).upgrade(async tx => {
+  // Backfill updatedAt = createdAt for existing records (Option A)
+  const now = new Date().toISOString();
+  
+  // Completions
+  const completions = await tx.table('completions').toArray();
+  for (const c of completions) {
+    if (!c.updatedAt) {
+      await tx.table('completions').update(c.id, { 
+        updatedAt: c.createdAt || now 
+      });
+    }
+  }
+  
+  // Milestones
+  const milestones = await tx.table('milestones').toArray();
+  for (const m of milestones) {
+    if (!m.updatedAt) {
+      await tx.table('milestones').update(m.id, { 
+        updatedAt: m.createdAt || now 
+      });
+    }
+  }
+  
+  // Goals
+  const goals = await tx.table('goals').toArray();
+  for (const g of goals) {
+    if (!g.updatedAt) {
+      await tx.table('goals').update(g.id, { 
+        updatedAt: g.createdAt || now 
+      });
+    }
+  }
+  
+  // UserSettings
+  const settings = await tx.table('userSettings').toArray();
+  for (const s of settings) {
+    if (!s.updatedAt) {
+      await tx.table('userSettings').update(s.id, { 
+        updatedAt: s.createdAt || now 
+      });
+    }
+  }
+  
+  // Routines
+  const routines = await tx.table('routines').toArray();
+  for (const r of routines) {
+    if (!r.updatedAt) {
+      await tx.table('routines').update(r.id, { 
+        updatedAt: r.createdAt || now 
+      });
+    }
+  }
+  
+  // HabitRoutines
+  const habitRoutines = await tx.table('habitRoutines').toArray();
+  for (const hr of habitRoutines) {
+    if (!hr.updatedAt) {
+      await tx.table('habitRoutines').update(hr.id, { 
+        updatedAt: hr.createdAt || now 
+      });
+    }
+  }
+});
+
 // ==================
 // HABIT FUNCTIONS
 // ==================
@@ -101,6 +176,8 @@ export async function toggleCompletion(habitId: string, date: string, userId: st
     .equals([habitId, date])
     .first();
 
+  const now = new Date().toISOString();
+
   if (existing) {
     await db.completions.delete(existing.id);
     return null;
@@ -111,6 +188,8 @@ export async function toggleCompletion(habitId: string, date: string, userId: st
       habitId,
       date,
       completed: true,
+      createdAt: now,
+      updatedAt: now,
     };
     await db.completions.add(completion);
     return completion;
@@ -259,11 +338,13 @@ export async function getGoals(userId: string): Promise<Goal[]> {
 }
 
 export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDate'> & { userId: string }): Promise<Goal> {
+  const now = new Date().toISOString();
   const goal: Goal = {
     id: crypto.randomUUID(),
     ...data,
-    createdAt: new Date().toISOString(),
-    startDate: new Date().toISOString(),
+    createdAt: now,
+    startDate: now,
+    updatedAt: now,
   };
 
   await db.goals.add(goal);
@@ -271,7 +352,7 @@ export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDat
 }
 
 export async function updateGoal(id: string, data: Partial<Goal>): Promise<void> {
-  await db.goals.update(id, data);
+  await db.goals.update(id, { ...data, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteGoal(id: string): Promise<void> {
@@ -283,7 +364,10 @@ export async function setFocusGoal(goalId: string): Promise<void> {
   const goal = await db.goals.get(goalId);
   if (goal) {
     // Toggle the focus status
-    await db.goals.update(goalId, { isFocus: !goal.isFocus });
+    await db.goals.update(goalId, { 
+      isFocus: !goal.isFocus,
+      updatedAt: new Date().toISOString() 
+    });
   }
 }
 
@@ -297,12 +381,15 @@ export async function getMilestones(goalId: string): Promise<Milestone[]> {
 
 export async function createMilestone(data: Omit<Milestone, 'id' | 'completed' | 'order'>): Promise<Milestone> {
   const count = await db.milestones.where('goalId').equals(data.goalId).count();
+  const now = new Date().toISOString();
 
   const milestone: Milestone = {
     id: crypto.randomUUID(),
     ...data,
     completed: false,
     order: count,
+    createdAt: now,
+    updatedAt: now,
   };
 
   await db.milestones.add(milestone);
@@ -310,7 +397,7 @@ export async function createMilestone(data: Omit<Milestone, 'id' | 'completed' |
 }
 
 export async function updateMilestone(id: string, data: Partial<Milestone>): Promise<void> {
-  await db.milestones.update(id, data);
+  await db.milestones.update(id, { ...data, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteMilestone(id: string): Promise<void> {
@@ -321,10 +408,12 @@ export async function toggleMilestone(id: string): Promise<Milestone | null> {
   const milestone = await db.milestones.get(id);
   if (!milestone) return null;
 
+  const now = new Date().toISOString();
   const updated: Milestone = {
     ...milestone,
     completed: !milestone.completed,
-    completedAt: !milestone.completed ? new Date().toISOString() : undefined,
+    completedAt: !milestone.completed ? now : undefined,
+    updatedAt: now,
   };
 
   await db.milestones.update(id, updated);
@@ -341,9 +430,10 @@ export async function getSettings(userId: string): Promise<UserSettings | undefi
 
 export async function updateSettings(data: Partial<UserSettings> & { userId: string }): Promise<void> {
   const existing = await getSettings(data.userId);
+  const now = new Date().toISOString();
 
   if (existing) {
-    await db.userSettings.update(existing.id, data);
+    await db.userSettings.update(existing.id, { ...data, updatedAt: now });
   } else {
     const settings: UserSettings = {
       id: crypto.randomUUID(),
@@ -353,7 +443,8 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: str
       weekStartsOn: data.weekStartsOn ?? 0,
       showMotivationalQuotes: data.showMotivationalQuotes ?? true,
       defaultCategory: data.defaultCategory || 'health',
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       xp: 0,
       level: 1,
       gems: 0,
@@ -493,12 +584,14 @@ export async function linkHabitToRoutine(habitId: string, routineId: string, ord
     return existing;
   }
 
+  const now = new Date().toISOString();
   const link: HabitRoutine = {
     id: crypto.randomUUID(),
     habitId,
     routineId,
     orderIndex,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
 
   await db.habitRoutines.add(link);
@@ -572,7 +665,10 @@ export async function updateHabitRoutineOrder(habitId: string, routineId: string
     .first();
 
   if (link) {
-    await db.habitRoutines.update(link.id, { orderIndex: newOrderIndex });
+    await db.habitRoutines.update(link.id, { 
+      orderIndex: newOrderIndex,
+      updatedAt: new Date().toISOString() 
+    });
   }
 }
 

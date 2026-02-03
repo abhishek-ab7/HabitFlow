@@ -107,18 +107,23 @@ export const useRoutineStore = create<RoutineState>((set, get) => ({
     },
 
     reorderRoutines: async (orderedIds: string[]) => {
+        const now = new Date().toISOString();
+        
         // Optimistic update
         set(state => {
             const reordered = orderedIds.map((id, index) => {
                 const routine = state.routines.find(r => r.id === id);
-                return routine ? { ...routine, orderIndex: index } : null;
+                return routine ? { ...routine, orderIndex: index, updatedAt: now } : null;
             }).filter(Boolean) as Routine[];
             return { routines: reordered };
         });
 
         // DB update
         for (let i = 0; i < orderedIds.length; i++) {
-            await db.routines.update(orderedIds[i], { orderIndex: i });
+            await db.routines.update(orderedIds[i], { 
+                orderIndex: i,
+                updatedAt: now 
+            });
         }
     },
 

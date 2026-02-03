@@ -60,6 +60,8 @@ export interface HabitCompletion {
   completed: boolean;
   note?: string;
   skipped?: boolean; // Intentionally skipped (e.g., rest day)
+  createdAt?: string; // ISO timestamp
+  updatedAt?: string; // ISO timestamp - for conflict resolution
 }
 
 // Derived habit statistics
@@ -89,6 +91,7 @@ export interface Goal {
   deadline: string; // ISO date string
   isFocus: boolean; // Featured goal on dashboard
   createdAt: string;
+  updatedAt?: string; // ISO timestamp - for conflict resolution
   completedAt?: string;
   archived: boolean;
 }
@@ -102,6 +105,8 @@ export interface Milestone {
   completedAt?: string;
   deadline?: string;
   order: number;
+  createdAt?: string; // ISO timestamp
+  updatedAt?: string; // ISO timestamp - for conflict resolution
 }
 
 // Derived goal statistics
@@ -141,6 +146,7 @@ export interface HabitRoutine {
   routineId: string;
   orderIndex: number; // Order of habit within the routine
   createdAt: string;
+  updatedAt?: string; // ISO timestamp - for conflict resolution
 }
 
 // ============================================
@@ -177,6 +183,7 @@ export interface UserSettings {
   showMotivationalQuotes: boolean;
   defaultCategory: Category;
   createdAt: string;
+  updatedAt?: string; // ISO timestamp - for conflict resolution
   // Gamification fields
   xp: number;
   level: number;

@@ -2,6 +2,7 @@
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions } from '@/lib/db';
 import type { Habit, HabitCompletion, Goal, Milestone } from '@/lib/types';
+import { resolveConflict, mergeGamificationFields } from './conflict-resolution';
 
 // ===================
 // TYPES
@@ -378,20 +379,25 @@ export class SyncEngine {
       const remoteByKey_ = remoteByKey.get(habitKey);
 
       if (remoteById_) {
-        // Same ID exists remotely - use Last Write Wins based on updatedAt
+        // Same ID exists remotely - use conflict resolution based on updatedAt
         processedRemoteIds.add(remoteById_.id);
 
-        const localUpdated = new Date(local.updatedAt || local.createdAt).getTime();
-        const remoteUpdated = new Date(remoteById_.updated_at || remoteById_.created_at).getTime();
+        const resolution = resolveConflict(
+          { ...local, updatedAt: local.updatedAt || local.createdAt },
+          { ...remoteById_, updated_at: remoteById_.updated_at, created_at: remoteById_.created_at },
+          {}
+        );
 
-        if (localUpdated > remoteUpdated) {
+        if (resolution.winner === 'local') {
           // Local is newer - push to remote (including archived status)
           await this.pushHabitToRemote(local);
-        } else if (localUpdated < remoteUpdated) {
+          this.log('info', `🔄 Habit conflict (${local.name}): ${resolution.reason}`);
+        } else if (resolution.winner === 'remote') {
           // Remote is newer - update local (including archived status)
           await this.updateLocalHabit(remoteById_);
+          this.log('info', `🔄 Habit conflict (${local.name}): ${resolution.reason}`);
         }
-        // If equal timestamps, do nothing (already in sync)
+        // If equal, do nothing (already in sync)
       } else if (remoteByKey_ && remoteByKey_.id !== local.id) {
         // Different ID but same name+category - merge (remote wins for ID)
         processedRemoteIds.add(remoteByKey_.id);
@@ -630,6 +636,8 @@ export class SyncEngine {
       .filter(c => c.userId === this.userId!)
       .toArray();
 
+    this.log('info', `📊 Completions: Local=${localCompletions.length}, Remote=${remoteCompletions?.length || 0}`);
+
     // Create lookup maps using habitId-date as unique key
     const remoteMap = new Map(
       (remoteCompletions || []).map((c: any) => [`${c.habit_id}-${c.date}`, c])
@@ -638,14 +646,23 @@ export class SyncEngine {
       localCompletions.map(c => [`${c.habitId}-${c.date}`, c])
     );
 
+    // Track IDs we've seen to avoid duplicates
+    const processedKeys = new Set<string>();
+
     // Collect batch operations
     const toInsertRemote: any[] = [];
+    const toUpdateRemote: any[] = [];
     const toUpsertLocal: HabitCompletion[] = [];
 
-    // Push local completions that don't exist remotely
+    // Process local completions
     for (const local of localCompletions) {
       const key = `${local.habitId}-${local.date}`;
-      if (!remoteMap.has(key)) {
+      const remote = remoteMap.get(key);
+      
+      processedKeys.add(key);
+      
+      if (!remote) {
+        // Local only - push to remote
         toInsertRemote.push({
           id: local.id,
           user_id: this.userId,
@@ -653,14 +670,60 @@ export class SyncEngine {
           date: local.date,
           completed: local.completed,
           notes: local.note || null,
+          created_at: new Date().toISOString(),
         });
+      } else if (local.completed !== remote.completed || local.note !== remote.notes) {
+        // Both exist but differ - use intelligent conflict resolution
+        const resolution = resolveConflict(
+          { 
+            ...local, 
+            updatedAt: local.updatedAt || local.createdAt,
+            completed: local.completed 
+          },
+          { 
+            ...remote, 
+            updated_at: remote.updated_at,
+            created_at: remote.created_at,
+            completed: remote.completed 
+          },
+          { preferCompleted: true } // Completed always wins
+        );
+        
+        if (resolution.winner === 'local') {
+          // Local wins - push to remote
+          toUpdateRemote.push({
+            id: remote.id, // Keep remote ID to update
+            user_id: this.userId,
+            habit_id: local.habitId,
+            date: local.date,
+            completed: local.completed,
+            notes: local.note || null,
+            updated_at: new Date().toISOString(),
+          });
+          this.log('info', `🔄 Completion conflict (${local.habitId} on ${local.date}): ${resolution.reason}`);
+        } else if (resolution.winner === 'remote') {
+          // Remote wins - pull to local
+          toUpsertLocal.push({
+            id: remote.id,
+            userId: this.userId || remote.user_id,
+            habitId: remote.habit_id,
+            date: remote.date,
+            completed: remote.completed,
+            note: remote.notes || undefined,
+            updatedAt: remote.updated_at,
+            createdAt: remote.created_at,
+          });
+          this.log('info', `🔄 Completion conflict (${local.habitId} on ${local.date}): ${resolution.reason}`);
+        }
+        // If 'equal', do nothing - already in sync
       }
     }
 
     // Pull remote completions that don't exist locally
     for (const remote of (remoteCompletions || []) as any[]) {
       const key = `${remote.habit_id}-${remote.date}`;
-      if (!localMap.has(key)) {
+      
+      if (!processedKeys.has(key) && !localMap.has(key)) {
         toUpsertLocal.push({
           id: remote.id,
           userId: this.userId || remote.user_id,
@@ -675,10 +738,17 @@ export class SyncEngine {
     // Execute batch operations
     if (toInsertRemote.length > 0) {
       await this.batchUpsert('completions', toInsertRemote);
+      this.log('info', `✅ Pushed ${toInsertRemote.length} new completions to remote`);
+    }
+
+    if (toUpdateRemote.length > 0) {
+      await this.batchUpsert('completions', toUpdateRemote);
+      this.log('info', `✅ Updated ${toUpdateRemote.length} completions on remote (conflict resolution)`);
     }
 
     if (toUpsertLocal.length > 0) {
       await db.completions.bulkPut(toUpsertLocal);
+      this.log('info', `✅ Pulled ${toUpsertLocal.length} completions from remote`);
     }
   }
 
@@ -750,14 +820,22 @@ export class SyncEngine {
 
       if (remoteById_) {
         processedRemoteIds.add(remoteById_.id);
-        const localUpdated = new Date(local.createdAt).getTime();
-        const remoteUpdated = new Date(remoteById_.updated_at || remoteById_.created_at).getTime();
-
-        if (localUpdated > remoteUpdated) {
+        
+        // Use conflict resolution with "completed status wins"
+        const resolution = resolveConflict(
+          { ...local, updatedAt: local.updatedAt || local.createdAt },
+          { ...remoteById_ },
+          { completedStatuses: ['completed'] }
+        );
+        
+        if (resolution.winner === 'local') {
           await this.pushGoalToRemote(local);
-        } else {
+          this.log('info', `🔄 Goal conflict (${local.title}): ${resolution.reason}`);
+        } else if (resolution.winner === 'remote') {
           await this.updateLocalGoal(remoteById_);
+          this.log('info', `🔄 Goal conflict (${local.title}): ${resolution.reason}`);
         }
+        // If 'equal', do nothing - already in sync
       } else if (remoteByTitle_ && remoteByTitle_.id !== local.id) {
         processedRemoteIds.add(remoteByTitle_.id);
         await this.mergeGoalToRemote(local, remoteByTitle_);
@@ -912,10 +990,17 @@ export class SyncEngine {
     const remoteMap = new Map((remoteMilestones || []).map((m: any) => [m.id, m]));
     const localMap = new Map(localMilestones.map(m => [m.id, m]));
 
-    // Push local milestones not in remote
+    // Collect batch operations
     const toInsertRemote: any[] = [];
+    const toUpdateRemote: any[] = [];
+    const toUpsertLocal: Milestone[] = [];
+
+    // Process local milestones
     for (const local of localMilestones) {
-      if (!remoteMap.has(local.id)) {
+      const remote = remoteMap.get(local.id);
+      
+      if (!remote) {
+        // Local only - push to remote
         toInsertRemote.push({
           id: local.id,
           user_id: this.userId,
@@ -924,16 +1009,63 @@ export class SyncEngine {
           is_completed: local.completed,
           completed_at: local.completedAt,
           order_index: local.order,
+          updated_at: new Date().toISOString(),
         });
+      } else if (local.completed !== remote.is_completed || local.title !== remote.title) {
+        // Both exist but differ - use conflict resolution with "completed always wins"
+        const resolution = resolveConflict(
+          { ...local, updatedAt: local.updatedAt || local.createdAt },
+          { 
+            ...remote, 
+            completed: remote.is_completed,
+            updated_at: remote.updated_at,
+            created_at: remote.created_at 
+          },
+          { preferCompleted: true }
+        );
+        
+        if (resolution.winner === 'local') {
+          toUpdateRemote.push({
+            id: remote.id,
+            user_id: this.userId,
+            goal_id: local.goalId,
+            title: local.title,
+            is_completed: local.completed,
+            completed_at: local.completedAt,
+            order_index: local.order,
+            updated_at: new Date().toISOString(),
+          });
+          this.log('info', `🔄 Milestone conflict (${local.title}): ${resolution.reason}`);
+        } else if (resolution.winner === 'remote') {
+          toUpsertLocal.push({
+            id: remote.id,
+            userId: this.userId || remote.user_id,
+            goalId: remote.goal_id,
+            title: remote.title,
+            completed: remote.is_completed || false,
+            completedAt: remote.completed_at || undefined,
+            order: remote.order_index || 0,
+            updatedAt: remote.updated_at,
+            createdAt: remote.created_at,
+          });
+          this.log('info', `🔄 Milestone conflict (${local.title}): ${resolution.reason}`);
+        }
+        // If 'equal', do nothing
       }
     }
 
+    // Execute batch operations
     if (toInsertRemote.length > 0) {
       await this.batchUpsert('milestones', toInsertRemote);
+      this.log('info', `✅ Pushed ${toInsertRemote.length} new milestones to remote`);
+    }
+
+    if (toUpdateRemote.length > 0) {
+      await this.batchUpsert('milestones', toUpdateRemote);
+      this.log('info', `✅ Updated ${toUpdateRemote.length} milestones on remote (conflict resolution)`);
     }
 
     // Pull remote milestones not in local
-    const toUpsertLocal: Milestone[] = [];
     for (const remote of (remoteMilestones || []) as any[]) {
       if (!localMap.has(remote.id)) {
         toUpsertLocal.push({
@@ -944,12 +1076,15 @@ export class SyncEngine {
           completed: remote.is_completed || false,
           completedAt: remote.completed_at || undefined,
           order: remote.order_index || 0,
+          updatedAt: remote.updated_at,
+          createdAt: remote.created_at,
         });
       }
     }
 
     if (toUpsertLocal.length > 0) {
       await db.milestones.bulkPut(toUpsertLocal);
+      this.log('info', `✅ Pulled ${toUpsertLocal.length} milestones from remote`);
     }
   }
 
@@ -1030,16 +1165,22 @@ export class SyncEngine {
           updated_at: local.updated_at,
         });
       } else {
-        // Exists in remote, check timestamp
+        // Exists in remote, use conflict resolution with "done status wins"
         const remote = remoteById.get(local.id);
-        const localUpdated = new Date(local.updated_at).getTime();
-        const remoteUpdated = new Date(remote.updated_at || remote.created_at).getTime();
-
-        if (localUpdated > remoteUpdated) {
+        const resolution = resolveConflict(
+          { ...local, updatedAt: local.updated_at },
+          { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
+          { completedStatuses: ['done'] }
+        );
+        
+        if (resolution.winner === 'local') {
           await this.pushTaskToRemote(local);
-        } else if (remoteUpdated > localUpdated) {
+          this.log('info', `🔄 Task conflict (${local.title}): ${resolution.reason}`);
+        } else if (resolution.winner === 'remote') {
           await this.updateLocalTask(remote);
+          this.log('info', `🔄 Task conflict (${local.title}): ${resolution.reason}`);
         }
+        // If 'equal', do nothing
       }
     }
 
@@ -1160,14 +1301,21 @@ export class SyncEngine {
 
       if (remote) {
         processedRemoteIds.add(remote.id);
-        const localUpdated = new Date(local.updatedAt || local.createdAt).getTime();
-        const remoteUpdated = new Date(remote.updated_at || remote.created_at).getTime();
+        
+        const resolution = resolveConflict(
+          { ...local, updatedAt: local.updatedAt || local.createdAt },
+          { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
+          {}
+        );
 
-        if (localUpdated > remoteUpdated) {
+        if (resolution.winner === 'local') {
           await this.pushRoutineToRemote(local);
-        } else if (localUpdated < remoteUpdated) {
+          this.log('info', `🔄 Routine conflict (${local.title}): ${resolution.reason}`);
+        } else if (resolution.winner === 'remote') {
           await this.updateLocalRoutine(remote);
+          this.log('info', `🔄 Routine conflict (${local.title}): ${resolution.reason}`);
         }
+        // If 'equal', do nothing
       } else {
         // Local only - push to remote
         await this.pushRoutineToRemote(local);
@@ -1309,18 +1457,38 @@ export class SyncEngine {
       // Remote only - pull to local
       await this.updateLocalUserSettings(remoteSettings);
     } else if (remoteSettings && localSettings) {
-      // Both exist - use last write wins based on updated_at
-      const localUpdated = new Date(localSettings.createdAt).getTime(); // Settings don't have updatedAt currently
-      const remoteUpdated = new Date((remoteSettings as any).updated_at || (remoteSettings as any).created_at).getTime();
-
-      if (localUpdated > remoteUpdated) {
-        // Local is newer - push to remote
-        await this.pushUserSettingsToRemote(localSettings);
-      } else if (localUpdated < remoteUpdated) {
-        // Remote is newer - update local
-        await this.updateLocalUserSettings(remoteSettings);
-      }
-      // If equal, do nothing (already in sync)
+      // Both exist - merge gamification fields (highest value wins) and use timestamp for other fields
+      this.log('info', '🎮 Both settings exist, merging with conflict resolution...');
+      
+      // First, merge gamification fields to ensure highest values
+      const mergedGamification = mergeGamificationFields(
+        localSettings, 
+        remoteSettings as any
+      );
+      
+      // Then use conflict resolution for other fields based on timestamp
+      const resolution = resolveConflict(
+        { ...localSettings, updatedAt: localSettings.updatedAt || localSettings.createdAt },
+        { ...(remoteSettings as any) },
+        {}
+      );
+      
+      // Merge: Take winner's data for non-gamification fields, but always use merged gamification values
+      const winner = resolution.winner === 'local' ? localSettings : remoteSettings;
+      const finalSettings = {
+        ...winner,
+        xp: mergedGamification.xp,
+        level: mergedGamification.level,
+        gems: mergedGamification.gems,
+        streakShield: mergedGamification.streakShield,
+      };
+      
+      // Push merged settings to both local and remote to ensure consistency
+      await this.pushUserSettingsToRemote(finalSettings);
+      await this.updateLocalUserSettings(finalSettings);
+      
+      this.log('info', `🎮 Settings merged: XP=${finalSettings.xp}, Level=${finalSettings.level}, Gems=${finalSettings.gems}, Shield=${finalSettings.streakShield}`);
+      this.log('info', `🔄 ${resolution.reason}`);
     }
   }
 
@@ -1437,18 +1605,55 @@ export class SyncEngine {
     const remoteMap = new Map((remoteLinks || []).map((l: any) => [`${l.habit_id}-${l.routine_id}`, l]));
     const localMap = new Map(userLocalLinks.map(l => [`${l.habitId}-${l.routineId}`, l]));
 
-    // Push local links not in remote
+    // Collect batch operations
     const toInsertRemote: any[] = [];
+    const toUpdateRemote: any[] = [];
+    const toUpsertLocal: any[] = [];
+    
+    // Process local links
     for (const local of userLocalLinks) {
       const key = `${local.habitId}-${local.routineId}`;
-      if (!remoteMap.has(key)) {
+      const remote = remoteMap.get(key);
+      
+      if (!remote) {
+        // Local only - push to remote
         toInsertRemote.push({
           id: local.id,
           habit_id: local.habitId,
           routine_id: local.routineId,
           order_index: local.orderIndex,
           created_at: local.createdAt,
+          updated_at: local.updatedAt || local.createdAt,
         });
+      } else if (local.orderIndex !== remote.order_index) {
+        // Both exist but differ - use conflict resolution
+        const resolution = resolveConflict(
+          { ...local, updatedAt: local.updatedAt || local.createdAt },
+          { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
+          {}
+        );
+        
+        if (resolution.winner === 'local') {
+          toUpdateRemote.push({
+            id: remote.id,
+            habit_id: local.habitId,
+            routine_id: local.routineId,
+            order_index: local.orderIndex,
+            updated_at: new Date().toISOString(),
+          });
+          this.log('info', `🔄 Habit-routine conflict (${key}): ${resolution.reason}`);
+        } else if (resolution.winner === 'remote') {
+          toUpsertLocal.push({
+            id: remote.id,
+            habitId: remote.habit_id,
+            routineId: remote.routine_id,
+            orderIndex: remote.order_index || 0,
+            createdAt: remote.created_at,
+            updatedAt: remote.updated_at,
+          });
+          this.log('info', `🔄 Habit-routine conflict (${key}): ${resolution.reason}`);
+        }
+        // If 'equal', do nothing
       }
     }
 
@@ -1457,8 +1662,12 @@ export class SyncEngine {
       this.log('info', `✅ Pushed ${toInsertRemote.length} habit-routine links to remote`);
     }
 
+    if (toUpdateRemote.length > 0) {
+      await this.batchUpsert('habit_routines', toUpdateRemote);
+      this.log('info', `✅ Updated ${toUpdateRemote.length} habit-routine links on remote (conflict resolution)`);
+    }
+
     // Pull remote links not in local
-    const toUpsertLocal: any[] = [];
     for (const remote of (remoteLinks || []) as any[]) {
       const key = `${remote.habit_id}-${remote.routine_id}`;
       if (!localMap.has(key)) {
@@ -1468,6 +1677,7 @@ export class SyncEngine {
           routineId: remote.routine_id,
           orderIndex: remote.order_index || 0,
           createdAt: remote.created_at,
+          updatedAt: remote.updated_at,
         });
       }
     }
