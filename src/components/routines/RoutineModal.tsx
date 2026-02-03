@@ -164,7 +164,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
 
                 {/* Main Content Area with Custom Scrollbar */}
                 <ScrollArea className="h-[60vh] w-full">
-                    <form id="routine-form" onSubmit={handleSubmit} className="px-8 py-6 pb-32 space-y-8">
+                    <form id="routine-form" onSubmit={handleSubmit} className="px-8 py-6 pb-44 space-y-8">
 
                         {/* Section 1: Essentials */}
                         <div className="space-y-5">
@@ -329,7 +329,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                                 <div className="flex-1 min-w-0">
                                                     <p className={cn(
                                                         "font-medium truncate transition-colors",
-                                                        isSelected ? "text-indigo-700 dark:text-indigo-200" : "text-foreground group-hover:text-foreground/90"
+                                                        isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white"
                                                     )}>
                                                         {habit.name}
                                                     </p>
@@ -353,7 +353,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                 </ScrollArea>
 
                 {/* Footer */}
-                <div className="absolute bottom-0 left-0 right-0 p-8 pt-24 bg-gradient-to-t from-background via-background/95 to-transparent flex justify-end gap-3 z-20 pointer-events-none">
+                <div className="absolute bottom-0 left-0 right-0 p-8 pt-20 bg-gradient-to-t from-background via-background/95 to-transparent flex justify-end gap-3 z-20 pointer-events-none">
                     <Button
                         type="button"
                         variant="ghost"
