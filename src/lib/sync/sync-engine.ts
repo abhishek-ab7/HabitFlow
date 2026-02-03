@@ -205,6 +205,7 @@ export class SyncEngine {
         this.syncHabitsWithRetry(),
         this.syncGoalsWithRetry(),
         this.syncTasksWithRetry(),
+        this.syncRoutinesWithRetry(), // NEW: Add routine sync
       ]);
 
       // Check for failures
@@ -344,6 +345,8 @@ export class SyncEngine {
   private async syncHabits() {
     if (!this.userId) return;
 
+    this.log('info', '🔄 Starting habit sync...');
+
     // Pull ALL habits from Supabase (including archived for proper merge)
     const { data: remoteHabits, error } = await this.supabase
       .from('habits')
@@ -353,6 +356,8 @@ export class SyncEngine {
     if (error) throw error;
 
     const localHabits = await db.habits.where('userId').equals(this.userId).toArray();
+
+    this.log('info', `📊 Habit counts: Local=${localHabits.length}, Remote=${remoteHabits?.length || 0}`);
 
     // Create lookup maps - use lowercase for case-insensitive matching
     const remoteById = new Map((remoteHabits || []).map((h: any) => [h.id, h]));
@@ -423,7 +428,7 @@ export class SyncEngine {
       target_days: habit.targetDaysPerWeek,
       reminder_time: null,
       is_archived: habit.archived,
-      archived_at: habit.archivedAt || null,
+      // REMOVED: archived_at (column doesn't exist in Supabase)
       order_index: habit.order,
       updated_at: habit.updatedAt || habit.createdAt,
     } as any);
@@ -538,11 +543,10 @@ export class SyncEngine {
       return;
     }
 
-    // Soft delete - mark as archived with timestamp
+    // Soft delete - mark as archived (no timestamp since column doesn't exist)
     // @ts-expect-error - Supabase type issue with update
     const { error } = await this.supabase.from('habits').update({
       is_archived: true,
-      archived_at: now,
       updated_at: now,
     }).eq('id', habitId).eq('user_id', this.userId);
 
@@ -757,14 +761,15 @@ export class SyncEngine {
         await this.mergeGoalToRemote(local, remoteByTitle_);
       } else if (!local.archived) {
         await this.pushGoalToRemote(local);
+        // Mark as processed to prevent duplicate pull
+        processedRemoteIds.add(local.id);
       }
     }
 
+    // FIXED: Only pull remote goals that haven't been processed AND don't exist locally
     for (const remote of (remoteGoals || []) as any[]) {
-      if (!processedRemoteIds.has(remote.id) && !localById.has(remote.id)) {
-        if (!remote.is_archived) {
-          await this.updateLocalGoal(remote);
-        }
+      if (!processedRemoteIds.has(remote.id) && !localById.has(remote.id) && !remote.is_archived) {
+        await this.updateLocalGoal(remote);
       }
     }
   }
@@ -1121,6 +1126,130 @@ export class SyncEngine {
     }
 
     await this.supabase.from('tasks').delete().eq('id', taskId);
+  }
+
+  // ===================
+  // ROUTINES SYNC
+  // ===================
+
+  private async syncRoutinesWithRetry() {
+    return this.withRetry(() => this.syncRoutines(), 'Routines sync');
+  }
+
+  private async syncRoutines() {
+    if (!this.userId) return;
+
+    const { data: remoteRoutines, error } = await this.supabase
+      .from('routines')
+      .select('*')
+      .eq('user_id', this.userId);
+
+    if (error) throw error;
+
+    const localRoutines = await db.routines.where('userId').equals(this.userId).toArray();
+
+    const remoteById = new Map((remoteRoutines || []).map((r: any) => [r.id, r]));
+    const localById = new Map(localRoutines.map(r => [r.id, r]));
+    const processedRemoteIds = new Set<string>();
+
+    // Process local routines
+    for (const local of localRoutines) {
+      const remote = remoteById.get(local.id);
+
+      if (remote) {
+        processedRemoteIds.add(remote.id);
+        const localUpdated = new Date(local.updatedAt || local.createdAt).getTime();
+        const remoteUpdated = new Date(remote.updated_at || remote.created_at).getTime();
+
+        if (localUpdated > remoteUpdated) {
+          await this.pushRoutineToRemote(local);
+        } else if (localUpdated < remoteUpdated) {
+          await this.updateLocalRoutine(remote);
+        }
+      } else {
+        // Local only - push to remote
+        await this.pushRoutineToRemote(local);
+      }
+    }
+
+    // Process remote routines not yet seen
+    for (const remote of (remoteRoutines || []) as any[]) {
+      if (!processedRemoteIds.has(remote.id) && !localById.has(remote.id)) {
+        await this.updateLocalRoutine(remote);
+      }
+    }
+  }
+
+  private async pushRoutineToRemote(routine: any) {
+    if (!this.userId) return;
+
+    await this.supabase.from('routines').upsert({
+      id: routine.id,
+      user_id: this.userId,
+      title: routine.title,
+      description: routine.description || null,
+      trigger_type: routine.triggerType,
+      trigger_value: routine.triggerValue || null,
+      is_active: routine.isActive,
+      order_index: routine.orderIndex,
+      created_at: routine.createdAt,
+      updated_at: routine.updatedAt || routine.createdAt,
+    } as any);
+  }
+
+  private async updateLocalRoutine(remote: any) {
+    await db.routines.put({
+      id: remote.id,
+      userId: this.userId!,
+      title: remote.title,
+      description: remote.description,
+      triggerType: remote.trigger_type,
+      triggerValue: remote.trigger_value,
+      isActive: remote.is_active,
+      orderIndex: remote.order_index,
+      createdAt: remote.created_at,
+      updatedAt: remote.updated_at || remote.created_at,
+    });
+  }
+
+  async pushRoutine(routine: any) {
+    if (!this.userId) return;
+
+    if (!this.isOnline) {
+      this.queueOperation({
+        type: 'update',
+        table: 'routines' as any,
+        data: {
+          id: routine.id,
+          user_id: this.userId,
+          title: routine.title,
+          description: routine.description,
+          trigger_type: routine.triggerType,
+          trigger_value: routine.triggerValue,
+          is_active: routine.isActive,
+          order_index: routine.orderIndex,
+          updated_at: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
+    await this.pushRoutineToRemote(routine);
+  }
+
+  async deleteRoutine(routineId: string) {
+    if (!this.userId) return;
+
+    if (!this.isOnline) {
+      this.queueOperation({
+        type: 'delete',
+        table: 'routines' as any,
+        data: { id: routineId },
+      });
+      return;
+    }
+
+    await this.supabase.from('routines').delete().eq('id', routineId);
   }
 
   // ===================

@@ -38,7 +38,7 @@ export async function forcePushAllHabits() {
             target_days: habit.targetDaysPerWeek,
             reminder_time: null,
             is_archived: habit.archived || false,
-            archived_at: habit.archivedAt || null,
+            // REMOVED: archived_at (column doesn't exist in Supabase)
             order_index: habit.order,
             created_at: habit.createdAt,
             updated_at: habit.updatedAt || habit.createdAt,
