@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
-import dynamic from 'next/dynamic'
 import { TaskCard, CreateTaskModal, SmartTaskInput } from "@/components/tasks"
 import { Loader2, Inbox } from "lucide-react"
 import { toast } from "sonner"
@@ -9,15 +8,8 @@ import { cn } from "@/lib/utils"
 import { useTaskStore } from "@/lib/stores/task-store"
 import type { Task } from "@/lib/types"
 
-// ⚡ OPTIMIZATION: Dynamic import for KanbanBoard (saves ~100KB on initial load)
-const KanbanBoard = dynamic(() => import("@/components/tasks").then(mod => ({ default: mod.KanbanBoard })), {
-  loading: () => <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>,
-  ssr: false
-});
-
 export default function TasksPage() {
     const { tasks, loadTasks, isLoading, toggleTaskComplete, editTask, addTask } = useTaskStore()
-    const [view, setView] = useState<'list' | 'board'>('list')
 
     // Initial load
     useEffect(() => {
@@ -30,22 +22,6 @@ export default function TasksPage() {
             toast.success("Task updated")
         } catch (error) {
             toast.error("Failed to update task")
-        }
-    }
-
-    const handleTaskUpdate = async (updatedTask: Task) => {
-        try {
-            await editTask(updatedTask.id, {
-                status: updatedTask.status,
-                priority: updatedTask.priority,
-                due_date: updatedTask.due_date,
-                description: updatedTask.description,
-                title: updatedTask.title,
-                goal_id: updatedTask.goal_id,
-                tags: updatedTask.tags
-            })
-        } catch (error) {
-            toast.error("Failed to update task status")
         }
     }
 
@@ -66,12 +42,12 @@ export default function TasksPage() {
     };
 
     // ⚡ OPTIMIZATION: Memoize filtered tasks to prevent recalculation on every render
-    const activeTasks = useMemo(() => 
+    const activeTasks = useMemo(() =>
         tasks.filter(t => t.status !== 'done' && t.status !== 'archived'),
         [tasks]
     );
-    
-    const completedTasks = useMemo(() => 
+
+    const completedTasks = useMemo(() =>
         tasks.filter(t => t.status === 'done'),
         [tasks]
     );
@@ -89,20 +65,6 @@ export default function TasksPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="flex bg-muted p-1 rounded-lg border border-border/50">
-                        <button
-                            onClick={() => setView('list')}
-                            className={cn("px-3 py-1.5 text-sm font-medium rounded-md transition-all", view === 'list' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}
-                        >
-                            List
-                        </button>
-                        <button
-                            onClick={() => setView('board')}
-                            className={cn("px-3 py-1.5 text-sm font-medium rounded-md transition-all", view === 'board' ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground")}
-                        >
-                            Board
-                        </button>
-                    </div>
                     {/* Note: CreateTaskModal calls onTaskCreated. Since we use store, we can just reload or let store update. 
                         Usually store updates state immediately. But refreshing is safe. */}
                     <CreateTaskModal onTaskCreated={loadTasks} />
@@ -130,8 +92,6 @@ export default function TasksPage() {
                             <p className="text-muted-foreground">Get started by creating your first task.</p>
                         </div>
                     </div>
-                ) : view === 'board' ? (
-                    <KanbanBoard tasks={activeTasks} onTaskUpdate={handleTaskUpdate} />
                 ) : (
                     <div className="space-y-8 overflow-y-auto h-full pr-2">
                         {/* Active Tasks */}

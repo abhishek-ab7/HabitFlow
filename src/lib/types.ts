@@ -278,6 +278,7 @@ export interface TaskFormData {
   due_date?: string;
   goal_id?: string;
   tags?: string[];
+  metadata?: Record<string, any>;
 }
 
 // ============================================

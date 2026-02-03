@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Checkbox } from "@/components/ui/checkbox"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
     Select,
     SelectContent,
@@ -18,7 +18,7 @@ import {
 import { useRoutineStore } from "@/lib/stores/routine-store"
 import { useHabitStore } from "@/lib/stores/habit-store"
 import { Routine } from "@/lib/types"
-import { Loader2, MapPin, Clock, Play, CheckCircle2, X } from "lucide-react"
+import { Loader2, MapPin, Clock, Play, CheckCircle2, X, Plus, Sparkles, Layers } from "lucide-react"
 import { toast } from "sonner"
 import { getCurrentPosition } from "@/lib/location"
 import { cn } from "@/lib/utils"
@@ -60,7 +60,6 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                 triggerType: routine.triggerType,
                 triggerValue: routine.triggerValue || '',
             })
-            // Pre-select habits that belong to this routine using junction table
             setLoadingHabits(true)
             getRoutineHabits(routine.id).then(routineHabits => {
                 setSelectedHabitIds(new Set(routineHabits.map(h => h.id)));
@@ -102,15 +101,12 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                 toast.success("Routine created")
             }
 
-            // Update habit-routine links using junction table
             if (routineId) {
                 try {
-                    // Get current links
                     const currentHabits = await getRoutineHabits(routineId);
                     const currentHabitIds = new Set(currentHabits.map(h => h.id));
                     const selectedSet = selectedHabitIds;
 
-                    // Link newly selected habits
                     const linkPromises = [];
                     for (const habitId of Array.from(selectedSet)) {
                         if (!currentHabitIds.has(habitId)) {
@@ -119,7 +115,6 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                     }
                     await Promise.all(linkPromises);
 
-                    // Unlink deselected habits
                     const unlinkPromises = [];
                     for (const habitId of Array.from(currentHabitIds)) {
                         if (!selectedSet.has(habitId)) {
@@ -143,12 +138,11 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
         }
     }
 
-    // Filter out archived habits for selection
     const activeHabits = habits.filter(h => !h.archived);
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent showCloseButton={false} className="sm:max-w-[600px] flex flex-col h-[85vh] md:h-auto md:max-h-[85vh] p-0 overflow-hidden bg-background/60 backdrop-blur-2xl border-white/10 dark:border-white/5 shadow-2xl ring-1 ring-white/20 dark:ring-white/10 !rounded-3xl">
+            <DialogContent showCloseButton={false} className="sm:max-w-[600px] flex flex-col h-[85vh] md:h-auto md:max-h-[85vh] p-0 overflow-hidden bg-background/60 backdrop-blur-2xl border-white/10 dark:border-white/5 shadow-2xl ring-1 ring-white/20 dark:ring-white/10 !rounded-3xl gap-0">
 
                 {/* Header with Gradient */}
                 <div className="relative p-8 pb-6 shrink-0 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
@@ -159,7 +153,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                     </div>
 
                     <DialogHeader className="space-y-2">
-                        <DialogTitle className="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500">
+                        <DialogTitle className="text-3xl font-bold tracking-tight text-foreground">
                             {routine ? "Edit Routine" : "Design New Routine"}
                         </DialogTitle>
                         <DialogDescription className="text-base text-muted-foreground font-medium">
@@ -168,11 +162,11 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                     </DialogHeader>
                 </div>
 
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar">
-                    <form id="routine-form" onSubmit={handleSubmit} className="space-y-8">
+                {/* Main Content Area with Custom Scrollbar */}
+                <ScrollArea className="h-[60vh] w-full">
+                    <form id="routine-form" onSubmit={handleSubmit} className="px-8 py-6 pb-32 space-y-8">
 
-                        {/* Basic Info Section */}
+                        {/* Section 1: Essentials */}
                         <div className="space-y-5">
                             <div className="space-y-2">
                                 <Label htmlFor="title" className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Name</Label>
@@ -198,7 +192,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                             </div>
                         </div>
 
-                        {/* Trigger Section */}
+                        {/* Section 2: Trigger */}
                         <div className="space-y-2">
                             <Label className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Activation Trigger</Label>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -285,7 +279,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                             )}
                         </div>
 
-                        {/* Habits Selection */}
+                        {/* Section 3: Habit Stack */}
                         <div className="space-y-3">
                             <div className="flex items-center justify-between px-1">
                                 <Label className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Habit Stack</Label>
@@ -294,7 +288,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                 </span>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-h-[100px]">
                                 {loadingHabits ? (
                                     <div className="col-span-full py-12 flex flex-col items-center justify-center text-muted-foreground">
                                         <Loader2 className="w-8 h-8 animate-spin mb-3 opacity-50" />
@@ -354,16 +348,17 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                 )}
                             </div>
                         </div>
+
                     </form>
-                </div>
+                </ScrollArea>
 
                 {/* Footer */}
-                <div className="p-6 border-t border-white/5 bg-background/40 backdrop-blur-md flex justify-end gap-3 shrink-0">
+                <div className="absolute bottom-0 left-0 right-0 p-8 pt-24 bg-gradient-to-t from-background via-background/95 to-transparent flex justify-end gap-3 z-20 pointer-events-none">
                     <Button
                         type="button"
                         variant="ghost"
                         onClick={onClose}
-                        className="h-12 px-6 rounded-xl hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
+                        className="pointer-events-auto h-12 px-6 rounded-xl hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
                     >
                         Cancel
                     </Button>
@@ -372,22 +367,24 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                         form="routine-form"
                         disabled={loading || !formData.title}
                         className={cn(
-                            "h-12 px-8 rounded-xl font-semibold shadow-lg transition-all duration-300",
+                            "pointer-events-auto h-12 px-8 rounded-xl font-semibold shadow-lg transition-all duration-300",
                             "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:via-purple-500 hover:to-pink-500",
                             "text-white border-0 shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-[0.98]",
                             "disabled:opacity-50 disabled:pointer-events-none"
                         )}
                     >
-                        {loading ? (
-                            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                        ) : routine ? (
-                            "Save Changes"
-                        ) : (
-                            "Create Routine"
-                        )}
+                        {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <SaveIcon routine={routine} />}
                     </Button>
                 </div>
             </DialogContent>
         </Dialog>
+    )
+}
+
+function SaveIcon({ routine }: { routine?: Routine | null }) {
+    return (
+        <div className="flex items-center gap-2">
+            <span>{routine ? "Save Changes" : "Create Routine"}</span>
+        </div>
     )
 }

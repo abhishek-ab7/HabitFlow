@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { isAIEnabled } from "@/lib/ai-features-flag"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Plus, Calendar as CalendarIcon, Flag, Target, Sparkles, X, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import type { Database } from "@/lib/supabase/types"
+import { useTaskStore } from "@/lib/stores/task-store"
 
 type Goal = Database['public']['Tables']['goals']['Row']
 
@@ -29,6 +30,7 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
     const [subtasks, setSubtasks] = useState<{ id: string; title: string; completed: boolean }[]>([])
     const [newSubtask, setNewSubtask] = useState("")
     const [isGenerating, setIsGenerating] = useState(false)
+    const { addTask } = useTaskStore()
 
     const [goals, setGoals] = useState<Goal[]>([])
 
@@ -105,17 +107,14 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
 
         setLoading(true)
         try {
-            const { error } = await (supabase.from("tasks") as any).insert({
+            await addTask({
                 title,
                 description,
                 priority,
-                due_date: dueDate ? new Date(dueDate).toISOString() : null,
-                goal_id: selectedGoalId === "none" ? null : selectedGoalId,
-                user_id: (await supabase.auth.getUser()).data.user?.id!,
-                metadata: { subtasks } as any
+                due_date: dueDate ? new Date(dueDate).toISOString() : undefined,
+                goal_id: selectedGoalId === "none" ? undefined : selectedGoalId || undefined,
+                metadata: { subtasks }
             })
-
-            if (error) throw error
 
             toast.success("Task created successfully")
             setOpen(false)
@@ -152,6 +151,9 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                     <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent w-fit">
                         Create Task
                     </DialogTitle>
+                    <DialogDescription>
+                        Add a new task to your list. Fill in the details below.
+                    </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4 mt-4">
                     <div className="space-y-2">

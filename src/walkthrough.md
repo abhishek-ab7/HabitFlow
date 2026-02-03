@@ -18,10 +18,10 @@ This session focused on implementing a "Pro Max" quality UI for user settings an
     - **Gems Tab**: Explanation of the Gem Economy and Streak Shields.
     - **Rules Tab**: Detailed game mechanics.
 
-### 3. Level Motivation Overhaul (New)
-- **Discipline Radar**: A radar chart visualizing user stats (Discipline, Focus, Resilience).
-- **XP Journey Map**: A scrollable vertical timeline showing past achievements and future unlocks.
-- **Accountability Pledge**: A "signed contract" feature where users define their motivation.
+### 3. Level Motivation Overhaul (Pro Max Polish)
+- **Discipline Radar**: Upgraded to a "Mastery Radar" with gradient fills, dashed grid lines, and glowing backdrop.
+- **XP Journey Map**: Implemented a vertical timeline with "glowing pulse" effects for the current level and dashed gradient connectors.
+- **Accountability Pledge**: Completely re-themed to a "Holographic Identity Protocol" with glassmorphism and animated borders.
 
 ### 4. AI Coach Integration (Fixed)
 - Migrated to `@google/generative-ai` SDK.

@@ -14,7 +14,10 @@
 - [x] **Integration** <!-- id: 11 -->
     - [x] Refactor `GamificationRulesModal` to include new "My Journey" tab (or replace "Levels" content) <!-- id: 12 -->
     - [x] Ensure Mobile responsiveness <!-- id: 13 -->
-- [ ] **Verification** <!-- id: 14 -->
-    - [ ] Check Z-Index and Layout <!-- id: 15 -->
-    - [ ] Verify Data Persistence <!-- id: 16 -->
-    - [ ] Build Check <!-- id: 17 -->
+    - [x] Polish UI with "Pro Max" aesthetic (Gradients, Glassmorphism, Animations) <!-- id: 17 -->
+- [x] **Verification** <!-- id: 14 -->
+    - [x] Check Z-Index and Layout <!-- id: 15 -->
+    - [x] Verify Data Persistence <!-- id: 16 -->
+    - [x] Build Check <!-- id: 17 -->
+- [ ] **Redesign** <!-- id: 18 -->
+    - [ ] Redesign `RoutineModal` (Remove scrollbars, Premium UI) <!-- id: 19 -->

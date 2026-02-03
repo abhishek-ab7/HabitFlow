@@ -23,8 +23,8 @@ interface RoutineCardProps {
 }
 
 export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardProps) {
+    const { getHabitCompletions, completions } = useHabitStore();
     const { getRoutineHabits } = useRoutineStore();
-    const { getHabitCompletions } = useHabitStore();
     const [routineHabits, setRoutineHabits] = useState<Habit[]>([]);
     const [isCompleted, setIsCompleted] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -49,8 +49,10 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
                 let allDone = true;
 
                 for (const habit of habits) {
-                    const completions = await getHabitCompletions(habit.id);
-                    const isDoneToday = completions.some(c => c.date === today && c.completed);
+                    // We can use the store's completions directly since we have them now
+                    // fetching getHabitCompletions is fine too, but we need to ensure reactivity
+                    const habitCompletions = getHabitCompletions(habit.id);
+                    const isDoneToday = habitCompletions.some(c => c.date === today && c.completed);
                     if (!isDoneToday) {
                         allDone = false;
                         break;
@@ -70,7 +72,7 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
         checkCompletion();
 
         return () => { mounted = false; };
-    }, [routine.id]); // Stabilize: only re-run if the routine ID itself changes
+    }, [routine.id, completions, getRoutineHabits, getHabitCompletions]); // Re-run when completions change
 
     return (
         <motion.div

@@ -114,17 +114,45 @@ export function ProfileStatsCard({
     return (
         <BentoGridItem
             span={2}
-            className={cn("md:row-span-2 relative overflow-hidden", className)}
+            className={cn("md:row-span-2 relative overflow-hidden flex flex-col justify-between group", className)}
             header={<ProfileHeader />}
         >
-            <div className="mt-auto space-y-2 cursor-pointer" onClick={() => openRules('xp')}>
+            {/* Added Middle Content - Quick Stats */}
+            <div className="flex-1 flex flex-col justify-center py-4">
+                <div className="grid grid-cols-2 gap-3">
+                    <div
+                        className="bg-indigo-50/50 dark:bg-indigo-900/10 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/20 cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 transition-colors"
+                        onClick={() => openRules('levels')}
+                    >
+                        <div className="flex items-center gap-2 mb-1">
+                            <Zap className="w-4 h-4 text-amber-500" />
+                            <span className="text-xs font-semibold text-muted-foreground">Next Unlock</span>
+                        </div>
+                        <p className="text-sm font-bold text-foreground truncate">Level {level + 1} Badge</p>
+                    </div>
+                    <div
+                        className="bg-blue-50/50 dark:bg-blue-900/10 p-3 rounded-xl border border-blue-100 dark:border-blue-800/20 cursor-pointer hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-colors"
+                        onClick={() => openRules('gems')}
+                    >
+                        <div className="flex items-center gap-2 mb-1">
+                            <Shield className="w-4 h-4 text-blue-500" />
+                            <span className="text-xs font-semibold text-muted-foreground">Active Shield</span>
+                        </div>
+                        <p className="text-sm font-bold text-foreground">
+                            {streakShield > 0 ? "Protected" : "Vulnerable"}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-auto space-y-2 cursor-pointer pt-4 border-t border-border/40" onClick={() => openRules('xp')}>
                 <div className="flex justify-between text-xs font-medium">
                     <span className="text-muted-foreground">Progress to Level {level + 1}</span>
                     <span className="text-indigo-600 dark:text-indigo-400">{Math.round(progress)}%</span>
                 </div>
-                <Progress value={progress} className="h-2 bg-indigo-100 dark:bg-indigo-950" indicatorClassName="bg-gradient-to-r from-indigo-500 to-purple-500" />
-                <p className="text-[10px] text-muted-foreground text-right w-full">
-                    {xpRequired - xp} XP needed
+                <Progress value={progress} className="h-2.5 bg-secondary" indicatorClassName="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+                <p className="text-[10px] text-muted-foreground text-right w-full font-medium">
+                    {xpRequired - xp} XP to level up
                 </p>
             </div>
         </BentoGridItem>
