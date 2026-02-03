@@ -183,7 +183,6 @@ export interface Task {
   updated_at: string;
   parentTaskId?: string | null; // For sub-tasks
   depth?: number; // Nesting level (0=root, 1=subtask, 2=sub-subtask, max 3)
-  subtasks?: Task[]; // For UI rendering (derived, not stored)
 }
 
 // ============================================
