@@ -26,6 +26,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { db, getSettings, updateSettings } from '@/lib/db';
 import { cleanupAllDuplicates, countAllDuplicates } from '@/lib/cleanup';
+import { forcePushAllHabits, forcePullAllHabits } from '@/lib/force-sync';
 import { cn } from '@/lib/utils';
 import type { UserSettings, Category } from '@/lib/types';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
@@ -48,6 +49,7 @@ export default function SettingsPage() {
   } | null>(null);
 
   const [showAvatarSelector, setShowAvatarSelector] = useState(false);
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -208,6 +210,34 @@ export default function SettingsPage() {
     }
   };
 
+  const handleForcePush = async () => {
+    setIsForceSyncing(true);
+    try {
+      const result = await forcePushAllHabits();
+      toast.success(`Pushed ${result.success}/${result.total} habits to cloud`);
+      if (result.failed > 0) {
+        toast.warning(`${result.failed} habits failed to sync`);
+      }
+    } catch (error) {
+      toast.error('Force push failed: ' + (error as Error).message);
+    } finally {
+      setIsForceSyncing(false);
+    }
+  };
+
+  const handleForcePull = async () => {
+    setIsForceSyncing(true);
+    try {
+      const result = await forcePullAllHabits();
+      toast.success(`Pulled ${result.total} habits from cloud. Refreshing...`);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      toast.error('Force pull failed: ' + (error as Error).message);
+    } finally {
+      setIsForceSyncing(false);
+    }
+  };
+
   if (!settings) {
     return (
       <div className="container px-4 py-8 max-w-7xl mx-auto flex items-center justify-center min-h-[50vh]">
@@ -285,6 +315,47 @@ export default function SettingsPage() {
                 <RefreshCw className={cn("h-3 w-3 mr-2", isSyncing && "animate-spin")} />
                 {isSyncing ? 'Syncing...' : 'Sync Now'}
               </Button>
+            </BentoGridItem>
+          )}
+
+          {/* 3.5 Force Sync Debug Panel (DEV ONLY) */}
+          {isAuthenticated && (
+            <BentoGridItem
+              span={2}
+              title="🔧 Force Sync (Debug)"
+              icon={<Database className="h-5 w-5 text-red-500" />}
+              className="bg-red-50/30 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30"
+            >
+              <div className="space-y-2 mt-2">
+                <p className="text-xs text-muted-foreground">
+                  Use these tools to manually sync data when auto-sync fails.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleForcePush}
+                    disabled={isForceSyncing}
+                    className="h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600"
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span className="text-xs">Push Local → Cloud</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleForcePull}
+                    disabled={isForceSyncing}
+                    className="h-auto py-3 flex-col gap-1 border-dashed hover:border-solid hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span className="text-xs">Pull Cloud → Local</span>
+                  </Button>
+                </div>
+                <p className="text-xs text-red-600 dark:text-red-400 font-medium">
+                  ⚠️ Force Push will overwrite cloud data with local habits.
+                </p>
+              </div>
             </BentoGridItem>
           )}
 
