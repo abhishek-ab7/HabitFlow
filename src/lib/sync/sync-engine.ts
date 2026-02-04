@@ -2139,6 +2139,11 @@ export class SyncEngine {
         { event: '*', schema: 'public', table: 'habit_routines' },
         () => this.debouncedSync('habit_routines')
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'routine_completions', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('routine_completions')
+      )
       .subscribe((status) => {
         this.log('info', `Realtime subscription status: ${status}`);
       });
@@ -2177,6 +2182,9 @@ export class SyncEngine {
             break;
           case 'habit_routines':
             await this.syncHabitRoutinesWithRetry();
+            break;
+          case 'routine_completions':
+            await this.syncRoutineCompletions();
             break;
         }
 
