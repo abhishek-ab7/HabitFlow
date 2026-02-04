@@ -15,6 +15,16 @@ export function RoutineTriggerWatcher() {
     useEffect(() => {
         if (typeof window === 'undefined' || !navigator.geolocation) return;
 
+        // Check if we have any routines that need location monitoring
+        // We look for inactive routines with location triggers
+        const hasLocationRoutines = routines.some(routine =>
+            routine.triggerType === 'location' &&
+            routine.triggerValue &&
+            !routine.isActive
+        );
+
+        if (!hasLocationRoutines) return;
+
         const checkLocation = async () => {
             try {
                 const position = await getCurrentPosition();
