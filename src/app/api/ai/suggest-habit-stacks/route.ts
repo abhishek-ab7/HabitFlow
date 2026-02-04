@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { habitStackingSchema } from '@/lib/ai/schemas';
 import { buildHabitStackingPrompt } from '@/lib/ai/prompts';
 import type { HabitStackingInput, HabitStackingOutput } from '@/lib/ai/types';
@@ -22,11 +22,11 @@ export async function POST(req: NextRequest) {
     }
 
     const input = body as HabitStackingInput;
-    
+
     if (!input.existingHabits || input.existingHabits.length < 2) {
       return NextResponse.json({ error: 'At least 2 habits are required for stacking suggestions' }, { status: 400 });
     }
-    
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: 'AI service is not configured.' },
@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = getAIService();
+    const ai = new HabitFlowAI('habits');
     const prompt = buildHabitStackingPrompt(input);
-    
+
     // Cache key: based on habit IDs (changes when habits change)
     const habitIds = input.existingHabits.map(h => h.id).sort().join(',');
     const cacheKey = `habit-stacks:${habitIds}`;
@@ -58,9 +58,9 @@ export async function POST(req: NextRequest) {
     console.error('Habit Stacking Route Error:', error);
 
     // Check for rate limit error
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
       {

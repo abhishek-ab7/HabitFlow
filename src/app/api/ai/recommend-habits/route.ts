@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { habitRecommendationSchema } from '@/lib/ai/schemas';
 import { buildHabitRecommendationPrompt } from '@/lib/ai/prompts';
 import type { HabitRecommendationInput, HabitRecommendationOutput } from '@/lib/ai/types';
@@ -18,8 +18,8 @@ export async function POST(req: NextRequest) {
     const { goals, currentHabits, categoryPerformance, userLevel } = body;
 
     if (!goals || goals.length === 0) {
-      return NextResponse.json({ 
-        error: 'At least one goal is required for habit recommendations' 
+      return NextResponse.json({
+        error: 'At least one goal is required for habit recommendations'
       }, { status: 400 });
     }
 
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
     }
 
-    const ai = getAIService();
+    const ai = new HabitFlowAI('habits');
     const prompt = buildHabitRecommendationPrompt(body);
 
     // Cache for 24 hours, invalidate when goals/habits change
@@ -50,14 +50,14 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[AI Habits] Error:', error);
 
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
-      { 
+      {
         error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to generate habit recommendations',
-        details: error.message 
+        details: error.message
       },
       { status: isRateLimit ? 429 : 500 }
     );

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { coachBriefingSchema } from '@/lib/ai/schemas';
 import { buildCoachPrompt } from '@/lib/ai/prompts';
 import type { CoachBriefingInput, CoachBriefingOutput } from '@/lib/ai/types';
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { userData, context } = body as CoachBriefingInput;
-    
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: 'AI Coach is not configured.' },
@@ -30,9 +30,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = getAIService();
+    const ai = new (await import('@/lib/ai/service')).HabitFlowAI('dashboard');
     const prompt = buildCoachPrompt({ userData, context });
-    
+
     // Generate cache key based on user and date
     const cacheKey = `coach:${userData?.userId || 'anonymous'}:${new Date().toDateString()}:${context?.mode || 'briefing'}`;
     const cacheTTL = 6 * 60 * 60; // 6 hours
@@ -53,9 +53,9 @@ export async function POST(req: NextRequest) {
     console.error('AI Coach Route Error:', error);
 
     // Check for rate limit error
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
       {

@@ -176,13 +176,7 @@ export default function DashboardPage() {
 
 
 
-      {isAIEnabled() && <PersonalizedQuote />}
 
-      {isAIEnabled() && (
-        <div className="mb-6">
-          <AICoachWidget />
-        </div>
-      )}
 
       <MetricCards
         todayCompleted={todayProgress.completed}
@@ -208,6 +202,18 @@ export default function DashboardPage() {
           onToggleMilestone={handleToggleMilestone}
         />
       </div>
+
+      {isAIEnabled() && (
+        <div className="mt-8 mb-6">
+          <PersonalizedQuote />
+        </div>
+      )}
+
+      {isAIEnabled() && (
+        <div className="mb-8">
+          <AICoachWidget />
+        </div>
+      )}
 
       <QuickActions
         onMarkTodayHabits={handleMarkTodayHabits}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { subtaskGenerationSchema } from '@/lib/ai/schemas';
 import { buildSubtaskPrompt } from '@/lib/ai/prompts';
 import type { SubtaskGenerationInput, SubtaskGenerationOutput } from '@/lib/ai/types';
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
     }
 
-    const ai = getAIService();
+    const ai = new HabitFlowAI('tasks');
     const prompt = buildSubtaskPrompt({ title, description });
 
     console.log(`[AI Subtasks] Generating for task: "${title}"`);
@@ -35,16 +35,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('AI Generation Error:', error);
-    
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
-      { 
+      {
         error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to generate subtasks',
-        details: error.message 
-      }, 
+        details: error.message
+      },
       { status: isRateLimit ? 429 : 500 }
     );
   }

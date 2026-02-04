@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { taskPrioritySchema } from '@/lib/ai/schemas';
 import { buildPrioritizePrompt } from '@/lib/ai/prompts';
 import type { TaskPriorityInput, TaskPriorityOutput } from '@/lib/ai/types';
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
     }
 
-    const ai = getAIService();
+    const ai = new HabitFlowAI('tasks');
     const prompt = buildPrioritizePrompt(body);
 
     // Cache task priority for 6 hours (invalidate when task is updated/completed)
@@ -49,14 +49,14 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error('[AI Priority] Error:', error);
 
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
-      { 
+      {
         error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to prioritize task',
-        details: error.message 
+        details: error.message
       },
       { status: isRateLimit ? 429 : 500 }
     );

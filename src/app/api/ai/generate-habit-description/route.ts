@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { habitDescriptionSchema } from '@/lib/ai/schemas';
 import { buildHabitDescriptionPrompt } from '@/lib/ai/prompts';
 import type { HabitDescriptionInput, HabitDescriptionOutput } from '@/lib/ai/types';
@@ -22,11 +22,11 @@ export async function POST(req: NextRequest) {
     }
 
     const input = body as HabitDescriptionInput;
-    
+
     if (!input.habit || !input.habit.name) {
       return NextResponse.json({ error: 'Habit information is required' }, { status: 400 });
     }
-    
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: 'AI service is not configured.' },
@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = getAIService();
+    const ai = new HabitFlowAI('habits');
     const prompt = buildHabitDescriptionPrompt(input);
-    
+
     // Cache key: based on habit name and category (static content, long cache)
     const habitKey = `${input.habit.name}-${input.habit.category}`.toLowerCase().replace(/\s+/g, '-');
     const cacheKey = `habit-desc:${habitKey}`;
@@ -58,9 +58,9 @@ export async function POST(req: NextRequest) {
     console.error('Habit Description Route Error:', error);
 
     // Check for rate limit error
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
       {

@@ -107,8 +107,9 @@ export function HabitStackSuggestions() {
           name: stack.name,
           description: stack.description,
           trigger_habit_id: stack.triggerHabitId,
+          stacked_habit_ids: stack.stackedHabitIds, // Array of habit IDs in the stack
           suggested_order: stack.suggestedOrder,
-          reasoning: stack.reasoning,
+          ai_reasoning: stack.reasoning, // Fixed: database uses ai_reasoning, not reasoning
           difficulty: stack.difficulty,
           estimated_time_minutes: stack.estimatedTimeMinutes,
           expected_success_rate: stack.expectedSuccessRate,
@@ -117,15 +118,18 @@ export function HabitStackSuggestions() {
         .select()
         .single();
 
-      if (stackError) throw stackError;
+      if (stackError) {
+        console.error('Supabase error:', stackError);
+        throw new Error(stackError.message || 'Failed to save stack');
+      }
 
       // TODO: Optionally reorder habits based on suggestedOrder
       // This would require updating habit.order_index for the habits in the stack
 
       toast.success(`🎉 "${stack.name}" activated! Try following the suggested order.`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to activate stack:', error);
-      toast.error('Failed to activate stack. Please try again.');
+      toast.error(error.message || 'Failed to activate stack. Please try again.');
     } finally {
       setActivatingStack(null);
     }

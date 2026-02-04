@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +41,7 @@ export function HabitSuggestions() {
 
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await fetch('/api/ai/recommend-habits', {
         method: 'POST',
@@ -77,9 +77,8 @@ export function HabitSuggestions() {
     }
   }
 
-  useEffect(() => {
-    fetchRecommendations();
-  }, [activeGoals.length, habits.length]);
+  // Removed auto-fetch useEffect to prevent rate limiting
+  // User must manually trigger generation
 
   const handleAddHabit = async (rec: HabitRecommendation) => {
     try {
@@ -88,9 +87,9 @@ export function HabitSuggestions() {
         category: rec.category.toLowerCase() as Category,
         targetDaysPerWeek: rec.targetDaysPerWeek
       });
-      
+
       toast.success(`Added "${rec.habitName}" to your habits!`);
-      
+
       // Remove the recommendation from the list
       setRecommendations(prev => prev.filter(r => r.habitName !== rec.habitName));
     } catch (error) {
@@ -123,20 +122,22 @@ export function HabitSuggestions() {
           <Lightbulb className="h-5 w-5 fill-current" />
           AI Suggestions
         </CardTitle>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => fetchRecommendations()}
-          disabled={loading}
-          className="h-8 w-8 text-amber-500 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50"
-        >
-          <RefreshCw className={cn(
-            'h-4 w-4 transition-transform',
-            loading && 'animate-spin'
-          )} />
-        </Button>
+        {recommendations.length > 0 && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => fetchRecommendations()}
+            disabled={loading}
+            className="h-8 w-8 text-amber-500 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+          >
+            <RefreshCw className={cn(
+              'h-4 w-4 transition-transform',
+              loading && 'animate-spin'
+            )} />
+          </Button>
+        )}
       </CardHeader>
-      
+
       <CardContent className="space-y-3">
         {loading && recommendations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 space-y-3">
@@ -160,13 +161,23 @@ export function HabitSuggestions() {
             </Button>
           </div>
         ) : recommendations.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No new suggestions right now. Keep crushing your current habits!
-          </p>
+          <div className="text-center py-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Get personalized habit recommendations based on your goals.
+            </p>
+            <Button
+              onClick={() => fetchRecommendations()}
+              variant="default"
+              className="gap-2 bg-amber-600 hover:bg-amber-700"
+            >
+              <Lightbulb className="h-4 w-4" />
+              Generate Suggestions
+            </Button>
+          </div>
         ) : (
           <>
             {recommendations.map((rec, index) => (
-              <div 
+              <div
                 key={index}
                 className="border rounded-lg p-3 space-y-2 bg-white/50 dark:bg-gray-900/50 hover:bg-white dark:hover:bg-gray-900 transition-colors"
               >
@@ -177,16 +188,16 @@ export function HabitSuggestions() {
                       {rec.reasoning}
                     </p>
                   </div>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     className="h-8 w-8 p-0 flex-shrink-0 hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-600"
                     onClick={() => handleAddHabit(rec)}
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
-                
+
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <Badge variant="secondary" className="text-xs">
                     {rec.category}
@@ -194,7 +205,7 @@ export function HabitSuggestions() {
                   <Badge variant="outline" className="text-xs">
                     {rec.targetDaysPerWeek}x/week
                   </Badge>
-                  <Badge 
+                  <Badge
                     variant={rec.difficulty === 'easy' ? 'default' : 'outline'}
                     className={cn(
                       'text-xs',

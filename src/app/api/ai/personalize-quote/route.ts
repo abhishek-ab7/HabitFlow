@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { quotePersonalizationSchema } from '@/lib/ai/schemas';
 import { buildQuotePersonalizationPrompt } from '@/lib/ai/prompts';
 import type { QuotePersonalizationInput, QuotePersonalizationOutput } from '@/lib/ai/types';
@@ -22,11 +22,11 @@ export async function POST(req: NextRequest) {
     }
 
     const input = body as QuotePersonalizationInput;
-    
+
     if (!input.userContext || !input.userContext.userName) {
       return NextResponse.json({ error: 'User context is required' }, { status: 400 });
     }
-    
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: 'AI service is not configured.' },
@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = getAIService();
+    const ai = new HabitFlowAI('dashboard');
     const prompt = buildQuotePersonalizationPrompt(input);
-    
+
     // Cache key: based on context and user state (refresh more frequently)
     const mood = input.userContext.currentMood || 'neutral';
     const context = input.context || 'general';
@@ -60,9 +60,9 @@ export async function POST(req: NextRequest) {
     console.error('Quote Personalization Route Error:', error);
 
     // Check for rate limit error
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
       {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIService } from '@/lib/ai/service';
+import { HabitFlowAI } from '@/lib/ai/service';
 import { milestoneGenerationSchema } from '@/lib/ai/schemas';
 import { buildMilestoneGenerationPrompt } from '@/lib/ai/prompts';
 import type { MilestoneGenerationInput, MilestoneGenerationOutput } from '@/lib/ai/types';
@@ -22,11 +22,11 @@ export async function POST(req: NextRequest) {
     }
 
     const input = body as MilestoneGenerationInput;
-    
+
     if (!input.goal || !input.goal.id || !input.goal.title) {
       return NextResponse.json({ error: 'Goal information is required' }, { status: 400 });
     }
-    
+
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: 'AI service is not configured.' },
@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = getAIService();
+    const ai = new HabitFlowAI('dashboard');
     const prompt = buildMilestoneGenerationPrompt(input);
-    
+
     // Cache key: goal-specific, long TTL (milestones don't change often)
     const timeline = input.userContext?.timelinePreference || 'balanced';
     const cacheKey = `milestones:${input.goal.id}:${timeline}`;
@@ -61,9 +61,9 @@ export async function POST(req: NextRequest) {
     console.error('Milestone Generation Route Error:', error);
 
     // Check for rate limit error
-    const isRateLimit = error.message?.includes('429') || 
-                        error.message?.includes('quota') ||
-                        error.message?.includes('rate limit');
+    const isRateLimit = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('rate limit');
 
     return NextResponse.json(
       {
