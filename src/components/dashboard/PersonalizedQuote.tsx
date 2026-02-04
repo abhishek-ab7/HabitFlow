@@ -17,7 +17,7 @@ export function PersonalizedQuote() {
   const [loading, setLoading] = useState(false);
   const [reaction, setReaction] = useState<'liked' | 'disliked' | null>(null);
   const [quoteId, setQuoteId] = useState<string | null>(null);
-  
+
   const { user } = useAuth();
   const { completions } = useHabitStore();
   const { goals } = useGoalStore();
@@ -25,12 +25,12 @@ export function PersonalizedQuote() {
 
   const fetchQuote = async () => {
     if (!user) return;
-    
+
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
       const todayCompletions = completions.filter(c => c.date === today);
-      
+
       const response = await fetch('/api/ai/personalize-quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -54,7 +54,7 @@ export function PersonalizedQuote() {
         const error = await response.json();
         throw new Error(error.error || 'Failed to fetch quote');
       }
-      
+
       const data = await response.json();
       const newQuote = data.primaryQuote;
       setQuote(newQuote);
@@ -91,11 +91,7 @@ export function PersonalizedQuote() {
     }
   };
 
-  useEffect(() => {
-    if (user) {
-      fetchQuote();
-    }
-  }, [user]);
+
 
   const handleReaction = async (liked: boolean) => {
     if (!user || !quoteId) {
@@ -105,12 +101,12 @@ export function PersonalizedQuote() {
     }
 
     setReaction(liked ? 'liked' : 'disliked');
-    
+
     try {
       // Update the quote record with the reaction
       const { error } = await (supabase
         .from('motivational_quotes') as any)
-        .update({ 
+        .update({
           user_reaction: liked ? 'liked' : 'disliked',
           reacted_at: new Date().toISOString()
         })
@@ -140,7 +136,24 @@ export function PersonalizedQuote() {
     );
   }
 
-  if (!quote) return null;
+  if (!quote) {
+    return (
+      <Card className="border-indigo-500/20 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/20 dark:to-purple-950/20 mb-6">
+        <CardContent className="flex flex-col items-center justify-center py-6 space-y-3">
+          <div className="p-3 bg-white/50 dark:bg-black/20 rounded-full">
+            <Quote className="h-6 w-6 text-indigo-500" />
+          </div>
+          <div className="text-center space-y-1">
+            <p className="font-medium text-foreground">Need some inspiration?</p>
+            <p className="text-sm text-muted-foreground">Get a quote personalized for your day.</p>
+          </div>
+          <Button onClick={fetchQuote} size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white">
+            Get Daily Quote
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-indigo-500/20 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/20 dark:to-purple-950/20 mb-6">
@@ -151,7 +164,7 @@ export function PersonalizedQuote() {
             <p className="text-base font-medium leading-relaxed text-foreground">
               "{quote.quote}"
             </p>
-            
+
             {quote.author && (
               <p className="text-sm text-muted-foreground italic">
                 — {quote.author}

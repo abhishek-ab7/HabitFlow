@@ -15,7 +15,7 @@ import {
   QuickActions,
   TodayTasksWidget,
   AICoachWidget,
-  BurnoutAlert,
+
   PersonalizedQuote,
 } from '@/components/dashboard';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -174,7 +174,7 @@ export default function DashboardPage() {
     <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
       <HeroSection />
 
-      {isAIEnabled() && <BurnoutAlert />}
+
 
       {isAIEnabled() && <PersonalizedQuote />}
 

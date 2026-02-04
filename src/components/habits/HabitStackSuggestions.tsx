@@ -19,12 +19,12 @@ export function HabitStackSuggestions() {
   const { habits, completions } = useHabitStore();
   const { user } = useAuth();
   const supabase = createClient();
-  
+
   const activeHabits = habits.filter(h => !h.archived);
 
   const fetchStacks = async () => {
     if (activeHabits.length < 2) return;
-    
+
     setLoading(true);
     try {
       // Calculate completion rates for last 30 days
@@ -35,9 +35,9 @@ export function HabitStackSuggestions() {
           const daysDiff = (now.getTime() - completionDate.getTime()) / (1000 * 60 * 60 * 24);
           return c.habitId === h.id && daysDiff <= 30;
         });
-        
+
         const completionRate = (habitCompletions.length / 30) * 100;
-        
+
         // Calculate current streak
         let currentStreak = 0;
         for (let i = 0; i < 30; i++) {
@@ -51,7 +51,7 @@ export function HabitStackSuggestions() {
             break;
           }
         }
-        
+
         return {
           id: h.id,
           name: h.name,
@@ -77,7 +77,7 @@ export function HabitStackSuggestions() {
         const error = await response.json();
         throw new Error(error.error || 'Failed to fetch stacks');
       }
-      
+
       const data = await response.json();
       setStacks(data.stacks || []);
       toast.success(`Found ${data.stacks.length} habit stack${data.stacks.length !== 1 ? 's' : ''}!`);
@@ -89,11 +89,7 @@ export function HabitStackSuggestions() {
     }
   };
 
-  useEffect(() => {
-    if (activeHabits.length >= 2) {
-      fetchStacks();
-    }
-  }, [activeHabits.length]);
+
 
   const handleActivateStack = async (stack: HabitStack, stackIndex: number) => {
     if (!user) {
@@ -125,7 +121,7 @@ export function HabitStackSuggestions() {
 
       // TODO: Optionally reorder habits based on suggestedOrder
       // This would require updating habit.order_index for the habits in the stack
-      
+
       toast.success(`🎉 "${stack.name}" activated! Try following the suggested order.`);
     } catch (error) {
       console.error('Failed to activate stack:', error);
@@ -203,7 +199,7 @@ export function HabitStackSuggestions() {
                   <Zap className="h-3 w-3" />
                   Suggested Order:
                 </div>
-                {stack.suggestedOrder.map((step, i) => (
+                {stack.suggestedOrder?.map((step, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm pl-5">
                     <span className="text-amber-600 dark:text-amber-500 font-bold shrink-0">{i + 1}.</span>
                     <span>{step}</span>
@@ -220,8 +216,8 @@ export function HabitStackSuggestions() {
                 💡 {stack.reasoning}
               </p>
 
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 className="w-full bg-amber-600 hover:bg-amber-700"
                 onClick={() => handleActivateStack(stack, index)}
                 disabled={activatingStack === index}

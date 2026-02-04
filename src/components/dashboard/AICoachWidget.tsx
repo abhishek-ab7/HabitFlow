@@ -113,11 +113,7 @@ export function AICoachWidget() {
         }
     };
 
-    useEffect(() => {
-        if (user) {
-            fetchAdvice(false);
-        }
-    }, [user]);
+
 
     return (
         <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/20 dark:to-purple-950/20 overflow-hidden relative">
@@ -197,7 +193,27 @@ export function AICoachWidget() {
                             </p>
                         </div>
                     </div>
-                ) : null}
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-6 space-y-3 text-center">
+                        <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full mb-2">
+                            <Sparkles className="w-6 h-6 text-indigo-500" />
+                        </div>
+                        <div className="space-y-1">
+                            <p className="font-semibold text-foreground">Ready for your briefing?</p>
+                            <p className="text-sm text-muted-foreground max-w-[200px] mx-auto">
+                                Get personalized focus, motivation, and insights for today.
+                            </p>
+                        </div>
+                        <Button
+                            size="sm"
+                            onClick={() => fetchAdvice(true)}
+                            className="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Connect AI Coach
+                        </Button>
+                    </div>
+                )}
             </CardContent>
         </Card>
     );
