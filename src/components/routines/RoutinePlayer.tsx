@@ -18,7 +18,7 @@ interface RoutinePlayerProps {
 }
 
 export function RoutinePlayer({ routine, onClose }: RoutinePlayerProps) {
-    const { toggle, ensureComplete } = useHabitStore();
+    const { toggle, ensureComplete, getCompletionForDate } = useHabitStore();
     const { getRoutineHabits } = useRoutineStore();
     const { addXp } = useGamificationStore();
 
@@ -33,14 +33,49 @@ export function RoutinePlayer({ routine, onClose }: RoutinePlayerProps) {
         if (routine) {
             setLoading(true);
             getRoutineHabits(routine.id).then(habits => {
-                setRoutineHabits(habits.filter(h => !h.archived));
+                const activeHabits = habits.filter(h => !h.archived);
+                setRoutineHabits(activeHabits);
                 setLoading(false);
-                setActiveStep(0);
-                setCompletedSteps([]);
-                setIsFinished(false);
+
+                // Smart Resume Logic: Find where we left off
+                const today = new Date().toISOString().split('T')[0];
+                const previouslyCompletedIds: string[] = [];
+                let firstUncompletedIndex = -1;
+
+                // Check completion status for each habit
+                for (let i = 0; i < activeHabits.length; i++) {
+                    const habit = activeHabits[i];
+                    // We need to use getState because getCompletionForDate from hook might be stale inside async call?
+                    // Actually, the hook's returned function usually reads current state or uses get().
+                    // But to be safe and simple, we trust the hook's stable function identity.
+                    const completion = getCompletionForDate(habit.id, today);
+
+                    if (completion && completion.completed) {
+                        previouslyCompletedIds.push(habit.id);
+                    } else if (firstUncompletedIndex === -1) {
+                        firstUncompletedIndex = i;
+                    }
+                }
+
+                if (activeHabits.length > 0) {
+                    if (firstUncompletedIndex !== -1) {
+                        // Resuming: Start at the first incomplete step
+                        setActiveStep(firstUncompletedIndex);
+                        setIsFinished(false);
+                    } else {
+                        // All completed: Show finish screen
+                        setActiveStep(activeHabits.length - 1);
+                        setIsFinished(true);
+                    }
+                } else {
+                    setActiveStep(0);
+                    setIsFinished(false);
+                }
+
+                setCompletedSteps(previouslyCompletedIds);
             });
         }
-    }, [routine?.id]); // Stabilize dependency
+    }, [routine?.id, getRoutineHabits, getCompletionForDate]); // Dependencies stable
 
     const currentHabit = routineHabits[activeStep];
     const progress = routineHabits.length > 0 ? ((activeStep) / routineHabits.length) * 100 : 0;
