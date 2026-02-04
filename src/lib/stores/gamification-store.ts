@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { getSettings, updateSettings } from '../db';
 import { getSupabaseClient } from '../supabase/client';
+import { getSyncEngine } from '../sync';
 
 export const XP_PER_TASK = 10;
 export const XP_PER_HABIT = 15;
@@ -142,6 +143,16 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 gems: newGems,
                 streakShield // Ensure this is preserved
             });
+
+            // Sync to Supabase via sync engine
+            const syncEngine = getSyncEngine();
+            syncEngine.pushUserSettings({
+                userId: session.user.id,
+                xp: newXp,
+                level: newLevel,
+                gems: newGems,
+                streakShield
+            });
         }
 
         return { leveledUp, newLevel };
@@ -157,9 +168,20 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
+            const { xp, level, streakShield } = get();
             await updateSettings({
                 userId: session.user.id,
                 gems: newGems
+            });
+
+            // Sync to Supabase
+            const syncEngine = getSyncEngine();
+            syncEngine.pushUserSettings({
+                userId: session.user.id,
+                xp,
+                level,
+                gems: newGems,
+                streakShield
             });
         }
         return true;
@@ -177,8 +199,19 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
+            const { xp, level } = get();
             await updateSettings({
                 userId: session.user.id,
+                gems: newGems,
+                streakShield: newShields
+            });
+
+            // Sync to Supabase
+            const syncEngine = getSyncEngine();
+            syncEngine.pushUserSettings({
+                userId: session.user.id,
+                xp,
+                level,
                 gems: newGems,
                 streakShield: newShields
             });

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions } from '@/lib/db';
+import { countDuplicateCompletions, countDuplicateHabits, countDuplicateGoals, countAllDuplicates } from '@/lib/cleanup';
 import type { Habit, HabitCompletion, Goal, Milestone } from '@/lib/types';
 import { useSyncStatusStore } from '../stores/sync-status-store';
 import { resolveConflict, mergeGamificationFields } from './conflict-resolution';
@@ -49,6 +50,17 @@ export class SyncEngine {
   private syncDebounceTimer: NodeJS.Timeout | null = null;
   private lastSyncAt: Date | null = null;
   private isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+  // Entity-specific sync locks to prevent race conditions
+  private habitSyncLock = false;
+  private completionSyncLock = false;
+  private taskSyncLock = false;
+  private routineSyncLock = false;
+  private goalSyncLock = false;
+  private milestoneSyncLock = false;
+
+  // Periodic duplicate cleanup
+  private duplicateCleanupInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.setupAuth();
@@ -249,10 +261,18 @@ export class SyncEngine {
         this.syncRoutineCompletions(), // NEW: Routine completions sync
       ]);
 
-      this.notifyStatus({ type: 'syncing', message: 'Cleaning up...', progress: 80 });
+      this.notifyStatus({ type: 'syncing', message: 'Cleaning up duplicates...', progress: 80 });
 
-      // Cleanup duplicates
-      await this.cleanupLocalDuplicates();
+      // Cleanup duplicates with logging
+      await this.cleanupLocalDuplicatesWithLogging();
+
+      // Start periodic cleanup if not already running
+      if (!this.duplicateCleanupInterval && typeof window !== 'undefined') {
+        this.duplicateCleanupInterval = setInterval(() => {
+          this.cleanupLocalDuplicatesQuietly();
+        }, 30000); // Every 30 seconds
+        this.log('info', '🔄 Periodic duplicate cleanup started (every 30s)');
+      }
 
       this.lastSyncAt = new Date();
       this.notifyStatus({
@@ -370,6 +390,23 @@ export class SyncEngine {
   }
 
   private async syncHabits() {
+    if (!this.userId) return;
+
+    // Prevent concurrent syncs
+    if (this.habitSyncLock) {
+      this.log('warn', 'Habit sync already running, skipping');
+      return;
+    }
+
+    this.habitSyncLock = true;
+    try {
+      return await this.syncHabitsImpl();
+    } finally {
+      this.habitSyncLock = false;
+    }
+  }
+
+  private async syncHabitsImpl() {
     if (!this.userId) return;
 
     this.log('info', '🔄 Starting habit sync...');
@@ -644,6 +681,23 @@ export class SyncEngine {
   private async syncCompletions() {
     if (!this.userId) return;
 
+    // Prevent concurrent syncs
+    if (this.completionSyncLock) {
+      this.log('warn', 'Completion sync already running, skipping');
+      return;
+    }
+
+    this.completionSyncLock = true;
+    try {
+      return await this.syncCompletionsImpl();
+    } finally {
+      this.completionSyncLock = false;
+    }
+  }
+
+  private async syncCompletionsImpl() {
+    if (!this.userId) return;
+
     const startDate = this.getStartDate();
 
     const { data: remoteCompletions, error } = await this.supabase
@@ -771,8 +825,34 @@ export class SyncEngine {
     }
 
     if (toUpsertLocal.length > 0) {
-      await db.completions.bulkPut(toUpsertLocal);
-      this.log('info', `✅ Pulled ${toUpsertLocal.length} completions from remote`);
+      // DEDUP before writing to prevent duplicates
+      const dedupedCompletions = this.deduplicateByKey(
+        toUpsertLocal,
+        (c) => `${c.habitId}-${c.date}`
+      );
+
+      // Use transaction with existence checks for atomicity
+      await db.transaction('rw', db.completions, async () => {
+        for (const completion of dedupedCompletions) {
+          const existing = await db.completions
+            .where('[habitId+date]')
+            .equals([completion.habitId, completion.date])
+            .first();
+
+          if (existing) {
+            // Update only if remote is newer
+            const shouldUpdate = (completion.updatedAt || completion.createdAt || '') >
+              (existing.updatedAt || existing.createdAt || '');
+            if (shouldUpdate) {
+              await db.completions.update(existing.id, completion);
+            }
+          } else {
+            await db.completions.add(completion);
+          }
+        }
+      });
+
+      this.log('info', `✅ Pulled ${dedupedCompletions.length} completions (deduped from ${toUpsertLocal.length})`);
     }
   }
 
@@ -820,6 +900,23 @@ export class SyncEngine {
   }
 
   private async syncGoals() {
+    if (!this.userId) return;
+
+    // Prevent concurrent syncs
+    if (this.goalSyncLock) {
+      this.log('warn', 'Goal sync already running, skipping');
+      return;
+    }
+
+    this.goalSyncLock = true;
+    try {
+      return await this.syncGoalsImpl();
+    } finally {
+      this.goalSyncLock = false;
+    }
+  }
+
+  private async syncGoalsImpl() {
     if (!this.userId) return;
 
     const { data: remoteGoals, error } = await this.supabase
@@ -1003,6 +1100,23 @@ export class SyncEngine {
   private async syncMilestones() {
     if (!this.userId) return;
 
+    // Prevent concurrent syncs
+    if (this.milestoneSyncLock) {
+      this.log('warn', 'Milestone sync already running, skipping');
+      return;
+    }
+
+    this.milestoneSyncLock = true;
+    try {
+      return await this.syncMilestonesImpl();
+    } finally {
+      this.milestoneSyncLock = false;
+    }
+  }
+
+  private async syncMilestonesImpl() {
+    if (!this.userId) return;
+
     const { data: remoteMilestones, error } = await this.supabase
       .from('milestones')
       .select('*')
@@ -1107,8 +1221,31 @@ export class SyncEngine {
     }
 
     if (toUpsertLocal.length > 0) {
-      await db.milestones.bulkPut(toUpsertLocal);
-      this.log('info', `✅ Pulled ${toUpsertLocal.length} milestones from remote`);
+      // DEDUP before writing to prevent duplicates
+      const dedupedMilestones = this.deduplicateByKey(
+        toUpsertLocal,
+        (m) => m.id // Milestones have unique IDs
+      );
+
+      // Use transaction with existence checks for atomicity
+      await db.transaction('rw', db.milestones, async () => {
+        for (const milestone of dedupedMilestones) {
+          const existing = await db.milestones.get(milestone.id);
+
+          if (existing) {
+            // Update only if remote is newer
+            const shouldUpdate = (milestone.updatedAt || milestone.createdAt || '') >
+              (existing.updatedAt || existing.createdAt || '');
+            if (shouldUpdate) {
+              await db.milestones.update(milestone.id, milestone);
+            }
+          } else {
+            await db.milestones.add(milestone);
+          }
+        }
+      });
+
+      this.log('info', `✅ Pulled ${dedupedMilestones.length} milestones (deduped from ${toUpsertLocal.length})`);
     }
   }
 
@@ -1157,6 +1294,23 @@ export class SyncEngine {
   }
 
   private async syncTasks() {
+    if (!this.userId) return;
+
+    // Prevent concurrent syncs
+    if (this.taskSyncLock) {
+      this.log('warn', 'Task sync already running, skipping');
+      return;
+    }
+
+    this.taskSyncLock = true;
+    try {
+      return await this.syncTasksImpl();
+    } finally {
+      this.taskSyncLock = false;
+    }
+  }
+
+  private async syncTasksImpl() {
     if (!this.userId) return;
 
     const { data: remoteTasks, error } = await this.supabase
@@ -1313,6 +1467,23 @@ export class SyncEngine {
   }
 
   private async syncRoutines() {
+    if (!this.userId) return;
+
+    // Prevent concurrent syncs
+    if (this.routineSyncLock) {
+      this.log('warn', 'Routine sync already running, skipping');
+      return;
+    }
+
+    this.routineSyncLock = true;
+    try {
+      return await this.syncRoutinesImpl();
+    } finally {
+      this.routineSyncLock = false;
+    }
+  }
+
+  private async syncRoutinesImpl() {
     if (!this.userId) return;
 
     const { data: remoteRoutines, error } = await this.supabase
@@ -1716,8 +1887,34 @@ export class SyncEngine {
     }
 
     if (toUpsertLocal.length > 0) {
-      await db.habitRoutines.bulkPut(toUpsertLocal);
-      this.log('info', `✅ Pulled ${toUpsertLocal.length} habit-routine links from remote`);
+      // DEDUP before writing to prevent duplicates
+      const dedupedLinks = this.deduplicateByKey(
+        toUpsertLocal,
+        (link) => `${link.habitId}-${link.routineId}` // Composite key
+      );
+
+      // Use transaction with existence checks for atomicity
+      await db.transaction('rw', db.habitRoutines, async () => {
+        for (const link of dedupedLinks) {
+          const existing = await db.habitRoutines
+            .where('[habitId+routineId]')
+            .equals([link.habitId, link.routineId])
+            .first();
+
+          if (existing) {
+            // Update only if remote is newer
+            const shouldUpdate = (link.updatedAt || link.createdAt || '') >
+              (existing.updatedAt || existing.createdAt || '');
+            if (shouldUpdate) {
+              await db.habitRoutines.update(existing.id, link);
+            }
+          } else {
+            await db.habitRoutines.add(link);
+          }
+        }
+      });
+
+      this.log('info', `✅ Pulled ${dedupedLinks.length} habit-routine links (deduped from ${toUpsertLocal.length})`);
     }
   }
 
@@ -2025,6 +2222,70 @@ export class SyncEngine {
     } catch (error) {
       this.log('error', 'Cleanup failed', error);
     }
+  }
+
+  private async cleanupLocalDuplicatesWithLogging() {
+    if (!this.userId) return;
+
+    try {
+      const before = await countAllDuplicates();
+
+      // Run cleanup
+      await cleanupDuplicateCompletions();
+      await cleanupDuplicateGoals();
+
+      const after = await countAllDuplicates();
+
+      if (before.completions > 0 || before.habits > 0 || before.goals > 0) {
+        this.log('warn', `🧹 Cleaned duplicates: ${before.completions} completions, ${before.habits} habits, ${before.goals} goals`);
+      }
+    } catch (error) {
+      this.log('error', 'Cleanup with logging failed', error);
+    }
+  }
+
+  private async cleanupLocalDuplicatesQuietly() {
+    try {
+      await this.cleanupLocalDuplicatesWithLogging();
+    } catch (error) {
+      // Silent failure - don't interrupt user experience
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[SyncEngine] Auto-cleanup failed:', error);
+      }
+    }
+  }
+
+  // ===================
+  //DEDUPLICATION HELPERS
+  // ===================
+
+  /**
+   * Generic deduplication helper - keeps the newest item based on updatedAt/createdAt
+   */
+  private deduplicateByKey<T extends { updatedAt?: string; createdAt?: string }>(
+    items: T[],
+    keyFn: (item: T) => string
+  ): T[] {
+    const seen = new Map<string, T>();
+
+    for (const item of items) {
+      const key = keyFn(item);
+      const existing = seen.get(key);
+
+      if (!existing) {
+        seen.set(key, item);
+      } else {
+        // Keep the newer one
+        const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+        const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+
+        if (itemTime > existingTime) {
+          seen.set(key, item);
+        }
+      }
+    }
+
+    return Array.from(seen.values());
   }
 
   // Public utility methods
