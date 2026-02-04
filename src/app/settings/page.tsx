@@ -23,7 +23,8 @@ import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { db, getSettings, updateSettings } from '@/lib/db';
 import { cleanupAllDuplicates, countAllDuplicates } from '@/lib/cleanup';
-import { forcePushAllHabits, forcePullAllHabits } from '@/lib/force-sync';
+import { forcePushAllHabits } from '@/lib/force-sync';
+import { getSyncEngine } from '@/lib/sync';
 import { cn } from '@/lib/utils';
 import type { UserSettings } from '@/lib/types';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
@@ -227,10 +228,11 @@ export default function SettingsPage() {
   const handleForcePull = async () => {
     setIsForceSyncing(true);
     try {
-      const result = await forcePullAllHabits();
-      toast.success(`Pulled ${result.total} habits from cloud. Refreshing...`);
+      await getSyncEngine().syncAll();
+      toast.success('Synced all data (Tasks, Goals, Habits, Routines) from cloud. Refreshing...');
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
+      console.error('Force pull failed:', error);
       toast.error('Force pull failed: ' + (error as Error).message);
     } finally {
       setIsForceSyncing(false);
