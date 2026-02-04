@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Routine, Habit } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,41 +74,84 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
         return () => { mounted = false; };
     }, [routine.id, completions, getRoutineHabits, getHabitCompletions]); // Re-run when completions change
 
+    // Memoize progress calculation to avoid recalculation on every render
+    // and ensure it updates when completions change in the store
+    const { totalHabits, completedHabits, progressPercentage } = useMemo(() => {
+        const total = routineHabits.length;
+        let completed = 0;
+
+        if (total > 0) {
+            const today = new Date().toISOString().split('T')[0];
+            completed = routineHabits.filter(habit => {
+                const habitCompletions = getHabitCompletions(habit.id);
+                return habitCompletions.some(c => c.date === today && c.completed);
+            }).length;
+        }
+
+        return {
+            totalHabits: total,
+            completedHabits: completed,
+            progressPercentage: total > 0 ? (completed / total) * 100 : 0
+        };
+    }, [routineHabits, getHabitCompletions, completions]); // getHabitCompletions will be stable, but results depend on store state which causes re-render
+
     return (
         <motion.div
             layout
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            whileHover={{ y: -4 }}
-            transition={{ duration: 0.2 }}
+            whileHover={{ y: -5, scale: 1.02 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="group relative h-full"
         >
             <Card className={cn(
-                "overflow-hidden border-indigo-500/10 hover:border-indigo-500/30 transition-colors bg-gradient-to-br from-card to-card/50 dark:from-card dark:to-indigo-950/20",
-                isCompleted && "opacity-80 grayscale-[0.3]"
+                "relative overflow-hidden border transition-all duration-300 h-full flex flex-col",
+                "bg-white/40 dark:bg-slate-900/40 backdrop-blur-md", // Glassmorphism base
+                "border-white/50 dark:border-white/10", // Glass border
+                "hover:shadow-2xl hover:shadow-indigo-500/20 dark:hover:shadow-indigo-900/30", // Glow effect on hover
+                isCompleted && "opacity-90"
             )}>
-                <CardHeader className="flex flex-row items-start justify-between p-5 pb-2">
-                    <div className="space-y-1">
-                        <CardTitle className="text-lg font-bold flex items-center gap-2">
+
+                {/* Background Progress Bar */}
+                <motion.div
+                    className="absolute inset-0 bg-indigo-500/5 dark:bg-indigo-400/10 z-0"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progressPercentage}%` }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                />
+
+                {/* Active Progress Gradient Line at bottom (optional but adds polish) */}
+                <motion.div
+                    className="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 z-10"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progressPercentage}%` }}
+                />
+
+                <CardHeader className="relative z-10 flex flex-row items-start justify-between p-5 pb-2">
+                    <div className="space-y-1 w-full">
+                        <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
                             {routine.title}
-                            {routine.isActive && !isCompleted && (
-                                <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                            )}
-                            {isCompleted && (
-                                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                            {/* Status Indicator Dot */}
+                            {!isCompleted && routine.isActive && (
+                                <span className="flex h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse ring-2 ring-indigo-500/30" />
                             )}
                         </CardTitle>
-                        {routine.description && (
-                            <p className="text-sm text-muted-foreground line-clamp-1">{routine.description}</p>
-                        )}
+                        <div className="h-5">
+                            {routine.description ? (
+                                <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-1 font-medium">{routine.description}</p>
+                            ) : (
+                                <span className="text-sm text-transparent select-none">No description</span>
+                            )}
+                        </div>
                     </div>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2 text-muted-foreground">
-                                <MoreHorizontal className="w-4 h-4" />
+                            <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0">
+                                <MoreHorizontal className="w-5 h-5" />
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl">
                             <DropdownMenuItem onClick={() => onEdit(routine)}>
                                 Edit Routine
                             </DropdownMenuItem>
@@ -119,47 +162,70 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
                     </DropdownMenu>
                 </CardHeader>
 
-                <CardContent className="p-5 pt-2 space-y-4">
-                    <div className="flex flex-wrap gap-2">
+                <CardContent className="relative z-10 p-5 pt-2 space-y-6 flex-1 flex flex-col justify-end">
+                    {/* Tags & Stats Row */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
                         {routine.triggerType === 'time' && (
-                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800">
-                                <Clock className="w-3 h-3 mr-1" />
-                                {routine.triggerValue}
-                            </Badge>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100/50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 border border-blue-200/50 dark:border-blue-500/20">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{routine.triggerValue}</span>
+                            </div>
                         )}
                         {routine.triggerType === 'location' && (
-                            <Badge variant="secondary" className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800">
-                                <MapPin className="w-3 h-3 mr-1" />
-                                {routine.triggerValue}
-                            </Badge>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100/50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-200/50 dark:border-purple-500/20">
+                                <MapPin className="w-3.5 h-3.5" />
+                                <span>{routine.triggerValue}</span>
+                            </div>
                         )}
-                        <Badge variant="outline" className="text-xs">
-                            {routineHabits.length} Actions
-                        </Badge>
+
+                        <div className="ml-auto flex items-center gap-1.5">
+                            <span className={cn(
+                                "transition-colors",
+                                completedHabits === totalHabits ? "text-green-600 dark:text-green-400" : ""
+                            )}>
+                                {completedHabits}/{totalHabits} Done
+                            </span>
+                        </div>
                     </div>
 
-                    <Button
-                        className={cn(
-                            "w-full gap-2 font-semibold shadow-lg transition-all",
-                            isCompleted
-                                ? "bg-green-600/10 text-green-600 hover:bg-green-600/20 shadow-none cursor-not-allowed"
-                                : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/20"
-                        )}
-                        onClick={() => !isCompleted && onPlay(routine)}
-                        disabled={isCompleted || loading}
-                    >
-                        {isCompleted ? (
-                            <>
-                                <CheckCircle2 className="w-4 h-4" />
-                                Completed Today
-                            </>
-                        ) : (
-                            <>
-                                <Play className="w-4 h-4 fill-current" />
-                                Start Routine
-                            </>
-                        )}
-                    </Button>
+                    {/* Action Area */}
+                    <div className="pt-2">
+                        <motion.div
+                            whileHover={!isCompleted && !loading ? { scale: 1.03 } : {}}
+                            whileTap={!isCompleted && !loading ? { scale: 0.97 } : {}}
+                        >
+                            <Button
+                                className={cn(
+                                    "w-full h-12 gap-2 font-bold text-base shadow-lg transition-all rounded-xl border relative overflow-hidden",
+                                    isCompleted
+                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20 shadow-none cursor-default"
+                                        : "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-400 dark:hover:border-indigo-400"
+                                )}
+                                onClick={() => !isCompleted && onPlay(routine)}
+                                disabled={isCompleted || loading}
+                            >
+                                {/* Button Content */}
+                                <span className="relative z-10 flex items-center gap-2">
+                                    {isCompleted ? (
+                                        <>
+                                            <CheckCircle2 className="w-5 h-5" />
+                                            Active Today
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Play className={cn("w-5 h-5 fill-current", !isCompleted && "animate-pulse")} />
+                                            Start Routine
+                                        </>
+                                    )}
+                                </span>
+
+                                {/* Button Hover Fill Effect (Gradient) for Play State */}
+                                {!isCompleted && (
+                                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                )}
+                            </Button>
+                        </motion.div>
+                    </div>
                 </CardContent>
             </Card>
         </motion.div>

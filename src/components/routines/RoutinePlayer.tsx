@@ -18,7 +18,7 @@ interface RoutinePlayerProps {
 }
 
 export function RoutinePlayer({ routine, onClose }: RoutinePlayerProps) {
-    const { toggle } = useHabitStore();
+    const { toggle, ensureComplete } = useHabitStore();
     const { getRoutineHabits } = useRoutineStore();
     const { addXp } = useGamificationStore();
 
@@ -63,14 +63,9 @@ export function RoutinePlayer({ routine, onClose }: RoutinePlayerProps) {
         // Check if already completed today to prevent un-toggling
         const today = new Date().toISOString().split('T')[0];
 
-        // We need to check the actual store state for this habit to be safe
-        // But since we don't have direct access to 'completed' status here easily without looking up
-        // We will assume the intent is ALWAYS to complete.
-        // However, the toggle function likely just flips it.
-        // Let's rely on the store's toggle behavior for now, but usually for a linear player,
-        // you want "Complete" to ensure it turns TRUE.
-        // For now, let's just toggle and assume the user hasn't done it yet.
-        await toggle(currentHabit.id, today);
+        // Use ensureComplete to make this idempotent
+        // This fixes the bug where clicking "Complete" on an already completed habit would toggle it OFF
+        await ensureComplete(currentHabit.id, today);
         setCompletedSteps([...completedSteps, currentHabit.id]);
 
         handleNext();

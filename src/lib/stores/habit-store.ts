@@ -38,6 +38,7 @@ interface HabitState {
   editHabit: (id: string, data: Partial<Habit>) => Promise<void>;
   removeHabit: (id: string) => Promise<void>;
   toggle: (habitId: string, date: string) => Promise<void>;
+  ensureComplete: (habitId: string, date: string) => Promise<void>;
   reorder: (orderedIds: string[]) => Promise<void>;
   setSelectedMonth: (date: Date) => void;
   setCategoryFilter: (categories: Category[]) => void;
@@ -201,6 +202,16 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       await syncEngine.pushCompletion(result);
     } catch (error) {
       console.error('Failed to sync completion:', error);
+    }
+  },
+
+  ensureComplete: async (habitId: string, date: string) => {
+    const { completions, toggle } = get();
+    // Check if truly completed (exists AND completed=true)
+    const isCompleted = completions.some(c => c.habitId === habitId && c.date === date && c.completed);
+
+    if (!isCompleted) {
+      await toggle(habitId, date);
     }
   },
 

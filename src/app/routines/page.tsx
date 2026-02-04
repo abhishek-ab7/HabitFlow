@@ -3,15 +3,18 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRoutineStore } from '@/lib/stores/routine-store';
+import { useHabitStore } from '@/lib/stores/habit-store';
 import { RoutineCard, RoutineModal, RoutinePlayer } from '@/components/routines';
 import { Routine } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Plus, Loader2, Play } from 'lucide-react';
 import { HeroSection } from '@/components/dashboard/hero-section';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 
 export default function RoutinesPage() {
     const { routines, loadRoutines, isLoading, deleteRoutine } = useRoutineStore();
+    const { loadCompletions } = useHabitStore();
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
@@ -19,7 +22,12 @@ export default function RoutinesPage() {
 
     useEffect(() => {
         loadRoutines();
-    }, [loadRoutines]);
+        // Load completions for current month to ensure progress bars work
+        const today = new Date();
+        const start = format(startOfMonth(today), 'yyyy-MM-dd');
+        const end = format(endOfMonth(today), 'yyyy-MM-dd');
+        loadCompletions(start, end);
+    }, [loadRoutines, loadCompletions]);
 
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -56,17 +64,22 @@ export default function RoutinesPage() {
     return (
         <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto space-y-8">
             {/* Reusing Hero Section structure for consistency but customized */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-800 p-8 md:p-12 text-white shadow-2xl">
+            {/* Reusing Hero Section structure for consistency but customized */}
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-white via-blue-50 to-indigo-50 dark:from-indigo-950 dark:via-purple-950 dark:to-indigo-950 p-8 md:p-12 shadow-xl border border-white/40 dark:border-white/10">
+                {/* Glassmorphism effects */}
+                <div className="absolute inset-0 bg-white/40 dark:bg-white/5 backdrop-blur-3xl z-0" />
+
                 {/* Subtle grain overlay using CSS */}
-                <div className="absolute inset-0 opacity-20 mix-blend-overlay" style={{
+                <div className="absolute inset-0 opacity-10 dark:opacity-20 mix-blend-overlay z-0" style={{
                     backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`
                 }} />
+
                 <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                     <div className="space-y-4 max-w-2xl">
-                        <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-tight">
+                        <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-tight text-slate-900 dark:text-white">
                             Design Your Flow
                         </h1>
-                        <p className="text-lg text-indigo-100 max-w-xl leading-relaxed">
+                        <p className="text-lg text-slate-600 dark:text-indigo-100 max-w-xl leading-relaxed font-medium">
                             Chain habits together into powerful routines. Automate your day and reduce decision fatigue.
                         </p>
                     </div>
@@ -77,7 +90,7 @@ export default function RoutinesPage() {
                         <Button
                             size="lg"
                             onClick={handleCreate}
-                            className="bg-white text-indigo-600 hover:bg-indigo-50 font-bold shadow-xl border-none h-14 px-8 text-lg rounded-2xl"
+                            className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-2xl shadow-indigo-500/30 border-none h-14 px-8 text-lg rounded-2xl transition-all"
                         >
                             <Plus className="mr-2 h-6 w-6" />
                             Create Routine
