@@ -51,6 +51,12 @@ export class SyncEngine {
   private lastSyncAt: Date | null = null;
   private isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
+  // Auth ready promise to prevent race conditions
+  private authReadyResolve!: () => void;
+  public authReady: Promise<void> = new Promise((resolve) => {
+    this.authReadyResolve = resolve;
+  });
+
   // Entity-specific sync locks to prevent race conditions
   private habitSyncLock = false;
   private completionSyncLock = false;
@@ -77,11 +83,17 @@ export class SyncEngine {
       const { data: { session } } = await this.supabase.auth.getSession();
       this.userId = session?.user?.id || null;
 
+      console.log('[SyncEngine] Auth setup complete, userId:', this.userId);
+
+      // Resolve the auth ready promise
+      this.authReadyResolve();
+
       this.supabase.auth.onAuthStateChange((event, session) => {
         const newUserId = session?.user?.id || null;
 
         if (newUserId !== this.userId) {
           this.userId = newUserId;
+          console.log('[SyncEngine] Auth state changed, new userId:', this.userId);
 
           if (newUserId) {
             this.syncAll();
@@ -98,6 +110,8 @@ export class SyncEngine {
       }
     } catch (error) {
       this.log('error', 'Failed to setup auth', error);
+      // Resolve anyway to prevent hanging
+      this.authReadyResolve();
     }
   }
 
@@ -212,8 +226,11 @@ export class SyncEngine {
   // ===================
 
   async syncAll(): Promise<void> {
+    // Wait for auth to be ready first
+    await this.authReady;
+
     if (!this.userId) {
-      this.log('info', 'Sync skipped - no user');
+      this.log('warn', '- Sync skipped - no user (after auth ready)');
       return;
     }
 
@@ -919,6 +936,8 @@ export class SyncEngine {
   private async syncGoalsImpl() {
     if (!this.userId) return;
 
+    this.log('info', '🔄 Syncing goals from Supabase...');
+
     const { data: remoteGoals, error } = await this.supabase
       .from('goals')
       .select('*')
@@ -1313,6 +1332,8 @@ export class SyncEngine {
   private async syncTasksImpl() {
     if (!this.userId) return;
 
+    this.log('info', '🔄 Syncing tasks from Supabase...');
+
     const { data: remoteTasks, error } = await this.supabase
       .from('tasks')
       .select('*')
@@ -1485,6 +1506,8 @@ export class SyncEngine {
 
   private async syncRoutinesImpl() {
     if (!this.userId) return;
+
+    this.log('info', '🔄 Syncing routines from Supabase...');
 
     const { data: remoteRoutines, error } = await this.supabase
       .from('routines')
@@ -1709,9 +1732,14 @@ export class SyncEngine {
       gems: settings.gems || 0,
       streak_shield: settings.streakShield || 0,
       updated_at: new Date().toISOString(),
-    } as any);
+    } as any, {
+      onConflict: 'user_id', // CRITICAL: Tell upsert which column to match on
+    });
 
-    if (error) throw error;
+    if (error) {
+      this.log('error', '❌ Failed to push user settings to remote', error);
+      throw error;
+    }
     this.log('info', '✅ User settings pushed to remote');
   }
 
@@ -1739,6 +1767,24 @@ export class SyncEngine {
       await db.userSettings.update(existing.id, localSettings);
     } else {
       await db.userSettings.add(localSettings);
+    }
+
+    // Update Zustand gamification store to reflect synced data
+    try {
+      const { useGamificationStore } = await import('@/lib/stores/gamification-store');
+      const store = useGamificationStore.getState();
+
+      // Only update if values have actually changed
+      if (store.xp !== localSettings.xp ||
+        store.level !== localSettings.level ||
+        store.gems !== localSettings.gems ||
+        store.streakShield !== localSettings.streakShield) {
+
+        store.loadGamification(); // Reload from IndexedDB
+        this.log('info', `🎮 UI updated: XP=${localSettings.xp}, Level=${localSettings.level}, Gems=${localSettings.gems}`);
+      }
+    } catch (error) {
+      this.log('warn', 'Failed to update gamification UI, but data is synced', error);
     }
 
     this.log('info', '✅ User settings pulled from remote');

@@ -144,10 +144,13 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 streakShield // Ensure this is preserved
             });
 
-            // Sync to Supabase via sync engine
+            // Sync to Supabase via sync engine with COMPLETE settings
+            const currentSettings = await getSettings(session.user.id);
             const syncEngine = getSyncEngine();
             syncEngine.pushUserSettings({
-                userId: session.user.id,
+                userName: currentSettings?.userName,
+                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
+                defaultCategory: currentSettings?.defaultCategory ?? 'health',
                 xp: newXp,
                 level: newLevel,
                 gems: newGems,
@@ -174,10 +177,13 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 gems: newGems
             });
 
-            // Sync to Supabase
+            // Sync to Supabase with complete settings
+            const currentSettings = await getSettings(session.user.id);
             const syncEngine = getSyncEngine();
             syncEngine.pushUserSettings({
-                userId: session.user.id,
+                userName: currentSettings?.userName,
+                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
+                defaultCategory: currentSettings?.defaultCategory ?? 'health',
                 xp,
                 level,
                 gems: newGems,
@@ -206,10 +212,13 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 streakShield: newShields
             });
 
-            // Sync to Supabase
+            // Sync to Supabase with complete settings
+            const currentSettings = await getSettings(session.user.id);
             const syncEngine = getSyncEngine();
             syncEngine.pushUserSettings({
-                userId: session.user.id,
+                userName: currentSettings?.userName,
+                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
+                defaultCategory: currentSettings?.defaultCategory ?? 'health',
                 xp,
                 level,
                 gems: newGems,

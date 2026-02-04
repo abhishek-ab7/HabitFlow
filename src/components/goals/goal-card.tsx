@@ -247,12 +247,7 @@ export function GoalCard({
                 transition={{ duration: 0.5 }}
               />
               {/* Today marker */}
-              {stats.daysRemaining > 0 && stats.daysElapsed > 0 && (
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-foreground rounded-full"
-                  style={{ left: `${elapsedPercentage}%`, transform: 'translateX(-50%) translateY(-50%)' }}
-                />
-              )}
+
             </div>
           </div>
 
@@ -332,7 +327,7 @@ export function GoalCard({
                       />
                     </motion.div>
                   ))}
-                  
+
                   {/* Add milestone button */}
                   <Button
                     variant="outline"
