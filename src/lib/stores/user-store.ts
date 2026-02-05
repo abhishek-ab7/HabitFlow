@@ -12,7 +12,8 @@ interface UserState {
 
     // Actions
     loadUser: () => Promise<void>;
-    setDisplayName: (name: string) => Promise<void>;
+    setDisplayName: (name: string) => void; // LOCAL ONLY - synchronous
+    saveDisplayNameToServer: () => Promise<void>; // EXPLICIT SAVE - async
     setupRealtimeSubscription: () => void;
     cleanupRealtimeSubscription: () => void;
 }
@@ -136,40 +137,43 @@ export const useUserStore = create<UserState>((set, get) => ({
         }
     },
 
-    setDisplayName: async (name: string) => {
-        console.log('[UserStore] Setting display name:', name);
-        set({ displayName: name });
+    setDisplayName: (name: string) => {
+        // LOCAL STATE UPDATE ONLY - NO ASYNC, NO SUPABASE PUSH
+        console.log('[UserStore] Setting display name (local only):', name);
 
+        // Warn if setting default value to track where it's being called from
+        if (name === 'Habit Hero' || name === '') {
+            console.warn('[UserStore] ⚠️ Setting empty/default value - caller:', new Error().stack?.split('\n')[2]);
+        }
+
+        set({ displayName: name });
+    },
+
+    saveDisplayNameToServer: async () => {
+        const { displayName } = get();
         const supabase = getSupabaseClient();
         const { data: { session } } = await supabase.auth.getSession();
 
-        if (session?.user) {
-            // 1. Update local DB
-            console.log('[UserStore] Updating local DB with display name:', name);
-            await updateSettings({
-                userId: session.user.id,
-                userName: name
-            });
+        if (!session?.user) {
+            throw new Error('No active session');
+        }
 
-            // 2. Sync to Remote
-            const currentSettings = await getSettings(session.user.id);
+        console.log('[UserStore] 💾 Saving display name to server:', displayName);
+
+        // 1. Update local DB
+        await updateSettings({
+            userId: session.user.id,
+            userName: displayName
+        });
+
+        // 2. Push to Supabase
+        const currentSettings = await getSettings(session.user.id);
+        if (currentSettings) {
             const syncEngine = getSyncEngine();
-
-            // Use existing settings to avoid overwriting gamification data with defaults/nulls
-            // The pushUserSettings method in sync engine expects the full object logic or handles partials?
-            // Looking at gamification-store, it constructs the full object.
-            // We should probably do the same or rely on the sync engine reading from DB?
-            // SyncEngine.pushUserSettings takes 'settings: any'.
-            // If we look at sync-engine.ts, it calls pushUserSettingsToRemote(settings).
-            // So we should pass the FULL settings object from DB.
-
-            if (currentSettings) {
-                console.log('[UserStore] Pushing to Supabase:', { userName: currentSettings.userName });
-                await syncEngine.pushUserSettings(currentSettings);
-                console.log('[UserStore] ✅ Display name saved and synced successfully');
-            } else {
-                console.warn('[UserStore] ⚠️ No current settings found, cannot sync');
-            }
+            await syncEngine.pushUserSettings(currentSettings);
+            console.log('[UserStore] ✅ Display name saved to Supabase');
+        } else {
+            console.warn('[UserStore] ⚠️ No current settings found in local DB');
         }
     }
 }));

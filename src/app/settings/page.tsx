@@ -16,6 +16,7 @@ import {
   User,
   Mail,
   Lock,
+  Save,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -58,7 +59,7 @@ export default function SettingsPage() {
   const [isForceSyncing, setIsForceSyncing] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
-  const { displayName, email, setDisplayName, loadUser } = useUserStore();
+  const { displayName, email, setDisplayName, saveDisplayNameToServer, loadUser } = useUserStore();
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -102,13 +103,14 @@ export default function SettingsPage() {
     }
   }, [user, isAuthenticated, loadUser]);
 
-  const handleUpdateName = async (name: string) => {
-    if (settings && user?.id) {
-      // Update local settings state
-      setSettings({ ...settings, userName: name });
-      // Update store and DB via store action
-      await setDisplayName(name);
-      toast.success('Name updated');
+  const handleSaveDisplayName = async () => {
+    try {
+      // NEW: Use explicit save function from user store
+      await saveDisplayNameToServer();
+      toast.success('Display name saved');
+    } catch (error) {
+      console.error('Failed to save display name:', error);
+      toast.error('Failed to save display name');
     }
   };
 
@@ -318,16 +320,31 @@ export default function SettingsPage() {
                 {/* Display Name Field */}
                 <div className="space-y-2.5">
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Display Name</Label>
-                  <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-indigo-500 transition-colors">
-                      <User className="h-4 w-4" />
+                  <div className="flex gap-2">
+                    <div className="relative group flex-1">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-indigo-500 transition-colors">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <Input
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        placeholder="How should we call you?"
+                        className="h-11 pl-10 rounded-xl border-border/50 bg-background/50 focus:bg-background transition-all focus:ring-2 focus:ring-indigo-500/20"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveDisplayName();
+                          }
+                        }}
+                      />
                     </div>
-                    <Input
-                      value={displayName}
-                      onChange={(e) => handleUpdateName(e.target.value)}
-                      placeholder="How should we call you?"
-                      className="h-11 pl-10 rounded-xl border-border/50 bg-background/50 focus:bg-background transition-all focus:ring-2 focus:ring-indigo-500/20"
-                    />
+                    <Button
+                      onClick={handleSaveDisplayName}
+                      className="h-11 px-6 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border border-primary/20 shadow-lg shadow-primary/25 hover:shadow-primary/50 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 font-medium tracking-wide"
+                    >
+                      <Save className="h-4 w-4 mr-2 stroke-[2.5]" />
+                      Save
+                    </Button>
                   </div>
                 </div>
               </div>
