@@ -25,14 +25,30 @@ export function AICoachWidget() {
     const { habits } = useHabitStore();
     const { tasks } = useTaskStore();
     const { level } = useGamificationStore();
-    const { displayName, loadUser } = useUserStore();
+    const { displayName, isLoading: isLoadingUser, loadUser } = useUserStore();
 
     useEffect(() => {
         if (user) loadUser();
     }, [user, loadUser]);
 
+    // NEW: Auto-fetch AI coach data when user data finishes loading
+    useEffect(() => {
+        if (user && !isLoadingUser && !data && !loading) {
+            console.log('[AI Coach] User data ready, auto-fetching advice');
+            fetchAdvice();
+        }
+    }, [user, isLoadingUser]); // Trigger when isLoadingUser changes
+
     const fetchAdvice = async (force: boolean = false) => {
         if (!user) return;
+
+        // NEW: Wait for user data to load before making AI request
+        if (isLoadingUser) {
+            console.log('[AI Coach] Waiting for user data to finish loading...');
+            return;
+        }
+
+        console.log('[AI Coach] User data loaded, displayName:', displayName || '(empty)');
 
         const today = new Date().toISOString().split('T')[0];
         const cacheKey = `ai_coach_advice_${user.id}`;
@@ -61,12 +77,15 @@ export function AICoachWidget() {
             const todaysHabits = habits.filter(h => !h.archived);
             const unfinishedTasks = tasks.filter(t => t.status !== 'done');
 
+            const userName = displayName || user.email?.split('@')[0] || 'Habit Hero';
+            console.log('[AI Coach] Sending request with userName:', userName);
+
             const res = await fetch('/api/ai/coach', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userData: {
-                        userName: displayName || user.email?.split('@')[0] || 'Habit Hero',
+                        userName,
                         level
                     },
                     context: {
@@ -124,6 +143,16 @@ export function AICoachWidget() {
 
     return (
         <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/20 dark:to-purple-950/20 overflow-hidden relative">
+            {/* Loading Overlay for User Data */}
+            {isLoadingUser && (
+                <div className="absolute inset-0 bg-background/90 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="text-center space-y-2">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mx-auto" />
+                        <p className="text-sm text-muted-foreground">Loading your profile...</p>
+                    </div>
+                </div>
+            )}
+
             <div className="absolute top-0 right-0 p-3 opacity-10">
                 <Sparkles className="w-24 h-24 text-indigo-500" />
             </div>

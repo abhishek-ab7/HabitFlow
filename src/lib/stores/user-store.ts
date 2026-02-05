@@ -2,21 +2,26 @@ import { create } from 'zustand';
 import { getSettings, updateSettings } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 interface UserState {
     displayName: string;
     email: string | null;
     isLoading: boolean;
+    realtimeChannel: RealtimeChannel | null;
 
     // Actions
     loadUser: () => Promise<void>;
     setDisplayName: (name: string) => Promise<void>;
+    setupRealtimeSubscription: () => void;
+    cleanupRealtimeSubscription: () => void;
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
     displayName: '',
     email: null,
     isLoading: false,
+    realtimeChannel: null,
 
     loadUser: async () => {
         set({ isLoading: true });
@@ -61,11 +66,73 @@ export const useUserStore = create<UserState>((set, get) => ({
                         set({ displayName: settings.userName });
                     }
                 }
+
+                // NEW: Setup realtime subscription for cross-device sync
+                get().setupRealtimeSubscription();
             }
         } catch (error) {
             console.error('[UserStore] Failed to load user data:', error);
         } finally {
             set({ isLoading: false });
+        }
+    },
+
+    setupRealtimeSubscription: () => {
+        const supabase = getSupabaseClient();
+
+        // Clean up existing subscription first
+        get().cleanupRealtimeSubscription();
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!session?.user) {
+                console.log('[UserStore] No session, skipping realtime setup');
+                return;
+            }
+
+            console.log('[UserStore] Setting up realtime subscription for user:', session.user.id);
+
+            const channel = supabase
+                .channel('user_settings_realtime')
+                .on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'user_settings',
+                    filter: `user_id=eq.${session.user.id}`
+                }, async (payload) => {
+                    console.log('[UserStore] 🔔 Realtime update detected:', payload.new);
+                    const newName = (payload.new as any).user_name;
+
+                    if (newName && newName !== get().displayName) {
+                        console.log('[UserStore] Updating display name from realtime:', newName);
+                        set({ displayName: newName });
+
+                        // Update local DB to keep in sync
+                        try {
+                            await updateSettings({
+                                userId: session.user.id,
+                                userName: newName
+                            });
+                            console.log('[UserStore] ✅ Display name synced via realtime');
+                        } catch (error) {
+                            console.error('[UserStore] Failed to update local DB:', error);
+                        }
+                    }
+                })
+                .subscribe((status) => {
+                    console.log('[UserStore] Realtime subscription status:', status);
+                });
+
+            set({ realtimeChannel: channel });
+        });
+    },
+
+    cleanupRealtimeSubscription: () => {
+        const channel = get().realtimeChannel;
+        if (channel) {
+            console.log('[UserStore] Cleaning up realtime subscription');
+            const supabase = getSupabaseClient();
+            supabase.removeChannel(channel);
+            set({ realtimeChannel: null });
         }
     },
 
