@@ -39,13 +39,13 @@ export async function POST(req: NextRequest) {
     const cacheKey = `quote:${input.userContext.userName}:${mood}:${context}:${date}`;
     const cacheTTL = 6 * 60 * 60; // 6 hours (quotes should feel fresh)
 
-    console.log(`[AI Quote] Generating for ${input.userContext.userName} (${mood}, ${context})`);
+    console.log(`[AI Quote] Generating for ${input.userContext.userName} (${mood}, ${context})${input.forceRefresh ? ' [FORCE REFRESH]' : ''}`);
 
     const result = await ai.generate<QuotePersonalizationOutput>(
       'motivate',
       prompt,
       quotePersonalizationSchema,
-      cacheKey,
+      input.forceRefresh ? undefined : cacheKey, // Skip cache if forceRefresh
       cacheTTL
     );
 

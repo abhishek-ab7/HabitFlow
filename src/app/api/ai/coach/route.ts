@@ -33,13 +33,13 @@ export async function POST(req: NextRequest) {
     const cacheKey = `coach:${userData?.userId || 'anonymous'}:${new Date().toDateString()}:${context?.mode || 'briefing'}`;
     const cacheTTL = 6 * 60 * 60; // 6 hours
 
-    console.log(`[AI Coach] Generating briefing for user ${userData?.userId}`);
+    console.log(`[AI Coach] Generating briefing for user ${userData?.userId}${body.forceRefresh ? ' [FORCE REFRESH]' : ''}`);
 
     const result = await ai.generate<CoachBriefingOutput>(
       'coach',
       prompt,
       coachBriefingSchema,
-      cacheKey,
+      body.forceRefresh ? undefined : cacheKey, // Skip cache if forceRefresh
       cacheTTL
     );
 

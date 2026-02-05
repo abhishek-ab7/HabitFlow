@@ -37,13 +37,13 @@ export async function POST(req: NextRequest) {
     const cacheKey = `habit-stacks:${habitIds}`;
     const cacheTTL = 3 * 24 * 60 * 60; // 3 days
 
-    console.log(`[AI Habit Stacks] Generating for ${input.existingHabits.length} habits`);
+    console.log(`[AI Habit Stacks] Generating for ${input.existingHabits.length} habits${input.forceRefresh ? ' [FORCE REFRESH]' : ''}`);
 
     const result = await ai.generate<HabitStackingOutput>(
       'suggest-stacks',
       prompt,
       habitStackingSchema,
-      cacheKey,
+      input.forceRefresh ? undefined : cacheKey, // Skip cache if forceRefresh
       cacheTTL
     );
 

@@ -1,6 +1,6 @@
 // AI Feature Types and Interfaces
 
-export type AIFeature = 
+export type AIFeature =
   | 'coach'
   | 'prioritize'
   | 'recommend-habits'
@@ -58,6 +58,7 @@ export interface CoachBriefingInput {
     topPriorityTask?: string;
     upcomingDeadlines?: Array<{ title: string; daysLeft: number }>;
   };
+  forceRefresh?: boolean;
 }
 
 export interface CoachBriefingOutput {
@@ -246,6 +247,7 @@ export interface HabitStackingInput {
     strugglingCategories?: string[];
     topPerformingHabits?: string[];
   };
+  forceRefresh?: boolean;
 }
 
 export interface HabitStack {
@@ -280,6 +282,7 @@ export interface QuotePersonalizationInput {
     goals?: Array<{ title: string; progress: number }>;
   };
   context?: 'morning' | 'evening' | 'struggling' | 'celebrating' | 'general';
+  forceRefresh?: boolean;
 }
 
 export interface PersonalizedQuote {

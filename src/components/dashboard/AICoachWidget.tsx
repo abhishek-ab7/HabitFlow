@@ -73,7 +73,8 @@ export function AICoachWidget() {
                         todaysHabits: todaysHabits.map(h => h.name),
                         unfinishedTasks: unfinishedTasks.map(t => t.title),
                         mode: 'briefing'
-                    }
+                    },
+                    forceRefresh: force
                 })
             });
 

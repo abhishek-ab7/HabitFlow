@@ -23,7 +23,7 @@ export function PersonalizedQuote() {
   const { goals } = useGoalStore();
   const supabase = createClient();
 
-  const fetchQuote = async () => {
+  const fetchQuote = async (forceRefresh: boolean = false) => {
     if (!user) return;
 
     setLoading(true);
@@ -46,7 +46,8 @@ export function PersonalizedQuote() {
               progress: 50 // Default progress value
             }))
           },
-          context: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'general' : 'evening'
+          context: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'general' : 'evening',
+          forceRefresh
         })
       });
 
@@ -69,9 +70,8 @@ export function PersonalizedQuote() {
             quote_text: newQuote.quote,
             author: newQuote.author || null,
             context: newQuote.context,
-            personalization_reason: newQuote.whyItMatters || null,
-            actionable_insight: newQuote.actionableInsight || null,
-            mood_alignment: todayCompletions.length > 3 ? 'motivated' : todayCompletions.length === 0 ? 'struggling' : 'neutral'
+            reasoning: newQuote.whyItMatters || null,
+            actionable_insight: newQuote.actionableInsight || null
           })
           .select()
           .single();
@@ -107,8 +107,7 @@ export function PersonalizedQuote() {
       const { error } = await (supabase
         .from('motivational_quotes') as any)
         .update({
-          user_reaction: liked ? 'liked' : 'disliked',
-          reacted_at: new Date().toISOString()
+          user_reaction: liked ? 'liked' : 'disliked'
         })
         .eq('id', quoteId);
 
@@ -147,7 +146,7 @@ export function PersonalizedQuote() {
             <p className="font-medium text-foreground">Need some inspiration?</p>
             <p className="text-sm text-muted-foreground">Get a quote personalized for your day.</p>
           </div>
-          <Button onClick={fetchQuote} size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white">
+          <Button onClick={() => fetchQuote(false)} size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white">
             Get Daily Quote
           </Button>
         </CardContent>
@@ -209,7 +208,7 @@ export function PersonalizedQuote() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={fetchQuote}
+                onClick={() => fetchQuote(true)}
                 disabled={loading}
                 className="h-7 gap-1"
               >

@@ -22,7 +22,7 @@ export function HabitStackSuggestions() {
 
   const activeHabits = habits.filter(h => !h.archived);
 
-  const fetchStacks = async () => {
+  const fetchStacks = async (forceRefresh: boolean = false) => {
     if (activeHabits.length < 2) return;
 
     setLoading(true);
@@ -69,7 +69,8 @@ export function HabitStackSuggestions() {
           userContext: {
             availableTimeSlots: ['morning', 'evening'],
             topPerformingHabits: habitData.filter(h => h.completionRate > 70).map(h => h.name)
-          }
+          },
+          forceRefresh
         })
       });
 
@@ -160,7 +161,7 @@ export function HabitStackSuggestions() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={fetchStacks}
+              onClick={() => fetchStacks(true)}
               disabled={loading}
               className="h-7 gap-1"
             >
@@ -180,7 +181,7 @@ export function HabitStackSuggestions() {
             <p className="text-sm text-muted-foreground mb-3">
               Get AI-powered habit stacking suggestions
             </p>
-            <Button onClick={fetchStacks} variant="default" className="gap-2 bg-amber-600 hover:bg-amber-700">
+            <Button onClick={() => fetchStacks(false)} variant="default" className="gap-2 bg-amber-600 hover:bg-amber-700">
               <Sparkles className="h-4 w-4" />
               Generate Stack Suggestions
             </Button>

@@ -1883,6 +1883,20 @@ export class SyncEngine {
       this.log('warn', 'Failed to update gamification UI, but data is synced', error);
     }
 
+    // NEW: Update user store to refresh display name
+    try {
+      const { useUserStore } = await import('@/lib/stores/user-store');
+      const userStore = useUserStore.getState();
+
+      // Only update if display name changed
+      if (userStore.displayName !== localSettings.userName && localSettings.userName) {
+        userStore.loadUser(); // Reload from IndexedDB
+        this.log('info', `👤 Display name updated in UI: ${localSettings.userName}`);
+      }
+    } catch (error) {
+      this.log('warn', 'Failed to update user store UI, but data is synced', error);
+    }
+
     this.log('info', '✅ User settings pulled from remote');
   }
 
