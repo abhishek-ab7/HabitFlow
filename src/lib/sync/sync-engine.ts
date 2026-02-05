@@ -1821,6 +1821,7 @@ export class SyncEngine {
     const { error } = await this.supabase.from('user_settings').upsert({
       user_id: this.userId,
       user_name: settings.userName || null,
+      avatar_id: settings.avatarId || 'avatar-1',
       week_start_day: settings.weekStartsOn || 0,
       default_category: settings.defaultCategory || 'health',
       xp: settings.xp || 0,
@@ -1853,7 +1854,7 @@ export class SyncEngine {
       level: remote.level || 1,
       gems: remote.gems || 0,
       streakShield: remote.streak_shield || 0,
-      avatarId: 'avatar-1',
+      avatarId: remote.avatar_id || 'avatar-1',
     };
 
     // Check if settings exist for this user
@@ -1910,6 +1911,7 @@ export class SyncEngine {
         data: {
           user_id: this.userId,
           user_name: settings.userName,
+          avatar_id: settings.avatarId || 'avatar-1',
           week_start_day: settings.weekStartsOn,
           default_category: settings.defaultCategory,
           xp: settings.xp,
