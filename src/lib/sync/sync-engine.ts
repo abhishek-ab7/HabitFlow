@@ -34,6 +34,7 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 2000;
 const BATCH_SIZE = 50;
 const SYNC_WINDOW_DAYS = 90;
+const SYNC_VERSION = '2.0.0'; // Bumped for habit property migration
 
 // ===================
 // SYNC ENGINE
@@ -142,6 +143,70 @@ export class SyncEngine {
       }
     } catch (error) {
       this.log('warn', 'Failed to load pending operations', error);
+    }
+  }
+
+  // ===================
+  // MIGRATION METHODS
+  // ===================
+
+  /**
+   * Migrate habit properties to fix archived boolean mapping
+   * This fixes the issue where remote.is_archived was not properly mapped to local archived property
+   */
+  private async migrateHabitProperties(): Promise<void> {
+    if (!this.userId) return;
+
+    this.log('info', '🔧 Starting habit property migration...');
+
+    try {
+      const habits = await db.habits.where('userId').equals(this.userId).toArray();
+      let fixedCount = 0;
+
+      for (const habit of habits) {
+        // Fix any habits with undefined or incorrectly typed archived property
+        if (habit.archived === undefined || habit.archived === null) {
+          await db.habits.update(habit.id, { archived: false });
+          fixedCount++;
+        }
+      }
+
+      this.log('info', `✅ Migration complete: Fixed ${fixedCount} habits`);
+    } catch (error) {
+      this.log('error', `❌ Migration failed: ${error}`);
+      // Don't throw - allow app to continue even if migration fails
+    }
+  }
+
+  /**
+   * Check sync version and run migrations if needed
+   * This ensures migrations run exactly once per user per version
+   */
+  async checkAndRunMigrations(): Promise<void> {
+    if (!this.userId) {
+      this.log('warn', 'Cannot run migrations: no user ID');
+      return;
+    }
+
+    try {
+      const storageKey = `sync_version_${this.userId}`;
+      const currentVersion = localStorage.getItem(storageKey);
+
+      if (currentVersion !== SYNC_VERSION) {
+        this.log('info', `🔄 Version mismatch (${currentVersion} → ${SYNC_VERSION}), running migrations...`);
+
+        // Run migrations
+        await this.migrateHabitProperties();
+
+        // Update version
+        localStorage.setItem(storageKey, SYNC_VERSION);
+        this.log('info', `✅ Migrations complete, version updated to ${SYNC_VERSION}`);
+      } else {
+        this.log('info', `✅ Sync version ${SYNC_VERSION} matches, skipping migrations`);
+      }
+    } catch (error) {
+      this.log('error', `❌ Migration check failed: ${error}`);
+      // Don't throw - allow app to continue
     }
   }
 
@@ -530,7 +595,7 @@ export class SyncEngine {
       icon: remote.icon || '✓',
       category: remote.category,
       targetDaysPerWeek: remote.target_days || 7,
-      archived: remote.is_archived || false,
+      archived: Boolean(remote.is_archived), // Fixed: explicit boolean coercion
       archivedAt: remote.archived_at || undefined,
       updatedAt: remote.updated_at || remote.created_at,
       order: remote.order_index || 0,
@@ -607,6 +672,36 @@ export class SyncEngine {
     }
 
     await this.pushHabitToRemote(habit);
+  }
+
+  async archiveHabit(habitId: string) {
+    if (!this.userId) return;
+
+    const now = new Date().toISOString();
+
+    if (!this.isOnline) {
+      this.queueOperation({
+        type: 'update',
+        table: 'habits',
+        data: {
+          id: habitId,
+          user_id: this.userId,
+          is_archived: true,
+          archived_at: now,
+          updated_at: now,
+        },
+      });
+      return;
+    }
+
+    // Soft delete - mark as archived (no timestamp since column doesn't exist)
+    // @ts-expect-error - Supabase type issue with update
+    const { error } = await this.supabase.from('habits').update({
+      is_archived: true,
+      updated_at: now,
+    }).eq('id', habitId).eq('user_id', this.userId);
+
+    if (error) throw error;
   }
 
   async deleteHabit(habitId: string) {
@@ -1164,8 +1259,9 @@ export class SyncEngine {
           goal_id: local.goalId,
           title: local.title,
           is_completed: local.completed,
-          completed_at: local.completedAt,
+          completed_at: local.completedAt || null,
           order_index: local.order,
+          created_at: local.createdAt || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
       } else if (local.completed !== remote.is_completed || local.title !== remote.title) {
@@ -1188,7 +1284,7 @@ export class SyncEngine {
             goal_id: local.goalId,
             title: local.title,
             is_completed: local.completed,
-            completed_at: local.completedAt,
+            completed_at: local.completedAt || null,
             order_index: local.order,
             updated_at: new Date().toISOString(),
           });
@@ -2217,7 +2313,12 @@ export class SyncEngine {
       const batch = items.slice(i, i + BATCH_SIZE);
       const { error } = await this.supabase.from(table).upsert(batch as any);
       if (error) {
-        this.log('error', `Batch upsert failed for ${table}`, error);
+        this.log('error', `Batch upsert failed for ${table}: ${error.message}`, {
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          batchSize: batch.length
+        });
         throw error;
       }
     }

@@ -13,9 +13,14 @@ import {
   Palette,
   ShieldAlert,
   CloudCog,
+  User,
+  Mail,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FadeIn } from '@/components/motion';
 import { useTheme } from '@/providers/theme-provider';
@@ -31,6 +36,8 @@ import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
 import { SettingsHero } from '@/components/settings/SettingsHero';
 import { AvatarSelector } from '@/components/settings/AvatarSelector';
+import { PasswordChangeModal } from '@/components/settings/password-change-modal';
+import { useUserStore } from '@/lib/stores/user-store';
 import { Avatar } from '@/lib/avatars';
 
 export default function SettingsPage() {
@@ -49,10 +56,15 @@ export default function SettingsPage() {
 
   const [showAvatarSelector, setShowAvatarSelector] = useState(false);
   const [isForceSyncing, setIsForceSyncing] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+
+  const { displayName, email, setDisplayName, loadUser } = useUserStore();
 
   useEffect(() => {
     const loadSettings = async () => {
       if (!user?.id) return;
+
+      loadUser(); // Load user profile store
 
       let s = await getSettings(user.id);
 
@@ -88,12 +100,14 @@ export default function SettingsPage() {
     if (isAuthenticated) {
       loadSettings();
     }
-  }, [user, isAuthenticated]);
+  }, [user, isAuthenticated, loadUser]);
 
   const handleUpdateName = async (name: string) => {
     if (settings && user?.id) {
-      await updateSettings({ userId: user.id, userName: name });
+      // Update local settings state
       setSettings({ ...settings, userName: name });
+      // Update store and DB via store action
+      await setDisplayName(name);
       toast.success('Name updated');
     }
   };
@@ -265,7 +279,7 @@ export default function SettingsPage() {
       <FadeIn>
         {/* ROW 1: HERO (Span 3) */}
         <SettingsHero
-          userName={settings.userName || ''}
+          userName={displayName || settings.userName || ''}
           avatarId={settings.avatarId || 'avatar-1'}
           level={settings.level}
           xp={settings.xp}
@@ -275,57 +289,74 @@ export default function SettingsPage() {
           className="mb-8"
         />
 
-        <BentoGrid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-auto">
+        <BentoGrid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:auto-rows-auto">
 
-          {/* ROW 2: APPEARANCE (Span 1) & SYNC (Span 2) */}
+          {/* ROW 2: ACCOUNT (Span 2) */}
           <BentoGridItem
-            title="Appearance"
-            icon={<Palette className="h-5 w-5 text-purple-500" />}
-            span={1}
-            className="md:col-span-1"
+            title="Account & Security"
+            icon={<User className="h-5 w-5 text-indigo-500" />}
+            span={2}
+            className="md:col-span-2"
+            description="Manage your profile and security preferences"
           >
-            <div className="grid grid-cols-3 gap-2 mt-4">
-              {[
-                { value: 'light', icon: Sun, label: 'Light' },
-                { value: 'dark', icon: Moon, label: 'Dark' },
-                { value: 'system', icon: Monitor, label: 'Auto' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setTheme(opt.value as 'light' | 'dark' | 'system')}
-                  className={cn(
-                    "p-3 rounded-xl flex items-center justify-center transition-all border",
-                    theme === opt.value
-                      ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/25"
-                      : "bg-background/50 hover:bg-background border-border text-muted-foreground hover:text-foreground"
-                  )}
-                  title={opt.label}
+            <div className="flex flex-col gap-6 mt-6 pb-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Email Field */}
+                <div className="space-y-2.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email Address</Label>
+                  <div className="relative group">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-hover:text-foreground transition-colors">
+                      <Mail className="h-4 w-4" />
+                    </div>
+                    <div className="flex items-center h-11 w-full rounded-xl border border-border/50 bg-muted/30 px-10 text-sm text-foreground/80 font-medium cursor-not-allowed">
+                      <span className="truncate">{email || user?.email || 'No email linked'}</span>
+                    </div>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px] shadow-emerald-500/50" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Display Name Field */}
+                <div className="space-y-2.5">
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Display Name</Label>
+                  <div className="relative group">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-indigo-500 transition-colors">
+                      <User className="h-4 w-4" />
+                    </div>
+                    <Input
+                      value={displayName}
+                      onChange={(e) => handleUpdateName(e.target.value)}
+                      placeholder="How should we call you?"
+                      className="h-11 pl-10 rounded-xl border-border/50 bg-background/50 focus:bg-background transition-all focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Area */}
+              <div className="flex items-center justify-between pt-6 border-t border-border/40 mt-4">
+                <div className="text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 text-emerald-500" />
+                    Account is secure
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsPasswordModalOpen(true)}
+                  className="h-9 px-4 rounded-lg border-indigo-500/20 hover:bg-indigo-500/5 hover:text-indigo-600 hover:border-indigo-500/30 transition-all text-xs font-medium"
                 >
-                  <opt.icon className="w-5 h-5" />
-                </button>
-              ))}
+                  <Lock className="h-3.5 w-3.5 mr-2 text-indigo-500" />
+                  Change Password
+                </Button>
+              </div>
             </div>
           </BentoGridItem>
 
-          {isAuthenticated && (
-            <BentoGridItem
-              span={2}
-              title={
-                <div className="flex items-center gap-2">
-                  <span>Cloud Sync</span>
-                  {isSyncing && <span className="text-xs text-muted-foreground animate-pulse">(Syncing...)</span>}
-                </div>
-              }
-              icon={<CloudCog className="h-5 w-5 text-blue-500" />}
-              className="md:col-span-2 lg:col-span-2"
-            >
-              <div className="mt-2">
-                <SyncStatusPanel />
-              </div>
-            </BentoGridItem>
-          )}
+          {/* ROW 2 & 3: Layout Reordering */}
 
-          {/* ROW 3: DATA VAULT (1), DEBUG (1), DANGER (1) */}
           <BentoGridItem
             title="Data Vault"
             icon={<Database className="h-5 w-5 text-emerald-500" />}
@@ -368,16 +399,65 @@ export default function SettingsPage() {
 
               {/* Duplicate Maintenance */}
               {hasDuplicates && (
-                <div className="mt-2 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20 flex flex-col gap-2">
+                <div className="mt-8 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20 flex flex-col gap-2">
                   <div className="flex items-center gap-2 text-xs font-semibold text-amber-600">
                     <ShieldAlert className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{duplicateCounts.habits + duplicateCounts.goals} duplicates</span>
+                    <span className="truncate">{duplicateCounts.habits + duplicateCounts.goals} duplicates found</span>
                   </div>
                   <Button size="sm" variant="ghost" onClick={handleCleanupDuplicates} disabled={isCleaning} className="h-7 text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 w-full">
                     Fix Now
                   </Button>
                 </div>
               )}
+            </div>
+          </BentoGridItem>
+
+          {/* ROW 3: Cloud Sync (Span 2) */}
+          {isAuthenticated && (
+            <BentoGridItem
+              span={2}
+              title={
+                <div className="flex items-center gap-2">
+                  <span>Cloud Sync</span>
+                  {isSyncing && <span className="text-xs text-muted-foreground animate-pulse font-normal ml-2">(Syncing...)</span>}
+                </div>
+              }
+              icon={<CloudCog className="h-5 w-5 text-blue-500" />}
+              className="md:col-span-2 lg:col-span-2"
+            >
+              <div className="mt-2">
+                <SyncStatusPanel />
+              </div>
+            </BentoGridItem>
+          )}
+
+          {/* ROW 3: Appearance (Span 1) */}
+          <BentoGridItem
+            title="Appearance"
+            icon={<Palette className="h-5 w-5 text-purple-500" />}
+            span={1}
+            className="md:col-span-1"
+          >
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              {[
+                { value: 'light', icon: Sun, label: 'Light' },
+                { value: 'dark', icon: Moon, label: 'Dark' },
+                { value: 'system', icon: Monitor, label: 'Auto' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setTheme(opt.value as 'light' | 'dark' | 'system')}
+                  className={cn(
+                    "p-3 rounded-xl flex items-center justify-center transition-all border outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                    theme === opt.value
+                      ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/25 scale-105"
+                      : "bg-background/50 hover:bg-background border-border text-muted-foreground hover:text-foreground"
+                  )}
+                  title={opt.label}
+                >
+                  <opt.icon className="w-5 h-5" />
+                </button>
+              ))}
             </div>
           </BentoGridItem>
 
@@ -467,6 +547,11 @@ export default function SettingsPage() {
         confirmLabel="Clear All Data"
         variant="destructive"
         onConfirm={handleClearAllData}
+      />
+
+      <PasswordChangeModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
       />
     </div>
   );

@@ -7,6 +7,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useTaskStore } from '@/lib/stores/task-store';
+import { useUserStore } from '@/lib/stores/user-store';
 import { cn } from '@/lib/utils';
 
 interface AICoachResponse {
@@ -24,6 +25,11 @@ export function AICoachWidget() {
     const { habits } = useHabitStore();
     const { tasks } = useTaskStore();
     const { level } = useGamificationStore();
+    const { displayName, loadUser } = useUserStore();
+
+    useEffect(() => {
+        if (user) loadUser();
+    }, [user, loadUser]);
 
     const fetchAdvice = async (force: boolean = false) => {
         if (!user) return;
@@ -60,7 +66,7 @@ export function AICoachWidget() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userData: {
-                        userName: user.email?.split('@')[0], // Fallback if no name
+                        userName: displayName || user.email?.split('@')[0] || 'Habit Hero',
                         level
                     },
                     context: {

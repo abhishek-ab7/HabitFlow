@@ -59,22 +59,28 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           setIsSyncing(status.type === 'syncing');
         });
 
-        // STEP 1: Sync from Supabase first (pulls remote data into IndexedDB)
-        console.log('[SyncProvider] STEP 1: Syncing from Supabase to IndexedDB...');
-        setSyncStatus({ type: 'syncing', message: 'Syncing from cloud...', progress: 30 });
-        await syncEngine.syncAll();
-        console.log('[SyncProvider] STEP 1: Sync complete');
+        // STEP 1: Check and run migrations if needed
+        console.log('[SyncProvider] STEP 1: Checking for migrations...');
+        setSyncStatus({ type: 'syncing', message: 'Checking migrations...', progress: 10 });
+        await syncEngine.checkAndRunMigrations();
+        console.log('[SyncProvider] STEP 1: Migration check complete');
 
-        // STEP 2: Then preload from IndexedDB into Zustand stores
-        console.log('[SyncProvider] STEP 2: Loading data into Zustand stores...');
-        setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 70 });
+        // STEP 2: Sync from Supabase (pulls remote data into IndexedDB)
+        console.log('[SyncProvider] STEP 2: Syncing from Supabase to IndexedDB...');
+        setSyncStatus({ type: 'syncing', message: 'Syncing from cloud...', progress: 40 });
+        await syncEngine.syncAll();
+        console.log('[SyncProvider] STEP 2: Sync complete');
+
+        // STEP 3: Then preload from IndexedDB into Zustand stores
+        console.log('[SyncProvider] STEP 3: Loading data into Zustand stores...');
+        setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 80 });
         await Promise.all([
           useGoalStore.getState().loadGoals(),
           useHabitStore.getState().loadHabits(),
           useTaskStore.getState().loadTasks(),
           useRoutineStore.getState().loadRoutines(),
         ]);
-        console.log('[SyncProvider] STEP 2: Store loading complete');
+        console.log('[SyncProvider] STEP 3: Store loading complete');
 
         setIsDataLoaded(true);
         setSyncStatus({ type: 'success', message: 'All data loaded' });
