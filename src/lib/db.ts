@@ -146,6 +146,7 @@ db.version(7).stores({
 // ==================
 
 export async function getHabits(userId: string): Promise<Habit[]> {
+  if (!userId) return [];
   return db.habits.where('userId').equals(userId).filter(h => !h.archived).sortBy('order');
 }
 
@@ -366,6 +367,7 @@ export async function cleanupDuplicateGoals(): Promise<number> {
 // ==================
 
 export async function getGoals(userId: string): Promise<Goal[]> {
+  if (!userId) return [];
   return db.goals.where('userId').equals(userId).filter(g => !g.archived).toArray();
 }
 
@@ -457,10 +459,12 @@ export async function toggleMilestone(id: string): Promise<Milestone | null> {
 // ==================
 
 export async function getSettings(userId: string): Promise<UserSettings | undefined> {
+  if (!userId) return undefined;
   return db.userSettings.where('userId').equals(userId).first();
 }
 
 export async function updateSettings(data: Partial<UserSettings> & { userId: string }): Promise<void> {
+  if (!data.userId) return;
   const existing = await getSettings(data.userId);
   const now = new Date().toISOString();
 
@@ -568,6 +572,7 @@ export async function seedDemoData(userId: string): Promise<void> {
 // ==================
 
 export async function getTasks(userId: string): Promise<Task[]> {
+  if (!userId) return [];
   return db.tasks.where('userId').equals(userId).filter(t => t.status !== 'archived').reverse().sortBy('created_at');
 }
 
