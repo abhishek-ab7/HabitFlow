@@ -1,5 +1,3 @@
-'use client';
-
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Pencil, Trophy, Shield, Zap } from 'lucide-react';
@@ -10,30 +8,28 @@ import { getAvatarById } from '@/lib/avatars';
 import { BentoGridItem } from '@/components/ui/bento-grid';
 import { cn } from '@/lib/utils';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
+import { useUserStore } from '@/lib/stores/user-store';
 
 interface ProfileStatsCardProps {
-    userName: string;
     avatarId?: string;
     level: number;
     xp: number;
     streakShield: number;
-    onUpdateName: (name: string) => void;
     onAvatarClick: () => void;
     className?: string;
 }
 
 export function ProfileStatsCard({
-    userName,
     avatarId,
     level,
     xp,
     streakShield,
-    onUpdateName,
     onAvatarClick,
     className
 }: ProfileStatsCardProps) {
+    const { displayName, setDisplayName } = useUserStore();
     const [isEditing, setIsEditing] = useState(false);
-    const [newName, setNewName] = useState(userName);
+    const [newName, setNewName] = useState(displayName || 'Habit Hero');
     const { openRules } = useGamificationStore();
 
     const avatar = getAvatarById(avatarId);
@@ -67,19 +63,19 @@ export function ProfileStatsCard({
                                 autoFocus
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
-                                        onUpdateName(newName);
+                                        setDisplayName(newName);
                                         setIsEditing(false);
                                     }
                                 }}
                             />
-                            <Button size="sm" variant="ghost" onClick={() => { onUpdateName(newName); setIsEditing(false); }}>OK</Button>
+                            <Button size="sm" variant="ghost" onClick={() => { setDisplayName(newName); setIsEditing(false); }}>OK</Button>
                         </div>
                     ) : (
                         <div
                             className="font-bold text-xl flex items-center gap-2 group cursor-pointer"
                             onClick={() => setIsEditing(true)}
                         >
-                            {userName || 'Habit Hero'}
+                            {displayName || 'Habit Hero'}
                             <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
                         </div>
                     )}

@@ -7,6 +7,7 @@ import { useGoalStore } from '@/lib/stores/goal-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { useRoutineStore } from '@/lib/stores/routine-store';
+import { useUserStore } from '@/lib/stores/user-store';
 
 interface SyncContextType {
   syncStatus: SyncStatus;
@@ -75,6 +76,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         console.log('[SyncProvider] STEP 3: Loading data into Zustand stores...');
         setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 80 });
         await Promise.all([
+          useUserStore.getState().loadUser(),
           useGoalStore.getState().loadGoals(),
           useHabitStore.getState().loadHabits(),
           useTaskStore.getState().loadTasks(),

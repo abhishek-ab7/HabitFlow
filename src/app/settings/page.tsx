@@ -279,12 +279,10 @@ export default function SettingsPage() {
       <FadeIn>
         {/* ROW 1: HERO (Span 3) */}
         <SettingsHero
-          userName={displayName || settings.userName || ''}
           avatarId={settings.avatarId || 'avatar-1'}
           level={settings.level}
           xp={settings.xp}
           streakShield={settings.streakShield}
-          onUpdateName={handleUpdateName}
           onAvatarClick={() => setShowAvatarSelector(true)}
           className="mb-8"
         />
