@@ -23,9 +23,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
-    }
+    // AI Service will handle key validation from pool
 
     const ai = new HabitFlowAI('habits');
     const prompt = buildHabitRecommendationPrompt(body);

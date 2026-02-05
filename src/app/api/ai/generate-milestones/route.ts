@@ -27,12 +27,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Goal information is required' }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json(
-        { error: 'AI service is not configured.' },
-        { status: 500 }
-      );
-    }
+    // AI Service will handle key validation from pool
 
     const ai = new HabitFlowAI('dashboard');
     const prompt = buildMilestoneGenerationPrompt(input);

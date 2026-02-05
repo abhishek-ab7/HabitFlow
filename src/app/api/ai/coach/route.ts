@@ -23,12 +23,8 @@ export async function POST(req: NextRequest) {
 
     const { userData, context } = body as CoachBriefingInput;
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json(
-        { error: 'AI Coach is not configured.' },
-        { status: 500 }
-      );
-    }
+    // AI Service will handle key validation from pool
+
 
     const ai = new (await import('@/lib/ai/service')).HabitFlowAI('dashboard');
     const prompt = buildCoachPrompt({ userData, context });

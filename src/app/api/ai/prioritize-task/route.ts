@@ -21,9 +21,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Task id and title are required' }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
-    }
+    // AI Service will handle key validation from pool
 
     const ai = new HabitFlowAI('tasks');
     const prompt = buildPrioritizePrompt(body);

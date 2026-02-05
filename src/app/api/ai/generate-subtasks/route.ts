@@ -16,9 +16,7 @@ export async function POST(req: NextRequest) {
 
     const { title, description } = await req.json() as SubtaskGenerationInput;
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
-    }
+    // AI Service will handle key validation from pool
 
     const ai = new HabitFlowAI('tasks');
     const prompt = buildSubtaskPrompt({ title, description });
