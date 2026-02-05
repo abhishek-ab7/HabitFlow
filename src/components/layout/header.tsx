@@ -49,8 +49,16 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleSignOut = async () => {
-    await signOut();
-    router.push('/login');
+    try {
+      // Call server-side route to clear cookies reliably
+      await fetch('/auth/signout', { method: 'POST' });
+      // Force a hard navigation to ensure clean state
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Fallback
+      router.push('/login');
+    }
   };
 
   const toggleTheme = () => {
