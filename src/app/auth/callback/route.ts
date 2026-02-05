@@ -9,8 +9,9 @@ export async function GET(request: NextRequest) {
   const next = requestUrl.searchParams.get('next') ?? '/';
   const error = requestUrl.searchParams.get('error');
   const errorDescription = requestUrl.searchParams.get('error_description');
+  const type = requestUrl.searchParams.get('type'); // 'recovery' for password reset
 
-  console.log('Callback received:', { code: !!code, error, next });
+  console.log('Callback received:', { code: !!code, error, next, type });
 
   // Handle OAuth errors from provider
   if (error) {
@@ -37,13 +38,10 @@ export async function GET(request: NextRequest) {
     // Determine the redirect origin
     const forwardedHost = request.headers.get('x-forwarded-host');
     const forwardedProto = request.headers.get('x-forwarded-proto');
-    const origin = forwardedHost 
-      ? `${forwardedProto || 'https'}://${forwardedHost}` 
+    const origin = forwardedHost
+      ? `${forwardedProto || 'https'}://${forwardedHost}`
       : requestUrl.origin;
-    
-    // Create response first
-    const response = NextResponse.redirect(`${origin}${next}`);
-    
+
     // Create Supabase client with cookie handling
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -54,18 +52,7 @@ export async function GET(request: NextRequest) {
             return request.cookies.getAll();
           },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              // Set cookies on the response with proper options
-              response.cookies.set({
-                name,
-                value,
-                ...options,
-                sameSite: 'lax',
-                secure: true,
-                httpOnly: true,
-                path: '/',
-              });
-            });
+            // We'll set cookies on the response later
           },
         },
       }
@@ -85,7 +72,56 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('Session exchange successful, user:', data.session.user.email);
-    
+
+    // Check if this is a password recovery session
+    // Supabase sets user.aud to 'authenticated' for recovery sessions
+    // We can detect recovery by checking if the user just verified their email for password reset
+    const isRecovery = data.session.user.recovery_sent_at !== undefined;
+
+    // Determine redirect path: recovery sessions go to reset page, others use 'next' param
+    const redirectPath = isRecovery ? '/auth/reset-password' : next;
+
+    console.log('Redirect decision:', { isRecovery, redirectPath, recovery_sent_at: data.session.user.recovery_sent_at });
+
+    // Create response with proper redirect
+    const response = NextResponse.redirect(`${origin}${redirectPath}`);
+
+    // Now set the session cookies on the response
+    const cookiesToSet: Array<{ name: string; value: string; options: any }> = [];
+
+    const supabaseWithCookies = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookies) {
+            cookies.forEach(({ name, value, options }) => {
+              cookiesToSet.push({ name, value, options });
+            });
+          },
+        },
+      }
+    );
+
+    // Trigger cookie setting by getting session again
+    await supabaseWithCookies.auth.getSession();
+
+    // Apply all cookies to response
+    cookiesToSet.forEach(({ name, value, options }) => {
+      response.cookies.set({
+        name,
+        value,
+        ...options,
+        sameSite: 'lax',
+        secure: true,
+        httpOnly: true,
+        path: '/',
+      });
+    });
+
     // Return the response with cookies set
     return response;
   } catch (err) {

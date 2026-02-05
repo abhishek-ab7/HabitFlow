@@ -26,6 +26,7 @@ import {
 import { FadeIn, StaggerContainer, StaggerItem } from '@/components/motion';
 import { GoalCard, GoalFormModal, EmptyGoals } from '@/components/goals';
 import { useGoalStore } from '@/lib/stores';
+import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Goal, GoalFormData, GoalStatus, AreaOfLife } from '@/lib/types';
@@ -77,11 +78,15 @@ export default function GoalsPage() {
   const [sortBy, setSortBy] = useState<SortOption>('deadline');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  // Load goals on mount
+  const { isAuthenticated, user } = useAuth();
+
+  // Load goals on mount AND when auth state changes
   useEffect(() => {
-    loadGoals();
-    loadAllMilestones();
-  }, [loadGoals, loadAllMilestones]);
+    if (isAuthenticated && user?.id) {
+      loadGoals();
+      loadAllMilestones();
+    }
+  }, [isAuthenticated, user?.id, loadGoals, loadAllMilestones]);
 
   // Filter, sort and organize goals - memoized to avoid recalculation on every render
   const displayGoals = useMemo(() => {
@@ -140,7 +145,7 @@ export default function GoalsPage() {
       // Handle milestones - add new ones
       const existingMilestones = getGoalMilestones(editingGoal.id);
       const existingTitles = existingMilestones.map(m => m.title);
-      const newTitles = data.milestones.filter(title => 
+      const newTitles = data.milestones.filter(title =>
         title.trim() && !existingTitles.includes(title.trim())
       );
 
@@ -151,7 +156,7 @@ export default function GoalsPage() {
 
       // Note: We're not deleting removed milestones to preserve history
       // If needed, that could be added as a separate feature
-      
+
       await loadAllMilestones(); // Reload to get updated milestones
     }
   };
