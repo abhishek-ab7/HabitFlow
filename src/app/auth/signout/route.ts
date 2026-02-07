@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
+import { validateRedirectUrl } from '@/lib/security/url-validator'
 
 export async function POST(request: NextRequest) {
     const requestUrl = new URL(request.url)
@@ -10,7 +11,9 @@ export async function POST(request: NextRequest) {
         ? `${forwardedProto || 'https'}://${forwardedHost}`
         : requestUrl.origin;
 
-    const response = NextResponse.redirect(`${origin}/login`, {
+    // Validate redirect URL to prevent open redirects
+    const validatedRedirectUrl = validateRedirectUrl(origin, '/login', '/login');
+    const response = NextResponse.redirect(validatedRedirectUrl, {
         status: 302,
     })
 

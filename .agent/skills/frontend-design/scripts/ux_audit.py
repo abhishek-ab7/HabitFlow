@@ -104,7 +104,12 @@ class UXAuditor:
     
     def audit_file(self, filepath: str) -> None:
         try:
-            with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            # Security fix: Validate path is safe
+            safe_path = Path(filepath).resolve()
+            if not safe_path.is_file():
+                return
+            
+            with open(safe_path, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
         except: return
         

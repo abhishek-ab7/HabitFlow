@@ -1,12 +1,13 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { validateRedirectUrl, getValidatedNextPath } from '@/lib/security/url-validator';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
-  const next = requestUrl.searchParams.get('next') ?? '/';
+  const next = getValidatedNextPath(requestUrl.searchParams, '/');
   const error = requestUrl.searchParams.get('error');
   const errorDescription = requestUrl.searchParams.get('error_description');
   const type = requestUrl.searchParams.get('type'); // 'recovery' for password reset
@@ -83,8 +84,9 @@ export async function GET(request: NextRequest) {
 
     console.log('Redirect decision:', { isRecovery, redirectPath, recovery_sent_at: data.session.user.recovery_sent_at });
 
-    // Create response with proper redirect
-    const response = NextResponse.redirect(`${origin}${redirectPath}`);
+    // Create response with proper redirect (validated to prevent open redirects)
+    const validatedRedirectUrl = validateRedirectUrl(origin, redirectPath, '/');
+    const response = NextResponse.redirect(validatedRedirectUrl);
 
     // Now set the session cookies on the response
     const cookiesToSet: Array<{ name: string; value: string; options: any }> = [];

@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { rateLimit } from '@/lib/security/rate-limit';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -24,7 +25,30 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
   if (isPublicRoute) {
+    // Apply rate limiting to sensitive public routes
+    if (pathname.startsWith('/auth/callback')) {
+      const result = rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+      if (!result.success) {
+        return new NextResponse('Too Many Requests', { status: 429 });
+      }
+    }
+
+    if (pathname === '/login') {
+      const result = rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+      if (!result.success) {
+        return new NextResponse('Too Many Requests', { status: 429 });
+      }
+    }
+
     return NextResponse.next();
+  }
+
+  // Apply rate limiting to signout (even if it's protected, to prevent DoS)
+  if (pathname === '/auth/signout') {
+    const result = rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+    if (!result.success) {
+      return new NextResponse('Too Many Requests', { status: 429 });
+    }
   }
 
   // Create a response object
@@ -33,6 +57,34 @@ export async function middleware(request: NextRequest) {
       headers: request.headers,
     },
   });
+
+  // Add Security Headers
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // Content Security Policy (CSP)
+  // Allow scripts from self and trusted sources (Supabase, Vercel)
+  const cspHeader = `
+    default-src 'self';
+    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://va.vercel-scripts.com;
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' blob: data: https://*.supabase.co https://*.userusercontent.com;
+    font-src 'self' data:;
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+    frame-ancestors 'none';
+    block-all-mixed-content;
+    upgrade-insecure-requests;
+  `.replace(/\s{2,}/g, ' ').trim();
+
+  response.headers.set('Content-Security-Policy', cspHeader);
+
+  response.headers.set(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains'
+  );
 
   // Create Supabase client with proper cookie handling
   const supabase = createServerClient(

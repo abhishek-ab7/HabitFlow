@@ -520,6 +520,11 @@ def persist_design_system(design_system: dict, page: str = None, output_dir: str
     
     # Generate and write MASTER.md
     master_content = format_master_md(design_system)
+    
+    # Security fix: Validate master_file is within design_system_dir
+    if not str(master_file.resolve()).startswith(str(design_system_dir.resolve())):
+        raise ValueError(f"Path traversal detected for master file: {master_file}")
+
     with open(master_file, 'w', encoding='utf-8') as f:
         f.write(master_content)
     created_files.append(str(master_file))
@@ -528,6 +533,11 @@ def persist_design_system(design_system: dict, page: str = None, output_dir: str
     if page:
         page_file = pages_dir / f"{page.lower().replace(' ', '-')}.md"
         page_content = format_page_override_md(design_system, page, page_query)
+        
+        # Security fix: Validate page_file is within pages_dir
+        if not str(page_file.resolve()).startswith(str(pages_dir.resolve())):
+             raise ValueError(f"Path traversal detected for page file: {page_file}")
+             
         with open(page_file, 'w', encoding='utf-8') as f:
             f.write(page_content)
         created_files.append(str(page_file))

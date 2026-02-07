@@ -162,8 +162,18 @@ class BM25:
 # ============ SEARCH FUNCTIONS ============
 def _load_csv(filepath):
     """Load CSV and return list of dicts"""
-    with open(filepath, 'r', encoding='utf-8') as f:
-        return list(csv.DictReader(f))
+    # Security fix: Ensure path is within allowed data directory
+    try:
+        safe_path = Path(filepath).resolve()
+        data_dir = Path(DATA_DIR).resolve()
+        if not str(safe_path).startswith(str(data_dir)):
+             raise ValueError(f"Path traversal detected: {filepath}")
+             
+        with open(safe_path, 'r', encoding='utf-8') as f:
+            return list(csv.DictReader(f))
+    except Exception as e:
+        print(f"Error loading CSV {filepath}: {e}")
+        return []
 
 
 def _search_csv(filepath, search_cols, output_cols, query, max_results):
