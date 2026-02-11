@@ -26,7 +26,13 @@ export function SyncStatusBadge() {
         if (isSyncing) return 'Syncing...';
         if (pendingChanges > 0) return `${pendingChanges} pending`;
         if (lastSyncTime) {
-            return `Synced ${formatDistanceToNow(lastSyncTime, { addSuffix: true })}`;
+            const distance = formatDistanceToNow(lastSyncTime);
+            // Shorten "less than a minute" to "just now"
+            if (distance.includes('less than a minute')) {
+                return 'Just synced';
+            }
+            // Remove "ago" suffix and shorten format
+            return `Synced ${distance.replace(' ago', '')}`;
         }
         return 'Not synced';
     };
