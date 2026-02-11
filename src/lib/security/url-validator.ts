@@ -8,9 +8,9 @@
 const ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    // Add your production domain here when deploying
-    // 'habitflow.app',
-    // 'www.habitflow.app',
+    'habitflow.tech',
+    'www.habitflow.tech',
+    'habit-flow-ochre-two.vercel.app',
 ];
 
 const ALLOWED_PATHS = [
@@ -84,8 +84,16 @@ export function validateRedirectUrl(
     // Validate origin
     if (!isValidOrigin(origin)) {
         console.warn(`Invalid origin detected: ${origin}, using fallback`);
-        // Use the request's own origin as fallback
-        return fallback;
+        // Return absolute URL with origin + fallback path
+        // Try to use the origin anyway if it's a valid URL structure
+        try {
+            const url = new URL(origin);
+            return `${url.origin}${fallback}`;
+        } catch {
+            // If origin is completely invalid, we can't construct a URL
+            // This should never happen in middleware context
+            return fallback;
+        }
     }
 
     // Validate path
