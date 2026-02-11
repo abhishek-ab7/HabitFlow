@@ -127,6 +127,9 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (err) {
     console.error('Callback error:', err);
-    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=Callback+error`);
+    const errorMessage = err instanceof Error ? err.message : 'Unknown callback error';
+    const errorStack = err instanceof Error ? err.stack : '';
+    console.error('Error details:', { message: errorMessage, stack: errorStack });
+    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=${encodeURIComponent(errorMessage)}`);
   }
 }
