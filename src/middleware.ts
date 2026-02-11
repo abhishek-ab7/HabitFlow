@@ -34,7 +34,7 @@ export async function middleware(request: NextRequest) {
     }
 
     if (pathname === '/login') {
-      const result = rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+      const result = rateLimit(request, { limit: 20, windowMs: 60 * 1000 }); // 20 req/min
       if (!result.success) {
         return new NextResponse('Too Many Requests', { status: 429 });
       }
