@@ -75,14 +75,13 @@ export async function GET(request: NextRequest) {
     console.log('Session exchange successful, user:', data.session.user.email);
 
     // Check if this is a password recovery session
-    // Supabase sets user.aud to 'authenticated' for recovery sessions
-    // We can detect recovery by checking if the user just verified their email for password reset
-    const isRecovery = data.session.user.recovery_sent_at !== undefined;
+    // Detect recovery via: (1) explicit type=recovery query param, or (2) recovery_sent_at on user
+    const isRecovery = type === 'recovery' || data.session.user.recovery_sent_at !== undefined;
 
     // Determine redirect path: recovery sessions go to reset page, others use 'next' param
     const redirectPath = isRecovery ? '/auth/reset-password' : next;
 
-    console.log('Redirect decision:', { isRecovery, redirectPath, recovery_sent_at: data.session.user.recovery_sent_at });
+    console.log('Redirect decision:', { isRecovery, type, redirectPath, recovery_sent_at: data.session.user.recovery_sent_at });
 
     // Create response with proper redirect (validated to prevent open redirects)
     const validatedRedirectUrl = validateRedirectUrl(origin, redirectPath, '/');

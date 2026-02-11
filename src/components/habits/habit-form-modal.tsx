@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronDown, Link2 } from 'lucide-react';
 import {
   Dialog,
@@ -45,7 +45,22 @@ const CATEGORY_COLORS: Record<Category, string> = {
   relationships: 'bg-orange-500/20 text-orange-600 border-orange-500/30 hover:bg-orange-500/30',
 };
 
-const COMMON_EMOJIS = ['🧘', '💪', '📚', '💻', '✍️', '🏃', '🎯', '💤', '🥗', '🧠', '🎨', '🎵'];
+const COMMON_EMOJIS = [
+  // Health & Fitness
+  '🧘', '💪', '🏃', '💤', '🥗', '💧', '🍎', '🚴', '🚶', '💊',
+  // Learning & Productivity
+  '📚', '💻', '✍️', '🧠', '🎯', '⚡', '📅', '📝', '🎓', '🔬',
+  // Arts & Creativity
+  '🎨', '🎵', '📷', '🎭', '🧶', '🎸', '🎹', '🖌️', '💃', '📽️',
+  // Mindfulness & Self-care
+  '🕯️', '🛁', '🌱', '☀️', '😊', '🙏', '📿', '🌳', '🌺', '🍵',
+  // Finance & Work
+  '💰', '💼', '📈', '📊', '🏧', '💳', '🏗️', '🚀', '👔', '🤑',
+  // Social & Family
+  '❤️', '👨‍👩‍👧‍👦', '🤝', '💌', '📞', '🥳', '🎁', '👶', '🐾', '🏠',
+  // Misc
+  '🧹', '🧼', '🧺', '🛒', '🚗', '✈️', '🌍', '🛠️', '🔧', '⭐'
+];
 
 export function HabitFormModal({
   open,
@@ -59,6 +74,7 @@ export function HabitFormModal({
   const [icon, setIcon] = useState('');
   const [errors, setErrors] = useState<{ name?: string }>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAllIcons, setShowAllIcons] = useState(false);
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<Set<string>>(new Set());
   const [loadingRoutines, setLoadingRoutines] = useState(false);
 
@@ -71,13 +87,13 @@ export function HabitFormModal({
   useEffect(() => {
     if (open) {
       loadRoutines();
-      
+
       if (habit) {
         setName(habit.name);
         setCategory(habit.category);
         setTargetDays(habit.targetDaysPerWeek);
         setIcon(habit.icon || '');
-        
+
         // Load routines this habit belongs to
         setLoadingRoutines(true);
         getHabitRoutines(habit.id).then(habitRoutines => {
@@ -107,7 +123,7 @@ export function HabitFormModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate
     if (!name.trim()) {
       setErrors({ name: 'Habit name is required' });
@@ -148,13 +164,13 @@ export function HabitFormModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto scrollbar-hide">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{isEditing ? 'Edit Habit' : 'Create New Habit'}</DialogTitle>
             <DialogDescription>
-              {isEditing 
-                ? 'Update your habit details below.' 
+              {isEditing
+                ? 'Update your habit details below.'
                 : 'Define a new habit to track daily.'}
             </DialogDescription>
           </DialogHeader>
@@ -162,26 +178,43 @@ export function HabitFormModal({
           <div className="space-y-6 py-6">
             {/* Icon selector */}
             <div>
-              <label className="text-sm font-medium mb-2 block">Icon (optional)</label>
-              <div className="flex flex-wrap gap-2">
-                {COMMON_EMOJIS.map((emoji) => (
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium">Icon (optional)</label>
+                <button
+                  type="button"
+                  onClick={() => setShowAllIcons(!showAllIcons)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showAllIcons ? 'Show Less' : 'Show All'}
+                </button>
+              </div>
+              <motion.div
+                layout
+                className="flex flex-wrap gap-2 overflow-hidden"
+                animate={{ height: 'auto' }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+              >
+                {(showAllIcons ? COMMON_EMOJIS : COMMON_EMOJIS.slice(0, 12)).map((emoji) => (
                   <motion.button
                     key={emoji}
+                    layout
                     type="button"
                     onClick={() => setIcon(icon === emoji ? '' : emoji)}
                     className={cn(
                       "w-10 h-10 rounded-lg text-lg flex items-center justify-center border-2 transition-colors",
-                      icon === emoji 
-                        ? "border-primary bg-primary/10" 
+                      icon === emoji
+                        ? "border-primary bg-primary/10"
                         : "border-transparent bg-muted hover:bg-muted/80"
                     )}
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
                   >
                     {emoji}
                   </motion.button>
                 ))}
-              </div>
+              </motion.div>
             </div>
 
             {/* Name input */}
@@ -216,7 +249,7 @@ export function HabitFormModal({
                     onClick={() => setCategory(cat.value)}
                     className={cn(
                       "px-3 py-1.5 rounded-full text-sm font-medium border transition-all",
-                      category === cat.value 
+                      category === cat.value
                         ? CATEGORY_COLORS[cat.value]
                         : "bg-muted text-muted-foreground border-transparent hover:bg-muted/80"
                     )}
@@ -241,8 +274,8 @@ export function HabitFormModal({
                     onClick={() => setTargetDays(day)}
                     className={cn(
                       "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
-                      targetDays === day 
-                        ? "bg-primary text-primary-foreground" 
+                      targetDays === day
+                        ? "bg-primary text-primary-foreground"
                         : "bg-muted hover:bg-muted/80"
                     )}
                   >
@@ -251,8 +284,8 @@ export function HabitFormModal({
                 ))}
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                {targetDays === 7 
-                  ? 'Daily habit' 
+                {targetDays === 7
+                  ? 'Daily habit'
                   : `${targetDays} days per week`}
               </p>
             </div>
@@ -268,56 +301,61 @@ export function HabitFormModal({
                 Advanced Options
               </button>
 
-              {showAdvanced && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="mt-4 space-y-3"
-                >
-                  <div>
-                    <label className="text-sm font-medium mb-2 flex items-center gap-2">
-                      <Link2 className="w-4 h-4" />
-                      Link to Routines (optional)
-                    </label>
-                    <div className="border rounded-md p-3 space-y-2 max-h-32 overflow-y-auto bg-muted/30">
-                      {routines.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No routines available. Create a routine to link habits.
+              <AnimatePresence>
+                {showAdvanced && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="pt-4 space-y-3">
+                      <div>
+                        <label className="text-sm font-medium mb-2 flex items-center gap-2">
+                          <Link2 className="w-4 h-4" />
+                          Link to Routines (optional)
+                        </label>
+                        <div className="border rounded-md p-3 space-y-2 max-h-32 overflow-y-auto bg-muted/30 scrollbar-hide">
+                          {routines.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">
+                              No routines available. Create a routine to link habits.
+                            </p>
+                          ) : loadingRoutines ? (
+                            <p className="text-sm text-muted-foreground">Loading...</p>
+                          ) : (
+                            routines.map((routine) => (
+                              <div key={routine.id} className="flex items-center space-x-2">
+                                <Checkbox
+                                  id={`routine-${routine.id}`}
+                                  checked={selectedRoutineIds.has(routine.id)}
+                                  onCheckedChange={() => handleRoutineToggle(routine.id)}
+                                />
+                                <label
+                                  htmlFor={`routine-${routine.id}`}
+                                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                                >
+                                  {routine.title}
+                                </label>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          This habit can belong to multiple routines
                         </p>
-                      ) : loadingRoutines ? (
-                        <p className="text-sm text-muted-foreground">Loading...</p>
-                      ) : (
-                        routines.map((routine) => (
-                          <div key={routine.id} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={`routine-${routine.id}`}
-                              checked={selectedRoutineIds.has(routine.id)}
-                              onCheckedChange={() => handleRoutineToggle(routine.id)}
-                            />
-                            <label
-                              htmlFor={`routine-${routine.id}`}
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
-                            >
-                              {routine.title}
-                            </label>
-                          </div>
-                        ))
-                      )}
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      This habit can belong to multiple routines
-                    </p>
-                  </div>
-                </motion.div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
 
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="ghost" 
+            <Button
+              type="button"
+              variant="ghost"
               onClick={() => onOpenChange(false)}
             >
               Cancel
