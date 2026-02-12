@@ -71,6 +71,7 @@ export async function middleware(request: NextRequest) {
     style-src 'self' 'unsafe-inline';
     img-src 'self' blob: data: https://*.supabase.co https://*.userusercontent.com;
     font-src 'self' data:;
+    connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.supabase.net wss://*.supabase.co wss://*.supabase.in wss://*.supabase.net https://generativelanguage.googleapis.com;
     object-src 'none';
     base-uri 'self';
     form-action 'self';
