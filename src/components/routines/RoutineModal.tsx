@@ -316,7 +316,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                                 className={cn(
                                                     "cursor-pointer relative flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 group",
                                                     isSelected
-                                                        ? "bg-indigo-500/10 border-indigo-500/50 shadow-[0_0_15px_-5px_hsl(var(--primary)/0.3)]"
+                                                        ? "bg-indigo-500/10 border-indigo-500/50 shadow-[0_0_15px_-5px_var(--primary)]"
                                                         : "bg-white/5 border-white/5 hover:border-white/20"
                                                 )}
                                             >

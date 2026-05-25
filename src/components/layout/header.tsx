@@ -73,8 +73,9 @@ export function Header() {
           <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
             <motion.div
               className="relative flex h-11 w-11 min-w-[2.75rem] min-h-[2.75rem] aspect-square items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-purple-600/10 border border-purple-500/30 dark:border-purple-400/40 shadow-sm shadow-purple-500/10 shrink-0 overflow-hidden"
-              whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0], transition: { duration: 0.5 } }}
+              whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0] }}
               whileTap={{ scale: 0.95 }}
+              transition={{ type: 'tween', duration: 0.5 }}
             >
               <svg
                 viewBox="0 0 32 32"
@@ -113,6 +114,17 @@ export function Header() {
                     <stop offset="0%" stopColor="#9333ea" />
                     <stop offset="100%" stopColor="#ec4899" />
                   </linearGradient>
+                  <linearGradient 
+                    id="nav-icon-grad-active" 
+                    x1="0" 
+                    y1="0" 
+                    x2="18.36" 
+                    y2="18.36" 
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop offset="0%" stopColor="var(--primary)" />
+                    <stop offset="100%" stopColor="#d946ef" />
+                  </linearGradient>
                 </defs>
               </svg>
             </motion.div>
@@ -137,6 +149,16 @@ export function Header() {
                 transform: translateX(85px);
               }
             }
+            .nav-link svg {
+              transition: stroke 0.3s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            }
+            .nav-link.nav-link-active svg {
+              stroke: url(#nav-icon-grad-active);
+            }
+            .nav-link:hover svg {
+              stroke: url(#nav-icon-grad-active);
+              transform: scale(1.15) rotate(4deg) translateY(-0.5px);
+            }
           `}} />
           {navItems.map((item) => {
             const isActive = pathname === item.href;
@@ -146,7 +168,10 @@ export function Header() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="nav-link relative flex items-center justify-start h-10 px-3 py-2 rounded-lg group"
+                className={cn(
+                  "nav-link relative flex items-center justify-start h-10 px-3 py-2 rounded-lg group",
+                  isActive && "nav-link-active"
+                )}
               >
                 <span
                   className={cn(
@@ -156,7 +181,16 @@ export function Header() {
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="relative flex items-center justify-center shrink-0">
+                    {/* Premium backlit glow overlay */}
+                    <span 
+                      className={cn(
+                        "absolute -inset-2.5 rounded-full bg-gradient-to-br from-primary/10 via-purple-500/5 to-pink-500/10 dark:from-primary/20 dark:via-purple-500/10 dark:to-pink-500/20 blur-sm opacity-0 transition-all duration-500 scale-75 group-hover:opacity-100 group-hover:scale-100",
+                        isActive && "opacity-100 scale-100"
+                      )}
+                    />
+                    <Icon className="h-[18.36px] w-[18.36px] shrink-0 relative z-10" />
+                  </span>
                   <span className="absolute left-10 opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-1 2xl:relative 2xl:left-0 2xl:opacity-100 2xl:pointer-events-auto 2xl:ml-2">
                     {item.label}
                   </span>

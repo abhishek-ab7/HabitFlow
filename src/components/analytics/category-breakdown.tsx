@@ -85,7 +85,7 @@ export function CategoryBreakdownChart({ data }: CategoryBreakdownChartProps) {
                   <Cell 
                     key={`cell-${index}`} 
                     fill={entry.color}
-                    stroke="hsl(var(--background))"
+                    stroke="var(--background)"
                     strokeWidth={2}
                   />
                 ))}

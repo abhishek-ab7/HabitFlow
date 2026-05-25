@@ -53,25 +53,25 @@ export function WeekdayChart({ data }: WeekdayChartProps) {
             <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
               <CartesianGrid 
                 strokeDasharray="3 3" 
-                stroke="hsl(var(--border))"
+                stroke="#e2e8f0"
                 vertical={false}
               />
               <XAxis 
                 dataKey="name"
-                stroke="hsl(var(--foreground))"
+                stroke="#94a3b8"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
-                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
               />
               <YAxis
-                stroke="hsl(var(--foreground))"
+                stroke="#94a3b8"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 domain={[0, 100]}
                 tickFormatter={value => `${value}%`}
-                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
               />
               <Tooltip
                 content={({ active, payload }) => {
@@ -99,11 +99,11 @@ export function WeekdayChart({ data }: WeekdayChartProps) {
                 {chartData.map((entry, index) => {
                   // Color based on performance
                   const rate = entry.averageCompletionRate;
-                  let color = 'hsl(var(--muted-foreground))';
-                  if (rate >= 80) color = 'hsl(var(--chart-1))';
-                  else if (rate >= 60) color = 'hsl(var(--chart-2))';
-                  else if (rate >= 40) color = 'hsl(var(--chart-3))';
-                  else if (rate >= 20) color = 'hsl(var(--chart-4))';
+                  let color = '#94a3b8'; // muted-foreground
+                  if (rate >= 80) color = '#8b5cf6'; // chart-1
+                  else if (rate >= 60) color = '#10b981'; // chart-2
+                  else if (rate >= 40) color = '#f59e0b'; // chart-3
+                  else if (rate >= 20) color = '#ec4899'; // chart-4
                   
                   return (
                     <Cell 

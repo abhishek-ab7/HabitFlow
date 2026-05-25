@@ -96,28 +96,28 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
             <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
               <CartesianGrid 
                 strokeDasharray="3 3" 
-                stroke="hsl(var(--border))"
+                stroke="#e2e8f0"
                 vertical={false}
               />
               <XAxis 
                 dataKey="dateLabel"
-                stroke="hsl(var(--foreground))"
+                stroke="#94a3b8"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 dy={10}
                 interval="preserveStartEnd"
-                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
               />
               <YAxis
-                stroke="hsl(var(--foreground))"
+                stroke="#94a3b8"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 domain={[0, 100]}
                 tickFormatter={value => `${value}%`}
                 dx={-10}
-                tick={{ fill: 'hsl(var(--foreground))', fontSize: 12 }}
+                tick={{ fill: '#94a3b8', fontSize: 12 }}
               />
               <Tooltip
                 content={({ active, payload }) => {
@@ -140,12 +140,12 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
               />
               <ReferenceLine 
                 y={averageRate} 
-                stroke="hsl(var(--muted-foreground))" 
+                stroke="#94a3b8" 
                 strokeDasharray="5 5"
                 label={{
                   value: 'Avg',
                   position: 'right',
-                  fill: 'hsl(var(--foreground))',
+                  fill: '#64748b',
                   fontSize: 11,
                   fontWeight: 500,
                 }}
@@ -153,13 +153,13 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
               <Line
                 type="monotone"
                 dataKey="completionRate"
-                stroke="hsl(var(--primary))"
+                stroke="#8b5cf6"
                 strokeWidth={2}
                 dot={false}
                 activeDot={{
                   r: 6,
-                  fill: "hsl(var(--primary))",
-                  stroke: "hsl(var(--background))",
+                  fill: "#8b5cf6",
+                  stroke: "#ffffff",
                   strokeWidth: 2,
                 }}
               />

@@ -110,8 +110,9 @@ export default function ResetPasswordPage() {
                         <div className="flex items-center gap-2.5">
                             <motion.div
                                 className="relative flex h-12 w-12 min-w-[3rem] min-h-[3rem] aspect-square items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-purple-600/10 border border-purple-500/30 dark:border-purple-400/40 shadow-sm shadow-purple-500/10 shrink-0 overflow-hidden"
-                                whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0], transition: { duration: 0.5 } }}
+                                whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0] }}
                                 whileTap={{ scale: 0.95 }}
+                                transition={{ type: 'tween', duration: 0.5 }}
                             >
                                 <svg
                                     viewBox="0 0 32 32"
