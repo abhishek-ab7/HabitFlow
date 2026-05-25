@@ -107,11 +107,53 @@ export default function ResetPasswordPage() {
                 <div className="bg-card border border-border rounded-2xl shadow-xl p-8">
                     {/* Logo */}
                     <div className="flex justify-center mb-6">
-                        <div className="flex items-center gap-2">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-purple-600 text-primary-foreground font-bold text-xl">
-                                HF
-                            </div>
-                            <span className="font-bold text-2xl bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                        <div className="flex items-center gap-2.5">
+                            <motion.div
+                                className="relative flex h-12 w-12 min-w-[3rem] min-h-[3rem] aspect-square items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-purple-600/10 border border-purple-500/30 dark:border-purple-400/40 shadow-sm shadow-purple-500/10 shrink-0 overflow-hidden"
+                                whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0], transition: { duration: 0.5 } }}
+                                whileTap={{ scale: 0.95 }}
+                            >
+                                <svg
+                                    viewBox="0 0 32 32"
+                                    className="h-8 w-8"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    {/* Flowing circular arc representing habits loop */}
+                                    <motion.path
+                                        d="M 16 4 A 12 12 0 1 1 15.99 4"
+                                        stroke="url(#reset-logo-grad)"
+                                        strokeWidth="3.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        initial={{ pathLength: 0, opacity: 0 }}
+                                        animate={{ pathLength: 1, opacity: 1 }}
+                                        transition={{ duration: 1.2, ease: "easeOut" }}
+                                    />
+                                    {/* Completed checkmark flying out representing progression */}
+                                    <motion.path
+                                        d="M 12 16.5 L 15 19.5 L 21 12.5"
+                                        stroke="url(#reset-logo-grad-2)"
+                                        strokeWidth="3.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        initial={{ pathLength: 0, opacity: 0 }}
+                                        animate={{ pathLength: 1, opacity: 1 }}
+                                        transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
+                                    />
+                                    <defs>
+                                        <linearGradient id="reset-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stopColor="var(--primary)" />
+                                            <stop offset="100%" stopColor="#9333ea" />
+                                        </linearGradient>
+                                        <linearGradient id="reset-logo-grad-2" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stopColor="#9333ea" />
+                                            <stop offset="100%" stopColor="#ec4899" />
+                                        </linearGradient>
+                                    </defs>
+                                </svg>
+                            </motion.div>
+                            <span className="font-bold text-2xl bg-gradient-to-r from-primary via-purple-600 to-pink-500 bg-clip-text text-transparent tracking-tight">
                                 Habit Flow
                             </span>
                         </div>

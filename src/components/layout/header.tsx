@@ -70,15 +70,53 @@ export function Header() {
       <div className="w-full flex h-16 items-center px-4 md:px-6">
         {/* Logo */}
         <div className="flex-grow-0 flex-shrink-0 flex justify-start mr-4 lg:mr-8">
-          <Link href="/" className="flex items-center gap-2 flex-shrink-0">
+          <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
             <motion.div
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-purple-600 text-primary-foreground font-bold text-lg shrink-0"
-              whileHover={{ scale: 1.05 }}
+              className="relative flex h-11 w-11 min-w-[2.75rem] min-h-[2.75rem] aspect-square items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-purple-600/10 border border-purple-500/30 dark:border-purple-400/40 shadow-sm shadow-purple-500/10 shrink-0 overflow-hidden"
+              whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0], transition: { duration: 0.5 } }}
               whileTap={{ scale: 0.95 }}
             >
-              HF
+              <svg
+                viewBox="0 0 32 32"
+                className="h-7 w-7"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                {/* Flowing circular arc representing habits loop */}
+                <motion.path
+                  d="M 16 4 A 12 12 0 1 1 15.99 4"
+                  stroke="url(#logo-grad)"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ duration: 1.2, ease: "easeOut" }}
+                />
+                {/* Completed checkmark flying out representing progression */}
+                <motion.path
+                  d="M 12 16.5 L 15 19.5 L 21 12.5"
+                  stroke="url(#logo-grad-2)"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  initial={{ pathLength: 0, opacity: 0 }}
+                  animate={{ pathLength: 1, opacity: 1 }}
+                  transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
+                />
+                <defs>
+                  <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="var(--primary)" />
+                    <stop offset="100%" stopColor="#9333ea" />
+                  </linearGradient>
+                  <linearGradient id="logo-grad-2" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#9333ea" />
+                    <stop offset="100%" stopColor="#ec4899" />
+                  </linearGradient>
+                </defs>
+              </svg>
             </motion.div>
-            <span className="hidden font-semibold text-lg sm:inline-block bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent whitespace-nowrap">
+            <span className="hidden font-semibold text-lg sm:inline-block bg-gradient-to-r from-primary via-purple-600 to-pink-500 bg-clip-text text-transparent whitespace-nowrap tracking-tight">
               Habit Flow
             </span>
           </Link>
