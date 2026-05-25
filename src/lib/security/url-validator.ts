@@ -84,16 +84,8 @@ export function validateRedirectUrl(
     // Validate origin
     if (!isValidOrigin(origin)) {
         console.warn(`Invalid origin detected: ${origin}, using fallback`);
-        // Return absolute URL with origin + fallback path
-        // Try to use the origin anyway if it's a valid URL structure
-        try {
-            const url = new URL(origin);
-            return `${url.origin}${fallback}`;
-        } catch {
-            // If origin is completely invalid, we can't construct a URL
-            // This should never happen in middleware context
-            return fallback;
-        }
+        // Do not use the invalid origin! Just return the fallback path which will be relative
+        return fallback;
     }
 
     // Validate path

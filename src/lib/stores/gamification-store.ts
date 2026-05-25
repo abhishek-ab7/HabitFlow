@@ -102,9 +102,8 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
             try {
                 await updateSettings({
                     userId: session.user.id,
-                    // @ts-ignore - dynamic property
                     motivation_text: text
-                });
+                } as any);
             } catch (e) {
                 console.warn("Failed to persist motivation text (column might be missing)", e);
             }

@@ -88,26 +88,28 @@ export function HabitFormModal({
     if (open) {
       loadRoutines();
 
-      if (habit) {
-        setName(habit.name);
-        setCategory(habit.category);
-        setTargetDays(habit.targetDaysPerWeek);
-        setIcon(habit.icon || '');
+      Promise.resolve().then(() => {
+        if (habit) {
+          setName(habit.name);
+          setCategory(habit.category);
+          setTargetDays(habit.targetDaysPerWeek);
+          setIcon(habit.icon || '');
 
-        // Load routines this habit belongs to
-        setLoadingRoutines(true);
-        getHabitRoutines(habit.id).then(habitRoutines => {
-          setSelectedRoutineIds(new Set(habitRoutines.map(r => r.id)));
-          setLoadingRoutines(false);
-        });
-      } else {
-        setName('');
-        setCategory('personal');
-        setTargetDays(7);
-        setIcon('');
-        setSelectedRoutineIds(new Set());
-      }
-      setErrors({});
+          // Load routines this habit belongs to
+          setLoadingRoutines(true);
+          getHabitRoutines(habit.id).then(habitRoutines => {
+            setSelectedRoutineIds(new Set(habitRoutines.map(r => r.id)));
+            setLoadingRoutines(false);
+          });
+        } else {
+          setName('');
+          setCategory('personal');
+          setTargetDays(7);
+          setIcon('');
+          setSelectedRoutineIds(new Set());
+        }
+        setErrors({});
+      });
     }
   }, [open, habit, loadRoutines, getHabitRoutines]);
 

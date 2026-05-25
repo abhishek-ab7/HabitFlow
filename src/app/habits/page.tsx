@@ -52,7 +52,9 @@ function HabitsPageContent() {
   // Check for ?new=true query param
   useEffect(() => {
     if (searchParams.get('new') === 'true') {
-      setShowModal(true);
+      Promise.resolve().then(() => {
+        setShowModal(true);
+      });
       // Clean up the URL
       router.replace('/habits');
     }

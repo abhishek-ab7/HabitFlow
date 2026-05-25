@@ -1,37 +1,37 @@
 import { useHabitStore } from '../habit-store'
 
 // Mock dependencies
-jest.mock('../../db', () => ({
-    getHabits: jest.fn(),
-    createHabit: jest.fn(),
-    updateHabit: jest.fn(),
-    deleteHabit: jest.fn(),
-    toggleCompletion: jest.fn(),
-    getAllCompletionsInRange: jest.fn(),
-    reorderHabits: jest.fn(),
+vi.mock('../../db', () => ({
+    getHabits: vi.fn(),
+    createHabit: vi.fn(),
+    updateHabit: vi.fn(),
+    deleteHabit: vi.fn(),
+    toggleCompletion: vi.fn(),
+    getAllCompletionsInRange: vi.fn(),
+    reorderHabits: vi.fn(),
 }))
 
-jest.mock('../../supabase/client', () => ({
-    getSupabaseClient: jest.fn(() => ({
+vi.mock('../../supabase/client', () => ({
+    getSupabaseClient: vi.fn(() => ({
         auth: {
-            getSession: jest.fn().mockResolvedValue({ data: { session: { user: { id: 'test-user' } } } }),
+            getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'test-user' } } } }),
         },
     })),
 }))
 
-jest.mock('../../sync', () => ({
-    getSyncEngine: jest.fn(() => ({
-        pushHabit: jest.fn(),
-        deleteHabit: jest.fn(),
-        pushCompletion: jest.fn(),
-        deleteCompletion: jest.fn(),
+vi.mock('../../sync', () => ({
+    getSyncEngine: vi.fn(() => ({
+        pushHabit: vi.fn(),
+        deleteHabit: vi.fn(),
+        pushCompletion: vi.fn(),
+        deleteCompletion: vi.fn(),
     })),
 }))
 
-jest.mock('../gamification-store', () => ({
+vi.mock('../gamification-store', () => ({
     useGamificationStore: {
-        getState: jest.fn(() => ({
-            addXp: jest.fn(),
+        getState: vi.fn(() => ({
+            addXp: vi.fn(),
         })),
     },
     XP_PER_HABIT: 10,
@@ -40,7 +40,7 @@ jest.mock('../gamification-store', () => ({
 describe('HabitStore', () => {
     beforeEach(() => {
         useHabitStore.setState({ habits: [], completions: [], error: null, isLoading: false })
-        jest.clearAllMocks()
+        vi.clearAllMocks()
     })
 
     it('should have initial state', () => {

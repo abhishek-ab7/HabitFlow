@@ -44,7 +44,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     if (!isAuthenticated) {
       console.log('[SyncProvider] Skipping sync - not authenticated');
-      setIsDataLoaded(true); // Skip if not authenticated
+      Promise.resolve().then(() => {
+        setIsDataLoaded(true); // Skip if not authenticated
+      });
       return;
     }
 

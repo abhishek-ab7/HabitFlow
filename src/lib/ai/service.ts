@@ -51,8 +51,8 @@ export class HabitFlowAI {
     const modules: AIModule[] = ['dashboard', 'tasks', 'habits'];
     const pools: Record<AIModule, string[]> = {} as any;
 
-    for (const module of modules) {
-      const moduleUpper = module.toUpperCase();
+    for (const mod of modules) {
+      const moduleUpper = mod.toUpperCase();
       const keys: string[] = [];
 
       for (let i = 1; i <= 3; i++) {
@@ -65,7 +65,7 @@ export class HabitFlowAI {
         }
       }
 
-      pools[module] = keys;
+      pools[mod] = keys;
     }
 
     return pools;

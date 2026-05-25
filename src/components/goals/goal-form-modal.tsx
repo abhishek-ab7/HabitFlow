@@ -64,26 +64,28 @@ export function GoalFormModal({
   // Reset form when opening or goal changes
   useEffect(() => {
     if (open) {
-      if (goal) {
-        setTitle(goal.title);
-        setDescription(goal.description || '');
-        setAreaOfLife(goal.areaOfLife);
-        setPriority(goal.priority);
-        setStartDate(format(new Date(goal.startDate), 'yyyy-MM-dd'));
-        setDeadline(format(new Date(goal.deadline), 'yyyy-MM-dd'));
-        setMilestones(existingMilestones.length > 0 ? existingMilestones : ['']);
-        setIsFocus(goal.isFocus);
-      } else {
-        setTitle('');
-        setDescription('');
-        setAreaOfLife('personal_growth');
-        setPriority('medium');
-        setStartDate(format(new Date(), 'yyyy-MM-dd'));
-        setDeadline(format(addDays(new Date(), 30), 'yyyy-MM-dd'));
-        setMilestones(['']);
-        setIsFocus(false);
-      }
-      setErrors({});
+      Promise.resolve().then(() => {
+        if (goal) {
+          setTitle(goal.title);
+          setDescription(goal.description || '');
+          setAreaOfLife(goal.areaOfLife);
+          setPriority(goal.priority);
+          setStartDate(format(new Date(goal.startDate), 'yyyy-MM-dd'));
+          setDeadline(format(new Date(goal.deadline), 'yyyy-MM-dd'));
+          setMilestones(existingMilestones.length > 0 ? existingMilestones : ['']);
+          setIsFocus(goal.isFocus);
+        } else {
+          setTitle('');
+          setDescription('');
+          setAreaOfLife('personal_growth');
+          setPriority('medium');
+          setStartDate(format(new Date(), 'yyyy-MM-dd'));
+          setDeadline(format(addDays(new Date(), 30), 'yyyy-MM-dd'));
+          setMilestones(['']);
+          setIsFocus(false);
+        }
+        setErrors({});
+      });
     }
   }, [open, goal]);
 

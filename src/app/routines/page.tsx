@@ -37,7 +37,9 @@ export default function RoutinesPage() {
         if (playId && routines.length > 0) {
             const routineToPlay = routines.find(r => r.id === playId);
             if (routineToPlay) {
-                setPlayingRoutine(routineToPlay);
+                Promise.resolve().then(() => {
+                    setPlayingRoutine(routineToPlay);
+                });
                 // Clear the param so it doesn't reopen on refresh, 
                 // but we can replace URL without reload
                 router.replace('/routines', { scroll: false });

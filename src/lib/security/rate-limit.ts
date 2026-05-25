@@ -15,14 +15,16 @@ interface RateLimitConfig {
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
 // Cleanup expired entries every minute to prevent memory leaks
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of rateLimitStore.entries()) {
-        if (now > value.resetTime) {
-            rateLimitStore.delete(key);
+if (process.env.NODE_ENV !== 'test') {
+    setInterval(() => {
+        const now = Date.now();
+        for (const [key, value] of rateLimitStore.entries()) {
+            if (now > value.resetTime) {
+                rateLimitStore.delete(key);
+            }
         }
-    }
-}, 60000);
+    }, 60000);
+}
 
 export function rateLimit(request: NextRequest, config: RateLimitConfig) {
     const ip = (request as any).ip || request.headers.get('x-forwarded-for') || 'unknown';

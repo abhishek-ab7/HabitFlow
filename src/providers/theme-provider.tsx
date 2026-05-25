@@ -13,16 +13,25 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('system');
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
-
-  useEffect(() => {
-    // Get stored theme preference
-    const stored = localStorage.getItem('theme') as Theme | null;
-    if (stored) {
-      setTheme(stored);
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('theme') as Theme | null;
+      return stored || 'system';
     }
-  }, []);
+    return 'system';
+  });
+
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('theme') as Theme | null;
+      const activeTheme = stored || 'system';
+      if (activeTheme === 'system') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      return activeTheme as 'light' | 'dark';
+    }
+    return 'light';
+  });
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -30,16 +39,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Remove both classes first
     root.classList.remove('light', 'dark');
 
+    let newResolved: 'light' | 'dark';
     if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches
+      newResolved = window.matchMedia('(prefers-color-scheme: dark)').matches
         ? 'dark'
         : 'light';
-      root.classList.add(systemTheme);
-      setResolvedTheme(systemTheme);
     } else {
-      root.classList.add(theme);
-      setResolvedTheme(theme);
+      newResolved = theme as 'light' | 'dark';
     }
+    root.classList.add(newResolved);
+    
+    Promise.resolve().then(() => {
+      setResolvedTheme(newResolved);
+    });
 
     localStorage.setItem('theme', theme);
   }, [theme]);

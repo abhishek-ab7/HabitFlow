@@ -174,7 +174,7 @@ export function AuthForm() {
           </form>
 
           {/* Divider */}
-          {false && mode !== 'reset' && (
+          {mode !== 'reset' && (
             <>
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">

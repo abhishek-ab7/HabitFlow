@@ -22,11 +22,14 @@ export function HeroSection({ userName }: HeroSectionProps) {
   });
 
   useEffect(() => {
-    setMounted(true);
     const { greeting, emoji } = getTimeGreeting();
     const gradientClass = getTimeGradient();
     const { quote, author } = getRandomQuote();
-    setTimeData({ greeting, emoji, gradientClass, quote, author });
+    
+    Promise.resolve().then(() => {
+      setMounted(true);
+      setTimeData({ greeting, emoji, gradientClass, quote, author });
+    });
   }, []);
 
   // Render placeholder during SSR to avoid hydration mismatch

@@ -1,16 +1,16 @@
-import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { validateRedirectUrl, getValidatedNextPath } from '@/lib/security/url-validator';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
-  const next = getValidatedNextPath(requestUrl.searchParams, '/');
+  const next = getValidatedNextPath(requestUrl.searchParams, '/dashboard');
   const error = requestUrl.searchParams.get('error');
   const errorDescription = requestUrl.searchParams.get('error_description');
-  const type = requestUrl.searchParams.get('type'); // 'recovery' for password reset
+  const type = requestUrl.searchParams.get('type');
 
   console.log('Callback received:', { code: !!code, error, next, type });
 
@@ -25,16 +25,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=No+code+provided`);
   }
 
-  // Debug: Log all cookies to verify presence of code verifier
-  const allCookies = request.cookies.getAll();
-  console.log('Cookies in callback:', allCookies.map(c => c.name));
-  const verifierCookies = allCookies.filter(c => c.name.endsWith('-code-verifier'));
-  if (verifierCookies.length === 0) {
-    console.error('No code verifier cookie found!');
-  } else {
-    console.log('Found verifier cookies:', verifierCookies.map(c => c.name));
-  }
-
   try {
     // Determine the redirect origin
     const forwardedHost = request.headers.get('x-forwarded-host');
@@ -43,23 +33,10 @@ export async function GET(request: NextRequest) {
       ? `${forwardedProto || 'https'}://${forwardedHost}`
       : requestUrl.origin;
 
-    // Create Supabase client with cookie handling
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll();
-          },
-          setAll(cookiesToSet) {
-            // We'll set cookies on the response later
-          },
-        },
-      }
-    );
-
-    // Exchange code for session
+    // Use the central server client which correctly handles cookies via next/headers
+    const supabase = await createServerSupabaseClient();
+    
+    // Exchange code for session - this automatically sets cookies via the client config
     const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
     if (exchangeError) {
@@ -75,61 +52,16 @@ export async function GET(request: NextRequest) {
     console.log('Session exchange successful, user:', data.session.user.email);
 
     // Check if this is a password recovery session
-    // Detect recovery via: (1) explicit type=recovery query param, or (2) recovery_sent_at on user
     const isRecovery = type === 'recovery' || data.session.user.recovery_sent_at !== undefined;
-
-    // Determine redirect path: recovery sessions go to reset page, others use 'next' param
     const redirectPath = isRecovery ? '/auth/reset-password' : next;
 
-    console.log('Redirect decision:', { isRecovery, type, redirectPath, recovery_sent_at: data.session.user.recovery_sent_at });
-
     // Create response with proper redirect (validated to prevent open redirects)
-    const validatedRedirectUrl = validateRedirectUrl(origin, redirectPath, '/');
-    const response = NextResponse.redirect(validatedRedirectUrl);
+    const validatedRedirectUrl = validateRedirectUrl(origin, redirectPath, '/dashboard');
+    return NextResponse.redirect(validatedRedirectUrl);
 
-    // Now set the session cookies on the response
-    const cookiesToSet: Array<{ name: string; value: string; options: any }> = [];
-
-    const supabaseWithCookies = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return request.cookies.getAll();
-          },
-          setAll(cookies) {
-            cookies.forEach(({ name, value, options }) => {
-              cookiesToSet.push({ name, value, options });
-            });
-          },
-        },
-      }
-    );
-
-    // Trigger cookie setting by getting session again
-    await supabaseWithCookies.auth.getSession();
-
-    // Apply all cookies to response
-    cookiesToSet.forEach(({ name, value, options }) => {
-      response.cookies.set({
-        name,
-        value,
-        ...options,
-        sameSite: 'lax',
-        secure: true,
-        httpOnly: true,
-        path: '/',
-      });
-    });
-
-    // Return the response with cookies set
-    return response;
   } catch (err) {
     console.error('Callback error:', err);
     const errorMessage = err instanceof Error ? err.message : 'Unknown callback error';
-    const errorStack = err instanceof Error ? err.stack : '';
-    console.error('Error details:', { message: errorMessage, stack: errorStack });
     return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=${encodeURIComponent(errorMessage)}`);
   }
 }

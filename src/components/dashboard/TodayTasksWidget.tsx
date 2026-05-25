@@ -16,7 +16,9 @@ export function TodayTasksWidget() {
 
     useEffect(() => {
         loadTasks()
-        setMounted(true)
+        Promise.resolve().then(() => {
+            setMounted(true)
+        })
     }, [loadTasks])
 
     // Hydration safety: Don't render date-dependent logic until mounted

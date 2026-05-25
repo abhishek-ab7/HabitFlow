@@ -4,7 +4,7 @@ import { RoutineModal } from '../RoutineModal'
 import { Routine } from '@/lib/types'
 
 // Mock Framer Motion
-jest.mock('framer-motion', () => ({
+vi.mock('framer-motion', () => ({
     motion: {
         div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
     },
@@ -12,11 +12,11 @@ jest.mock('framer-motion', () => ({
 }))
 
 // Define stable mock functions
-const mockAddRoutine = jest.fn()
-const mockUpdateRoutine = jest.fn()
-const mockGetRoutineHabits = jest.fn().mockResolvedValue([])
-const mockLinkHabit = jest.fn()
-const mockUnlinkHabit = jest.fn()
+const mockAddRoutine = vi.fn()
+const mockUpdateRoutine = vi.fn()
+const mockGetRoutineHabits = vi.fn().mockResolvedValue([])
+const mockLinkHabit = vi.fn()
+const mockUnlinkHabit = vi.fn()
 
 const mockRoutineStore = {
     addRoutine: mockAddRoutine,
@@ -26,7 +26,7 @@ const mockRoutineStore = {
     unlinkHabit: mockUnlinkHabit,
 }
 
-const mockLoadHabits = jest.fn().mockResolvedValue([])
+const mockLoadHabits = vi.fn().mockResolvedValue([])
 const mockHabits = [
     { id: '1', name: 'Meditation', archived: false, icon: '🧘' },
     { id: '2', name: 'Running', archived: false, icon: '🏃' },
@@ -38,32 +38,32 @@ const mockHabitStore = {
 }
 
 // Mock stores with stable returns
-jest.mock('@/lib/stores/routine-store', () => ({
+vi.mock('@/lib/stores/routine-store', () => ({
     useRoutineStore: () => mockRoutineStore,
 }))
 
-jest.mock('@/lib/stores/habit-store', () => ({
+vi.mock('@/lib/stores/habit-store', () => ({
     useHabitStore: () => mockHabitStore,
 }))
 
 // Mock location
-jest.mock('@/lib/location', () => ({
-    getCurrentPosition: jest.fn(),
+vi.mock('@/lib/location', () => ({
+    getCurrentPosition: vi.fn(),
 }))
 
 // Mock sonner
-jest.mock('sonner', () => ({
+vi.mock('sonner', () => ({
     toast: {
-        success: jest.fn(),
-        error: jest.fn(),
+        success: vi.fn(),
+        error: vi.fn(),
     },
 }))
 
 describe('RoutineModal', () => {
-    const mockOnClose = jest.fn()
+    const mockOnClose = vi.fn()
 
     beforeEach(() => {
-        jest.clearAllMocks()
+        vi.clearAllMocks()
         // Reset mock implementation if needed
     })
 
@@ -84,8 +84,11 @@ describe('RoutineModal', () => {
             description: 'Start the day right',
             triggerType: 'manual',
             triggerValue: '',
-            createdAt: new Date(),
-            updatedAt: new Date()
+            userId: 'u1',
+            isActive: true,
+            orderIndex: 0,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         }
 
         render(<RoutineModal isOpen={true} onClose={mockOnClose} routine={mockRoutine} />)

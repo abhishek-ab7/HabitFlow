@@ -1,22 +1,23 @@
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { Mock } from 'vitest'
 import { TodayTasksWidget } from '../TodayTasksWidget'
 import { useTaskStore } from '@/lib/stores/task-store'
 
 // Mock Stores
-jest.mock('@/lib/stores/task-store', () => ({
-    useTaskStore: jest.fn(),
+vi.mock('@/lib/stores/task-store', () => ({
+    useTaskStore: vi.fn(),
 }))
 
 // Mock Router
-jest.mock('next/navigation', () => ({
-    useRouter: jest.fn(() => ({
-        push: jest.fn(),
+vi.mock('next/navigation', () => ({
+    useRouter: vi.fn(() => ({
+        push: vi.fn(),
     })),
 }))
 
 // Mock Framer Motion to avoid animation issues in tests
-jest.mock('framer-motion', () => ({
+vi.mock('framer-motion', () => ({
     motion: {
         div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
     },
@@ -24,12 +25,12 @@ jest.mock('framer-motion', () => ({
 }))
 
 describe('TodayTasksWidget', () => {
-    const mockLoadTasks = jest.fn()
-    const mockToggleTaskComplete = jest.fn()
+    const mockLoadTasks = vi.fn()
+    const mockToggleTaskComplete = vi.fn()
 
     beforeEach(() => {
-        jest.clearAllMocks()
-            ; (useTaskStore as unknown as jest.Mock).mockReturnValue({
+        vi.clearAllMocks()
+            ; (useTaskStore as unknown as Mock).mockReturnValue({
                 tasks: [],
                 loadTasks: mockLoadTasks,
                 toggleTaskComplete: mockToggleTaskComplete,
@@ -44,23 +45,20 @@ describe('TodayTasksWidget', () => {
         // With 'mounted' check it returns the loading skeleton
     })
 
-    it('renders empty state when no tasks', () => {
+    it('renders empty state when no tasks', async () => {
         render(<TodayTasksWidget />)
-        // Wait for effect?
-        // Since we mock state, it should render immediately after mount logic?
-        // The component has `if (!mounted)`. Test environment might render fast.
-        // We can verify "Clear for takeoff!" text if it renders.
-        expect(screen.getByText('Clear for takeoff!')).toBeInTheDocument()
+        // Wait for effect to mount
+        expect(await screen.findByText('Clear for takeoff!')).toBeInTheDocument()
     })
 
-    it('renders tasks due today', () => {
+    it('renders tasks due today', async () => {
         const today = new Date().toISOString().split('T')[0]
         const tasks = [
             { id: '1', title: 'Task 1', status: 'todo', due_date: today },
             { id: '2', title: 'Task 2', status: 'todo', due_date: today },
         ]
 
-            ; (useTaskStore as unknown as jest.Mock).mockReturnValue({
+            ; (useTaskStore as unknown as Mock).mockReturnValue({
                 tasks,
                 loadTasks: mockLoadTasks,
                 toggleTaskComplete: mockToggleTaskComplete,
@@ -68,7 +66,7 @@ describe('TodayTasksWidget', () => {
             })
 
         render(<TodayTasksWidget />)
-        expect(screen.getByText('Task 1')).toBeInTheDocument()
-        expect(screen.getByText('2 tasks due.')).toBeInTheDocument()
+        expect(await screen.findByText('Task 1')).toBeInTheDocument()
+        expect(await screen.findByText('2 tasks due.')).toBeInTheDocument()
     })
 })

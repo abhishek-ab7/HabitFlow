@@ -39,3 +39,25 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE / Editor configuration
+.vscode/
+
+# AI Devkit / Agent files
+/.agent/
+/.agents/
+/.cline/
+/.continue/
+/.ai-devkit.json
+/AGENTS.md
+/PROJECT_RECONSTRUCTION.md
+/RECONSTRUCT_PROMPT.md
+
+# Log files
+*.log
+dev.log
+
+# Test reports
+/playwright-report/
+/test-results/
+
