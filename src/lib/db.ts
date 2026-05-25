@@ -229,6 +229,84 @@ export async function toggleCompletion(habitId: string, date: string, userId: st
   }
 }
 
+export async function freezeCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion> {
+  const existing = await db.completions
+    .where('[habitId+date]')
+    .equals([habitId, date])
+    .first();
+
+  const now = new Date().toISOString();
+
+  if (existing) {
+    const updated: HabitCompletion = {
+      ...existing,
+      completed: true, // Keep true so we don't break simple completion logic
+      status: 'frozen',
+      updatedAt: now
+    };
+    await db.completions.update(existing.id, updated);
+    return updated;
+  } else {
+    const completion: HabitCompletion = {
+      id: crypto.randomUUID(),
+      userId,
+      habitId,
+      date,
+      completed: true,
+      status: 'frozen',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.completions.add(completion);
+    return completion;
+  }
+}
+
+export async function batchCompleteHabits(habitIds: string[], date: string, userId: string): Promise<HabitCompletion[]> {
+  const results: HabitCompletion[] = [];
+  
+  await db.transaction('rw', db.completions, async () => {
+    for (const habitId of habitIds) {
+      const existing = await db.completions
+        .where('[habitId+date]')
+        .equals([habitId, date])
+        .first();
+
+      const now = new Date().toISOString();
+
+      if (existing) {
+        if (!existing.completed || existing.status !== 'completed') {
+          const updated: HabitCompletion = {
+            ...existing,
+            completed: true,
+            status: 'completed',
+            updatedAt: now
+          };
+          await db.completions.update(existing.id, updated);
+          results.push(updated);
+        } else {
+          results.push(existing);
+        }
+      } else {
+        const newCompletion: HabitCompletion = {
+          id: crypto.randomUUID(),
+          habitId,
+          date,
+          completed: true,
+          status: 'completed',
+          userId,
+          createdAt: now,
+          updatedAt: now
+        };
+        await db.completions.add(newCompletion);
+        results.push(newCompletion);
+      }
+    }
+  });
+
+  return results;
+}
+
 export async function getAllCompletionsInRange(startDate: string, endDate: string, userId: string): Promise<HabitCompletion[]> {
   return db.completions
     .where('date')
@@ -486,6 +564,27 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: str
       gems: 0,
       streakShield: 0,
       avatarId: 'avatar-1',
+      soundEnabled: data.soundEnabled ?? true,
+      hapticsEnabled: data.hapticsEnabled ?? true,
+      stats: data.stats || {
+        vitality: 1,
+        intelligence: 1,
+        discipline: 1,
+        charisma: 1,
+        wealth: 1,
+        creativity: 1,
+      },
+      unlockedThemes: data.unlockedThemes || [],
+      dashboardLayout: data.dashboardLayout || [
+        'hero',
+        'metrics',
+        'today-tasks',
+        'habit-overview',
+        'focus-goal',
+        'ai-quote',
+        'ai-coach',
+        'quick-actions'
+      ],
     };
     await db.userSettings.add(settings);
   }

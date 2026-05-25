@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical } from 'lucide-react';
+import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical, Snowflake } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import type { Habit, HabitCompletion, Category, Routine } from '@/lib/types';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { useFeedback } from '@/hooks/use-feedback';
 
 interface SortableHabitRowProps {
     habit: Habit;
@@ -36,6 +37,7 @@ interface SortableHabitRowProps {
     onEdit: (habit: Habit) => void;
     onDelete: (habitId: string) => void;
     onArchive: (habitId: string) => void;
+    onFreeze?: (habitId: string, date: string) => void;
 }
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -65,8 +67,10 @@ export function SortableHabitRow({
     onEdit,
     onDelete,
     onArchive,
+    onFreeze,
 }: SortableHabitRowProps) {
     const [rippleCell, setRippleCell] = useState<string | null>(null);
+    const { triggerPop } = useFeedback();
 
     const {
         attributes,
@@ -85,20 +89,38 @@ export function SortableHabitRow({
     };
 
     const getMonthlyCount = () => {
-        return completions.filter(c => c.habitId === habit.id && c.completed).length;
+        return completions.filter(c => c.habitId === habit.id && c.completed && c.status !== 'frozen').length;
     };
 
-    const isCompleted = (dateStr: string) => {
-        return completions.some(c => c.habitId === habit.id && c.date === dateStr && c.completed);
+    const getCompletion = (dateStr: string) => {
+        return completions.find(c => c.habitId === habit.id && c.date === dateStr);
     };
 
     const handleCellClick = (dateStr: string, isFutureDate: boolean) => {
         if (isFutureDate) return;
 
         const cellKey = `${habit.id}-${dateStr}`;
+        const comp = getCompletion(dateStr);
+        const completed = comp?.completed;
         setRippleCell(cellKey);
+        
+        if (!completed) {
+            triggerPop();
+        }
+
         onToggle(habit.id, dateStr);
 
+        setTimeout(() => setRippleCell(null), 500);
+    };
+
+    const handleCellRightClick = (e: React.MouseEvent, dateStr: string, isFutureDate: boolean) => {
+        e.preventDefault();
+        if (isFutureDate || !onFreeze) return;
+        
+        const cellKey = `${habit.id}-${dateStr}`;
+        setRippleCell(cellKey);
+        triggerPop(); // Provide feedback for freeze too
+        onFreeze(habit.id, dateStr);
         setTimeout(() => setRippleCell(null), 500);
     };
 
@@ -189,41 +211,58 @@ export function SortableHabitRow({
                 </DropdownMenu>
             </div>
 
-            {/* Day cells */}
             <div className="flex gap-0.5">
                 {days.map(({ day, dateStr, isFuture: isFutureDate, isToday: isTodayDate }) => {
-                    const completed = isCompleted(dateStr);
+                    const comp = getCompletion(dateStr);
+                    const isCompleted = comp?.completed && comp?.status !== 'frozen';
+                    const isFrozen = comp?.status === 'frozen';
                     const cellKey = `${habit.id}-${dateStr}`;
-                    const showRipple = rippleCell === cellKey && completed;
+                    const showRipple = rippleCell === cellKey && (isCompleted || isFrozen);
 
                     return (
                         <motion.button
                             key={day}
                             onClick={() => handleCellClick(dateStr, isFutureDate)}
+                            onContextMenu={(e) => handleCellRightClick(e, dateStr, isFutureDate)}
                             disabled={isFutureDate}
                             className={cn(
                                 "relative w-9 h-9 rounded-lg flex items-center justify-center transition-all",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                                completed
+                                isCompleted
                                     ? "bg-success/20 text-success hover:bg-success/30"
-                                    : isFutureDate
-                                        ? "bg-muted/20 cursor-not-allowed opacity-40"
-                                        : isTodayDate
-                                            ? "bg-primary/10 border-2 border-dashed border-primary/30 hover:bg-primary/20"
-                                            : "bg-muted/40 hover:bg-muted/60",
+                                    : isFrozen
+                                        ? "bg-sky-500/20 text-sky-500 hover:bg-sky-500/30"
+                                        : isFutureDate
+                                            ? "bg-muted/20 cursor-not-allowed opacity-40"
+                                            : isTodayDate
+                                                ? "bg-primary/10 border-2 border-dashed border-primary/30 hover:bg-primary/20"
+                                                : "bg-muted/40 hover:bg-muted/60",
                             )}
                             whileHover={!isFutureDate ? { scale: 1.05 } : {}}
                             whileTap={!isFutureDate ? { scale: 0.95 } : {}}
+                            title={isFutureDate ? undefined : "Left click to complete, Right click to freeze"}
                         >
                             <AnimatePresence mode="wait">
-                                {completed && (
+                                {isCompleted && (
                                     <motion.div
+                                        key="completed"
                                         initial={{ scale: 0, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
                                         exit={{ scale: 0, opacity: 0 }}
                                         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
                                     >
                                         <Check className="h-4 w-4" />
+                                    </motion.div>
+                                )}
+                                {isFrozen && (
+                                    <motion.div
+                                        key="frozen"
+                                        initial={{ scale: 0, opacity: 0, rotate: -45 }}
+                                        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                                        exit={{ scale: 0, opacity: 0, rotate: 45 }}
+                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                                    >
+                                        <Snowflake className="h-4 w-4" />
                                     </motion.div>
                                 )}
                             </AnimatePresence>

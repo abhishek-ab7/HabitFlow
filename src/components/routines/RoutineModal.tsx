@@ -305,7 +305,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                         return (
                                             <motion.div
                                                 key={habit.id}
-                                                whileHover={{ scale: 1.02, backgroundColor: "rgba(255,255,255,0.08)" }}
+                                                whileHover={{ scale: 1.02, backgroundColor: "rgba(99, 102, 241, 0.05)" }}
                                                 whileTap={{ scale: 0.98 }}
                                                 onClick={() => {
                                                     const newSet = new Set(Array.from(selectedHabitIds));
@@ -316,20 +316,20 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                                 className={cn(
                                                     "cursor-pointer relative flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 group",
                                                     isSelected
-                                                        ? "bg-indigo-500/10 border-indigo-500/50 shadow-[0_0_15px_-5px_var(--primary)]"
-                                                        : "bg-white/5 border-white/5 hover:border-white/20"
+                                                        ? "bg-indigo-500/10 border-indigo-500/50 shadow-[0_0_15px_-5px_rgba(99,102,241,0.4)]"
+                                                        : "bg-slate-50/50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/20"
                                                 )}
                                             >
                                                 <div className={cn(
                                                     "w-10 h-10 rounded-lg flex items-center justify-center text-xl shadow-inner transition-colors",
-                                                    isSelected ? "bg-indigo-500/20" : "bg-black/20 group-hover:bg-black/30"
+                                                    isSelected ? "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400" : "bg-slate-200/50 dark:bg-black/20 group-hover:bg-slate-200/80 dark:group-hover:bg-black/30"
                                                 )}>
-                                                    {habit.icon || '📝'}
+                                                    {(!habit.icon || habit.icon === '✓') ? '📝' : habit.icon}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className={cn(
                                                         "font-medium truncate transition-colors",
-                                                        isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white"
+                                                        isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white"
                                                     )}>
                                                         {habit.name}
                                                     </p>
@@ -338,7 +338,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                                     "w-5 h-5 rounded-full border flex items-center justify-center transition-all",
                                                     isSelected
                                                         ? "bg-indigo-500 border-indigo-500 scale-100"
-                                                        : "border-white/20 scale-90 opacity-50 group-hover:opacity-100"
+                                                        : "border-slate-300 dark:border-white/30 scale-90 opacity-60 group-hover:opacity-100"
                                                 )}>
                                                     {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                                                 </div>

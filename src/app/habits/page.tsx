@@ -3,14 +3,14 @@
 import { useEffect, useState, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import { Plus, Filter } from 'lucide-react';
+import { Plus, Filter, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { isAIEnabled } from '@/lib/ai-features-flag';
-import { MonthSelector, HabitGrid, HabitFormModal, HabitStackSuggestions } from '@/components/habits';
+import { MonthSelector, HabitGrid, HabitFormModal, HabitStackSuggestions, SmartHabitGenerator } from '@/components/habits';
 import { HabitSuggestions } from '@/components/habits/HabitSuggestions';
 import { FadeIn } from '@/components/motion';
 import { cn } from '@/lib/utils';
@@ -47,6 +47,7 @@ function HabitsPageContent() {
   } = useHabitStore();
 
   const [showModal, setShowModal] = useState(false);
+  const [showSmartGenerator, setShowSmartGenerator] = useState(false);
   const [editingHabit, setEditingHabit] = useState<Habit | undefined>();
 
   // Check for ?new=true query param
@@ -166,10 +167,22 @@ function HabitsPageContent() {
               Track your daily habits and build consistency
             </p>
           </div>
-          <Button onClick={() => setShowModal(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            New Habit
-          </Button>
+          <div className="flex gap-2">
+            {isAIEnabled() && (
+              <Button
+                onClick={() => setShowSmartGenerator(true)}
+                variant="outline"
+                className="gap-2 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20"
+              >
+                <Sparkles className="h-4 w-4 fill-current" />
+                AI Generator
+              </Button>
+            )}
+            <Button onClick={() => setShowModal(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Habit
+            </Button>
+          </div>
         </div>
 
         {/* Controls */}
@@ -265,6 +278,13 @@ function HabitsPageContent() {
         onSubmit={editingHabit ? handleEditHabit : handleCreateHabit}
         habit={editingHabit}
       />
+
+      {isAIEnabled() && (
+        <SmartHabitGenerator
+          open={showSmartGenerator}
+          onOpenChange={setShowSmartGenerator}
+        />
+      )}
     </div>
   );
 }

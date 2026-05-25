@@ -10,10 +10,12 @@ import {
   reorderHabits,
   seedDemoData,
   cleanupDuplicateCompletions,
+  cleanupDuplicateHabits,
   getRoutinesForHabit,
   getRoutinesForHabits,
   linkHabitToRoutine,
   unlinkHabitFromRoutine,
+  freezeCompletion,
 } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import type { Habit, HabitCompletion, HabitFormData, Category, Routine } from '../types';
@@ -38,7 +40,9 @@ interface HabitState {
   editHabit: (id: string, data: Partial<Habit>) => Promise<void>;
   removeHabit: (id: string) => Promise<void>;
   toggle: (habitId: string, date: string) => Promise<void>;
+  freezeHabit: (habitId: string, date: string) => Promise<void>;
   ensureComplete: (habitId: string, date: string) => Promise<void>;
+  batchComplete: (habitIds: string[], date: string) => Promise<void>;
   reorder: (orderedIds: string[]) => Promise<void>;
   setSelectedMonth: (date: Date) => void;
   setCategoryFilter: (categories: Category[]) => void;
@@ -70,6 +74,9 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   loadHabits: async () => {
     set({ isLoading: true, error: null });
     try {
+      // Clean up any duplicate habits first
+      await cleanupDuplicateHabits();
+
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -179,7 +186,8 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     if (result.completed) {
       const today = new Date().toISOString().split('T')[0];
       if (date === today) {
-        useGamificationStore.getState().addXp(XP_PER_HABIT);
+        const habit = get().habits.find(h => h.id === habitId);
+        useGamificationStore.getState().addXp(XP_PER_HABIT, habit?.category);
       }
     }
 
@@ -205,6 +213,29 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
   },
 
+  freezeHabit: async (habitId: string, date: string) => {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+
+    const result = await freezeCompletion(habitId, date, session.user.id);
+
+    set(state => {
+      const filtered = state.completions.filter(
+        c => !(c.habitId === habitId && c.date === date)
+      );
+      return { completions: [...filtered, result] };
+    });
+
+    // Sync to cloud
+    try {
+      const syncEngine = getSyncEngine();
+      await syncEngine.pushCompletion(result);
+    } catch (error) {
+      console.error('Failed to sync freeze completion:', error);
+    }
+  },
+
   ensureComplete: async (habitId: string, date: string) => {
     const { completions, toggle } = get();
     // Check if truly completed (exists AND completed=true)
@@ -212,6 +243,45 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     if (!isCompleted) {
       await toggle(habitId, date);
+    }
+  },
+
+  batchComplete: async (habitIds: string[], date: string) => {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+
+    const { batchCompleteHabits } = await import('@/lib/db');
+    const results = await batchCompleteHabits(habitIds, date, session.user.id);
+    
+    // Add XP for newly completed habits
+    const today = new Date().toISOString().split('T')[0];
+    if (date === today) {
+      const { useGamificationStore, XP_PER_HABIT } = await import('@/lib/stores/gamification-store');
+      results.forEach(r => {
+        // Simple heuristic: if created recently or updated recently (in this transaction)
+        if (r.updatedAt === r.createdAt || (new Date(r.updatedAt!).getTime() - new Date(r.createdAt!).getTime() < 1000)) {
+           const habit = get().habits.find(h => h.id === r.habitId);
+           useGamificationStore.getState().addXp(XP_PER_HABIT, habit?.category);
+        }
+      });
+    }
+
+    set(state => {
+      const filtered = state.completions.filter(
+        c => !(habitIds.includes(c.habitId) && c.date === date)
+      );
+      return { completions: [...filtered, ...results] };
+    });
+
+    // Sync to cloud
+    try {
+      const syncEngine = getSyncEngine();
+      for (const result of results) {
+        await syncEngine.pushCompletion(result);
+      }
+    } catch (error) {
+      console.error('Failed to sync batch completions:', error);
     }
   },
 

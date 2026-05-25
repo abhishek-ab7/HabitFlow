@@ -1,10 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Routine, Habit } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Play, Settings2, Clock, MapPin, MoreHorizontal, CheckCircle2 } from 'lucide-react';
+import { Play, Settings2, Clock, MapPin, MoreHorizontal, CheckCircle2, Check, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRoutineStore } from '@/lib/stores/routine-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
@@ -23,11 +22,19 @@ interface RoutineCardProps {
 }
 
 export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardProps) {
-    const { getHabitCompletions, completions } = useHabitStore();
+    const { getHabitCompletions, completions, batchComplete, toggle } = useHabitStore();
     const { getRoutineHabits } = useRoutineStore();
     const [routineHabits, setRoutineHabits] = useState<Habit[]>([]);
     const [isCompleted, setIsCompleted] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+    useEffect(() => {
+        if (isDropdownOpen) {
+            setIsExpanded(true);
+        }
+    }, [isDropdownOpen]);
 
     useEffect(() => {
         let mounted = true;
@@ -49,8 +56,6 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
                 let allDone = true;
 
                 for (const habit of habits) {
-                    // We can use the store's completions directly since we have them now
-                    // fetching getHabitCompletions is fine too, but we need to ensure reactivity
                     const habitCompletions = getHabitCompletions(habit.id);
                     const isDoneToday = habitCompletions.some(c => c.date === today && c.completed);
                     if (!isDoneToday) {
@@ -72,10 +77,9 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
         checkCompletion();
 
         return () => { mounted = false; };
-    }, [routine.id, completions, getRoutineHabits, getHabitCompletions]); // Re-run when completions change
+    }, [routine.id, completions, getRoutineHabits, getHabitCompletions]);
 
-    // Memoize progress calculation to avoid recalculation on every render
-    // and ensure it updates when completions change in the store
+    // Calculate progress
     const { totalHabits, completedHabits, progressPercentage } = useMemo(() => {
         const total = routineHabits.length;
         let completed = 0;
@@ -93,7 +97,61 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
             completedHabits: completed,
             progressPercentage: total > 0 ? (completed / total) * 100 : 0
         };
-    }, [routineHabits, getHabitCompletions, completions]); // getHabitCompletions will be stable, but results depend on store state which causes re-render
+    }, [routineHabits, getHabitCompletions, completions]);
+
+    // Calculate RPG Stats reward
+    const statsReward = useMemo(() => {
+        const rewards: Record<string, number> = {};
+        routineHabits.forEach(h => {
+            const cat = h.category || 'health';
+            const statName = cat === 'health' ? 'vitality' 
+                           : cat === 'learning' ? 'intelligence' 
+                           : cat === 'work' ? 'discipline' 
+                           : cat === 'relationships' ? 'charisma' 
+                           : cat === 'finance' ? 'wealth' 
+                           : 'creativity';
+            rewards[statName] = (rewards[statName] || 0) + 1;
+        });
+        return rewards;
+    }, [routineHabits]);
+
+    const handleCompleteAll = async () => {
+        if (!routineHabits.length || isCompleted || loading) return;
+        try {
+            setLoading(true);
+            const today = new Date().toISOString().split('T')[0];
+            const ids = routineHabits.map(h => h.id);
+            if (batchComplete) {
+                await batchComplete(ids, today);
+            }
+            setIsCompleted(true);
+        } catch (error) {
+            console.error("Error batch completing routine", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleToggleHabit = async (habitId: string) => {
+        const today = new Date().toISOString().split('T')[0];
+        try {
+            await toggle(habitId, today);
+        } catch (error) {
+            console.error("Error toggling habit", error);
+        }
+    };
+
+    const isHabitCompletedToday = (habitId: string) => {
+        const today = new Date().toISOString().split('T')[0];
+        const habitCompletions = getHabitCompletions(habitId);
+        return habitCompletions.some(c => c.date === today && c.completed);
+    };
+
+    // SVG Circle Math
+    const radius = 22;
+    const strokeWidth = 3.5;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (progressPercentage / 100) * circumference;
 
     return (
         <motion.div
@@ -101,130 +159,192 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            whileHover={{ y: -5, scale: 1.02 }}
-            transition={{ type: "spring", stiffness: 300, damping: 20 }}
-            className="group relative h-full"
+            whileHover={isDropdownOpen ? undefined : { y: -6 }}
+            onMouseEnter={() => { if (!isDropdownOpen) setIsExpanded(true); }}
+            onMouseLeave={() => { if (!isDropdownOpen) setIsExpanded(false); }}
+            onClick={() => { if (!isDropdownOpen) setIsExpanded(!isExpanded); }}
+            className="group relative cursor-pointer"
         >
+            {/* Glowing background outline on hover */}
+            <div className="absolute -inset-[1px] bg-gradient-to-r from-indigo-500/30 to-purple-500/30 rounded-[28px] opacity-0 group-hover:opacity-100 blur-sm transition-opacity duration-500" />
+            
             <Card className={cn(
-                "relative overflow-hidden border transition-all duration-300 h-full flex flex-col",
-                "bg-white/40 dark:bg-slate-900/40 backdrop-blur-md", // Glassmorphism base
-                "border-white/50 dark:border-white/10", // Glass border
-                "hover:shadow-2xl hover:shadow-indigo-500/20 dark:hover:shadow-indigo-900/30", // Glow effect on hover
-                isCompleted && "opacity-90"
+                "relative overflow-hidden border transition-all duration-500 flex flex-col rounded-[26px]",
+                "bg-white/30 dark:bg-slate-900/30 backdrop-blur-xl border-slate-200/50 dark:border-slate-800/50",
+                "shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_50px_rgba(99,102,241,0.15)]",
+                isCompleted && "bg-emerald-500/5 dark:bg-emerald-500/5 border-emerald-500/20"
             )}>
+                {/* Time-of-day colored background ambient light */}
+                <div className="absolute -right-20 -top-20 w-44 h-44 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-3xl -z-10 group-hover:scale-125 transition-transform duration-700" />
 
-                {/* Background Progress Bar */}
-                <motion.div
-                    className="absolute inset-0 bg-indigo-500/5 dark:bg-indigo-400/10 z-0"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercentage}%` }}
-                    transition={{ duration: 1, ease: "easeOut" }}
-                />
-
-                {/* Active Progress Gradient Line at bottom (optional but adds polish) */}
-                <motion.div
-                    className="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 z-10"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercentage}%` }}
-                />
-
-                <CardHeader className="relative z-10 flex flex-row items-start justify-between p-5 pb-2">
-                    <div className="space-y-1 w-full">
-                        <CardTitle className="text-xl font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
-                            {routine.title}
-                            {/* Status Indicator Dot */}
-                            {!isCompleted && routine.isActive && (
-                                <span className="flex h-2.5 w-2.5 rounded-full bg-indigo-500 animate-pulse ring-2 ring-indigo-500/30" />
+                {/* Card Header */}
+                <div className="relative z-10 flex flex-row items-center justify-between p-6 pb-3">
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                        <CardTitle className="text-xl font-black tracking-tight text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                            <span className="truncate">{routine.title}</span>
+                            {isCompleted && (
+                                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                             )}
                         </CardTitle>
-                        <div className="h-5">
-                            {routine.description ? (
-                                <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-1 font-medium">{routine.description}</p>
-                            ) : (
-                                <span className="text-sm text-transparent select-none">No description</span>
-                            )}
-                        </div>
-                    </div>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 shrink-0">
-                                <MoreHorizontal className="w-5 h-5" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl">
-                            <DropdownMenuItem onClick={() => onEdit(routine)}>
-                                Edit Routine
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onDelete(routine.id)} className="text-destructive focus:text-destructive">
-                                Delete
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                </CardHeader>
-
-                <CardContent className="relative z-10 p-5 pt-2 space-y-6 flex-1 flex flex-col justify-end">
-                    {/* Tags & Stats Row */}
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {routine.triggerType === 'time' && (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100/50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-300 border border-blue-200/50 dark:border-blue-500/20">
-                                <Clock className="w-3.5 h-3.5" />
-                                <span>{routine.triggerValue}</span>
-                            </div>
+                        {routine.description && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium line-clamp-1">
+                                {routine.description}
+                            </p>
                         )}
-                        {routine.triggerType === 'location' && (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-100/50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-200/50 dark:border-purple-500/20">
-                                <MapPin className="w-3.5 h-3.5" />
-                                <span>{routine.triggerValue}</span>
-                            </div>
-                        )}
-
-                        <div className="ml-auto flex items-center gap-1.5">
-                            <span className={cn(
-                                "transition-colors",
-                                completedHabits === totalHabits ? "text-green-600 dark:text-green-400" : ""
-                            )}>
-                                {completedHabits}/{totalHabits} Done
-                            </span>
-                        </div>
                     </div>
 
-                    {/* Action Area */}
-                    <div className="pt-2">
+                    {/* Progress Circle Visual */}
+                    <div className="relative flex items-center justify-center ml-4 shrink-0">
+                        <svg className="w-14 h-14 transform -rotate-90">
+                            <circle
+                                cx="28"
+                                cy="28"
+                                r={radius}
+                                className="stroke-slate-100 dark:stroke-slate-800/80 fill-none"
+                                strokeWidth={strokeWidth}
+                            />
+                            <motion.circle
+                                cx="28"
+                                cy="28"
+                                r={radius}
+                                className={cn(
+                                    "fill-none",
+                                    isCompleted ? "stroke-emerald-500" : "stroke-indigo-500 dark:stroke-indigo-400"
+                                )}
+                                strokeWidth={strokeWidth}
+                                strokeDasharray={circumference}
+                                animate={{ strokeDashoffset }}
+                                transition={{ duration: 0.5 }}
+                                strokeLinecap="round"
+                            />
+                        </svg>
+                        <span className="absolute text-[10px] font-black text-slate-700 dark:text-slate-300">
+                            {completedHabits}/{totalHabits}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Card Details Row */}
+                <div className="px-6 py-2 flex flex-wrap items-center gap-2 border-t border-b border-slate-100/50 dark:border-slate-800/20 bg-slate-50/30 dark:bg-slate-900/10">
+                    {routine.triggerType === 'time' && (
+                        <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 text-blue-600 dark:text-blue-400 text-[10px] font-black tracking-wider uppercase">
+                            <Clock className="w-3 h-3" />
+                            <span>{routine.triggerValue}</span>
+                        </div>
+                    )}
+                    {routine.triggerType === 'location' && (
+                        <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black tracking-wider uppercase">
+                            <MapPin className="w-3 h-3" />
+                            <span className="truncate max-w-[80px]">{routine.triggerValue}</span>
+                        </div>
+                    )}
+                    {routine.triggerType === 'manual' && (
+                        <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 text-[10px] font-black tracking-wider uppercase">
+                            <span>Manual</span>
+                        </div>
+                    )}
+
+                    {/* RPG Stats Badges */}
+                    {Object.entries(statsReward).map(([stat, amt]) => (
+                        <div key={stat} className="flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/20 border border-amber-100/50 dark:border-amber-900/30 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase">
+                            <Sparkles className="w-2.5 h-2.5" />
+                            <span>{stat.substring(0, 3)} +{amt}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Main Content Area */}
+                <CardContent className="relative z-10 p-6 flex-1 flex flex-col justify-between space-y-4">
+                    {/* Expandable Habits Checklist */}
+                    <motion.div
+                        initial={false}
+                        animate={{ height: isExpanded ? 'auto' : 0, opacity: isExpanded ? 1 : 0 }}
+                        transition={{ duration: 0.3, ease: "easeInOut" }}
+                        className="overflow-hidden space-y-2"
+                        onClick={(e) => e.stopPropagation()} // Stop propagation to prevent collapse
+                    >
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                            Habits Checklist
+                        </h4>
+                        <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                            {routineHabits.map((habit) => {
+                                const done = isHabitCompletedToday(habit.id);
+                                return (
+                                    <div
+                                        key={habit.id}
+                                        onClick={() => handleToggleHabit(habit.id)}
+                                        className={cn(
+                                            "flex items-center justify-between p-2 rounded-xl border transition-all text-xs font-semibold cursor-pointer",
+                                            done 
+                                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400" 
+                                                : "bg-slate-50/50 dark:bg-slate-900/20 border-slate-100 dark:border-slate-800/40 text-slate-600 dark:text-slate-300 hover:bg-slate-100/50 dark:hover:bg-slate-900/40"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <div className={cn(
+                                                "w-4 h-4 rounded-md flex items-center justify-center border transition-all",
+                                                done ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 dark:border-slate-600"
+                                            )}>
+                                                {done && <Check className="w-3 h-3" />}
+                                            </div>
+                                            <span className="truncate">{habit.icon} {habit.name}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </motion.div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
                         <motion.div
-                            whileHover={!isCompleted && !loading ? { scale: 1.03 } : {}}
-                            whileTap={!isCompleted && !loading ? { scale: 0.97 } : {}}
+                            className="flex-1"
+                            whileHover={!isCompleted && !loading ? { scale: 1.02 } : {}}
+                            whileTap={!isCompleted && !loading ? { scale: 0.98 } : {}}
                         >
                             <Button
-                                className={cn(
-                                    "w-full h-12 gap-2 font-bold text-base shadow-lg transition-all rounded-xl border relative overflow-hidden",
-                                    isCompleted
-                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20 shadow-none cursor-default"
-                                        : "bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-400 dark:hover:border-indigo-400"
-                                )}
-                                onClick={() => !isCompleted && onPlay(routine)}
+                                size="lg"
+                                onClick={() => onPlay(routine)}
                                 disabled={isCompleted || loading}
+                                className={cn(
+                                    "w-full h-11 text-sm font-black rounded-2xl shadow-md gap-2 border-none transition-all",
+                                    isCompleted 
+                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 shadow-none" 
+                                        : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-indigo-500/10"
+                                )}
                             >
-                                {/* Button Content */}
-                                <span className="relative z-10 flex items-center gap-2">
-                                    {isCompleted ? (
-                                        <>
-                                            <CheckCircle2 className="w-5 h-5" />
-                                            Active Today
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Play className={cn("w-5 h-5 fill-current", !isCompleted && "animate-pulse")} />
-                                            Start Routine
-                                        </>
-                                    )}
-                                </span>
-
-                                {/* Button Hover Fill Effect (Gradient) for Play State */}
-                                {!isCompleted && (
-                                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                {isCompleted ? (
+                                    <>
+                                        <CheckCircle2 className="w-4 h-4" />
+                                        Complete
+                                    </>
+                                ) : (
+                                    <>
+                                        <Play className="w-4 h-4 fill-current" />
+                                        Start Flow
+                                    </>
                                 )}
                             </Button>
                         </motion.div>
+
+                        <DropdownMenu onOpenChange={setIsDropdownOpen}>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="icon" className="h-11 w-11 rounded-2xl border-slate-200 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 shrink-0 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
+                                    <MoreHorizontal className="w-5 h-5" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-2xl border-slate-200/50 dark:border-slate-800/50">
+                                <DropdownMenuItem onClick={handleCompleteAll} disabled={isCompleted || routineHabits.length === 0} className="font-semibold text-xs rounded-xl">
+                                    Complete All Tasks
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => onEdit(routine)} className="font-semibold text-xs rounded-xl">
+                                    Edit Settings
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => onDelete(routine.id)} className="font-semibold text-xs text-destructive focus:text-destructive rounded-xl">
+                                    Delete Routine
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                 </CardContent>
             </Card>

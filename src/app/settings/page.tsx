@@ -14,9 +14,13 @@ import {
   ShieldAlert,
   CloudCog,
   User,
-  Mail,
   Lock,
   Save,
+  Volume2,
+  VolumeX,
+  Vibrate,
+  VibrateOff,
+  Mail
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -144,6 +148,32 @@ export default function SettingsPage() {
     } finally {
       setIsCleaning(false);
     }
+  };
+
+  const handleToggleSound = async () => {
+    if (!settings || !user?.id) return;
+    const newValue = !settings.soundEnabled;
+    await updateSettings({ userId: user.id, soundEnabled: newValue });
+    setSettings({ ...settings, soundEnabled: newValue });
+    // Update local storage for useFeedback hook fast access
+    localStorage.setItem('feedback_settings', JSON.stringify({
+      sound: newValue,
+      haptics: settings.hapticsEnabled
+    }));
+    toast.success(newValue ? 'Sound enabled' : 'Sound disabled');
+  };
+
+  const handleToggleHaptics = async () => {
+    if (!settings || !user?.id) return;
+    const newValue = !settings.hapticsEnabled;
+    await updateSettings({ userId: user.id, hapticsEnabled: newValue });
+    setSettings({ ...settings, hapticsEnabled: newValue });
+    // Update local storage for useFeedback hook fast access
+    localStorage.setItem('feedback_settings', JSON.stringify({
+      sound: settings.soundEnabled,
+      haptics: newValue
+    }));
+    toast.success(newValue ? 'Haptics enabled' : 'Haptics disabled');
   };
 
   const handleExportData = async () => {
@@ -298,6 +328,7 @@ export default function SettingsPage() {
             span={2}
             className="md:col-span-2"
             description="Manage your profile and security preferences"
+            disableHover
           >
             <div className="flex flex-col gap-6 mt-6 pb-2">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -378,6 +409,7 @@ export default function SettingsPage() {
             span={1}
             description="Manage local backups"
             className="md:col-span-1"
+            disableHover
           >
             <div className="flex flex-col gap-3 mt-4">
               <div className="grid grid-cols-2 gap-2">
@@ -439,6 +471,7 @@ export default function SettingsPage() {
               }
               icon={<CloudCog className="h-5 w-5 text-blue-500" />}
               className="md:col-span-2 lg:col-span-2"
+              disableHover
             >
               <div className="mt-2">
                 <SyncStatusPanel />
@@ -452,16 +485,18 @@ export default function SettingsPage() {
             icon={<Palette className="h-5 w-5 text-purple-500" />}
             span={1}
             className="md:col-span-1"
+            disableHover
           >
-            <div className="grid grid-cols-3 gap-2 mt-4">
+            <div className="grid grid-cols-4 gap-2 mt-4">
               {[
                 { value: 'light', icon: Sun, label: 'Light' },
                 { value: 'dark', icon: Moon, label: 'Dark' },
-                { value: 'system', icon: Monitor, label: 'Auto' },
+                { value: 'system', icon: Monitor, label: 'System' },
+                { value: 'auto', icon: CloudCog, label: 'Auto' },
               ].map((opt) => (
                 <button
                   key={opt.value}
-                  onClick={() => setTheme(opt.value as 'light' | 'dark' | 'system')}
+                  onClick={() => setTheme(opt.value as 'light' | 'dark' | 'system' | 'auto')}
                   className={cn(
                     "p-3 rounded-xl flex items-center justify-center transition-all border outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
                     theme === opt.value
@@ -476,6 +511,57 @@ export default function SettingsPage() {
             </div>
           </BentoGridItem>
 
+          {/* Sensory Feedback (Span 1) */}
+          <BentoGridItem
+            title="Sensory Feedback"
+            icon={<Volume2 className="h-5 w-5 text-pink-500" />}
+            span={1}
+            className="md:col-span-1"
+            disableHover
+          >
+            <div className="flex flex-col gap-3 mt-4">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border">
+                <div className="flex items-center gap-3">
+                  <div className={cn("p-2 rounded-lg", settings.soundEnabled ? "bg-pink-500/10 text-pink-500" : "bg-muted text-muted-foreground")}>
+                    {settings.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Sound Effects</span>
+                    <span className="text-[10px] text-muted-foreground">Pops and chimes</span>
+                  </div>
+                </div>
+                <Button 
+                  variant={settings.soundEnabled ? "default" : "outline"} 
+                  size="sm" 
+                  onClick={handleToggleSound}
+                  className={cn("h-8 px-3 text-xs", settings.soundEnabled && "bg-pink-500 hover:bg-pink-600 text-white")}
+                >
+                  {settings.soundEnabled ? "On" : "Off"}
+                </Button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border">
+                <div className="flex items-center gap-3">
+                  <div className={cn("p-2 rounded-lg", settings.hapticsEnabled ? "bg-pink-500/10 text-pink-500" : "bg-muted text-muted-foreground")}>
+                    {settings.hapticsEnabled ? <Vibrate className="w-4 h-4" /> : <VibrateOff className="w-4 h-4" />}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Haptics</span>
+                    <span className="text-[10px] text-muted-foreground">Vibrations on complete</span>
+                  </div>
+                </div>
+                <Button 
+                  variant={settings.hapticsEnabled ? "default" : "outline"} 
+                  size="sm" 
+                  onClick={handleToggleHaptics}
+                  className={cn("h-8 px-3 text-xs", settings.hapticsEnabled && "bg-pink-500 hover:bg-pink-600 text-white")}
+                >
+                  {settings.hapticsEnabled ? "On" : "Off"}
+                </Button>
+              </div>
+            </div>
+          </BentoGridItem>
+
           {isAuthenticated && (
             <BentoGridItem
               title="Debug Tools"
@@ -483,6 +569,7 @@ export default function SettingsPage() {
               span={1}
               description="Force sync actions"
               className="md:col-span-1"
+              disableHover
             >
               <div className="flex flex-col gap-3 mt-4">
                 <div className="grid grid-cols-2 gap-2">
@@ -521,7 +608,8 @@ export default function SettingsPage() {
             title="Danger Zone"
             icon={<Trash2 className="h-5 w-5 text-red-500" />}
             span={1}
-            className="border-red-500/20 bg-red-500/5 hover:bg-red-500/10 md:col-span-1"
+            className="border-red-500/20 bg-red-500/5 md:col-span-1"
+            disableHover
           >
             <div className="mt-4">
               <p className="text-xs text-muted-foreground mb-4">

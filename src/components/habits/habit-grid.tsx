@@ -49,7 +49,7 @@ export const HabitGrid = memo(function HabitGrid({
 }: HabitGridProps) {
   const [rippleCell, setRippleCell] = useState<string | null>(null);
   const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
-  const { getRoutinesForMultipleHabits, reorder } = useHabitStore();
+  const { getRoutinesForMultipleHabits, reorder, freezeHabit } = useHabitStore();
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -197,6 +197,7 @@ export const HabitGrid = memo(function HabitGrid({
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onArchive={onArchive}
+                    onFreeze={freezeHabit}
                   />
                 );
               })}

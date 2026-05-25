@@ -157,7 +157,7 @@ export function FocusGoal({ goals, getMilestones, getStats, onToggleMilestone }:
   }
 
   return (
-    <FadeIn delay={0.3}>
+    <FadeIn delay={0.3} className="h-full flex flex-col">
       <Card className="h-full flex flex-col">
         <CardHeader>
           <div className="flex items-center justify-between">

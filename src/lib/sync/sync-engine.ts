@@ -859,6 +859,7 @@ export class SyncEngine {
           habit_id: local.habitId,
           date: local.date,
           completed: local.completed,
+          status: local.status || 'completed',
           notes: local.note || null,
           created_at: new Date().toISOString(),
         });
@@ -887,6 +888,7 @@ export class SyncEngine {
             habit_id: local.habitId,
             date: local.date,
             completed: local.completed,
+            status: local.status || 'completed',
             notes: local.note || null,
             updated_at: new Date().toISOString(),
           });
@@ -899,6 +901,7 @@ export class SyncEngine {
             habitId: remote.habit_id,
             date: remote.date,
             completed: remote.completed,
+            status: remote.status || 'completed',
             note: remote.notes || undefined,
             updatedAt: remote.updated_at,
             createdAt: remote.created_at,
@@ -920,6 +923,7 @@ export class SyncEngine {
           habitId: remote.habit_id,
           date: remote.date,
           completed: remote.completed,
+          status: remote.status || 'completed',
           note: remote.notes || undefined,
         });
       }
@@ -977,6 +981,7 @@ export class SyncEngine {
       habit_id: completion.habitId,
       date: completion.date,
       completed: completion.completed,
+      status: completion.status || 'completed',
       notes: completion.note || null,
     };
 
@@ -1739,7 +1744,7 @@ export class SyncEngine {
     this.log('info', '🔄 Starting user settings sync...');
 
     // Pull settings from Supabase
-    const { data: remoteSettings, error } = await this.supabase
+    const { data: rawRemoteSettings, error } = await this.supabase
       .from('user_settings')
       .select('*')
       .eq('user_id', this.userId)
@@ -1749,11 +1754,51 @@ export class SyncEngine {
       throw error;
     }
 
+    const remoteSettings = rawRemoteSettings as any;
     const localSettings = await db.userSettings.where('userId').equals(this.userId).first();
 
     this.log('info', `📊 Settings: Local=${!!localSettings}, Remote=${!!remoteSettings}`);
 
-    if (!localSettings && !remoteSettings) {
+    // Map remote settings to camelCase format if they exist
+    const mappedRemoteSettings = remoteSettings ? {
+      id: localSettings?.id || remoteSettings.id || crypto.randomUUID(),
+      userId: remoteSettings.user_id,
+      userName: remoteSettings.user_name || undefined,
+      avatarId: remoteSettings.avatar_id || 'avatar-1',
+      weekStartsOn: (remoteSettings.week_start_day ?? 0) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      theme: (localSettings?.theme || 'system') as 'light' | 'dark' | 'system',
+      showMotivationalQuotes: localSettings?.showMotivationalQuotes ?? true,
+      defaultCategory: remoteSettings.default_category || 'health',
+      xp: remoteSettings.xp || 0,
+      level: remoteSettings.level || 1,
+      gems: remoteSettings.gems || 0,
+      streakShield: remoteSettings.streak_shield || 0,
+      soundEnabled: localSettings?.soundEnabled ?? true,
+      hapticsEnabled: localSettings?.hapticsEnabled ?? true,
+      stats: remoteSettings.stats || {
+        vitality: 1,
+        intelligence: 1,
+        discipline: 1,
+        charisma: 1,
+        wealth: 1,
+        creativity: 1,
+      },
+      unlockedThemes: remoteSettings.unlocked_themes || [],
+      dashboardLayout: remoteSettings.dashboard_layout || [
+        'hero',
+        'metrics',
+        'today-tasks',
+        'habit-overview',
+        'focus-goal',
+        'ai-quote',
+        'ai-coach',
+        'quick-actions'
+      ],
+      createdAt: remoteSettings.created_at || new Date().toISOString(),
+      updatedAt: remoteSettings.updated_at || undefined,
+    } : null;
+
+    if (!localSettings && !mappedRemoteSettings) {
       // No settings anywhere - create defaults locally
       this.log('info', 'Creating default user settings');
       await db.userSettings.add({
@@ -1769,41 +1814,72 @@ export class SyncEngine {
         gems: 0,
         streakShield: 0,
         avatarId: 'avatar-1',
+        stats: {
+          vitality: 1,
+          intelligence: 1,
+          discipline: 1,
+          charisma: 1,
+          wealth: 1,
+          creativity: 1,
+        },
+        unlockedThemes: [],
+        dashboardLayout: [
+          'hero',
+          'metrics',
+          'today-tasks',
+          'habit-overview',
+          'focus-goal',
+          'ai-quote',
+          'ai-coach',
+          'quick-actions'
+        ],
       });
       return;
     }
 
-    if (!remoteSettings && localSettings) {
+    if (!mappedRemoteSettings && localSettings) {
       // Local only - push to remote
       await this.pushUserSettingsToRemote(localSettings);
-    } else if (remoteSettings && !localSettings) {
+    } else if (mappedRemoteSettings && !localSettings) {
       // Remote only - pull to local
-      await this.updateLocalUserSettings(remoteSettings);
-    } else if (remoteSettings && localSettings) {
+      await this.updateLocalUserSettings(mappedRemoteSettings);
+    } else if (mappedRemoteSettings && localSettings) {
       // Both exist - merge gamification fields (highest value wins) and use timestamp for other fields
       this.log('info', '🎮 Both settings exist, merging with conflict resolution...');
 
       // First, merge gamification fields to ensure highest values
       const mergedGamification = mergeGamificationFields(
         localSettings,
-        remoteSettings as any
+        mappedRemoteSettings
       );
 
       // Then use conflict resolution for other fields based on timestamp
       const resolution = resolveConflict(
         { ...localSettings, updatedAt: localSettings.updatedAt || localSettings.createdAt },
-        { ...(remoteSettings as any) },
+        { ...mappedRemoteSettings },
         {}
       );
 
       // Merge: Take winner's data for non-gamification fields, but always use merged gamification values
-      const winner = resolution.winner === 'local' ? localSettings : remoteSettings;
+      const winner = resolution.winner === 'local' ? localSettings : mappedRemoteSettings;
       const finalSettings = {
         ...winner,
         xp: mergedGamification.xp,
         level: mergedGamification.level,
         gems: mergedGamification.gems,
         streakShield: mergedGamification.streakShield,
+        stats: mergedGamification.stats,
+        unlockedThemes: mergedGamification.unlockedThemes,
+        dashboardLayout: winner.dashboardLayout || localSettings.dashboardLayout || [
+          'hero',
+          'metrics',
+          'today-tasks',
+          'habit-overview',
+          'focus-goal',
+          'ai-quote',
+          'ai-coach',
+          'quick-actions'
+        ],
       };
 
       // Push merged settings to both local and remote to ensure consistency
@@ -1828,6 +1904,18 @@ export class SyncEngine {
       level: settings.level || 1,
       gems: settings.gems || 0,
       streak_shield: settings.streakShield || 0,
+      stats: settings.stats || null,
+      unlocked_themes: settings.unlockedThemes || [],
+      dashboard_layout: settings.dashboardLayout || [
+        'hero',
+        'metrics',
+        'today-tasks',
+        'habit-overview',
+        'focus-goal',
+        'ai-quote',
+        'ai-coach',
+        'quick-actions'
+      ],
       updated_at: new Date().toISOString(),
     } as any, {
       onConflict: 'user_id', // CRITICAL: Tell upsert which column to match on
@@ -1840,21 +1928,41 @@ export class SyncEngine {
     this.log('info', '✅ User settings pushed to remote');
   }
 
-  private async updateLocalUserSettings(remote: any) {
+  private async updateLocalUserSettings(settings: any) {
     const localSettings = {
-      id: crypto.randomUUID(),
+      id: settings.id || crypto.randomUUID(),
       userId: this.userId!,
-      theme: 'system' as const,
-      userName: remote.user_name,
-      weekStartsOn: remote.week_start_day || 0,
-      showMotivationalQuotes: true,
-      defaultCategory: remote.default_category || 'health',
-      createdAt: remote.created_at,
-      xp: remote.xp || 0,
-      level: remote.level || 1,
-      gems: remote.gems || 0,
-      streakShield: remote.streak_shield || 0,
-      avatarId: remote.avatar_id || 'avatar-1',
+      theme: settings.theme || 'system',
+      userName: settings.userName,
+      weekStartsOn: settings.weekStartsOn ?? 0,
+      showMotivationalQuotes: settings.showMotivationalQuotes ?? true,
+      defaultCategory: settings.defaultCategory || 'health',
+      createdAt: settings.createdAt || new Date().toISOString(),
+      updatedAt: settings.updatedAt || new Date().toISOString(),
+      xp: settings.xp ?? 0,
+      level: settings.level ?? 1,
+      gems: settings.gems ?? 0,
+      streakShield: settings.streakShield ?? 0,
+      avatarId: settings.avatarId || 'avatar-1',
+      stats: settings.stats || {
+        vitality: 1,
+        intelligence: 1,
+        discipline: 1,
+        charisma: 1,
+        wealth: 1,
+        creativity: 1,
+      },
+      unlockedThemes: settings.unlockedThemes || [],
+      dashboardLayout: settings.dashboardLayout || [
+        'hero',
+        'metrics',
+        'today-tasks',
+        'habit-overview',
+        'focus-goal',
+        'ai-quote',
+        'ai-coach',
+        'quick-actions'
+      ],
     };
 
     // Check if settings exist for this user
@@ -1884,7 +1992,7 @@ export class SyncEngine {
       this.log('warn', 'Failed to update gamification UI, but data is synced', error);
     }
 
-    // NEW: Update user store to refresh display name
+    // Update user store to refresh display name
     try {
       const { useUserStore } = await import('@/lib/stores/user-store');
       const userStore = useUserStore.getState();

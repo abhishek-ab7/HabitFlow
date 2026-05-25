@@ -19,7 +19,8 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  Workflow // Routine icon
+  Workflow, // Routine icon
+  Trophy
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
@@ -37,6 +38,7 @@ const navItems = [
   { href: '/habits', label: 'Habits', icon: CheckSquare },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -118,8 +120,8 @@ export function Header() {
                     id="nav-icon-grad-active" 
                     x1="0" 
                     y1="0" 
-                    x2="18.36" 
-                    y2="18.36" 
+                    x2="20" 
+                    y2="20" 
                     gradientUnits="userSpaceOnUse"
                   >
                     <stop offset="0%" stopColor="var(--primary)" />
@@ -189,7 +191,7 @@ export function Header() {
                         isActive && "opacity-100 scale-100"
                       )}
                     />
-                    <Icon className="h-[18.36px] w-[18.36px] shrink-0 relative z-10" />
+                    <Icon className="h-[20px] w-[20px] shrink-0 relative z-10" />
                   </span>
                   <span className="absolute left-10 opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-1 2xl:relative 2xl:left-0 2xl:opacity-100 2xl:pointer-events-auto 2xl:ml-2">
                     {item.label}

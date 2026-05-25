@@ -16,6 +16,31 @@ interface AICoachResponse {
     quote: string;
 }
 
+function useTypewriter(text: string, speed = 15, active = true) {
+    const [displayedText, setDisplayedText] = useState('');
+    
+    useEffect(() => {
+        if (!active || !text) {
+            setDisplayedText(text);
+            return;
+        }
+        
+        setDisplayedText('');
+        let i = 0;
+        const timer = setInterval(() => {
+            setDisplayedText((prev) => prev + text.charAt(i));
+            i++;
+            if (i >= text.length) {
+                clearInterval(timer);
+            }
+        }, speed);
+        
+        return () => clearInterval(timer);
+    }, [text, speed, active]);
+    
+    return displayedText;
+}
+
 export function AICoachWidget() {
     const { user } = useAuth();
     const [data, setData] = useState<AICoachResponse | null>(null);
@@ -141,8 +166,10 @@ export function AICoachWidget() {
 
 
 
+    const animatedFocus = useTypewriter(data?.focus || '', 15, !loading);
+
     return (
-        <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/20 dark:to-purple-950/20 overflow-hidden relative">
+        <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/30 via-white/40 to-purple-50/30 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md overflow-hidden relative shadow-lg">
             {/* Loading Overlay for User Data */}
             {isLoadingUser && (
                 <div className="absolute inset-0 bg-background/90 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -207,16 +234,16 @@ export function AICoachWidget() {
                         </h3>
 
                         {/* Focus */}
-                        <div className="flex gap-3 bg-background/50 backdrop-blur-sm p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/50">
+                        <div className="flex gap-3 bg-white/20 dark:bg-slate-950/30 backdrop-blur-md p-4 rounded-2xl border border-white/10 dark:border-white/5 shadow-inner">
                             <div className="mt-1 min-w-[24px]">
-                                <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                                <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400">
                                     <Lightbulb className="w-4 h-4" />
                                 </div>
                             </div>
                             <div>
-                                <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-0.5">Focus of the Moment</p>
+                                <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-1">Focus of the Moment</p>
                                 <p className="text-sm text-foreground/90 font-medium leading-relaxed">
-                                    {data.focus}
+                                    {animatedFocus}
                                 </p>
                             </div>
                         </div>

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { getSettings, updateSettings } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
+import type { UserStats, Category } from '../types';
 
 export const XP_PER_TASK = 10;
 export const XP_PER_HABIT = 15;
@@ -21,12 +22,9 @@ interface GamificationState {
     rulesModalOpen: boolean;
     activeRulesTab: 'xp' | 'gems' | 'levels';
 
-    // Motivation Features
-    stats: {
-        discipline: number;
-        focus: number;
-        resilience: number;
-    };
+    // Motivation & Gamification Features
+    stats: UserStats;
+    unlockedThemes: string[];
     motivationText: string;
 
     // Actions
@@ -36,7 +34,7 @@ interface GamificationState {
     closeRules: () => void;
     setActiveRulesTab: (tab: 'xp' | 'gems' | 'levels') => void;
     updateMotivation: (text: string) => Promise<void>;
-    addXp: (amount: number) => Promise<{ leveledUp: boolean; newLevel: number }>;
+    addXp: (amount: number, category?: Category) => Promise<{ leveledUp: boolean; newLevel: number }>;
     spendGems: (amount: number) => Promise<boolean>;
     buyShield: () => Promise<boolean>;
     getBufferProgress: () => number; // Returns 0-100% for the current level bar
@@ -52,12 +50,16 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
     rulesModalOpen: false,
     activeRulesTab: 'xp',
 
-    // Default Stats (Mock Data for now, could be calculated later)
+    // Default Stats (Will be overridden by DB)
     stats: {
-        discipline: 65,
-        focus: 42,
-        resilience: 80
+        vitality: 1,
+        intelligence: 1,
+        discipline: 1,
+        charisma: 1,
+        wealth: 1,
+        creativity: 1,
     },
+    unlockedThemes: [],
     motivationText: '',
 
     loadGamification: async () => {
@@ -74,6 +76,8 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                         level: settings.level ?? 1,
                         gems: settings.gems ?? 0,
                         streakShield: settings.streakShield ?? 0,
+                        stats: settings.stats || get().stats,
+                        unlockedThemes: settings.unlockedThemes || [],
                         // If DB doesn't have these fields yet, use defaults or mock
                         motivationText: (settings as any).motivation_text ?? '',
                     });
@@ -110,16 +114,30 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         }
     },
 
-    addXp: async (amount: number) => {
-        const { xp, level, gems, streakShield } = get();
+    addXp: async (amount: number, category?: Category) => {
+        const { xp, level, gems, streakShield, stats, unlockedThemes } = get();
         let newXp = xp + amount;
         let newLevel = level;
         let newGems = gems;
         let leveledUp = false;
 
+        // Calculate stat increments (1 point per 10 XP)
+        const statPoints = Math.max(1, Math.floor(amount / 10));
+        const newStats = { ...stats };
+        newStats.discipline += statPoints; // Always give discipline
+
+        if (category) {
+            switch (category) {
+                case 'health': newStats.vitality += statPoints; break;
+                case 'learning':
+                case 'work': newStats.intelligence += statPoints; break;
+                case 'personal': newStats.creativity += statPoints; break;
+                case 'finance': newStats.wealth += statPoints; break;
+                case 'relationships': newStats.charisma += statPoints; break;
+            }
+        }
+
         // Formula: XP required for next level = Level * 100
-        // e.g. Level 1 -> 100 XP to reach Level 2
-        // Level 2 -> 200 XP to reach Level 3
         const xpRequired = level * 100;
 
         if (newXp >= xpRequired) {
@@ -129,7 +147,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
             leveledUp = true;
         }
 
-        set({ xp: newXp, level: newLevel, gems: newGems, showLevelUp: leveledUp });
+        set({ xp: newXp, level: newLevel, gems: newGems, showLevelUp: leveledUp, stats: newStats });
 
         // Persist to DB
         const supabase = getSupabaseClient();
@@ -140,7 +158,9 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 xp: newXp,
                 level: newLevel,
                 gems: newGems,
-                streakShield // Ensure this is preserved
+                streakShield,
+                stats: newStats,
+                unlockedThemes
             });
 
             // Sync to Supabase via sync engine with COMPLETE settings
@@ -153,7 +173,9 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 xp: newXp,
                 level: newLevel,
                 gems: newGems,
-                streakShield
+                streakShield,
+                stats: newStats,
+                unlockedThemes
             });
         }
 

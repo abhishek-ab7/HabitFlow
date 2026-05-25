@@ -66,14 +66,14 @@ export function calculateCurrentStreak(
 ): number {
   if (completions.length === 0) return 0;
 
-  // Sort completions by date descending
+  // Sort completions by date descending, including frozen
   const sorted = [...completions]
-    .filter(c => c.completed)
+    .filter(c => c.completed || c.status === 'frozen')
     .sort((a, b) => b.date.localeCompare(a.date));
 
   if (sorted.length === 0) return 0;
 
-  // Check if today or yesterday is completed (streak is active)
+  // Check if today or yesterday is completed or frozen (streak is active)
   const todayStr = formatDate(today);
   const yesterdayStr = formatDate(subDays(today, 1));
   
@@ -89,10 +89,12 @@ export function calculateCurrentStreak(
 
   for (let i = 0; i < 365; i++) {
     const dateStr = formatDate(currentDate);
-    const hasCompletion = sorted.some(c => c.date === dateStr);
+    const comp = sorted.find(c => c.date === dateStr);
     
-    if (hasCompletion) {
-      streak++;
+    if (comp) {
+      if (comp.status !== 'frozen' && comp.completed) {
+        streak++;
+      }
       currentDate = subDays(currentDate, 1);
     } else {
       break;
@@ -106,13 +108,14 @@ export function calculateBestStreak(completions: HabitCompletion[]): number {
   if (completions.length === 0) return 0;
 
   const sorted = [...completions]
-    .filter(c => c.completed)
+    .filter(c => c.completed || c.status === 'frozen')
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (sorted.length === 0) return 0;
 
-  let bestStreak = 1;
-  let currentStreak = 1;
+  let bestStreak = 0;
+  let currentStreak = sorted[0].status === 'frozen' ? 0 : 1;
+  bestStreak = Math.max(bestStreak, currentStreak);
 
   for (let i = 1; i < sorted.length; i++) {
     const prevDate = parseISO(sorted[i - 1].date);
@@ -120,10 +123,12 @@ export function calculateBestStreak(completions: HabitCompletion[]): number {
     const diff = differenceInDays(currDate, prevDate);
 
     if (diff === 1) {
-      currentStreak++;
+      if (sorted[i].status !== 'frozen' && sorted[i].completed) {
+        currentStreak++;
+      }
       bestStreak = Math.max(bestStreak, currentStreak);
     } else if (diff > 1) {
-      currentStreak = 1;
+      currentStreak = sorted[i].status === 'frozen' ? 0 : 1;
     }
     // If diff === 0, same day, ignore
   }

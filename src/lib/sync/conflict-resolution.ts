@@ -182,12 +182,27 @@ export function mergeGamificationFields<T extends {
   level?: number;
   gems?: number;
   streakShield?: number;
+  stats?: any;
+  unlockedThemes?: string[];
 }>(local: T, remote: T): T {
+  // Merge stats by taking max of each
+  const mergedStats = { ...local.stats, ...remote.stats };
+  if (local.stats && remote.stats) {
+    for (const key of Object.keys(mergedStats)) {
+      mergedStats[key] = Math.max(local.stats[key] || 0, remote.stats[key] || 0);
+    }
+  }
+
+  // Merge unlocked themes by union
+  const mergedThemes = Array.from(new Set([...(local.unlockedThemes || []), ...(remote.unlockedThemes || [])]));
+
   return {
     ...local,
     xp: Math.max(local.xp || 0, remote.xp || 0),
     level: Math.max(local.level || 0, remote.level || 0),
     gems: Math.max(local.gems || 0, remote.gems || 0),
     streakShield: Math.max(local.streakShield || 0, remote.streakShield || 0),
+    stats: mergedStats,
+    unlockedThemes: mergedThemes,
   };
 }

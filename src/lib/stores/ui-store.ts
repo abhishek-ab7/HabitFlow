@@ -17,6 +17,9 @@ interface UIState {
   // Toast/notifications
   toasts: Toast[];
   
+  // Dashboard Layout
+  dashboardLayout: string[];
+  
   // Actions
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   openModal: (type: ModalState['type'], data?: unknown) => void;
@@ -26,6 +29,8 @@ interface UIState {
   setGlobalLoading: (loading: boolean) => void;
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
+  updateDashboardLayout: (layout: string[]) => void;
+  loadDashboardLayout: (userId: string) => Promise<void>;
 }
 
 interface Toast {
@@ -42,6 +47,16 @@ export const useUIStore = create<UIState>((set, get) => ({
   sidebarOpen: false,
   globalLoading: false,
   toasts: [],
+  dashboardLayout: [
+    'hero',
+    'metrics',
+    'today-tasks',
+    'habit-overview',
+    'focus-goal',
+    'ai-quote',
+    'ai-coach',
+    'quick-actions'
+  ],
 
   setTheme: (theme) => {
     set({ theme });
@@ -88,4 +103,23 @@ export const useUIStore = create<UIState>((set, get) => ({
       toasts: state.toasts.filter(t => t.id !== id),
     }));
   },
+
+  updateDashboardLayout: (layout) => {
+    set({ dashboardLayout: layout });
+    // Note: To persist this to DB/SyncEngine, it will be done via a dedicated hook or effect in the component
+    // or by importing getSettings/updateSettings here, but to avoid circular deps we'll do it where it's used.
+  },
+
+  loadDashboardLayout: async (userId) => {
+    try {
+      // Dynamic import to avoid circular dependency issues
+      const { getSettings } = await import('../db');
+      const settings = await getSettings(userId);
+      if (settings?.dashboardLayout && settings.dashboardLayout.length > 0) {
+        set({ dashboardLayout: settings.dashboardLayout });
+      }
+    } catch (e) {
+      console.error("Failed to load dashboard layout", e);
+    }
+  }
 }));

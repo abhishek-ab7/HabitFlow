@@ -52,12 +52,15 @@ export interface Habit {
   routineId?: string | null; // For linking to routines
 }
 
+export type CompletionStatus = 'completed' | 'missed' | 'frozen';
+
 export interface HabitCompletion {
   id: string;
   userId: string; // Added for data isolation
   habitId: string;
   date: string; // YYYY-MM-DD format
-  completed: boolean;
+  completed: boolean; // Keep for backward compatibility
+  status?: CompletionStatus; // Added for advanced states
   note?: string;
   skipped?: boolean; // Intentionally skipped (e.g., rest day)
   createdAt?: string; // ISO timestamp
@@ -186,8 +189,17 @@ export interface Task {
 }
 
 // ============================================
-// USER SETTINGS
+// USER SETTINGS & GAMIFICATION
 // ============================================
+
+export interface UserStats {
+  vitality: number;      // from 'health'
+  intelligence: number;  // from 'learning' and 'work'
+  discipline: number;    // from overall consistency
+  charisma: number;      // from 'relationships'
+  wealth: number;        // from 'finance'
+  creativity: number;    // from 'personal' and 'fun'
+}
 
 export interface UserSettings {
   id: string;
@@ -205,6 +217,11 @@ export interface UserSettings {
   gems: number;
   streakShield: number;
   avatarId?: string;
+  soundEnabled?: boolean;
+  hapticsEnabled?: boolean;
+  stats?: UserStats;
+  unlockedThemes?: string[];
+  dashboardLayout?: string[];
 }
 
 // ============================================

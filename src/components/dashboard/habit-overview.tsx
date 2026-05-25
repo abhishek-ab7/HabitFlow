@@ -64,7 +64,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
   }
 
   return (
-    <FadeIn delay={0.2}>
+    <FadeIn delay={0.2} className="h-full flex flex-col">
       <Card className="h-full flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>

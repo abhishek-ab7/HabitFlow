@@ -17,6 +17,7 @@ interface RoutineState {
     deleteRoutine: (id: string) => Promise<void>;
     reorderRoutines: (orderedIds: string[]) => Promise<void>;
     toggleActive: (id: string) => Promise<void>;
+    optimizeRoutineSequences: () => Promise<void>;
     
     // Junction table methods
     getRoutineHabits: (routineId: string) => Promise<Habit[]>;
@@ -131,6 +132,59 @@ export const useRoutineStore = create<RoutineState>((set, get) => ({
         const routine = get().routines.find(r => r.id === id);
         if (routine) {
             await get().updateRoutine(id, { isActive: !routine.isActive });
+        }
+    },
+
+    optimizeRoutineSequences: async () => {
+        set({ isLoading: true, error: null });
+        try {
+            const { routines } = get();
+            const now = new Date().toISOString();
+            
+            for (const routine of routines) {
+                // 1. Get all habit-routine links for this routine
+                const links = await db.habitRoutines
+                    .where('routineId')
+                    .equals(routine.id)
+                    .toArray();
+                
+                if (links.length <= 1) continue;
+
+                // 2. Fetch habits in this routine
+                const habitIds = links.map(l => l.habitId);
+                const habits = await db.habits.where('id').anyOf(habitIds).toArray();
+                
+                // 3. For each habit, calculate its completion rate based on completions
+                const habitsWithScores = await Promise.all(habits.map(async (habit) => {
+                    const completionsCount = await db.completions
+                        .where('habitId')
+                        .equals(habit.id)
+                        .filter(c => c.completed)
+                        .count();
+                    return { id: habit.id, score: completionsCount };
+                }));
+
+                // 4. Sort in descending order of performance (highest consistency first = trigger habit anchor)
+                habitsWithScores.sort((a, b) => b.score - a.score);
+
+                // 5. Update orderIndex of links in DB
+                for (let i = 0; i < habitsWithScores.length; i++) {
+                    const habitId = habitsWithScores[i].id;
+                    const link = links.find(l => l.habitId === habitId);
+                    if (link) {
+                        await db.habitRoutines.update(link.id, {
+                            orderIndex: i,
+                            updatedAt: now
+                        });
+                    }
+                }
+            }
+            
+            // Reload routines to refresh state/UI
+            await get().loadRoutines();
+        } catch (error) {
+            set({ error: (error as Error).message, isLoading: false });
+            throw error;
         }
     },
 

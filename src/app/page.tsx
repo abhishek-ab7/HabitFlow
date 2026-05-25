@@ -17,11 +17,16 @@ import {
   AICoachWidget,
 
   PersonalizedQuote,
+  BentoGrid,
 } from '@/components/dashboard';
 import { Skeleton } from '@/components/ui/skeleton';
 
+import { useUIStore } from '@/lib/stores/ui-store';
+import { getSupabaseClient } from '@/lib/supabase/client';
+
 export default function DashboardPage() {
   const router = useRouter();
+  const { loadDashboardLayout } = useUIStore();
 
   // Habit store
   const {
@@ -60,6 +65,13 @@ export default function DashboardPage() {
       const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
       const end = format(endOfMonth(today), 'yyyy-MM-dd');
 
+      // Load user layout settings
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await loadDashboardLayout(session.user.id);
+      }
+
       // ⚡ OPTIMIZATION: Load all data in parallel instead of sequential
       await Promise.all([
         loadHabits(),
@@ -70,7 +82,7 @@ export default function DashboardPage() {
     };
 
     init();
-  }, [loadHabits, loadGoals, loadAllMilestones, loadCompletions]);
+  }, [loadHabits, loadGoals, loadAllMilestones, loadCompletions, loadDashboardLayout]);
 
   // Computed values - OPTIMIZED: Memoized to prevent recalculation
   const todayProgress = useMemo(() => getTodayProgress(), [habits, completions]);
@@ -170,14 +182,9 @@ export default function DashboardPage() {
     );
   }
 
-  return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
-      <HeroSection />
-
-
-
-
-
+  // Define widgets for Bento Grid
+  const widgets = {
+    'metrics': (
       <MetricCards
         todayCompleted={todayProgress.completed}
         todayTotal={todayProgress.total}
@@ -188,38 +195,33 @@ export default function DashboardPage() {
         activeGoals={activeGoalsCount}
         upcomingDeadlines={upcomingDeadlines.length}
       />
-
-      <div className="mb-8">
-        <TodayTasksWidget />
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <HabitOverview habits={habits} completions={completions} onToggle={toggle} />
-        <FocusGoal
-          goals={focusGoals}
-          getMilestones={getGoalMilestones}
-          getStats={getGoalStats}
-          onToggleMilestone={handleToggleMilestone}
-        />
-      </div>
-
-      {isAIEnabled() && (
-        <div className="mt-8 mb-6">
-          <PersonalizedQuote />
-        </div>
-      )}
-
-      {isAIEnabled() && (
-        <div className="mb-8">
-          <AICoachWidget />
-        </div>
-      )}
-
+    ),
+    'today-tasks': <TodayTasksWidget />,
+    'habit-overview': <HabitOverview habits={habits} completions={completions} onToggle={toggle} />,
+    'focus-goal': (
+      <FocusGoal
+        goals={focusGoals}
+        getMilestones={getGoalMilestones}
+        getStats={getGoalStats}
+        onToggleMilestone={handleToggleMilestone}
+      />
+    ),
+    ...(isAIEnabled() ? { 'ai-quote': <PersonalizedQuote /> } : {}),
+    ...(isAIEnabled() ? { 'ai-coach': <AICoachWidget /> } : {}),
+    'quick-actions': (
       <QuickActions
         onMarkTodayHabits={handleMarkTodayHabits}
         onAddHabit={handleAddHabit}
         onAddGoal={handleAddGoal}
       />
+    )
+  };
+
+  return (
+    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
+      <HeroSection />
+
+      <BentoGrid widgets={widgets} />
     </div>
   );
 }

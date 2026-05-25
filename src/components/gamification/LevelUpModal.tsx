@@ -57,10 +57,15 @@ export function LevelUpModal() {
                             initial={{ y: 20, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             transition={{ delay: 0.5 }}
-                            className="flex items-center gap-2 px-6 py-3 bg-white/10 rounded-2xl border border-white/20 backdrop-blur-md"
+                            className="flex flex-col items-center gap-3 w-full"
                         >
-                            <Diamond className="w-6 h-6 text-amber-400 fill-amber-400" />
-                            <span className="font-bold text-xl text-amber-100">+{GEMS_PER_LEVEL} Gems</span>
+                            <div className="flex items-center gap-2 px-6 py-3 bg-white/10 rounded-2xl border border-white/20 backdrop-blur-md w-full justify-center">
+                                <Diamond className="w-6 h-6 text-amber-400 fill-amber-400" />
+                                <span className="font-bold text-xl text-amber-100">+{GEMS_PER_LEVEL} Gems</span>
+                            </div>
+                            <div className="flex items-center gap-2 px-6 py-3 bg-white/10 rounded-2xl border border-white/20 backdrop-blur-md w-full justify-center">
+                                <span className="font-bold text-lg text-emerald-300">Attributes Increased!</span>
+                            </div>
                         </motion.div>
 
                         <Button

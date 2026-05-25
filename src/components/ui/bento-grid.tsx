@@ -28,6 +28,7 @@ interface BentoGridItemProps {
     children?: React.ReactNode;
     onClick?: () => void;
     span?: 1 | 2 | 3;
+    disableHover?: boolean;
 }
 
 export const BentoGridItem = ({
@@ -38,20 +39,21 @@ export const BentoGridItem = ({
     icon,
     children,
     onClick,
-    span = 1
+    span = 1,
+    disableHover = false
 }: BentoGridItemProps) => {
     return (
         <motion.div
-            whileHover={{ y: -5, scale: 1.01 }}
+            whileHover={disableHover ? undefined : { y: -5, scale: 1.01 }}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClick}
             className={cn(
-                'rounded-3xl group/bento hover:shadow-2xl transition duration-200 shadow-input dark:shadow-none p-6 row-span-1',
+                'rounded-3xl group/bento transition duration-200 shadow-input dark:shadow-none p-6 row-span-1',
                 // Premium Glass Styles
                 'bg-white/40 dark:bg-black/20 backdrop-blur-xl border border-white/20 dark:border-white/10',
-                'hover:bg-white/50 dark:hover:bg-black/30',
+                !disableHover && 'hover:shadow-2xl hover:bg-white/50 dark:hover:bg-black/30',
                 onClick && 'cursor-pointer',
                 span === 2 && 'md:col-span-2',
                 span === 3 && 'md:col-span-3',
@@ -59,7 +61,7 @@ export const BentoGridItem = ({
             )}
         >
             {header}
-            <div className="group-hover/bento:translate-x-2 transition duration-200 h-full flex flex-col">
+            <div className={cn("transition duration-200 h-full flex flex-col", !disableHover && "group-hover/bento:translate-x-2")}>
                 {(icon || title) && (
                     <div className="flex items-center gap-3 mb-2">
                         {icon}

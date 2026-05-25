@@ -7,3 +7,5 @@ export { TodayTasksWidget } from './TodayTasksWidget';
 export { AICoachWidget } from './AICoachWidget';
 
 export { PersonalizedQuote } from './PersonalizedQuote';
+export * from './SortableWidget';
+export * from './BentoGrid';
