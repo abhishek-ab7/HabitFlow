@@ -21,7 +21,7 @@ export function UserStatusHUD() {
     const progress = getBufferProgress();
 
     return (
-        <div className="flex items-center gap-3 mr-4">
+        <div className="flex items-center gap-3">
             {/* Level Badge */}
             <TooltipProvider>
                 <Tooltip>
@@ -47,7 +47,7 @@ export function UserStatusHUD() {
 
             {/* XP Bar */}
             <div
-                className="hidden lg:block w-32 h-2.5 bg-secondary rounded-full overflow-hidden relative border border-border/50 cursor-pointer hover:opacity-80 transition-opacity"
+                className="block w-20 md:w-32 h-2.5 bg-secondary rounded-full overflow-hidden relative border border-border/50 cursor-pointer hover:opacity-80 transition-opacity"
                 onClick={() => openRules('xp')}
             >
                 <motion.div

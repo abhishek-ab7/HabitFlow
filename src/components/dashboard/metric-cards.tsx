@@ -61,6 +61,9 @@ export function MetricCards({
                   <span className="text-3xl font-bold tabular-nums">{todayCompleted}</span>
                   <span className="text-muted-foreground text-lg">/ {todayTotal}</span>
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {todayTotal - todayCompleted === 0 && todayTotal > 0 ? 'All habits completed!' : `${todayTotal - todayCompleted} remaining today`}
+                </p>
               </div>
               <ProgressRing
                 progress={todayPercentage}
@@ -90,6 +93,9 @@ export function MetricCards({
                   </span>
                   {getTrendIcon(monthlyTrend)}
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Target: 80% completion
+                </p>
               </div>
               <div className={cn(
                 "flex items-center justify-center w-12 h-12 rounded-xl",

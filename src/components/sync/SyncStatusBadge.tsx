@@ -54,7 +54,7 @@ export function SyncStatusBadge() {
             title={syncError || getStatusText()}
         >
             {getStatusIcon()}
-            <span className="hidden sm:inline">{getStatusText()}</span>
+            <span className="hidden xl:inline">{getStatusText()}</span>
         </div>
     );
 }
