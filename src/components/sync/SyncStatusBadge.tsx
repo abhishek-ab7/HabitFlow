@@ -27,14 +27,22 @@ export function SyncStatusBadge() {
         if (pendingChanges > 0) return `${pendingChanges} pending`;
         if (lastSyncTime) {
             const distance = formatDistanceToNow(lastSyncTime);
-            // Shorten "less than a minute" to "just now"
             if (distance.includes('less than a minute')) {
-                return 'Just synced';
+                return 'Just now';
             }
-            // Remove "ago" suffix and shorten format
-            return `Synced ${distance.replace(' ago', '')}`;
+            return distance;
         }
         return 'Not synced';
+    };
+
+    const getTooltipText = () => {
+        if (syncError) return `Sync error: ${syncError}`;
+        if (isSyncing) return 'Syncing your data with the cloud...';
+        if (pendingChanges > 0) return `${pendingChanges} local changes pending cloud sync`;
+        if (lastSyncTime) {
+            return `Successfully synced. Last sync: ${lastSyncTime.toLocaleDateString()} at ${lastSyncTime.toLocaleTimeString()}`;
+        }
+        return 'Data is not synced to cloud yet';
     };
 
     const getStatusColor = () => {
@@ -51,10 +59,10 @@ export function SyncStatusBadge() {
         ${getStatusColor()}
         transition-colors
       `}
-            title={syncError || getStatusText()}
+            title={getTooltipText()}
         >
             {getStatusIcon()}
-            <span className="hidden xl:inline">{getStatusText()}</span>
+            <span className="inline-block">{getStatusText()}</span>
         </div>
     );
 }
