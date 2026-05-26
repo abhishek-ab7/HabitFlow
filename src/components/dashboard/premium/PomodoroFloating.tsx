@@ -117,7 +117,7 @@ export function PomodoroFloating() {
   const activeColor = modeColors[mode];
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 select-none">
+    <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-50 select-none">
       <AnimatePresence>
         {!isExpanded ? (
           // Minimized State: circular pulsing progress indicator

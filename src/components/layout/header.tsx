@@ -213,6 +213,9 @@ export function Header() {
           })}
         </nav>
 
+        {/* Spacer to push actions to the right on mobile */}
+        <div className="flex-grow md:hidden" />
+
         {/* Right side actions */}
         <div className="flex-grow-0 flex-shrink-0 flex items-center justify-end gap-1.5 lg:gap-2">
           {isAuthenticated && (
@@ -252,7 +255,7 @@ export function Header() {
             variant="ghost"
             size="icon"
             onClick={() => window.dispatchEvent(new CustomEvent('toggle-shortcuts'))}
-            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+            className="h-9 w-9 text-muted-foreground hover:text-foreground hidden md:inline-flex"
             title="Keyboard Shortcuts (?)"
           >
             <Keyboard className="h-5 w-5" />

@@ -159,6 +159,14 @@ export default function DashboardContent() {
     }
   }, [showOnboarding, isEmpty]);
 
+  // If we have habits or goals, we are an existing user. Disable onboarding if it's open.
+  useEffect(() => {
+    if ((habits.length > 0 || goals.length > 0) && showOnboarding) {
+      setShowOnboarding(false);
+      localStorage.setItem('habitflow_onboarded', 'true');
+    }
+  }, [habits.length, goals.length, showOnboarding]);
+
   // Computed values - OPTIMIZED: Memoized to prevent recalculation
   const todayProgress = useMemo(() => getTodayProgress(), [habits, completions, getTodayProgress]);
   const monthlyProgress = useMemo(() => getMonthlyProgress(), [habits, completions, getMonthlyProgress]);

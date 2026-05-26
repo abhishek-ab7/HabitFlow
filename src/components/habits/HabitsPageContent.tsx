@@ -182,7 +182,7 @@ export default function HabitsPageContent() {
               Track your daily habits and build consistency
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {isAIEnabled() && (
               <Button
                 onClick={() => setShowSmartGenerator(true)}
@@ -273,8 +273,8 @@ export default function HabitsPageContent() {
 
         <div className="w-full">
           {/* Habit Grid - Full width */}
-          <Card>
-            <CardContent className="p-6">
+          <Card className="border-none shadow-none md:border md:shadow-sm">
+            <CardContent className="p-2 sm:p-4 md:p-6">
               <HabitGrid
                 habits={filteredHabits}
                 completions={completions}

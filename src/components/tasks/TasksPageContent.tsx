@@ -67,9 +67,9 @@ export default function TasksPageContent() {
     );
 
     return (
-        <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto space-y-8 h-[calc(100vh-4rem)] flex flex-col">
+        <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto space-y-8 h-[calc(100vh-8rem)] md:h-[calc(100vh-4rem)] flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-emerald-600 bg-clip-text text-transparent">
                         My Tasks

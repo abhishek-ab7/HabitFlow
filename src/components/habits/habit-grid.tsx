@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useCallback, useEffect, memo } from 'react';
+import { useMemo, useState, useCallback, useEffect, memo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
 import { Check } from 'lucide-react';
@@ -52,6 +52,7 @@ export const HabitGrid = memo(function HabitGrid({
   const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
   const [isMobile, setIsMobile] = useState(false);
   const { getRoutinesForMultipleHabits, reorder, freezeHabit } = useHabitStore();
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Handle window resizing to detect mobile
   useEffect(() => {
@@ -118,19 +119,30 @@ export const HabitGrid = memo(function HabitGrid({
     });
   }, [selectedMonth]);
 
-  // Compute displayed days (3 days on mobile, full month on desktop)
+  // Compute displayed days (always full month for scrollable layout)
   const displayedDays = useMemo(() => {
-    if (!isMobile) return days;
+    return days;
+  }, [days]);
 
-    const todayIndex = days.findIndex(d => d.isToday);
-    if (todayIndex !== -1) {
-      // Show Day Before Yesterday, Yesterday, and Today
-      const start = Math.max(0, todayIndex - 2);
-      return days.slice(start, todayIndex + 1);
+  // Auto-scroll to center today's date on mobile mount (offsetting for the sticky column width)
+  useEffect(() => {
+    if (isMobile && containerRef.current) {
+      const todayEl = containerRef.current.querySelector('.today-cell-header') as HTMLElement;
+      if (todayEl) {
+        const container = containerRef.current;
+        const viewportWidth = container.clientWidth;
+        const stickyWidth = 176; // w-44 width
+        const visibleCellsWidth = viewportWidth - stickyWidth;
+        
+        const todayRect = todayEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const todayContentCenter = todayRect.left - containerRect.left + container.scrollLeft + todayRect.width / 2;
+        
+        const targetScrollLeft = todayContentCenter - (stickyWidth + visibleCellsWidth / 2);
+        container.scrollLeft = Math.max(0, targetScrollLeft);
+      }
     }
-    // Return last 3 days of the selected month if today is not in it
-    return days.slice(-3);
-  }, [days, isMobile]);
+  }, [isMobile, displayedDays]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -163,11 +175,11 @@ export const HabitGrid = memo(function HabitGrid({
   }
 
   return (
-    <div className="overflow-x-auto pb-4 scrollbar-hide">
-      <div className="min-w-full md:min-w-[800px]">
+    <div ref={containerRef} className="overflow-x-auto pb-4 scrollbar-hide">
+      <div className="w-fit min-w-full">
         {/* Header row with days */}
         <div className="flex items-center sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-2 border-b">
-          <div className="w-32 md:w-64 flex-shrink-0" /> {/* Responsive Spacer */}
+          <div className="w-44 md:w-64 shrink-0 sticky left-0 bg-background z-20 border-r border-border/40 self-stretch" /> {/* Sticky Left Spacer */}
           <div className="flex gap-0.5">
             {displayedDays.map(({ day, dayLabel, isWeekend, isToday: isTodayDate }) => (
               <div
@@ -175,7 +187,7 @@ export const HabitGrid = memo(function HabitGrid({
                 className={cn(
                   "w-9 h-14 flex flex-col items-center justify-center text-xs",
                   isWeekend && "text-muted-foreground",
-                  isTodayDate && "font-bold"
+                  isTodayDate && "font-bold today-cell-header"
                 )}
               >
                 <span className={cn(

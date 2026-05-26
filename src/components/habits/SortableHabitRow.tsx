@@ -221,7 +221,7 @@ export function SortableHabitRow({
     return (
         <div ref={setNodeRef} style={style} className="flex items-center py-2 group bg-background relative">
             {/* Habit info */}
-            <div className="w-32 md:w-64 flex-shrink-0 flex items-center gap-2 pr-3">
+            <div className="w-44 md:w-64 shrink-0 flex items-center gap-2 pr-3 sticky left-0 bg-background z-10 border-r border-border/40">
                 {/* Drag Handle */}
                 <div
                     {...attributes}
@@ -232,12 +232,12 @@ export function SortableHabitRow({
                 </div>
 
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                        {habit.icon && <span className="text-lg">{habit.icon}</span>}
-                        <div className="flex flex-col min-w-0">
-                            <span className="font-medium text-sm break-words whitespace-normal leading-tight">{habit.name}</span>
+                    <div className="flex items-start gap-2 min-w-0">
+                        {habit.icon && <span className="text-lg shrink-0 mt-0.5">{habit.icon}</span>}
+                        <div className="flex-1 min-w-0">
+                            <span className="font-medium text-sm break-normal whitespace-normal leading-tight block">{habit.name}</span>
                             {habit.isQuantitative && (
-                                <span className="text-[10px] text-muted-foreground font-mono">
+                                <span className="text-[10px] text-muted-foreground font-mono block">
                                     Target: {habit.targetValue} {habit.unit}
                                 </span>
                             )}
@@ -319,7 +319,7 @@ export function SortableHabitRow({
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="h-7 w-7 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                         >
                             <MoreHorizontal className="h-4 w-4" />
                         </Button>
