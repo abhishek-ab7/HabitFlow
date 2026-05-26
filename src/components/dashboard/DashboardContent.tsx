@@ -102,15 +102,6 @@ export default function DashboardContent() {
   // Check if we need to show onboarding
   const isEmpty = habits.length === 0 && goals.length === 0 && !habitsLoading && !goalsLoading;
 
-  useEffect(() => {
-    if (isEmpty) {
-      const onboarded = localStorage.getItem('habitflow_onboarded');
-      if (onboarded !== 'true') {
-        setShowOnboarding(true);
-      }
-    }
-  }, [isEmpty]);
-
   // Initialize data on mount - OPTIMIZED: Parallel loading
   useEffect(() => {
     const init = async () => {
@@ -122,11 +113,27 @@ export default function DashboardContent() {
       // Load user layout settings
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
+      
       if (session?.user) {
         await Promise.all([
           loadDashboardLayout(session.user.id),
           loadUser(),
         ]);
+
+        // Check if welcome wizard should be shown (only on brand new signup)
+        const onboarded = localStorage.getItem('habitflow_onboarded');
+        if (onboarded !== 'true') {
+          const justSignedUp = localStorage.getItem('habitflow_just_signed_up') === 'true';
+          const createdAt = session.user.created_at;
+          const lastSignInAt = session.user.last_sign_in_at;
+          
+          const isNewUser = createdAt && lastSignInAt && 
+            (new Date(lastSignInAt).getTime() - new Date(createdAt).getTime() < 120000); // 2 minutes
+
+          if (justSignedUp || isNewUser) {
+            setShowOnboarding(true);
+          }
+        }
       }
 
       // ⚡ OPTIMIZATION: Load all data in parallel instead of sequential

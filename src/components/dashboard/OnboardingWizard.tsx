@@ -107,6 +107,7 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
       }
 
       localStorage.setItem('habitflow_onboarded', 'true');
+      localStorage.removeItem('habitflow_just_signed_up');
       onComplete();
     } catch (error) {
       console.error('Error during onboarding setup:', error);

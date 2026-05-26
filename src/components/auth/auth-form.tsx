@@ -49,6 +49,7 @@ export function AuthForm() {
         if (error) {
           toast.error(error.message);
         } else {
+          localStorage.setItem('habitflow_just_signed_up', 'true');
           toast.success(fullName.trim() ? `Welcome, ${fullName.trim()}! Please check your email to confirm.` : 'Account created! Please check your email to confirm.');
         }
       } else {
