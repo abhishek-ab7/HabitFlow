@@ -1852,6 +1852,7 @@ export class SyncEngine {
         creativity: 1,
       },
       unlockedThemes: remoteSettings.unlocked_themes || [],
+      motivation_text: remoteSettings.motivation_text || '',
       dashboardLayout: normalizeDashboardLayout(remoteSettings.dashboard_layout),
       createdAt: remoteSettings.created_at || new Date().toISOString(),
       updatedAt: remoteSettings.updated_at || undefined,
@@ -1927,6 +1928,7 @@ export class SyncEngine {
         streakShield: mergedGamification.streakShield,
         stats: mergedGamification.stats,
         unlockedThemes: mergedGamification.unlockedThemes,
+        motivation_text: (winner as any).motivation_text || '',
         dashboardLayout: normalizeDashboardLayout(winner.dashboardLayout || localSettings.dashboardLayout),
       };
 
@@ -1942,6 +1944,13 @@ export class SyncEngine {
   private async pushUserSettingsToRemote(settings: any) {
     if (!this.userId) return;
 
+    // Fetch existing local motivation text if not provided in the parameters to prevent overwrite
+    let motivation_text = settings.motivation_text;
+    if (motivation_text === undefined) {
+      const localSet = await db.userSettings.where('userId').equals(this.userId).first();
+      motivation_text = localSet?.motivation_text || null;
+    }
+
     const { error } = await this.supabase.from('user_settings').upsert({
       user_id: this.userId,
       user_name: settings.userName || null,
@@ -1954,6 +1963,7 @@ export class SyncEngine {
       streak_shield: settings.streakShield || 0,
       stats: settings.stats || null,
       unlocked_themes: settings.unlockedThemes || [],
+      motivation_text: motivation_text || null,
       dashboard_layout: normalizeDashboardLayout(settings.dashboardLayout),
       updated_at: new Date().toISOString(),
     } as any, {
@@ -1992,6 +2002,7 @@ export class SyncEngine {
         creativity: 1,
       },
       unlockedThemes: settings.unlockedThemes || [],
+      motivation_text: settings.motivation_text || '',
       dashboardLayout: normalizeDashboardLayout(settings.dashboardLayout),
     };
 
@@ -2056,6 +2067,7 @@ export class SyncEngine {
           level: settings.level,
           gems: settings.gems,
           streak_shield: settings.streakShield,
+          motivation_text: settings.motivation_text,
           updated_at: new Date().toISOString(),
         },
       });

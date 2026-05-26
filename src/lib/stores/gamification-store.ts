@@ -3,6 +3,8 @@ import { getSettings, updateSettings } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
 import type { UserStats, Category } from '../types';
+import { useHabitStore } from './habit-store';
+import { calculateCurrentStreak, calculateBestStreak } from '../calculations';
 
 export const XP_PER_TASK = 10;
 export const XP_PER_HABIT = 15;
@@ -73,12 +75,47 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
             if (session?.user?.id) {
                 const settings = await getSettings(session.user.id);
                 if (settings) {
+                    // Fetch habits and completions to calculate real stats
+                    const { habits, completions, getTodayProgress } = useHabitStore.getState();
+                    let maxCurrentStreak = 0;
+                    let maxBestStreak = 0;
+                    let todayCompletionRate = 0;
+
+                    if (habits && habits.length > 0) {
+                        const currentStreaks = habits.map(h => {
+                            const habitCompletions = completions.filter(c => c.habitId === h.id);
+                            return calculateCurrentStreak(habitCompletions);
+                        });
+                        maxCurrentStreak = Math.max(...currentStreaks, 0);
+
+                        const bestStreaks = habits.map(h => {
+                            const habitCompletions = completions.filter(c => c.habitId === h.id);
+                            return calculateBestStreak(habitCompletions);
+                        });
+                        maxBestStreak = Math.max(...bestStreaks, 0);
+
+                        const todayProgress = getTodayProgress();
+                        todayCompletionRate = todayProgress.total > 0 ? (todayProgress.completed / todayProgress.total) : 0;
+                    }
+
+                    const disciplineVal = Math.round(Math.min(100, (maxCurrentStreak / 30) * 100));
+                    const focusVal = Math.round(Math.min(100, todayCompletionRate * 100));
+                    const resilienceVal = Math.round(Math.min(100, (maxBestStreak / 60) * 100));
+
+                    const dbStats = settings.stats || get().stats;
+                    const calculatedStats: UserStats = {
+                        ...dbStats,
+                        discipline: disciplineVal || dbStats.discipline || 1,
+                        focus: focusVal,
+                        resilience: resilienceVal,
+                    };
+
                     set({
                         xp: settings.xp ?? 0,
                         level: settings.level ?? 1,
                         gems: settings.gems ?? 0,
                         streakShield: settings.streakShield ?? 0,
-                        stats: settings.stats || get().stats,
+                        stats: calculatedStats,
                         unlockedThemes: settings.unlockedThemes || [],
                         // If DB doesn't have these fields yet, use defaults or mock
                         motivationText: (settings as any).motivation_text ?? '',
@@ -102,16 +139,29 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-            // Note: 'motivation_text' needs to be added to DB schema if not present.
-            // For now, we'll try to save it if the column exists, or rely on local state/mock.
-            // In a real scenario, we'd add a migration.
             try {
                 await updateSettings({
                     userId: session.user.id,
                     motivation_text: text
                 } as any);
+
+                // Sync to Supabase via sync engine
+                const currentSettings = await getSettings(session.user.id);
+                const syncEngine = getSyncEngine();
+                syncEngine.pushUserSettings({
+                    userName: currentSettings?.userName,
+                    weekStartsOn: currentSettings?.weekStartsOn ?? 0,
+                    defaultCategory: currentSettings?.defaultCategory ?? 'health',
+                    xp: get().xp,
+                    level: get().level,
+                    gems: get().gems,
+                    streakShield: get().streakShield,
+                    stats: get().stats,
+                    unlockedThemes: get().unlockedThemes,
+                    motivation_text: text
+                });
             } catch (e) {
-                console.warn("Failed to persist motivation text (column might be missing)", e);
+                console.warn("Failed to persist motivation text", e);
             }
         }
     },

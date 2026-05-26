@@ -50,6 +50,7 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
         const { data } = await supabase
             .from("goals")
             .select("*")
+            // Supabase query uses 'is_archived' (snake_case database column name), not the local model's 'archived' attribute
             .eq("is_archived", false)
             .order("title")
 

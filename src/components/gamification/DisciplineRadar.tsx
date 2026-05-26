@@ -10,48 +10,75 @@ export function DisciplineRadar({ stats: customStats }: { stats?: UserStats }) {
     const storeStats = useGamificationStore(state => state.stats);
     const stats = customStats || storeStats;
 
-    const data = [
-        {
-            subject: 'Vitality',
-            A: stats?.vitality || 1,
-            fullMark: 100,
-        },
-        {
-            subject: 'Intellect',
-            A: stats?.intelligence || 1,
-            fullMark: 100,
-        },
-        {
-            subject: 'Discipline',
-            A: stats?.discipline || 1,
-            fullMark: 100,
-        },
-        {
-            subject: 'Charisma',
-            A: stats?.charisma || 1,
-            fullMark: 100,
-        },
-        {
-            subject: 'Wealth',
-            A: stats?.wealth || 1,
-            fullMark: 100,
-        },
-        {
-            subject: 'Creativity',
-            A: stats?.creativity || 1,
-            fullMark: 100,
-        },
-    ];
+    const isThreeAxis = typeof stats?.focus === 'number' && typeof stats?.resilience === 'number';
 
-    const maxVal = Math.max(
-        5,
-        stats?.vitality || 1,
-        stats?.intelligence || 1,
-        stats?.discipline || 1,
-        stats?.charisma || 1,
-        stats?.wealth || 1,
-        stats?.creativity || 1
-    );
+    const data = isThreeAxis
+        ? [
+            {
+                subject: 'Discipline',
+                A: stats?.discipline || 1,
+                fullMark: 100,
+            },
+            {
+                subject: 'Focus',
+                A: stats?.focus || 1,
+                fullMark: 100,
+            },
+            {
+                subject: 'Resilience',
+                A: stats?.resilience || 1,
+                fullMark: 100,
+            },
+          ]
+        : [
+            {
+                subject: 'Vitality',
+                A: stats?.vitality || 1,
+                fullMark: 100,
+            },
+            {
+                subject: 'Intellect',
+                A: stats?.intelligence || 1,
+                fullMark: 100,
+            },
+            {
+                subject: 'Discipline',
+                A: stats?.discipline || 1,
+                fullMark: 100,
+            },
+            {
+                subject: 'Charisma',
+                A: stats?.charisma || 1,
+                fullMark: 100,
+            },
+            {
+                subject: 'Wealth',
+                A: stats?.wealth || 1,
+                fullMark: 100,
+            },
+            {
+                subject: 'Creativity',
+                A: stats?.creativity || 1,
+                fullMark: 100,
+            },
+        ];
+
+    const maxVal = isThreeAxis
+        ? Math.max(
+            5,
+            stats?.discipline || 1,
+            stats?.focus || 1,
+            stats?.resilience || 1
+        )
+        : Math.max(
+            5,
+            stats?.vitality || 1,
+            stats?.intelligence || 1,
+            stats?.discipline || 1,
+            stats?.charisma || 1,
+            stats?.wealth || 1,
+            stats?.creativity || 1
+        );
 
     return (
         <motion.div
@@ -99,12 +126,22 @@ export function DisciplineRadar({ stats: customStats }: { stats?: UserStats }) {
             </div>
 
             <div className="grid grid-cols-3 gap-2 w-full mt-4">
-                <StatItem label="Vitality" value={stats?.vitality || 1} color="text-red-500" />
-                <StatItem label="Intellect" value={stats?.intelligence || 1} color="text-blue-500" />
-                <StatItem label="Discipline" value={stats?.discipline || 1} color="text-violet-500" />
-                <StatItem label="Charisma" value={stats?.charisma || 1} color="text-pink-500" />
-                <StatItem label="Wealth" value={stats?.wealth || 1} color="text-emerald-500" />
-                <StatItem label="Creativity" value={stats?.creativity || 1} color="text-amber-500" />
+                {isThreeAxis ? (
+                    <>
+                        <StatItem label="Discipline" value={stats?.discipline || 1} color="text-violet-500" />
+                        <StatItem label="Focus" value={stats?.focus || 1} color="text-sky-500" />
+                        <StatItem label="Resilience" value={stats?.resilience || 1} color="text-emerald-500" />
+                    </>
+                ) : (
+                    <>
+                        <StatItem label="Vitality" value={stats?.vitality || 1} color="text-red-500" />
+                        <StatItem label="Intellect" value={stats?.intelligence || 1} color="text-blue-500" />
+                        <StatItem label="Discipline" value={stats?.discipline || 1} color="text-violet-500" />
+                        <StatItem label="Charisma" value={stats?.charisma || 1} color="text-pink-500" />
+                        <StatItem label="Wealth" value={stats?.wealth || 1} color="text-emerald-500" />
+                        <StatItem label="Creativity" value={stats?.creativity || 1} color="text-amber-500" />
+                    </>
+                )}
             </div>
         </motion.div>
     );

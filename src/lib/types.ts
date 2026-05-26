@@ -222,6 +222,8 @@ export interface UserStats {
   charisma: number;      // from 'relationships'
   wealth: number;        // from 'finance'
   creativity: number;    // from 'personal' and 'fun'
+  focus?: number;
+  resilience?: number;
 }
 
 export interface DashboardWidgetConfig {
@@ -251,6 +253,7 @@ export interface UserSettings {
   hapticsEnabled?: boolean;
   stats?: UserStats;
   unlockedThemes?: string[];
+  motivation_text?: string;
   dashboardLayout?: (string | DashboardWidgetConfig)[];
 }
 
