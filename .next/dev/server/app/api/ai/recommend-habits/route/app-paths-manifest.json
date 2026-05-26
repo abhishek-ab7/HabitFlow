@@ -1,0 +1,3 @@
+{
+  "/api/ai/recommend-habits/route": "app/api/ai/recommend-habits/route.js"
+}

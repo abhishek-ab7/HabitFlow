@@ -1,0 +1,3 @@
+{
+  "/api/ai/generate-subtasks/route": "app/api/ai/generate-subtasks/route.js"
+}
