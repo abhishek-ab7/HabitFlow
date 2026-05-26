@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { HabitListSkeleton } from '@/components/ui/Skeletons';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { isAIEnabled } from '@/lib/ai-features-flag';
 import { MonthSelector, HabitGrid, HabitFormModal, HabitStackSuggestions, SmartHabitGenerator, ArchivedHabitsModal } from '@/components/habits';
@@ -145,15 +146,7 @@ function HabitsPageContent() {
           </div>
           <Skeleton className="h-10 w-32" />
         </div>
-        <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <HabitListSkeleton />
       </div>
     );
   }
@@ -326,16 +319,14 @@ export default function HabitsPage() {
   return (
     <Suspense fallback={
       <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto">
-        <Skeleton className="h-9 w-48 mb-8" />
-        <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <Skeleton className="h-9 w-48 mb-2" />
+            <Skeleton className="h-5 w-72" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <HabitListSkeleton />
       </div>
     }>
       <HabitsPageContent />

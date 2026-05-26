@@ -16,7 +16,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton } from '@/components/ui/skeleton'; // Force HMR refresh
+import { GoalListSkeleton } from '@/components/ui/Skeletons';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -231,14 +232,16 @@ function GoalsPageContent() {
 
   if (isLoading) {
     return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8">
-        <div className="animate-pulse space-y-6">
-          <div className="h-10 bg-muted rounded w-48" />
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-80 bg-muted rounded-xl" />
-            ))}
+      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto">
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Skeleton className="h-10 w-48 rounded" />
+              <Skeleton className="h-5 w-32 mt-2 rounded" />
+            </div>
+            <Skeleton className="h-10 w-32 rounded" />
           </div>
+          <GoalListSkeleton />
         </div>
       </div>
     );
@@ -489,13 +492,15 @@ export default function GoalsPage() {
   return (
     <Suspense fallback={
       <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto">
-        <Skeleton className="h-9 w-48 mb-8" />
-        <div className="bg-card border text-card-foreground rounded-xl shadow p-6">
-          <div className="space-y-4">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <Skeleton className="h-10 w-48 rounded animate-pulse" />
+              <Skeleton className="h-5 w-32 mt-2 rounded animate-pulse" />
+            </div>
+            <Skeleton className="h-10 w-32 rounded animate-pulse" />
           </div>
+          <GoalListSkeleton />
         </div>
       </div>
     }>

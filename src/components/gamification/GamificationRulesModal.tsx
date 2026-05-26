@@ -17,7 +17,7 @@ export function GamificationRulesModal() {
 
     return (
         <Dialog open={rulesModalOpen} onOpenChange={(open) => !open && closeRules()}>
-            <DialogContent className="sm:max-w-2xl bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-white/20 dark:border-white/10">
+            <DialogContent className="max-w-full sm:max-w-3xl lg:max-w-4xl bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-white/20 dark:border-white/10">
                 <DialogHeader>
                     <DialogTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600">
                         How to Play
@@ -33,50 +33,48 @@ export function GamificationRulesModal() {
                     onValueChange={(val) => setActiveRulesTab(val as any)}
                     className="w-full"
                 >
-                    <TabsList className="grid w-full grid-cols-3 mb-4">
-                        <TabsTrigger value="xp" className="flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-amber-500" />
+                    <TabsList className="grid w-full grid-cols-3 mb-4 text-xs sm:text-sm">
+                        <TabsTrigger value="xp" className="flex items-center gap-1 sm:gap-2">
+                            <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" />
                             XP & Levels
                         </TabsTrigger>
-                        <TabsTrigger value="gems" className="flex items-center gap-2">
-                            <Diamond className="w-4 h-4 text-blue-500" />
+                        <TabsTrigger value="gems" className="flex items-center gap-1 sm:gap-2">
+                            <Diamond className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-500" />
                             Gems & Shop
                         </TabsTrigger>
-                        <TabsTrigger value="rules" className="flex items-center gap-2">
-                            <Book className="w-4 h-4 text-emerald-500" />
+                        <TabsTrigger value="rules" className="flex items-center gap-1 sm:gap-2">
+                            <Book className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" />
                             Rules
                         </TabsTrigger>
                     </TabsList>
 
-                    <ScrollArea className="h-[400px] pr-4">
+                    <ScrollArea className="h-[480px] pr-2">
                         <TabsContent value="xp" className="space-y-4 focus-visible:ring-0">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[450px]">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {/* Left Column: Stats & Pledge */}
-                                <ScrollArea className="h-full pr-4">
-                                    <div className="space-y-4">
-                                        <div className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-xl border border-amber-100 dark:border-amber-900/50">
-                                            <h3 className="text-lg font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2 mb-2">
-                                                <Trophy className="w-5 h-5" />
-                                                Your Mastery Profile
-                                            </h3>
-                                            <p className="text-sm text-amber-800 dark:text-amber-300">
-                                                Track your discipline, focus, and resilience. Level up to boost these stats!
-                                            </p>
-                                        </div>
-                                        <DisciplineRadar />
-                                        <AccountabilityPledge />
+                                <div className="space-y-6">
+                                    <div className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-xl border border-amber-100 dark:border-amber-900/50">
+                                        <h3 className="text-lg font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2 mb-2">
+                                            <Trophy className="w-5 h-5" />
+                                            Your Mastery Profile
+                                        </h3>
+                                        <p className="text-sm text-amber-800 dark:text-amber-300">
+                                            Track your discipline, focus, and resilience. Level up to boost these stats!
+                                        </p>
                                     </div>
-                                </ScrollArea>
+                                    <div className="bg-muted/30 rounded-xl p-3 border">
+                                        <DisciplineRadar />
+                                    </div>
+                                    <AccountabilityPledge />
+                                </div>
 
                                 {/* Right Column: Journey Map */}
-                                <div className="bg-white/50 dark:bg-black/20 rounded-xl border p-1 h-full overflow-hidden flex flex-col">
-                                    <h3 className="text-sm font-bold px-4 py-3 bg-white/80 dark:bg-black/80 backdrop-blur-md border-b sticky top-0 z-10 flex items-center gap-2">
+                                <div className="bg-white/50 dark:bg-black/20 rounded-xl border p-4 flex flex-col">
+                                    <h3 className="text-sm font-bold pb-3 border-b flex items-center gap-2 mb-4">
                                         <Target className="w-4 h-4 text-indigo-500" />
                                         Journey Map
                                     </h3>
-                                    <ScrollArea className="flex-1">
-                                        <XPJourneyMap />
-                                    </ScrollArea>
+                                    <XPJourneyMap />
                                 </div>
                             </div>
                         </TabsContent>

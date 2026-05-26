@@ -1,5 +1,6 @@
 'use client';
 
+// Force HMR refresh
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';

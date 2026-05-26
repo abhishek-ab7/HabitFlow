@@ -22,7 +22,7 @@ export default function ShortcutsModal() {
       }
 
       console.log('ShortcutsModal keydown event:', event.key, 'code:', event.code, 'shift:', event.shiftKey);
-      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+      if (event.key === '?' && event.shiftKey) {
         event.preventDefault();
         setIsOpen(prev => !prev);
       } else if (event.key === 'Escape') {
@@ -108,7 +108,7 @@ export default function ShortcutsModal() {
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Toggle Shortcuts Menu</span>
-                    <kbd className="px-2 py-1 bg-muted border border-border rounded text-xs font-mono shadow-sm">?</kbd>
+                    <kbd className="px-2 py-1 bg-muted border border-border rounded text-xs font-mono shadow-sm">Shift+?</kbd>
                   </div>
                 </div>
               </div>
@@ -116,7 +116,7 @@ export default function ShortcutsModal() {
 
             {/* Footer */}
             <div className="mt-6 text-center text-xs text-muted-foreground">
-              Press <kbd className="px-1.5 py-0.5 bg-muted border border-border rounded text-[10px] font-mono">?</kbd> or <kbd className="px-1.5 py-0.5 bg-muted border border-border rounded text-[10px] font-mono">Esc</kbd> to close at any time.
+              Press <kbd className="px-1.5 py-0.5 bg-muted border border-border rounded text-[10px] font-mono">Shift+?</kbd> or <kbd className="px-1.5 py-0.5 bg-muted border border-border rounded text-[10px] font-mono">Esc</kbd> to close at any time.
             </div>
           </motion.div>
         </div>

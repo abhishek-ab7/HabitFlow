@@ -88,4 +88,28 @@ describe('PomodoroStore', () => {
         expect(state.timeLeft).toBe(25 * 60);
         expect(state.isRunning).toBe(false);
     });
+
+    it('should adjust duration when not running', () => {
+        usePomodoroStore.setState({ timeLeft: 1500, isRunning: false });
+        usePomodoroStore.getState().adjustDuration(300); // add 5 minutes
+
+        const state1 = usePomodoroStore.getState();
+        expect(state1.timeLeft).toBe(1800);
+        expect(state1.duration).toBe(1800);
+
+        // Adjust negative
+        usePomodoroStore.getState().adjustDuration(-600); // subtract 10 minutes
+        const state2 = usePomodoroStore.getState();
+        expect(state2.timeLeft).toBe(1200);
+        expect(state2.duration).toBe(1200);
+    });
+
+    it('should not adjust duration when running', () => {
+        usePomodoroStore.setState({ timeLeft: 1500, isRunning: true });
+        usePomodoroStore.getState().adjustDuration(300);
+
+        const state = usePomodoroStore.getState();
+        expect(state.timeLeft).toBe(1500);
+        expect(state.duration).toBe(1500);
+    });
 });

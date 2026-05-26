@@ -9,6 +9,12 @@ vi.mock('framer-motion', () => ({
         div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
     },
     AnimatePresence: ({ children }: any) => <>{children}</>,
+    useMotionValue: vi.fn((val) => ({
+        get: () => val,
+        set: vi.fn(),
+        onChange: vi.fn(),
+    })),
+    useTransform: vi.fn((val) => val),
 }))
 
 // Define stable mock functions

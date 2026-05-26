@@ -1,5 +1,6 @@
 'use client';
 
+// Force HMR refresh
 import { useEffect, useState } from 'react';
 import {
   Moon,

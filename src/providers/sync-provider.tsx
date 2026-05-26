@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { getSyncEngine, SyncStatus } from '@/lib/sync';
 import { useAuth } from './auth-provider';
 import { useGoalStore } from '@/lib/stores/goal-store';
@@ -21,7 +21,12 @@ interface SyncContextType {
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const userId = user?.id || null;
+  const lastUserIdRef = useRef<string | null>(null);
+  const isInitializingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({ type: 'idle' });
   const [isSyncing, setIsSyncing] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
@@ -40,43 +45,67 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   // Eager data load - sync from Supabase FIRST, then preload into Zustand
   useEffect(() => {
-    console.log('[SyncProvider] useEffect triggered, isAuthenticated:', isAuthenticated);
+    console.log('[SyncProvider] useEffect triggered, isAuthenticated:', isAuthenticated, 'userId:', userId);
 
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !userId) {
       console.log('[SyncProvider] Skipping sync - not authenticated');
-      Promise.resolve().then(() => {
-        setIsDataLoaded(true); // Skip if not authenticated
-      });
+      hasInitializedRef.current = false;
+      lastUserIdRef.current = null;
+      setIsDataLoaded(true); // Skip if not authenticated
       return;
     }
 
-    console.log('[SyncProvider] Starting data initialization...');
+    // If we've already successfully initialized for this user, do not run the sync/load again.
+    if (hasInitializedRef.current && lastUserIdRef.current === userId) {
+      console.log('[SyncProvider] Already initialized for user:', userId);
+      setIsDataLoaded(true);
+      return;
+    }
+
+    // If we are already initializing (running), ignore duplicate triggers
+    if (isInitializingRef.current) {
+      console.log('[SyncProvider] Sync initialization is already in progress, ignoring duplicate run');
+      return;
+    }
+
+    isInitializingRef.current = true;
+    console.log('[SyncProvider] Starting data initialization for user:', userId);
+
+    let active = true;
+    let metadataInterval: NodeJS.Timeout | null = null;
+    let unsubscribe: (() => void) | null = null;
 
     const initializeData = async () => {
       try {
         const syncEngine = getSyncEngine();
 
         // Subscribe to sync status for UI feedback
-        const unsubscribe = syncEngine.onSyncStatusChange((status) => {
-          setSyncStatus(status);
-          setIsSyncing(status.type === 'syncing');
+        unsubscribe = syncEngine.onSyncStatusChange((status) => {
+          if (active) {
+            setSyncStatus(status);
+            setIsSyncing(status.type === 'syncing');
+          }
         });
 
         // STEP 1: Check and run migrations if needed
         console.log('[SyncProvider] STEP 1: Checking for migrations...');
-        setSyncStatus({ type: 'syncing', message: 'Checking migrations...', progress: 10 });
+        if (active) setSyncStatus({ type: 'syncing', message: 'Checking migrations...', progress: 10 });
         await syncEngine.checkAndRunMigrations();
         console.log('[SyncProvider] STEP 1: Migration check complete');
 
+        if (!active) return;
+
         // STEP 2: Sync from Supabase (pulls remote data into IndexedDB)
         console.log('[SyncProvider] STEP 2: Syncing from Supabase to IndexedDB...');
-        setSyncStatus({ type: 'syncing', message: 'Syncing from cloud...', progress: 40 });
+        if (active) setSyncStatus({ type: 'syncing', message: 'Syncing from cloud...', progress: 40 });
         await syncEngine.syncAll();
         console.log('[SyncProvider] STEP 2: Sync complete');
 
+        if (!active) return;
+
         // STEP 3: Then preload from IndexedDB into Zustand stores
         console.log('[SyncProvider] STEP 3: Loading data into Zustand stores...');
-        setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 80 });
+        if (active) setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 80 });
         await Promise.all([
           useUserStore.getState().loadUser(),
           useGoalStore.getState().loadGoals(),
@@ -86,6 +115,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         ]);
         console.log('[SyncProvider] STEP 3: Store loading complete');
 
+        if (!active) return;
+
+        hasInitializedRef.current = true;
+        lastUserIdRef.current = userId;
         setIsDataLoaded(true);
         setSyncStatus({ type: 'success', message: 'All data loaded' });
 
@@ -93,24 +126,30 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         updateMetadata();
 
         // Setup periodic metadata updates
-        const metadataInterval = setInterval(updateMetadata, 30000);
+        metadataInterval = setInterval(() => {
+          if (active) updateMetadata();
+        }, 30000);
 
-        return () => {
-          unsubscribe();
-          clearInterval(metadataInterval);
-        };
       } catch (error) {
         console.error('[SyncProvider] Initialization failed:', error);
-        setSyncStatus({ type: 'error', message: 'Failed to load data' });
-        setIsDataLoaded(true); // Still render even if sync fails
+        if (active) {
+          setSyncStatus({ type: 'error', message: 'Failed to load data' });
+          setIsDataLoaded(true); // Still render even if sync fails
+        }
+      } finally {
+        isInitializingRef.current = false;
       }
     };
 
-    const cleanup = initializeData();
+    initializeData();
+
     return () => {
-      cleanup.then(fn => fn?.());
+      active = false;
+      isInitializingRef.current = false;
+      if (unsubscribe) unsubscribe();
+      if (metadataInterval) clearInterval(metadataInterval);
     };
-  }, [isAuthenticated, updateMetadata]);
+  }, [isAuthenticated, userId, updateMetadata]);
 
   // Listen for online/offline events
   useEffect(() => {

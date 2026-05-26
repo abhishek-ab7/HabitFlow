@@ -3,6 +3,7 @@
 import { Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { FadeIn } from '@/components/motion';
+import { EmptyGoalsIllustration } from '@/components/ui/illustrations';
 
 interface EmptyGoalsProps {
   onCreateGoal: () => void;
@@ -11,12 +12,8 @@ interface EmptyGoalsProps {
 export function EmptyGoals({ onCreateGoal }: EmptyGoalsProps) {
   return (
     <FadeIn className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="relative mb-6">
-        {/* Decorative circles */}
-        <div className="absolute -inset-4 bg-gradient-to-br from-primary/20 to-chart-4/20 rounded-full blur-xl" />
-        <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-primary/20 to-chart-4/20 flex items-center justify-center">
-          <Target className="h-10 w-10 text-primary" />
-        </div>
+      <div className="relative mb-4">
+        <EmptyGoalsIllustration />
       </div>
       
       <h3 className="text-xl font-semibold mb-2">No goals yet</h3>

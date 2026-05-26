@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, X, Timer, Coffee, CheckSquare } from 'lucide-react';
+import { Play, Pause, RotateCcw, X, Timer, Coffee, CheckSquare, Plus, Minus, Check } from 'lucide-react';
 import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -22,9 +23,19 @@ export function PomodoroFloating() {
     resetTimer,
     tick,
     setMode,
+    adjustDuration,
   } = usePomodoroStore();
 
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isEditingTime, setIsEditingTime] = useState(false);
+  const [customMinutes, setCustomMinutes] = useState(25);
+
+  // Sync typed minutes when not editing
+  useEffect(() => {
+    if (!isEditingTime) {
+      setCustomMinutes(Math.floor(timeLeft / 60));
+    }
+  }, [timeLeft, isEditingTime]);
 
   // Tick timer every second if running
   useEffect(() => {
@@ -66,10 +77,7 @@ export function PomodoroFloating() {
     return () => window.removeEventListener('pomodoro-complete', handleComplete);
   }, [activeTaskTitle]);
 
-  // If no timer is active and not running, don't show the widget
-  if (!activeTaskId && !isRunning && completedSessions === 0) {
-    return null;
-  }
+  // Widget is always visible in minimized state for general focus session use
 
   // Format time (e.g. 1500 seconds -> 25:00)
   const formatTime = (secs: number) => {
@@ -194,10 +202,105 @@ export function PomodoroFloating() {
 
             {/* Timer circle & Display */}
             <div className="flex flex-col items-center justify-center py-2 relative">
-              {/* Radial countdown display */}
-              <div className="text-4xl font-extrabold font-mono tracking-tight text-foreground tabular-nums select-all">
-                {formatTime(timeLeft)}
-              </div>
+              {isEditingTime ? (
+                <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="180"
+                    value={customMinutes}
+                    onChange={(e) => setCustomMinutes(Math.max(1, Math.min(180, parseInt(e.target.value) || 1)))}
+                    className="w-20 text-center text-2xl font-bold font-mono bg-muted/50 border-border h-9 focus-visible:ring-1 focus-visible:ring-ring"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const mins = Math.max(1, Math.min(180, customMinutes));
+                        adjustDuration(mins * 60 - timeLeft);
+                        setIsEditingTime(false);
+                        toast.success(`Duration set to ${mins}m`);
+                      } else if (e.key === 'Escape') {
+                        setIsEditingTime(false);
+                      }
+                    }}
+                  />
+                  <Button
+                    size="icon"
+                    className="h-8 w-8 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg cursor-pointer"
+                    onClick={() => {
+                      const mins = Math.max(1, Math.min(180, customMinutes));
+                      adjustDuration(mins * 60 - timeLeft);
+                      setIsEditingTime(false);
+                      toast.success(`Duration set to ${mins}m`);
+                    }}
+                    title="Save duration"
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8 rounded-lg cursor-pointer"
+                    onClick={() => setIsEditingTime(false)}
+                    title="Cancel"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-4 group">
+                  {!isRunning && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 rounded-full opacity-60 md:opacity-0 md:group-hover:opacity-100 transition-all hover:scale-110 cursor-pointer"
+                      onClick={() => {
+                        if (timeLeft > 60) {
+                          adjustDuration(-60);
+                          toast.success('Reduced duration by 1 minute');
+                        } else {
+                          toast.error('Minimum duration is 1 minute');
+                        }
+                      }}
+                      title="Decrease 1 minute"
+                    >
+                      <Minus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                    </Button>
+                  )}
+                  <div
+                    className={cn(
+                      "text-4xl font-extrabold font-mono tracking-tight text-foreground tabular-nums select-all",
+                      !isRunning && "cursor-pointer hover:text-primary transition-all hover:scale-105 transform duration-200"
+                    )}
+                    onClick={() => {
+                      if (!isRunning) {
+                        setIsEditingTime(true);
+                        setCustomMinutes(Math.floor(timeLeft / 60));
+                      }
+                    }}
+                    title={!isRunning ? "Click to edit duration" : undefined}
+                  >
+                    {formatTime(timeLeft)}
+                  </div>
+                  {!isRunning && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 rounded-full opacity-60 md:opacity-0 md:group-hover:opacity-100 transition-all hover:scale-110 cursor-pointer"
+                      onClick={() => {
+                        if (timeLeft < 180 * 60) {
+                          adjustDuration(60);
+                          toast.success('Increased duration by 1 minute');
+                        } else {
+                          toast.error('Maximum duration is 180 minutes');
+                        }
+                      }}
+                      title="Increase 1 minute"
+                    >
+                      <Plus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                    </Button>
+                  )}
+                </div>
+              )}
               <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mt-1.5">
                 {mode === 'focus' ? 'Focusing' : mode === 'short_break' ? 'Short Break' : 'Long Break'}
               </div>

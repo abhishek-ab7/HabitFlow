@@ -19,6 +19,7 @@ interface PomodoroState {
   resetTimer: () => void;
   tick: () => void;
   setMode: (mode: PomodoroMode) => void;
+  adjustDuration: (amountSecs: number) => void;
 }
 
 const DURATIONS: Record<PomodoroMode, number> = {
@@ -66,9 +67,7 @@ export const usePomodoroStore = create<PomodoroState>((set, get) => ({
   },
 
   resumeTimer: () => {
-    if (get().activeTaskId) {
-      set({ isRunning: true });
-    }
+    set({ isRunning: true });
   },
 
   resetTimer: () => {
@@ -121,6 +120,16 @@ export const usePomodoroStore = create<PomodoroState>((set, get) => ({
       timeLeft: DURATIONS[mode],
       duration: DURATIONS[mode],
       isRunning: false,
+    });
+  },
+
+  adjustDuration: (amountSecs: number) => {
+    const { timeLeft, isRunning } = get();
+    if (isRunning) return;
+    const newTime = Math.max(60, timeLeft + amountSecs); // Min 1 min
+    set({
+      timeLeft: newTime,
+      duration: newTime,
     });
   },
 }));

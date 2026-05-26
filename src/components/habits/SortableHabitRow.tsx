@@ -296,14 +296,13 @@ export function SortableHabitRow({
                     const cellKey = `${habit.id}-${dateStr}`;
                     const showRipple = rippleCell === cellKey && (isCompleted || isFrozen);
 
-                    const cellButton = (
+                    const innerButton = (
                         <motion.button
-                            key={day}
                             onClick={(e) => handleCellClick(dateStr, isFutureDate, e.shiftKey)}
                             onContextMenu={(e) => handleCellRightClick(e, dateStr, isFutureDate)}
                             disabled={isFutureDate}
                             className={cn(
-                                "group/cell relative w-9 h-9 rounded-lg flex items-center justify-center transition-all",
+                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                 isCompleted
                                     ? "bg-success/20 text-success hover:bg-success/30"
@@ -340,7 +339,67 @@ export function SortableHabitRow({
                                 </div>
                             )}
 
-                            {/* Hover Edit Pencil button */}
+                            {/* Render quantitative status or default checklist icons */}
+                            <AnimatePresence mode="wait">
+                                {isCompleted ? (
+                                    <motion.div
+                                        key="completed"
+                                        initial={{ scale: 0, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        exit={{ scale: 0, opacity: 0 }}
+                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                                    >
+                                        <Check className="h-4 w-4" />
+                                    </motion.div>
+                                ) : isFrozen ? (
+                                    <motion.div
+                                        key="frozen"
+                                        initial={{ scale: 0, opacity: 0, rotate: -45 }}
+                                        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                                        exit={{ scale: 0, opacity: 0, rotate: 45 }}
+                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                                    >
+                                        <Snowflake className="h-4 w-4" />
+                                    </motion.div>
+                                ) : habit.isQuantitative && comp?.value && comp.value > 0 ? (
+                                    <motion.div
+                                        key="quantitative-val"
+                                        initial={{ scale: 0, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        exit={{ scale: 0, opacity: 0 }}
+                                        className="text-xs font-bold font-mono"
+                                    >
+                                        {comp.value}
+                                    </motion.div>
+                                ) : null}
+                            </AnimatePresence>
+
+                            {/* Note indicator: small curl/dot if note exists */}
+                            {comp?.note && (
+                                <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            )}
+
+                            <SuccessRipple trigger={showRipple} />
+                        </motion.button>
+                    );
+
+                    const finalButton = comp?.note ? (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                {innerButton}
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-xs p-2.5 space-y-1 bg-popover text-popover-foreground border shadow-md">
+                                <p className="font-semibold text-[10px] text-muted-foreground/80">
+                                    {format(new Date(dateStr), 'MMM d, yyyy')}
+                                </p>
+                                <p className="text-xs leading-relaxed italic">"{comp.note}"</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    ) : innerButton;
+
+                    return (
+                        <div key={day} className="relative group/cell">
+                            {finalButton}
                             {!isFutureDate && (
                                 <Popover open={openPopoverDate === dateStr} onOpenChange={(open) => {
                                     if (open) {
@@ -449,68 +508,8 @@ export function SortableHabitRow({
                                     </PopoverContent>
                                 </Popover>
                             )}
-
-                            {/* Render quantitative status or default checklist icons */}
-                            <AnimatePresence mode="wait">
-                                {isCompleted ? (
-                                    <motion.div
-                                        key="completed"
-                                        initial={{ scale: 0, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0, opacity: 0 }}
-                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                                    >
-                                        <Check className="h-4 w-4" />
-                                    </motion.div>
-                                ) : isFrozen ? (
-                                    <motion.div
-                                        key="frozen"
-                                        initial={{ scale: 0, opacity: 0, rotate: -45 }}
-                                        animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                                        exit={{ scale: 0, opacity: 0, rotate: 45 }}
-                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                                    >
-                                        <Snowflake className="h-4 w-4" />
-                                    </motion.div>
-                                ) : habit.isQuantitative && comp?.value && comp.value > 0 ? (
-                                    <motion.div
-                                        key="quantitative-val"
-                                        initial={{ scale: 0, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0, opacity: 0 }}
-                                        className="text-xs font-bold font-mono"
-                                    >
-                                        {comp.value}
-                                    </motion.div>
-                                ) : null}
-                            </AnimatePresence>
-
-                            {/* Note indicator: small curl/dot if note exists but popover isn't open */}
-                            {comp?.note && (
-                                <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500" />
-                            )}
-
-                            <SuccessRipple trigger={showRipple} />
-                        </motion.button>
+                        </div>
                     );
-
-                    if (comp?.note) {
-                        return (
-                            <Tooltip key={day}>
-                                <TooltipTrigger asChild>
-                                    {cellButton}
-                                </TooltipTrigger>
-                                <TooltipContent side="top" className="max-w-xs p-2.5 space-y-1 bg-popover text-popover-foreground border shadow-md">
-                                    <p className="font-semibold text-[10px] text-muted-foreground/80">
-                                        {format(new Date(dateStr), 'MMM d, yyyy')}
-                                    </p>
-                                    <p className="text-xs leading-relaxed italic">"{comp.note}"</p>
-                                </TooltipContent>
-                            </Tooltip>
-                        );
-                    }
-
-                    return cellButton;
                 })}
             </div>
 

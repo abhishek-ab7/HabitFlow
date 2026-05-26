@@ -47,15 +47,22 @@ export function UserStatusHUD() {
 
             {/* XP Bar */}
             <div
-                className="block w-20 md:w-32 h-2.5 bg-secondary rounded-full overflow-hidden relative border border-border/50 cursor-pointer hover:opacity-80 transition-opacity"
+                className="block w-28 md:w-44 h-4 bg-muted/80 rounded-full overflow-hidden relative border border-border/40 cursor-pointer hover:opacity-90 transition-all shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]"
                 onClick={() => openRules('xp')}
             >
                 <motion.div
-                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
+                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
                     initial={{ width: 0 }}
                     animate={{ width: `${progress}%` }}
                     transition={{ type: 'spring', damping: 20 }}
                 />
+                {/* Shimmer Overlay */}
+                <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.15)_50%,transparent_75%)] bg-[length:200%_100%] animate-[shimmer_3s_infinite] pointer-events-none" />
+                
+                {/* XP Text Indicator */}
+                <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold font-mono tracking-wider text-indigo-950 dark:text-indigo-50 mix-blend-difference">
+                    {xp} / {level * 100} XP
+                </div>
             </div>
 
             {/* Gems */}

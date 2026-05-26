@@ -16,7 +16,7 @@ import { toast } from "sonner"
 import type { Database } from "@/lib/supabase/types"
 import type { GeneratedMilestone } from "@/lib/ai/types"
 
-import type { Task } from "@/lib/types"
+import type { Task, TaskStatus, Priority } from "@/lib/types"
 
 type Goal = Database['public']['Tables']['goals']['Row']
 type Milestone = Database['public']['Tables']['milestones']['Row']
@@ -59,12 +59,20 @@ export default function GoalDetailsPage() {
                 .order("priority", { ascending: false })
 
             if (taskError) throw taskError
-            if (taskError) throw taskError
 
             const mappedTasks: Task[] = (taskData || []).map((t: any) => ({
-                ...t,
+                id: t.id,
                 userId: t.user_id,
-                // Ensure other fields match if needed
+                title: t.title,
+                description: t.description,
+                status: t.status as TaskStatus,
+                priority: t.priority as Priority,
+                due_date: t.due_date,
+                goal_id: t.goal_id,
+                tags: t.tags || [],
+                metadata: t.metadata || {},
+                created_at: t.created_at,
+                updated_at: t.updated_at
             }))
             setTasks(mappedTasks)
 

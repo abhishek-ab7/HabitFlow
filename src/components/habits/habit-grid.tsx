@@ -22,6 +22,7 @@ import {
 } from '@dnd-kit/sortable';
 
 import { cn } from '@/lib/utils';
+import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
 import type { Habit, HabitCompletion, Category, Routine } from '@/lib/types';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { SortableHabitRow } from './SortableHabitRow';
@@ -150,8 +151,8 @@ export const HabitGrid = memo(function HabitGrid({
   if (habits.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <Check className="h-8 w-8 text-muted-foreground" />
+        <div className="mb-4">
+          <EmptyHabitsIllustration />
         </div>
         <h3 className="text-lg font-semibold mb-2">No habits yet</h3>
         <p className="text-muted-foreground max-w-sm">

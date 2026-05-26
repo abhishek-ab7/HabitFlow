@@ -1,5 +1,6 @@
 'use client';
 
+// Force HMR refresh
 import dynamic from 'next/dynamic';
 import { useEffect, useState, useMemo } from 'react';
 import { subDays, subMonths, subYears, format } from 'date-fns';
@@ -8,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { TimeRangeTabs } from '@/components/analytics';
+import { AchievementsGallery } from '@/components/analytics/AchievementsGallery';
 import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore } from '@/lib/stores';
 import {
   calculateDailyStats,
@@ -707,6 +709,11 @@ export default function AnalyticsPage() {
           </Card>
         </FadeIn>
       )}
+
+      {/* Achievements Gallery */}
+      <FadeIn delay={0.7} className="pt-8 border-t border-border/40">
+        <AchievementsGallery />
+      </FadeIn>
     </div>
   );
 }

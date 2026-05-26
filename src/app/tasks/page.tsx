@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils"
 import { useTaskStore } from "@/lib/stores/task-store"
 import type { Task } from "@/lib/types"
 
+import { TaskListSkeleton } from "@/components/ui/Skeletons"
+import { EmptyTasksIllustration } from "@/components/ui/illustrations"
+
 export default function TasksPage() {
     const { tasks, loadTasks, isLoading, toggleTaskComplete, editTask, addTask } = useTaskStore()
 
@@ -79,13 +82,11 @@ export default function TasksPage() {
                 </div>
 
                 {isLoading && tasks.length === 0 ? (
-                    <div className="flex items-center justify-center h-64">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    </div>
+                    <TaskListSkeleton />
                 ) : tasks.filter(t => t.status !== 'archived').length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
-                        <div className="p-4 rounded-full bg-muted/50">
-                            <Inbox className="h-8 w-8 text-muted-foreground" />
+                    <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                        <div>
+                            <EmptyTasksIllustration />
                         </div>
                         <div>
                             <h3 className="text-lg font-medium">No tasks yet</h3>

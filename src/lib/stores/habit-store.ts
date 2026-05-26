@@ -35,6 +35,7 @@ interface HabitState {
   error: string | null;
   selectedMonth: Date;
   categoryFilter: Category[];
+  loadedRange: { start: string; end: string } | null;
 
   // Actions
   loadHabits: () => Promise<void>;
@@ -70,6 +71,10 @@ interface HabitState {
   getCurrentStreaks: () => Map<string, number>;
 }
 
+let cachedStreaks: Map<string, number> | null = null;
+let lastHabitsRef: Habit[] | null = null;
+let lastCompletionsRef: HabitCompletion[] | null = null;
+
 export const useHabitStore = create<HabitState>((set, get) => ({
   habits: [],
   completions: [],
@@ -77,6 +82,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   error: null,
   selectedMonth: new Date(),
   categoryFilter: [],
+  loadedRange: null,
 
   loadHabits: async () => {
     set({ isLoading: true, error: null });
@@ -109,17 +115,39 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   },
 
   loadCompletions: async (startDate: string, endDate: string) => {
+    // Check if the requested range is already fully covered by loadedRange
+    const { loadedRange, completions: existingCompletions } = get();
+    if (loadedRange && startDate >= loadedRange.start && endDate <= loadedRange.end) {
+      return; // Already loaded!
+    }
+
     try {
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.user?.id) {
-        set({ completions: [] });
+        set({ completions: [], loadedRange: null });
         return;
       }
 
       const completions = await getAllCompletionsInRange(startDate, endDate, session.user.id);
-      set({ completions });
+      
+      // Merge: Filter out any existing completions that fall in [startDate, endDate]
+      // and append the newly fetched ones to keep everything loaded outside this range intact.
+      const filteredExisting = existingCompletions.filter(c => c.date < startDate || c.date > endDate);
+      
+      // Calculate union range
+      let newStart = startDate;
+      let newEnd = endDate;
+      if (loadedRange) {
+        newStart = startDate < loadedRange.start ? startDate : loadedRange.start;
+        newEnd = endDate > loadedRange.end ? endDate : loadedRange.end;
+      }
+
+      set({
+        completions: [...filteredExisting, ...completions],
+        loadedRange: { start: newStart, end: newEnd }
+      });
     } catch (error) {
       set({ error: (error as Error).message });
     }
@@ -128,7 +156,10 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   loadAllCompletions: async () => {
     try {
       const completions = await db.completions.toArray();
-      set({ completions });
+      set({ 
+        completions,
+        loadedRange: { start: '1970-01-01', end: '9999-12-31' }
+      });
     } catch (error) {
       set({ error: (error as Error).message });
     }
@@ -504,13 +535,21 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
   getCurrentStreaks: () => {
     const { habits, completions } = get();
-    const streaks = new Map<string, number>();
+    
+    // Return cached value if reference equality holds
+    if (cachedStreaks && habits === lastHabitsRef && completions === lastCompletionsRef) {
+      return cachedStreaks;
+    }
 
+    const streaks = new Map<string, number>();
     for (const habit of habits) {
       const stats = calculateHabitStats(habit, completions);
       streaks.set(habit.id, stats.currentStreak);
     }
 
+    cachedStreaks = streaks;
+    lastHabitsRef = habits;
+    lastCompletionsRef = completions;
     return streaks;
   },
 
