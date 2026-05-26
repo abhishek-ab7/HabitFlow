@@ -20,7 +20,8 @@ import {
   CloudOff,
   Loader2,
   Workflow, // Routine icon
-  Trophy
+  Trophy,
+  Keyboard
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
@@ -53,7 +54,7 @@ export function Header() {
   const handleSignOut = async () => {
     try {
       // Call server-side route to clear cookies reliably
-      await fetch('/auth/signout', { method: 'POST' });
+      await fetch('/auth/signout', { method: 'POST', redirect: 'manual' });
       // Force a hard navigation to ensure clean state
       window.location.href = '/login';
     } catch (error) {
@@ -202,15 +203,9 @@ export function Header() {
                 <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-gradient-to-r from-primary to-purple-600 transform scale-x-0 origin-left transition-transform duration-300 ease-out group-hover:scale-x-100 2xl:hidden" />
 
                 {isActive && (
-                  <motion.div
-                    className="absolute inset-0 rounded-lg bg-muted"
-                    layoutId="navbar-indicator"
+                  <div
+                    className="absolute inset-0 rounded-lg bg-muted border-none outline-none"
                     style={{ zIndex: -1 }}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 500,
-                      damping: 35,
-                    }}
                   />
                 )}
               </Link>
@@ -220,9 +215,12 @@ export function Header() {
 
         {/* Right side actions */}
         <div className="flex-grow-0 flex-shrink-0 flex items-center justify-end gap-1.5 lg:gap-2">
-          {isAuthenticated && <UserStatusHUD />}
-          {/* Sync Status Badge */}
-          {isAuthenticated && <SyncStatusBadge />}
+          {isAuthenticated && (
+            <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
+              <UserStatusHUD />
+              <SyncStatusBadge />
+            </div>
+          )}
 
           {/* User Menu */}
           {isAuthenticated ? (
@@ -248,6 +246,18 @@ export function Header() {
               <span className="sr-only">Sign in</span>
             </Button>
           )}
+
+          {/* Keyboard shortcuts */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => window.dispatchEvent(new CustomEvent('toggle-shortcuts'))}
+            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+            title="Keyboard Shortcuts (?)"
+          >
+            <Keyboard className="h-5 w-5" />
+            <span className="sr-only">Keyboard Shortcuts</span>
+          </Button>
 
           {/* Theme toggle */}
           <Button

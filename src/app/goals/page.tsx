@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Target,
@@ -15,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,7 +51,24 @@ const AREA_OPTIONS: { value: AreaOfLife; label: string; emoji: string }[] = [
 
 type SortOption = 'deadline' | 'priority' | 'progress' | 'created';
 
-export default function GoalsPage() {
+function GoalsPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [formModalOpen, setFormModalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | undefined>();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<SortOption>('deadline');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  const { isAuthenticated, user } = useAuth();
+
+  // Check for ?new=true query param
+  useEffect(() => {
+    if (searchParams.get('new') === 'true') {
+      setFormModalOpen(true);
+      router.replace('/goals');
+    }
+  }, [searchParams, router]);
   const {
     goals,
     milestones,
@@ -72,13 +91,6 @@ export default function GoalsPage() {
     getFilteredGoals,
   } = useGoalStore();
 
-  const [formModalOpen, setFormModalOpen] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<Goal | undefined>();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('deadline');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-
-  const { isAuthenticated, user } = useAuth();
 
   // Load goals on mount AND when auth state changes
   useEffect(() => {
@@ -124,7 +136,7 @@ export default function GoalsPage() {
     const focusGoals = sortedGoals.filter(g => g.isFocus);
     const otherGoals = sortedGoals.filter(g => !g.isFocus);
     return [...focusGoals, ...otherGoals];
-  }, [getFilteredGoals, searchQuery, sortBy, getGoalStats]);
+  }, [getFilteredGoals, goals, statusFilter, areaFilter, searchQuery, sortBy, getGoalStats]);
 
   const handleCreateGoal = async (data: GoalFormData) => {
     await addGoal(data);
@@ -470,5 +482,24 @@ export default function GoalsPage() {
         }
       />
     </div>
+  );
+}
+
+export default function GoalsPage() {
+  return (
+    <Suspense fallback={
+      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto">
+        <Skeleton className="h-9 w-48 mb-8" />
+        <div className="bg-card border text-card-foreground rounded-xl shadow p-6">
+          <div className="space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        </div>
+      </div>
+    }>
+      <GoalsPageContent />
+    </Suspense>
   );
 }

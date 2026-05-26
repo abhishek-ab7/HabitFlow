@@ -49,7 +49,18 @@ export const HabitGrid = memo(function HabitGrid({
 }: HabitGridProps) {
   const [rippleCell, setRippleCell] = useState<string | null>(null);
   const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
+  const [isMobile, setIsMobile] = useState(false);
   const { getRoutinesForMultipleHabits, reorder, freezeHabit } = useHabitStore();
+
+  // Handle window resizing to detect mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -106,6 +117,20 @@ export const HabitGrid = memo(function HabitGrid({
     });
   }, [selectedMonth]);
 
+  // Compute displayed days (7 days on mobile, full month on desktop)
+  const displayedDays = useMemo(() => {
+    if (!isMobile) return days;
+
+    const todayIndex = days.findIndex(d => d.isToday);
+    if (todayIndex !== -1) {
+      // Center today if possible, showing last 5 days and today + 1 day
+      const start = Math.max(0, todayIndex - 5);
+      return days.slice(start, start + 7);
+    }
+    // Return last 7 days of the selected month if today is not in it
+    return days.slice(-7);
+  }, [days, isMobile]);
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
@@ -138,12 +163,12 @@ export const HabitGrid = memo(function HabitGrid({
 
   return (
     <div className="overflow-x-auto pb-4 scrollbar-hide">
-      <div className="min-w-[800px]">
+      <div className="min-w-full md:min-w-[800px]">
         {/* Header row with days */}
         <div className="flex items-center sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-2 border-b">
-          <div className="w-52 flex-shrink-0" /> {/* Spacer for habit column */}
+          <div className="w-36 md:w-52 flex-shrink-0" /> {/* Responsive Spacer */}
           <div className="flex gap-0.5">
-            {days.map(({ day, dayLabel, isWeekend, isToday: isTodayDate }) => (
+            {displayedDays.map(({ day, dayLabel, isWeekend, isToday: isTodayDate }) => (
               <div
                 key={day}
                 className={cn(
@@ -167,7 +192,7 @@ export const HabitGrid = memo(function HabitGrid({
               </div>
             ))}
           </div>
-          <div className="w-24 flex-shrink-0 text-center text-xs text-muted-foreground">
+          <div className="w-16 md:w-24 flex-shrink-0 text-center text-xs text-muted-foreground ml-auto">
             Progress
           </div>
         </div>
@@ -189,7 +214,7 @@ export const HabitGrid = memo(function HabitGrid({
                   <SortableHabitRow
                     key={habit.id}
                     habit={habit}
-                    days={days}
+                    days={displayedDays}
                     completions={completions}
                     streak={streak}
                     habitRoutines={habitRoutines.get(habit.id)}

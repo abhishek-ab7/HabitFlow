@@ -65,7 +65,7 @@ export function SettingsHero({
                 <div className="flex-1 text-center md:text-left space-y-4 w-full">
                     <div className="space-y-1">
                         <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-500">
-                            {displayName || 'Habit Hero'}
+                            {displayName || 'Your Name'}
                         </h2>
                         <p className="text-muted-foreground flex items-center justify-center md:justify-start gap-2 text-sm font-medium">
                             <span className="inline-flex items-center gap-1 rounded-full bg-primary/20 px-3 py-1 text-primary">

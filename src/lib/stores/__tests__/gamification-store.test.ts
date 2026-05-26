@@ -148,4 +148,26 @@ describe('gamification-store', () => {
         progress = useGamificationStore.getState().getBufferProgress();
         expect(progress).toBe(100); 
     });
+
+    it('useShield decrements streakShield and returns true if shields > 0', async () => {
+        useGamificationStore.setState({ streakShield: 3 });
+        const { useShield } = useGamificationStore.getState();
+
+        const success = await useShield();
+        expect(success).toBe(true);
+
+        const state = useGamificationStore.getState();
+        expect(state.streakShield).toBe(2);
+    });
+
+    it('useShield returns false and does not decrement if shields is 0', async () => {
+        useGamificationStore.setState({ streakShield: 0 });
+        const { useShield } = useGamificationStore.getState();
+
+        const success = await useShield();
+        expect(success).toBe(false);
+
+        const state = useGamificationStore.getState();
+        expect(state.streakShield).toBe(0);
+    });
 });

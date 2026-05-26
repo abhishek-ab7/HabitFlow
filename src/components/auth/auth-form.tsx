@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Loader2, Eye, EyeOff, User } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ export function AuthForm() {
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -44,11 +45,11 @@ export function AuthForm() {
           setMode('signin');
         }
       } else if (mode === 'signup') {
-        const { error } = await signUp(email, password);
+        const { error } = await signUp(email, password, fullName.trim() || undefined);
         if (error) {
           toast.error(error.message);
         } else {
-          toast.success('Account created! Please check your email to confirm.');
+          toast.success(fullName.trim() ? `Welcome, ${fullName.trim()}! Please check your email to confirm.` : 'Account created! Please check your email to confirm.');
         }
       } else {
         const { error } = await signIn(email, password);
@@ -155,6 +156,22 @@ export function AuthForm() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Full Name — signup only */}
+            {mode === 'signup' && (
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Full name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="pl-10"
+                  disabled={isLoading}
+                  autoComplete="name"
+                />
+              </div>
+            )}
+
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input

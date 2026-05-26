@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { CheckCircle2, Circle, Calendar, Tag, AlertCircle, Sparkles } from "lucide-react"
+import { CheckCircle2, Circle, Calendar, Tag, AlertCircle, Sparkles, Play, Pause } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { isAIEnabled } from "@/lib/ai-features-flag"
 import { format } from "date-fns"
@@ -16,6 +16,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { Task } from "@/lib/types"
+import { usePomodoroStore } from "@/lib/stores/pomodoro-store"
 
 interface TaskCardProps {
     task: Task
@@ -35,6 +36,23 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
     const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
     const [loadingPriority, setLoadingPriority] = useState(false);
     
+    const { 
+        activeTaskId, 
+        isRunning: isTimerRunning, 
+        timeLeft, 
+        startTimer, 
+        pauseTimer, 
+        resumeTimer 
+    } = usePomodoroStore();
+
+    const isCurrentTaskActive = activeTaskId === task.id;
+
+    const formatMinutesSeconds = (secs: number) => {
+        const mins = Math.floor(secs / 60);
+        const remaining = secs % 60;
+        return `${mins}:${remaining.toString().padStart(2, '0')}`;
+    };
+
     const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done'
 
     const priorityStyles = {
@@ -243,6 +261,57 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                 <Sparkles className="h-3 w-3" />
                                 {loadingPriority ? 'Analyzing...' : 'AI Priority'}
                             </Button>
+                        )}
+
+                        {/* Pomodoro Timer Trigger */}
+                        {task.status !== 'done' && (
+                            <div className="flex items-center">
+                                {isCurrentTaskActive ? (
+                                    isTimerRunning ? (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                pauseTimer();
+                                            }}
+                                            className="h-6 px-2 text-[10px] gap-1 text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 rounded-md font-semibold"
+                                        >
+                                            <Pause className="h-3 w-3 fill-current animate-pulse" />
+                                            <span>Focusing ({formatMinutesSeconds(timeLeft)})</span>
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                resumeTimer();
+                                            }}
+                                            className="h-6 px-2 text-[10px] gap-1 text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 rounded-md font-semibold"
+                                        >
+                                            <Play className="h-3 w-3 fill-current" />
+                                            <span>Paused ({formatMinutesSeconds(timeLeft)})</span>
+                                        </Button>
+                                    )
+                                ) : (
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            startTimer(task.id, task.title);
+                                        }}
+                                        className="h-6 px-2 text-[10px] gap-1 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/5 rounded-md font-medium"
+                                    >
+                                        <Play className="h-3 w-3" />
+                                        <span>Start Focus</span>
+                                    </Button>
+                                )}
+                            </div>
                         )}
                     </div>
 

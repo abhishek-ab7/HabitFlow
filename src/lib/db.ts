@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, Routine, HabitRoutine, RoutineCompletion } from './types';
+import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, Routine, HabitRoutine, RoutineCompletion, MoodLog } from './types';
 
 // Define the database schema
 const db = new Dexie('HabitFlowDB') as Dexie & {
@@ -12,6 +12,7 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   routines: EntityTable<Routine, 'id'>;
   habitRoutines: EntityTable<HabitRoutine, 'id'>;
   routineCompletions: EntityTable<RoutineCompletion, 'id'>;
+  moodLogs: EntityTable<MoodLog, 'id'>;
 };
 
 // Schema version 5 - Added HabitRoutines junction table for many-to-many
@@ -141,6 +142,20 @@ db.version(7).stores({
   }
 });
 
+// Schema version 8 - Add moodLogs table for premium features
+db.version(8).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, routineId, isQuantitative',
+  completions: 'id, userId, habitId, date, [habitId+date], updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+  routines: 'id, userId, isActive, orderIndex, updatedAt',
+  habitRoutines: 'id, habitId, routineId, [habitId+routineId], updatedAt',
+  routineCompletions: 'id, userId, routineId, date, [routineId+date], updatedAt',
+  moodLogs: 'id, userId, date, [userId+date], updatedAt',
+});
+
 // ==================
 // HABIT FUNCTIONS
 // ==================
@@ -148,6 +163,11 @@ db.version(7).stores({
 export async function getHabits(userId: string): Promise<Habit[]> {
   if (!userId) return [];
   return db.habits.where('userId').equals(userId).filter(h => !h.archived).sortBy('order');
+}
+
+export async function getArchivedHabits(userId: string): Promise<Habit[]> {
+  if (!userId) return [];
+  return db.habits.where('userId').equals(userId).filter(h => !!h.archived).toArray();
 }
 
 export async function createHabit(data: HabitFormData & { userId: string }): Promise<Habit> {
@@ -163,6 +183,9 @@ export async function createHabit(data: HabitFormData & { userId: string }): Pro
     order: await db.habits.where('userId').equals(data.userId).count(),
     createdAt: now,
     updatedAt: now,
+    isQuantitative: data.isQuantitative ?? false,
+    targetValue: data.targetValue ?? 0,
+    unit: data.unit ?? '',
   };
 
   await db.habits.add(habit);
@@ -259,6 +282,36 @@ export async function freezeCompletion(habitId: string, date: string, userId: st
     };
     await db.completions.add(completion);
     return completion;
+  }
+}
+
+export async function unfreezeCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion> {
+  const existing = await db.completions
+    .where('[habitId+date]')
+    .equals([habitId, date])
+    .first();
+
+  const now = new Date().toISOString();
+
+  if (existing) {
+    const updated: HabitCompletion = {
+      ...existing,
+      completed: false,
+      status: undefined,
+      updatedAt: now
+    };
+    await db.completions.update(existing.id, updated);
+    return updated;
+  } else {
+    return {
+      id: crypto.randomUUID(),
+      userId,
+      habitId,
+      date,
+      completed: false,
+      createdAt: now,
+      updatedAt: now,
+    };
   }
 }
 
@@ -813,5 +866,142 @@ export async function unlinkAllHabitsFromRoutine(routineId: string): Promise<voi
   const linkIds = links.map(link => link.id);
   await db.habitRoutines.bulkDelete(linkIds);
 }
+
+// ==================
+// HABIT COMPLETION VALUES AND NOTES
+// ==================
+
+export async function updateCompletionNote(
+  habitId: string,
+  date: string,
+  note: string,
+  userId: string
+): Promise<HabitCompletion> {
+  const existing = await db.completions
+    .where('[habitId+date]')
+    .equals([habitId, date])
+    .first();
+
+  const now = new Date().toISOString();
+
+  if (existing) {
+    const updated = {
+      ...existing,
+      note,
+      updatedAt: now,
+    };
+    await db.completions.update(existing.id, updated);
+    return updated;
+  } else {
+    const completion: HabitCompletion = {
+      id: crypto.randomUUID(),
+      userId,
+      habitId,
+      date,
+      completed: true, // Auto-complete when adding a note/journal entry
+      note,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.completions.add(completion);
+    return completion;
+  }
+}
+
+export async function updateCompletionValue(
+  habitId: string,
+  date: string,
+  value: number,
+  userId: string
+): Promise<HabitCompletion> {
+  const existing = await db.completions
+    .where('[habitId+date]')
+    .equals([habitId, date])
+    .first();
+
+  const now = new Date().toISOString();
+  
+  // Find the habit to know the target value
+  const habit = await db.habits.get(habitId);
+  const targetValue = habit?.targetValue || 1;
+  const completed = value >= targetValue;
+
+  if (existing) {
+    const updated = {
+      ...existing,
+      value,
+      completed,
+      updatedAt: now,
+    };
+    await db.completions.update(existing.id, updated);
+    return updated;
+  } else {
+    const completion: HabitCompletion = {
+      id: crypto.randomUUID(),
+      userId,
+      habitId,
+      date,
+      completed,
+      value,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.completions.add(completion);
+    return completion;
+  }
+}
+
+// ==================
+// MOOD LOG FUNCTIONS
+// ==================
+
+export async function getMoodLogs(
+  userId: string,
+  startDate: string,
+  endDate: string
+): Promise<MoodLog[]> {
+  if (!userId) return [];
+  return db.moodLogs
+    .where('date')
+    .between(startDate, endDate, true, true)
+    .filter(log => log.userId === userId)
+    .toArray();
+}
+
+export async function setMoodLog(
+  userId: string,
+  date: string,
+  mood: MoodType
+): Promise<MoodLog> {
+  const existing = await db.moodLogs
+    .where('[userId+date]')
+    .equals([userId, date])
+    .first();
+
+  const now = new Date().toISOString();
+
+  if (existing) {
+    const updated: MoodLog = {
+      ...existing,
+      mood,
+      updatedAt: now,
+    };
+    await db.moodLogs.update(existing.id, updated);
+    return updated;
+  } else {
+    const newLog: MoodLog = {
+      id: crypto.randomUUID(),
+      userId,
+      date,
+      mood,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.moodLogs.add(newLog);
+    return newLog;
+  }
+}
+
+import type { MoodType } from './types';
 
 export { db };

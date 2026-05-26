@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions } from '@/lib/db';
+import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions, cleanupDuplicateHabits } from '@/lib/db';
 import { countDuplicateCompletions, countDuplicateHabits, countDuplicateGoals, countAllDuplicates } from '@/lib/cleanup';
-import type { Habit, HabitCompletion, Goal, Milestone } from '@/lib/types';
+import type { Habit, HabitCompletion, Goal, Milestone, MoodLog, MoodType } from '@/lib/types';
 import { useSyncStatusStore } from '../stores/sync-status-store';
 import { resolveConflict, mergeGamificationFields } from './conflict-resolution';
 
@@ -19,7 +19,7 @@ export type SyncStatus =
 interface PendingOperation {
   id: string;
   type: 'create' | 'update' | 'delete';
-  table: 'habits' | 'completions' | 'goals' | 'milestones' | 'tasks' | 'routines' | 'user_settings' | 'habit_routines';
+  table: 'habits' | 'completions' | 'goals' | 'milestones' | 'tasks' | 'routines' | 'user_settings' | 'habit_routines' | 'mood_logs';
   data: any;
   timestamp: number;
   retryCount: number;
@@ -341,6 +341,7 @@ export class SyncEngine {
         this.syncMilestonesWithRetry(),
         this.syncHabitRoutinesWithRetry(), // NEW: Add habit-routines junction sync
         this.syncRoutineCompletions(), // NEW: Routine completions sync
+        this.syncMoodLogsWithRetry(), // NEW: Mood logs sync
       ]);
 
       this.notifyStatus({ type: 'syncing', message: 'Cleaning up duplicates...', progress: 80 });
@@ -582,6 +583,9 @@ export class SyncEngine {
       // REMOVED: archived_at (column doesn't exist in Supabase)
       order_index: habit.order,
       updated_at: habit.updatedAt || habit.createdAt,
+      is_quantitative: habit.isQuantitative || false,
+      target_value: habit.targetValue || 0,
+      unit: habit.unit || '',
     } as any);
 
     if (error) throw error;
@@ -600,6 +604,9 @@ export class SyncEngine {
       updatedAt: remote.updated_at || remote.created_at,
       order: remote.order_index || 0,
       createdAt: remote.created_at,
+      isQuantitative: Boolean(remote.is_quantitative),
+      targetValue: remote.target_value || 0,
+      unit: remote.unit || '',
     };
 
     await db.habits.put(localHabit);
@@ -634,6 +641,7 @@ export class SyncEngine {
             date: completion.date,
             completed: completion.completed,
             notes: completion.note || null,
+            value: completion.value || 0,
           } as any);
         }
       } else {
@@ -666,6 +674,9 @@ export class SyncEngine {
           is_archived: habit.archived,
           order_index: habit.order,
           updated_at: new Date().toISOString(),
+          is_quantitative: habit.isQuantitative || false,
+          target_value: habit.targetValue || 0,
+          unit: habit.unit || '',
         },
       });
       return;
@@ -861,9 +872,10 @@ export class SyncEngine {
           completed: local.completed,
           status: local.status || 'completed',
           notes: local.note || null,
+          value: local.value || 0,
           created_at: new Date().toISOString(),
         });
-      } else if (local.completed !== remote.completed || local.note !== remote.notes) {
+      } else if (local.completed !== remote.completed || local.note !== remote.notes || (local.value || 0) !== (remote.value || 0)) {
         // Both exist but differ - use intelligent conflict resolution
         const resolution = resolveConflict(
           {
@@ -890,6 +902,7 @@ export class SyncEngine {
             completed: local.completed,
             status: local.status || 'completed',
             notes: local.note || null,
+            value: local.value || 0,
             updated_at: new Date().toISOString(),
           });
           this.log('info', `🔄 Completion conflict (${local.habitId} on ${local.date}): ${resolution.reason}`);
@@ -903,6 +916,7 @@ export class SyncEngine {
             completed: remote.completed,
             status: remote.status || 'completed',
             note: remote.notes || undefined,
+            value: remote.value || 0,
             updatedAt: remote.updated_at,
             createdAt: remote.created_at,
           });
@@ -925,6 +939,7 @@ export class SyncEngine {
           completed: remote.completed,
           status: remote.status || 'completed',
           note: remote.notes || undefined,
+          value: remote.value || 0,
         });
       }
     }
@@ -983,6 +998,7 @@ export class SyncEngine {
       completed: completion.completed,
       status: completion.status || 'completed',
       notes: completion.note || null,
+      value: completion.value || 0,
     };
 
     if (!this.isOnline) {
@@ -1848,10 +1864,17 @@ export class SyncEngine {
       this.log('info', '🎮 Both settings exist, merging with conflict resolution...');
 
       // First, merge gamification fields to ensure highest values
-      const mergedGamification = mergeGamificationFields(
-        localSettings,
-        mappedRemoteSettings
-      );
+      // EXCEPTION: If remote settings indicate a reset (level=1, xp=0, gems=0) and remote is newer,
+      // allow remote settings to override local settings to let the reset take effect.
+      const isRemoteReset = mappedRemoteSettings.level === 1 && mappedRemoteSettings.xp === 0 && mappedRemoteSettings.gems === 0;
+      const isRemoteNewer = new Date(mappedRemoteSettings.updatedAt || 0) > new Date(localSettings.updatedAt || localSettings.createdAt || 0);
+
+      const mergedGamification = (isRemoteReset && isRemoteNewer)
+        ? mappedRemoteSettings
+        : mergeGamificationFields(
+            localSettings,
+            mappedRemoteSettings
+          );
 
       // Then use conflict resolution for other fields based on timestamp
       const resolution = resolveConflict(
@@ -2406,6 +2429,9 @@ export class SyncEngine {
           case 'routine_completions':
             await this.syncRoutineCompletions();
             break;
+          case 'mood_logs':
+            await this.syncMoodLogsWithRetry();
+            break;
         }
 
         this.notifyStatus({ type: 'success', message: 'Data updated' });
@@ -2512,6 +2538,7 @@ export class SyncEngine {
       // Run cleanup
       await cleanupDuplicateCompletions();
       await cleanupDuplicateGoals();
+      await cleanupDuplicateHabits();
 
       const after = await countAllDuplicates();
 
@@ -2582,6 +2609,144 @@ export class SyncEngine {
 
   getOnlineStatus(): boolean {
     return this.isOnline;
+  }
+
+  // ===================
+  // MOOD LOGS SYNC
+  // ===================
+
+  private async syncMoodLogsWithRetry() {
+    return this.withRetry(() => this.syncMoodLogs(), 'Mood logs sync');
+  }
+
+  private async syncMoodLogs() {
+    if (!this.userId) return;
+
+    this.log('info', '🔄 Starting mood logs sync...');
+
+    const startDate = this.getStartDate();
+
+    const { data: remoteMoods, error } = await this.supabase
+      .from('mood_logs')
+      .select('*')
+      .eq('user_id', this.userId)
+      .gte('date', startDate);
+
+    if (error) throw error;
+
+    const localMoods = await db.moodLogs
+      .where('date')
+      .aboveOrEqual(startDate)
+      .toArray();
+
+    this.log('info', `📊 Mood logs count: Local=${localMoods.length}, Remote=${remoteMoods?.length || 0}`);
+
+    const remoteMap = new Map((remoteMoods || []).map((m: any) => [m.date, m]));
+    const localMap = new Map(localMoods.map(m => [m.date, m]));
+
+    const processedDates = new Set<string>();
+
+    const toInsertRemote: any[] = [];
+    const toUpdateRemote: any[] = [];
+    const toUpsertLocal: MoodLog[] = [];
+
+    // Process local moods
+    for (const local of localMoods) {
+      const key = local.date;
+      const remote = remoteMap.get(key);
+      processedDates.add(key);
+
+      if (!remote) {
+        // Local only - push to remote
+        toInsertRemote.push({
+          id: local.id,
+          user_id: this.userId,
+          date: local.date,
+          mood: local.mood,
+          created_at: local.createdAt || new Date().toISOString(),
+          updated_at: local.updatedAt || new Date().toISOString(),
+        });
+      } else if (local.mood !== remote.mood) {
+        // Differ - resolve conflict based on updatedAt
+        const localUpdated = local.updatedAt || local.createdAt || '';
+        const remoteUpdated = remote.updated_at || remote.created_at || '';
+
+        if (localUpdated >= remoteUpdated) {
+          // Local wins
+          toUpdateRemote.push({
+            id: remote.id,
+            user_id: this.userId,
+            date: local.date,
+            mood: local.mood,
+            updated_at: new Date().toISOString(),
+          });
+        } else {
+          // Remote wins
+          toUpsertLocal.push({
+            id: remote.id,
+            userId: this.userId,
+            date: remote.date,
+            mood: remote.mood as any,
+            createdAt: remote.created_at,
+            updatedAt: remote.updated_at,
+          });
+        }
+      }
+    }
+
+    // Pull remote moods that don't exist locally
+    for (const remote of (remoteMoods || []) as any[]) {
+      const key = remote.date;
+      if (!processedDates.has(key) && !localMap.has(key)) {
+        toUpsertLocal.push({
+          id: remote.id,
+          userId: this.userId,
+          date: remote.date,
+          mood: remote.mood as any,
+          createdAt: remote.created_at,
+          updatedAt: remote.updated_at,
+        });
+      }
+    }
+
+    // Upsert remote
+    if (toInsertRemote.length > 0) {
+      await this.batchUpsert('mood_logs', toInsertRemote);
+      this.log('info', `✅ Pushed ${toInsertRemote.length} new mood logs to remote`);
+    }
+    if (toUpdateRemote.length > 0) {
+      await this.batchUpsert('mood_logs', toUpdateRemote);
+      this.log('info', `✅ Updated ${toUpdateRemote.length} mood logs on remote`);
+    }
+
+    // Upsert local
+    if (toUpsertLocal.length > 0) {
+      await db.transaction('rw', db.moodLogs, async () => {
+        for (const log of toUpsertLocal) {
+          await db.moodLogs.put(log);
+        }
+      });
+      this.log('info', `✅ Pulled ${toUpsertLocal.length} mood logs from remote`);
+    }
+  }
+
+  async pushMoodLog(log: MoodLog) {
+    if (!this.userId) return;
+
+    const data = {
+      id: log.id,
+      user_id: this.userId,
+      date: log.date,
+      mood: log.mood,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (!this.isOnline) {
+      this.queueOperation({ type: 'update', table: 'mood_logs', data });
+      return;
+    }
+
+    await this.supabase.from('mood_logs').upsert(data as any);
   }
 }
 

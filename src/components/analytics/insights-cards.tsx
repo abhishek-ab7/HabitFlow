@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 import { 
   Trophy, 
   AlertTriangle, 
@@ -119,6 +120,14 @@ export function InsightsCards({ insights }: InsightsCardsProps) {
                     <p className="text-sm text-muted-foreground mt-0.5">
                       {insight.description}
                     </p>
+                    {insight.actionLabel && insight.actionHref && (
+                      <Link 
+                        href={insight.actionHref}
+                        className="inline-flex items-center text-xs font-semibold mt-2 text-primary hover:underline hover:opacity-90"
+                      >
+                        {insight.actionLabel} &rarr;
+                      </Link>
+                    )}
                   </div>
                   <Badge 
                     variant="secondary" 

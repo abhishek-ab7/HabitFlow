@@ -35,6 +35,7 @@ import { db, getSettings, updateSettings } from '@/lib/db';
 import { cleanupAllDuplicates, countAllDuplicates } from '@/lib/cleanup';
 import { forcePushAllHabits } from '@/lib/force-sync';
 import { getSyncEngine } from '@/lib/sync';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 import type { UserSettings } from '@/lib/types';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
@@ -43,6 +44,7 @@ import { SettingsHero } from '@/components/settings/SettingsHero';
 import { AvatarSelector } from '@/components/settings/AvatarSelector';
 import { PasswordChangeModal } from '@/components/settings/password-change-modal';
 import { useUserStore } from '@/lib/stores/user-store';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { Avatar } from '@/lib/avatars';
 
 export default function SettingsPage() {
@@ -64,12 +66,14 @@ export default function SettingsPage() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   const { displayName, email, setDisplayName, saveDisplayNameToServer, loadUser } = useUserStore();
+  const { xp, level, gems, streakShield, loadGamification } = useGamificationStore();
 
   useEffect(() => {
     const loadSettings = async () => {
       if (!user?.id) return;
 
       loadUser(); // Load user profile store
+      loadGamification(); // Load live XP/level from DB
 
       let s = await getSettings(user.id);
 
@@ -105,7 +109,7 @@ export default function SettingsPage() {
     if (isAuthenticated) {
       loadSettings();
     }
-  }, [user, isAuthenticated, loadUser]);
+  }, [user, isAuthenticated, loadUser, loadGamification]);
 
   const handleSaveDisplayName = async () => {
     try {
@@ -213,6 +217,67 @@ export default function SettingsPage() {
     }
   };
 
+  const handleExportCSVData = async () => {
+    setIsExporting(true);
+    try {
+      const habits = await db.habits.toArray();
+      const completions = await db.completions.toArray();
+
+      const habitMap = new Map(habits.map(h => [h.id, h]));
+      const headers = ['Date', 'Habit Name', 'Category', 'Target Value', 'Logged Value', 'Unit', 'Status', 'Completed', 'Notes'];
+
+      const rows = completions.map(c => {
+        const habit = habitMap.get(c.habitId);
+        const habitName = habit ? habit.name : 'Unknown Habit';
+        const category = habit ? habit.category : 'N/A';
+        const targetValue = habit && habit.isQuantitative ? habit.targetValue || 0 : 'N/A';
+        const loggedValue = habit && habit.isQuantitative ? c.value || 0 : 'N/A';
+        const unit = habit && habit.isQuantitative ? habit.unit || '' : 'N/A';
+        const status = c.status || (c.completed ? 'completed' : 'missed');
+        const completedStr = c.completed ? 'TRUE' : 'FALSE';
+        const noteStr = c.note || '';
+
+        const escapeCSVField = (val: any) => {
+          const stringified = String(val);
+          if (stringified.includes(',') || stringified.includes('"') || stringified.includes('\n')) {
+            return `"${stringified.replace(/"/g, '""')}"`;
+          }
+          return stringified;
+        };
+
+        return [
+          escapeCSVField(c.date),
+          escapeCSVField(habitName),
+          escapeCSVField(category),
+          escapeCSVField(targetValue),
+          escapeCSVField(loggedValue),
+          escapeCSVField(unit),
+          escapeCSVField(status),
+          escapeCSVField(completedStr),
+          escapeCSVField(noteStr)
+        ].join(',');
+      });
+
+      const csvContent = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `habit-flow-export-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success('CSV Data exported successfully');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to export CSV data');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -244,15 +309,53 @@ export default function SettingsPage() {
   };
 
   const handleClearAllData = async () => {
+    if (!user?.id) {
+      toast.error('Not authenticated');
+      return;
+    }
     try {
+      const supabase = getSupabaseClient();
+      const uid = user.id;
+
+      // Step 1: Delete all user data from Supabase (cloud)
+      // This prevents the sync engine from re-pulling data on the next page load.
+      await Promise.all([
+        supabase.from('habit_completions').delete().eq('user_id', uid),
+        supabase.from('completions').delete().eq('user_id', uid),
+        supabase.from('milestones').delete().eq('user_id', uid),
+        supabase.from('tasks').delete().eq('user_id', uid),
+        supabase.from('routine_completions').delete().eq('user_id', uid),
+      ]);
+      // Delete habits after completions (FK safety)
+      await supabase.from('habits').delete().eq('user_id', uid);
+      // habit_routines has no user_id column - delete via habit_id join isn't possible with client SDK
+      // so delete routines first (which will cascade habit_routines if FK cascade is set)
+      await supabase.from('habit_routines').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // can't filter by user; RLS ensures only own rows
+      await supabase.from('routines').delete().eq('user_id', uid);
+      await supabase.from('goals').delete().eq('user_id', uid);
+      // Also clear user_settings so reset is complete (XP/level/gems reset to 0)
+      await supabase.from('user_settings').delete().eq('user_id', uid);
+
+      // Step 2: Clear ALL local IndexedDB tables (including userSettings)
       await db.habits.clear();
       await db.completions.clear();
       await db.goals.clear();
       await db.milestones.clear();
-      toast.success('All data cleared. Refreshing...');
+      await db.tasks.clear();
+      await db.routines.clear();
+      await db.habitRoutines.clear();
+      await db.routineCompletions.clear();
+      await db.userSettings.clear();
+
+      // Step 3: Clear localStorage sync metadata so sync engine starts fresh
+      localStorage.removeItem('habit_sync_pending');
+      localStorage.removeItem(`sync_version_${uid}`);
+
+      toast.success('All data permanently deleted. Refreshing...');
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
-      toast.error('Failed to clear data');
+      console.error('Failed to clear data:', error);
+      toast.error('Failed to clear data: ' + (error as Error).message);
     }
   };
 
@@ -312,9 +415,9 @@ export default function SettingsPage() {
         {/* ROW 1: HERO (Span 3) */}
         <SettingsHero
           avatarId={settings.avatarId || 'avatar-1'}
-          level={settings.level}
-          xp={settings.xp}
-          streakShield={settings.streakShield}
+          level={level}
+          xp={xp}
+          streakShield={streakShield}
           onAvatarClick={() => setShowAvatarSelector(true)}
           className="mb-8"
         />
@@ -348,9 +451,9 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Display Name Field */}
+                {/* Full Name Field */}
                 <div className="space-y-2.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Display Name</Label>
+                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Full Name</Label>
                   <div className="flex gap-2">
                     <div className="relative group flex-1">
                       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-indigo-500 transition-colors">
@@ -359,7 +462,7 @@ export default function SettingsPage() {
                       <Input
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="How should we call you?"
+                        placeholder="Your full name"
                         className="h-11 pl-10 rounded-xl border-border/50 bg-background/50 focus:bg-background transition-all focus:ring-2 focus:ring-indigo-500/20"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
@@ -422,26 +525,38 @@ export default function SettingsPage() {
                   title="Backup to JSON"
                 >
                   <Download className="h-3.5 w-3.5 shrink-0" />
-                  <span>Backup</span>
+                  <span>JSON Backup</span>
                 </Button>
 
-                <div className="relative w-full">
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportData}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-600 hover:border-blue-500/50"
-                    title="Restore from JSON"
-                  >
-                    <Upload className="h-3.5 w-3.5 shrink-0" />
-                    <span>Restore</span>
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportCSVData}
+                  disabled={isExporting}
+                  className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/50"
+                  title="Export to CSV"
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0" />
+                  <span>CSV Export</span>
+                </Button>
+              </div>
+
+              <div className="relative w-full">
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportData}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-600 hover:border-blue-500/50"
+                  title="Restore from JSON"
+                >
+                  <Upload className="h-3.5 w-3.5 shrink-0" />
+                  <span>Restore JSON</span>
+                </Button>
               </div>
 
               {/* Duplicate Maintenance */}

@@ -14,8 +14,6 @@ import { AccountabilityPledge } from './AccountabilityPledge';
 export function GamificationRulesModal() {
     const { rulesModalOpen, activeRulesTab, closeRules, setActiveRulesTab } = useGamificationStore();
 
-    // Debugging: Ensure component is rendering and receiving state updates
-    console.log('[GamificationRulesModal] Render:', { rulesModalOpen, activeRulesTab });
 
     return (
         <Dialog open={rulesModalOpen} onOpenChange={(open) => !open && closeRules()}>

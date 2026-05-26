@@ -4,3 +4,7 @@ export { HabitFormModal } from './habit-form-modal';
 export { HabitStackSuggestions } from './HabitStackSuggestions';
 export { HabitDescriptionEditor } from './HabitDescriptionEditor';
 export { SmartHabitGenerator } from './SmartHabitGenerator';
+export { HabitTemplates } from './HabitTemplates';
+export { ArchivedHabitsModal } from './ArchivedHabitsModal';
+export { ShareCardModal } from './ShareCardModal';
+

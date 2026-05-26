@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useHabitStore } from '@/lib/stores/habit-store';
@@ -19,7 +19,9 @@ import {
   PersonalizedQuote,
   BentoGrid,
 } from '@/components/dashboard';
+import OnboardingWizard from '@/components/dashboard/OnboardingWizard';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MoodCheckIn } from '@/components/dashboard/MoodCheckIn';
 
 import { useUIStore } from '@/lib/stores/ui-store';
 import { getSupabaseClient } from '@/lib/supabase/client';
@@ -27,6 +29,7 @@ import { getSupabaseClient } from '@/lib/supabase/client';
 export default function DashboardPage() {
   const router = useRouter();
   const { loadDashboardLayout } = useUIStore();
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Habit store
   const {
@@ -56,6 +59,18 @@ export default function DashboardPage() {
     getUpcomingDeadlines,
     toggleMilestoneComplete,
   } = useGoalStore();
+
+  // Check if we need to show onboarding
+  const isEmpty = habits.length === 0 && goals.length === 0 && !habitsLoading && !goalsLoading;
+
+  useEffect(() => {
+    if (isEmpty) {
+      const onboarded = localStorage.getItem('habitflow_onboarded');
+      if (onboarded !== 'true') {
+        setShowOnboarding(true);
+      }
+    }
+  }, [isEmpty]);
 
   // Initialize data on mount - OPTIMIZED: Parallel loading
   useEffect(() => {
@@ -124,8 +139,9 @@ export default function DashboardPage() {
     await toggleMilestoneComplete(milestoneId);
   };
 
-  // Check if we need to show demo data prompt
-  const isEmpty = habits.length === 0 && goals.length === 0 && !isLoading;
+  if (showOnboarding) {
+    return <OnboardingWizard onComplete={() => setShowOnboarding(false)} />;
+  }
 
   if (isEmpty) {
     return (
@@ -149,7 +165,7 @@ export default function DashboardPage() {
                 Load Demo Data
               </button>
               <button
-                onClick={() => router.push('/habits?new=true')}
+                onClick={() => setShowOnboarding(true)}
                 className="px-6 py-3 bg-secondary text-secondary-foreground rounded-lg font-medium hover:bg-secondary/80 transition-colors"
               >
                 Start Fresh
@@ -164,7 +180,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
   if (isLoading) {
     return (
       <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
@@ -218,8 +233,10 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
+    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
       <HeroSection />
+
+      <MoodCheckIn />
 
       <BentoGrid widgets={widgets} />
     </div>

@@ -3,12 +3,13 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { AuthProvider } from '@/providers/auth-provider';
 import { SyncProvider } from '@/providers/sync-provider';
-import { Header } from '@/components/layout';
+import { Header, ShortcutsProvider } from '@/components/layout';
 import { ServiceWorkerRegistration } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { LevelUpModal } from '@/components/gamification/LevelUpModal';
 import { GamificationRulesModal } from '@/components/gamification/GamificationRulesModal';
 import { RoutineTriggerWatcher } from '@/components/routines/RoutineTriggerWatcher';
+import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
 import './globals.css';
 
 const geistSans = Geist({
@@ -78,7 +79,9 @@ export default function RootLayout({
               <LevelUpModal />
               <GamificationRulesModal />
               <RoutineTriggerWatcher />
+              <ShortcutsProvider />
               <Toaster richColors position="bottom-right" />
+              <PomodoroFloating />
             </SyncProvider>
           </AuthProvider>
         </ThemeProvider>

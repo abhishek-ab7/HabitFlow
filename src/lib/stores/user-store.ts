@@ -59,12 +59,28 @@ export const useUserStore = create<UserState>((set, get) => ({
                     console.warn('[UserStore] Failed to fetch from remote, falling back to local:', error);
                 }
 
-                // Fallback to local DB if remote fetch failed or returned nothing
+                // Fallback 2: local DB
                 if (!displayNameLoaded) {
                     const settings = await getSettings(session.user.id);
                     if (settings?.userName) {
                         console.log('[UserStore] Loaded display name from local DB:', settings.userName);
                         set({ displayName: settings.userName });
+                        displayNameLoaded = true;
+                    }
+                }
+
+                // Fallback 3: Supabase auth metadata (set at signup via options.data.full_name)
+                if (!displayNameLoaded) {
+                    const metaName = session.user.user_metadata?.full_name as string | undefined;
+                    if (metaName) {
+                        console.log('[UserStore] Loaded display name from auth metadata:', metaName);
+                        set({ displayName: metaName });
+
+                        // Persist into local + remote DB so subsequent loads hit Fallback 1/2
+                        await updateSettings({
+                            userId: session.user.id,
+                            userName: metaName
+                        });
                     }
                 }
 
@@ -141,9 +157,9 @@ export const useUserStore = create<UserState>((set, get) => ({
         // LOCAL STATE UPDATE ONLY - NO ASYNC, NO SUPABASE PUSH
         console.log('[UserStore] Setting display name (local only):', name);
 
-        // Warn if setting default value to track where it's being called from
-        if (name === 'Habit Hero' || name === '') {
-            console.warn('[UserStore] ⚠️ Setting empty/default value - caller:', new Error().stack?.split('\n')[2]);
+        // Warn if setting empty value to track where it's being called from
+        if (name === '') {
+            console.warn('[UserStore] ⚠️ Setting empty name - caller:', new Error().stack?.split('\n')[2]);
         }
 
         set({ displayName: name });

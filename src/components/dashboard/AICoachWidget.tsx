@@ -50,7 +50,7 @@ export function AICoachWidget() {
     const { habits } = useHabitStore();
     const { tasks } = useTaskStore();
     const { level } = useGamificationStore();
-    const { displayName, isLoading: isLoadingUser, loadUser } = useUserStore();
+    const { displayName, email, isLoading: isLoadingUser, loadUser } = useUserStore();
 
     useEffect(() => {
         if (user) loadUser();
@@ -58,11 +58,11 @@ export function AICoachWidget() {
 
     // NEW: Auto-fetch AI coach data when user data finishes loading
     useEffect(() => {
-        if (user && !isLoadingUser && !data && !loading) {
+        if (user && !isLoadingUser && email && !data && !loading) {
             console.log('[AI Coach] User data ready, auto-fetching advice');
             fetchAdvice();
         }
-    }, [user, isLoadingUser]); // Trigger when isLoadingUser changes
+    }, [user, isLoadingUser, email]); // Trigger when isLoadingUser or email changes
 
     const fetchAdvice = async (force: boolean = false) => {
         if (!user) return;
@@ -84,7 +84,23 @@ export function AICoachWidget() {
             if (cached) {
                 try {
                     const parsed = JSON.parse(cached);
-                    if (parsed.date === today) {
+                    // Determine current userName to validate cache identity
+                    let currentUserName = 'Habit Hero';
+                    if (displayName && displayName.trim()) {
+                        const firstWord = displayName.trim().split(/\s+/)[0];
+                        currentUserName = firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+                    } else if (user.email) {
+                        const emailPrefix = user.email.split('@')[0];
+                        const match = emailPrefix.match(/^[a-zA-Z]+/);
+                        if (match && match[0]) {
+                            const name = match[0];
+                            currentUserName = name.charAt(0).toUpperCase() + name.slice(1);
+                        } else {
+                            currentUserName = user.email;
+                        }
+                    }
+
+                    if (parsed.date === today && parsed.userName === currentUserName) {
                         setData(parsed.data);
                         return;
                     }
@@ -102,7 +118,21 @@ export function AICoachWidget() {
             const todaysHabits = habits.filter(h => !h.archived);
             const unfinishedTasks = tasks.filter(t => t.status !== 'done');
 
-            const userName = displayName || user.email?.split('@')[0] || 'Habit Hero';
+            // Extract first name or clean up email prefix
+            let userName = 'Habit Hero';
+            if (displayName && displayName.trim()) {
+                const firstWord = displayName.trim().split(/\s+/)[0];
+                userName = firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+            } else if (user.email) {
+                const emailPrefix = user.email.split('@')[0];
+                const match = emailPrefix.match(/^[a-zA-Z]+/);
+                if (match && match[0]) {
+                    const name = match[0];
+                    userName = name.charAt(0).toUpperCase() + name.slice(1);
+                } else {
+                    userName = user.email; // Fallback to full email address
+                }
+            }
             console.log('[AI Coach] Sending request with userName:', userName);
 
             const res = await fetch('/api/ai/coach', {
@@ -149,6 +179,7 @@ export function AICoachWidget() {
             // Save to cache
             localStorage.setItem(cacheKey, JSON.stringify({
                 date: today,
+                userName,
                 data: result
             }));
             setError(null);

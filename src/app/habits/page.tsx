@@ -3,14 +3,14 @@
 import { useEffect, useState, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import { Plus, Filter, Sparkles } from 'lucide-react';
+import { Plus, Filter, Sparkles, Archive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { isAIEnabled } from '@/lib/ai-features-flag';
-import { MonthSelector, HabitGrid, HabitFormModal, HabitStackSuggestions, SmartHabitGenerator } from '@/components/habits';
+import { MonthSelector, HabitGrid, HabitFormModal, HabitStackSuggestions, SmartHabitGenerator, ArchivedHabitsModal } from '@/components/habits';
 import { HabitSuggestions } from '@/components/habits/HabitSuggestions';
 import { FadeIn } from '@/components/motion';
 import { cn } from '@/lib/utils';
@@ -49,6 +49,8 @@ function HabitsPageContent() {
   const [showModal, setShowModal] = useState(false);
   const [showSmartGenerator, setShowSmartGenerator] = useState(false);
   const [editingHabit, setEditingHabit] = useState<Habit | undefined>();
+  const [modalTab, setModalTab] = useState<'details' | 'templates'>('details');
+  const [showArchivedModal, setShowArchivedModal] = useState(false);
 
   // Check for ?new=true query param
   useEffect(() => {
@@ -178,7 +180,32 @@ function HabitsPageContent() {
                 AI Generator
               </Button>
             )}
-            <Button onClick={() => setShowModal(true)} className="gap-2">
+            <Button
+              onClick={() => {
+                setModalTab('templates');
+                setShowModal(true);
+              }}
+              variant="outline"
+              className="gap-2 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-950/20"
+            >
+              <Sparkles className="h-4 w-4" />
+              Browse Templates
+            </Button>
+            <Button
+              onClick={() => setShowArchivedModal(true)}
+              variant="outline"
+              className="gap-2 border-border/80 hover:bg-muted/30"
+            >
+              <Archive className="h-4 w-4 text-muted-foreground" />
+              Archived
+            </Button>
+            <Button 
+              onClick={() => {
+                setModalTab('details');
+                setShowModal(true);
+              }} 
+              className="gap-2"
+            >
               <Plus className="h-4 w-4" />
               New Habit
             </Button>
@@ -277,6 +304,7 @@ function HabitsPageContent() {
         }}
         onSubmit={editingHabit ? handleEditHabit : handleCreateHabit}
         habit={editingHabit}
+        defaultTab={modalTab}
       />
 
       {isAIEnabled() && (
@@ -285,6 +313,11 @@ function HabitsPageContent() {
           onOpenChange={setShowSmartGenerator}
         />
       )}
+
+      <ArchivedHabitsModal
+        open={showArchivedModal}
+        onOpenChange={setShowArchivedModal}
+      />
     </div>
   );
 }

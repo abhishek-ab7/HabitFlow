@@ -50,6 +50,9 @@ export interface Habit {
   order: number; // For drag-and-drop ordering
   icon?: string; // Optional emoji or icon name
   routineId?: string | null; // For linking to routines
+  isQuantitative?: boolean;
+  targetValue?: number;
+  unit?: string;
 }
 
 export type CompletionStatus = 'completed' | 'missed' | 'frozen';
@@ -65,6 +68,18 @@ export interface HabitCompletion {
   skipped?: boolean; // Intentionally skipped (e.g., rest day)
   createdAt?: string; // ISO timestamp
   updatedAt?: string; // ISO timestamp - for conflict resolution
+  value?: number; // Added for quantitative habits
+}
+
+export type MoodType = 'happy' | 'calm' | 'neutral' | 'sad' | 'stressed';
+
+export interface MoodLog {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  mood: MoodType;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // Derived habit statistics
@@ -265,6 +280,8 @@ export interface Insight {
   icon: string;
   relatedId?: string; // Optional link to habit or goal
   priority: number; // For sorting insights
+  actionLabel?: string;
+  actionHref?: string;
 }
 
 // ============================================
@@ -292,6 +309,9 @@ export interface HabitFormData {
   category: Category;
   targetDaysPerWeek: number;
   icon?: string;
+  isQuantitative?: boolean;
+  targetValue?: number;
+  unit?: string;
 }
 
 export interface GoalFormData {

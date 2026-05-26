@@ -2,10 +2,13 @@ import { create } from 'zustand';
 import {
   db,
   getHabits,
+  getArchivedHabits,
   createHabit,
   updateHabit,
   deleteHabit,
   toggleCompletion,
+  freezeCompletion,
+  unfreezeCompletion,
   getAllCompletionsInRange,
   reorderHabits,
   seedDemoData,
@@ -15,12 +18,13 @@ import {
   getRoutinesForHabits,
   linkHabitToRoutine,
   unlinkHabitFromRoutine,
-  freezeCompletion,
+  updateCompletionNote,
+  updateCompletionValue,
 } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import type { Habit, HabitCompletion, HabitFormData, Category, Routine } from '../types';
 import { calculateHabitStats } from '../calculations';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import { getSyncEngine } from '../sync';
 import { useGamificationStore, XP_PER_HABIT } from './gamification-store';
 
@@ -34,6 +38,7 @@ interface HabitState {
 
   // Actions
   loadHabits: () => Promise<void>;
+  loadArchivedHabits: () => Promise<Habit[]>;
   loadCompletions: (startDate: string, endDate: string) => Promise<void>;
   loadAllCompletions: () => Promise<void>;
   addHabit: (data: HabitFormData) => Promise<Habit>;
@@ -41,6 +46,8 @@ interface HabitState {
   removeHabit: (id: string) => Promise<void>;
   toggle: (habitId: string, date: string) => Promise<void>;
   freezeHabit: (habitId: string, date: string) => Promise<void>;
+  updateNote: (habitId: string, date: string, note: string) => Promise<void>;
+  updateValue: (habitId: string, date: string, value: number) => Promise<void>;
   ensureComplete: (habitId: string, date: string) => Promise<void>;
   batchComplete: (habitIds: string[], date: string) => Promise<void>;
   reorder: (orderedIds: string[]) => Promise<void>;
@@ -74,9 +81,6 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   loadHabits: async () => {
     set({ isLoading: true, error: null });
     try {
-      // Clean up any duplicate habits first
-      await cleanupDuplicateHabits();
-
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -92,11 +96,20 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
   },
 
+  loadArchivedHabits: async () => {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return [];
+    try {
+      return await getArchivedHabits(session.user.id);
+    } catch (error) {
+      console.error('Failed to load archived habits:', error);
+      return [];
+    }
+  },
+
   loadCompletions: async (startDate: string, endDate: string) => {
     try {
-      // Clean up any duplicate completions first
-      await cleanupDuplicateCompletions();
-
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -142,17 +155,30 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
   editHabit: async (id: string, data: Partial<Habit>) => {
     await updateHabit(id, data);
-    const updatedHabit = get().habits.find(h => h.id === id);
+    const fullHabit = await db.habits.get(id);
 
-    set(state => ({
-      habits: state.habits.map(h => h.id === id ? { ...h, ...data } : h),
-    }));
+    set(state => {
+      let nextHabits = state.habits;
+      if (data.archived === true) {
+        nextHabits = state.habits.filter(h => h.id !== id);
+      } else if (data.archived === false) {
+        const exists = state.habits.some(h => h.id === id);
+        if (!exists && fullHabit) {
+          nextHabits = [...state.habits, fullHabit].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        } else {
+          nextHabits = state.habits.map(h => h.id === id ? { ...h, ...data } : h);
+        }
+      } else {
+        nextHabits = state.habits.map(h => h.id === id ? { ...h, ...data } : h);
+      }
+      return { habits: nextHabits };
+    });
 
     // Sync to cloud
-    if (updatedHabit) {
+    if (fullHabit) {
       try {
         const syncEngine = getSyncEngine();
-        await syncEngine.pushHabit({ ...updatedHabit, ...data });
+        await syncEngine.pushHabit(fullHabit);
       } catch (error) {
         console.error('Failed to sync habit:', error);
       }
@@ -218,7 +244,65 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
 
+    const existing = get().completions.find(c => c.habitId === habitId && c.date === date);
+    const isCurrentlyFrozen = existing?.status === 'frozen';
+
+    if (isCurrentlyFrozen) {
+      const result = await unfreezeCompletion(habitId, date, session.user.id);
+      set(state => {
+        const filtered = state.completions.filter(
+          c => !(c.habitId === habitId && c.date === date)
+        );
+        return { completions: [...filtered, result] };
+      });
+
+      try {
+        const syncEngine = getSyncEngine();
+        await syncEngine.pushCompletion(result);
+      } catch (error) {
+        console.error('Failed to sync unfreeze completion:', error);
+      }
+      return;
+    }
+
+    const dateObj = parseISO(date);
+    const startStr = format(startOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    const endStr = format(endOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+
+    const hasWeeklyFreeze = get().completions.some(
+      c => c.status === 'frozen' && c.date >= startStr && c.date <= endStr
+    );
+
+    if (hasWeeklyFreeze) {
+      const success = await useGamificationStore.getState().useShield();
+      if (!success) {
+        throw new Error("No free weekly freezes or purchased streak shields left! Buy a shield in Settings.");
+      }
+    }
+
     const result = await freezeCompletion(habitId, date, session.user.id);
+
+    set(state => {
+      const filtered = state.completions.filter(
+        c => !(c.habitId === habitId && c.date === date)
+      );
+      return { completions: [...filtered, result] };
+    });
+
+    try {
+      const syncEngine = getSyncEngine();
+      await syncEngine.pushCompletion(result);
+    } catch (error) {
+      console.error('Failed to sync freeze completion:', error);
+    }
+  },
+
+  updateNote: async (habitId: string, date: string, note: string) => {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+
+    const result = await updateCompletionNote(habitId, date, note, session.user.id);
 
     set(state => {
       const filtered = state.completions.filter(
@@ -232,7 +316,42 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       const syncEngine = getSyncEngine();
       await syncEngine.pushCompletion(result);
     } catch (error) {
-      console.error('Failed to sync freeze completion:', error);
+      console.error('Failed to sync completion note:', error);
+    }
+  },
+
+  updateValue: async (habitId: string, date: string, value: number) => {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("User not authenticated");
+
+    const result = await updateCompletionValue(habitId, date, value, session.user.id);
+
+    // If completed is true and wasn't completed before, award XP
+    const prevComp = get().completions.find(c => c.habitId === habitId && c.date === date);
+    const wasCompleted = prevComp?.completed && prevComp?.status !== 'frozen';
+    
+    if (result.completed && !wasCompleted) {
+      const today = new Date().toISOString().split('T')[0];
+      if (date === today) {
+        const habit = get().habits.find(h => h.id === habitId);
+        useGamificationStore.getState().addXp(XP_PER_HABIT, habit?.category);
+      }
+    }
+
+    set(state => {
+      const filtered = state.completions.filter(
+        c => !(c.habitId === habitId && c.date === date)
+      );
+      return { completions: [...filtered, result] };
+    });
+
+    // Sync to cloud
+    try {
+      const syncEngine = getSyncEngine();
+      await syncEngine.pushCompletion(result);
+    } catch (error) {
+      console.error('Failed to sync completion value:', error);
     }
   },
 

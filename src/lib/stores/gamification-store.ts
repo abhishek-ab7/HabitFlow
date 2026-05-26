@@ -37,6 +37,7 @@ interface GamificationState {
     addXp: (amount: number, category?: Category) => Promise<{ leveledUp: boolean; newLevel: number }>;
     spendGems: (amount: number) => Promise<boolean>;
     buyShield: () => Promise<boolean>;
+    useShield: () => Promise<boolean>;
     getBufferProgress: () => number; // Returns 0-100% for the current level bar
 }
 
@@ -243,6 +244,38 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 xp,
                 level,
                 gems: newGems,
+                streakShield: newShields
+            });
+        }
+        return true;
+    },
+
+    useShield: async () => {
+        const { streakShield } = get();
+        if (streakShield <= 0) return false;
+
+        const newShields = streakShield - 1;
+        set({ streakShield: newShields });
+
+        const supabase = getSupabaseClient();
+        const { data: { session } = {} } = await supabase.auth.getSession();
+        if (session?.user) {
+            const { xp, level, gems } = get();
+            await updateSettings({
+                userId: session.user.id,
+                streakShield: newShields
+            });
+
+            // Sync to Supabase with complete settings
+            const currentSettings = await getSettings(session.user.id);
+            const syncEngine = getSyncEngine();
+            syncEngine.pushUserSettings({
+                userName: currentSettings?.userName,
+                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
+                defaultCategory: currentSettings?.defaultCategory ?? 'health',
+                xp,
+                level,
+                gems,
                 streakShield: newShields
             });
         }

@@ -3,12 +3,12 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState, useMemo } from 'react';
 import { subDays, subMonths, subYears, format } from 'date-fns';
-import { BarChart3, TrendingUp, Target, Flame, Calendar } from 'lucide-react';
+import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { TimeRangeTabs } from '@/components/analytics';
-import { useHabitStore, useGoalStore, useTaskStore } from '@/lib/stores';
+import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore } from '@/lib/stores';
 import {
   calculateDailyStats,
   calculateCategoryBreakdown,
@@ -17,8 +17,9 @@ import {
   calculateCurrentStreak,
   calculateBestStreak,
 } from '@/lib/calculations';
-import type { TimeRange, DailyStats, WeekdayStats, Insight, Trend } from '@/lib/types';
+import type { TimeRange, DailyStats, WeekdayStats, Insight, Trend, MoodType } from '@/lib/types';
 import { DAYS_OF_WEEK } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 // Dynamic imports for heavy chart components (reduces initial bundle by ~200KB)
 const ConsistencyChart = dynamic(
@@ -50,8 +51,11 @@ export default function AnalyticsPage() {
   const { habits, completions, loadHabits, loadCompletions, isLoading: habitsLoading } = useHabitStore();
   const { goals, loadGoals, isLoading: goalsLoading } = useGoalStore();
   const { tasks, loadTasks, isLoading: tasksLoading } = useTaskStore();
+  const { loadMoodLogs, getMoodForDate, moodLogs } = useMoodStore();
+  const { completedSessions } = usePomodoroStore();
 
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
+  const [activeView, setActiveView] = useState<'analytics' | 'weekly-review'>('analytics');
 
   // Load data on mount
   useEffect(() => {
@@ -63,8 +67,12 @@ export default function AnalyticsPage() {
     // This is much faster than loading ALL history
     const end = new Date();
     const start = subYears(end, 1);
-    loadCompletions(format(start, 'yyyy-MM-dd'), format(end, 'yyyy-MM-dd'));
-  }, [loadHabits, loadCompletions, loadGoals, loadTasks]);
+    const startStr = format(start, 'yyyy-MM-dd');
+    const endStr = format(end, 'yyyy-MM-dd');
+    
+    loadCompletions(startStr, endStr);
+    loadMoodLogs(startStr, endStr);
+  }, [loadHabits, loadCompletions, loadGoals, loadTasks, loadMoodLogs]);
 
   // Calculate date range based on selection
   const dateRange = useMemo(() => {
@@ -177,6 +185,8 @@ export default function AnalyticsPage() {
         description: `You've been consistent for ${currentStreak} days. Keep up the momentum!`,
         icon: 'flame',
         priority: 1,
+        actionLabel: 'View Dashboard',
+        actionHref: '/',
       });
     }
 
@@ -188,6 +198,8 @@ export default function AnalyticsPage() {
         description: `Your record is ${bestStreak} days. You're ${bestStreak - currentStreak} days away from beating it!`,
         icon: 'trophy',
         priority: 3,
+        actionLabel: 'View Habits',
+        actionHref: '/habits',
       });
     }
 
@@ -200,6 +212,8 @@ export default function AnalyticsPage() {
         description: `With ${avgCompletionRate.toFixed(0)}% completion rate, you're crushing your habits!`,
         icon: 'star',
         priority: 2,
+        actionLabel: 'Check Leaderboard',
+        actionHref: '/leaderboard',
       });
     } else if (avgCompletionRate < 50 && habits.length > 0) {
       result.push({
@@ -209,6 +223,8 @@ export default function AnalyticsPage() {
         description: 'Consider focusing on fewer habits to build consistency before adding more.',
         icon: 'alert',
         priority: 2,
+        actionLabel: 'Manage Habits',
+        actionHref: '/habits',
       });
     }
 
@@ -221,6 +237,8 @@ export default function AnalyticsPage() {
         description: 'Your completion rate is improving compared to last week. Great progress!',
         icon: 'trending',
         priority: 3,
+        actionLabel: 'View Dashboard',
+        actionHref: '/',
       });
     } else if (trend === 'down') {
       result.push({
@@ -230,6 +248,8 @@ export default function AnalyticsPage() {
         description: 'Your completion rate dropped this week. Consider reviewing your goals.',
         icon: 'alert',
         priority: 2,
+        actionLabel: 'Review Goals',
+        actionHref: '/goals',
       });
     }
 
@@ -246,6 +266,8 @@ export default function AnalyticsPage() {
         description: `You complete ${(bestDay.averageCompletionRate - worstDay.averageCompletionRate).toFixed(0)}% fewer habits on ${worstDay.dayName}s. Try scheduling easier habits for that day.`,
         icon: 'calendar',
         priority: 4,
+        actionLabel: 'Reschedule Habits',
+        actionHref: '/habits',
       });
     }
 
@@ -259,11 +281,47 @@ export default function AnalyticsPage() {
         description: `Your ${lowPerformingCategory.category} habits have a ${lowPerformingCategory.completionRate}% completion rate. Consider making them easier or more specific.`,
         icon: 'target',
         priority: 4,
+        actionLabel: 'Edit Habits',
+        actionHref: '/habits',
       });
     }
 
     return result.sort((a, b) => a.priority - b.priority);
   }, [analyticsData, habits]);
+
+  const last7Days = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = subDays(new Date(), 6 - i);
+      return {
+        date,
+        dateStr: format(date, 'yyyy-MM-dd'),
+        dayName: format(date, 'EEE'),
+        dayOfWeek: date.getDay(),
+      };
+    });
+  }, []);
+
+  const weeklyNotes = useMemo(() => {
+    const startStr = format(subDays(new Date(), 6), 'yyyy-MM-dd');
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    
+    const notesList: { habitName: string; date: string; text: string }[] = [];
+    
+    completions.forEach(c => {
+      if (c.date >= startStr && c.date <= todayStr && c.note) {
+        const habit = habits.find(h => h.id === c.habitId);
+        if (habit) {
+          notesList.push({
+            habitName: habit.name,
+            date: c.date,
+            text: c.note,
+          });
+        }
+      }
+    });
+    
+    return notesList.sort((a, b) => b.date.localeCompare(a.date));
+  }, [completions, habits]);
 
   const isLoading = habitsLoading || goalsLoading || tasksLoading;
 
@@ -285,21 +343,48 @@ export default function AnalyticsPage() {
   const noData = habits.length === 0;
 
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8">
+    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <FadeIn className="mb-8">
+      <FadeIn className="mb-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
               <BarChart3 className="h-8 w-8 text-primary" />
-              Analytics
+              Analytics & Review
             </h1>
             <p className="text-muted-foreground mt-1">
-              Discover patterns and insights in your habits
+              Discover patterns, track mood history, and review weekly reflections
             </p>
           </div>
 
-          <TimeRangeTabs value={timeRange} onChange={setTimeRange} />
+          <div className="flex items-center gap-2">
+            <div className="flex p-1 bg-muted rounded-lg mr-2 border border-border/40">
+              <button
+                type="button"
+                onClick={() => setActiveView('analytics')}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors",
+                  activeView === 'analytics' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Analytics
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView('weekly-review')}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors",
+                  activeView === 'weekly-review' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Weekly Review
+              </button>
+            </div>
+
+            {activeView === 'analytics' && !noData && (
+              <TimeRangeTabs value={timeRange} onChange={setTimeRange} />
+            )}
+          </div>
         </div>
       </FadeIn>
 
@@ -312,7 +397,7 @@ export default function AnalyticsPage() {
             you'll see charts, insights, and patterns here.
           </p>
         </FadeIn>
-      ) : (
+      ) : activeView === 'analytics' ? (
         <>
           {/* Summary Cards */}
           <FadeIn delay={0.1} className="mb-8">
@@ -427,6 +512,200 @@ export default function AnalyticsPage() {
             <HeatmapCalendar data={analyticsData.heatmapData} weeks={52} />
           </FadeIn>
         </>
+      ) : (
+        // Weekly Review Screen Panel
+        <FadeIn className="space-y-6">
+          {/* Weekly Summary Cards */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Weekly Habits Logged</p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {completions.filter(c => {
+                        const startStr = format(subDays(new Date(), 6), 'yyyy-MM-dd');
+                        return c.date >= startStr && c.completed && c.status !== 'frozen';
+                      }).length} completions
+                    </p>
+                  </div>
+                  <Check className="h-8 w-8 text-emerald-500 bg-emerald-500/10 p-1.5 rounded-xl border border-emerald-500/20" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Focus Session Time</p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {completedSessions * 25} minutes
+                    </p>
+                  </div>
+                  <Coffee className="h-8 w-8 text-rose-500 bg-rose-500/10 p-1.5 rounded-xl border border-rose-500/20" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active Streak</p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {analyticsData.currentStreak} days
+                    </p>
+                  </div>
+                  <Flame className="h-8 w-8 text-amber-500 bg-amber-500/10 p-1.5 rounded-xl border border-amber-500/20" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Daily Mood check-in history */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+                <Smile className="h-4 w-4 text-emerald-500" />
+                Daily Mood Log (Past 7 Days)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex justify-between items-center max-w-3xl mx-auto p-4 bg-muted/20 rounded-2xl border border-border/30">
+                {last7Days.map((day) => {
+                  const mood = getMoodForDate(day.dateStr);
+                  const moodEmojiMap = {
+                    happy: '😊',
+                    calm: '😌',
+                    neutral: '😐',
+                    sad: '😢',
+                    stressed: '🤯',
+                  };
+                  const emoji = mood ? moodEmojiMap[mood] : '⚪';
+                  const moodLabel = mood ? mood.charAt(0).toUpperCase() + mood.slice(1) : 'No Log';
+                  
+                  return (
+                    <div key={day.dateStr} className="flex flex-col items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground font-medium">{day.dayName}</span>
+                      <div 
+                        className={cn(
+                          "w-12 h-12 rounded-xl flex items-center justify-center border text-2xl shadow-sm bg-card/60 transition-all",
+                          mood === 'happy' && "bg-amber-500/15 border-amber-500/30 text-amber-500",
+                          mood === 'calm' && "bg-emerald-500/15 border-emerald-500/30 text-emerald-500",
+                          mood === 'neutral' && "bg-slate-500/15 border-slate-500/30 text-slate-500",
+                          mood === 'sad' && "bg-blue-500/15 border-blue-500/30 text-blue-500",
+                          mood === 'stressed' && "bg-red-500/15 border-red-500/30 text-red-500"
+                        )}
+                        title={moodLabel}
+                      >
+                        {emoji}
+                      </div>
+                      <span className="text-[9px] font-bold text-muted-foreground/60">{format(day.date, 'MM/dd')}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Weekly Habit performance chart grid */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+                <Check className="h-4 w-4 text-emerald-500" />
+                Habits Overview (Last 7 Days)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {habits.filter(h => !h.archived).map((habit) => {
+                  return (
+                    <div key={habit.id} className="flex items-center justify-between p-3 rounded-xl border bg-card/45 hover:bg-card/60 transition-colors">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {habit.icon && <span className="text-lg">{habit.icon}</span>}
+                        <div className="min-w-0">
+                          <span className="font-semibold text-sm block truncate">{habit.name}</span>
+                          {habit.isQuantitative && (
+                            <span className="text-[10px] text-muted-foreground font-mono">Target: {habit.targetValue} {habit.unit}</span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        {last7Days.map((day) => {
+                          const comp = completions.find(c => c.habitId === habit.id && c.date === day.dateStr);
+                          const isCompleted = comp?.completed && comp?.status !== 'frozen';
+                          const isFrozen = comp?.status === 'frozen';
+                          
+                          return (
+                            <div 
+                              key={day.dateStr}
+                              className={cn(
+                                "w-8 h-8 rounded-lg flex flex-col items-center justify-center text-xs border font-mono transition-all",
+                                isCompleted
+                                  ? "bg-success/20 text-success border-success/30 font-bold"
+                                  : isFrozen
+                                    ? "bg-sky-500/20 text-sky-500 border-sky-500/30"
+                                    : "bg-muted/40 border-transparent text-muted-foreground/30"
+                              )}
+                              title={`${format(day.date, 'MMM d')}: ${isCompleted ? 'Completed' : isFrozen ? 'Frozen' : 'Not completed'}`}
+                            >
+                              {isCompleted ? (
+                                habit.isQuantitative && comp?.value ? (
+                                  comp.value
+                                ) : (
+                                  <Check className="h-3 w-3" />
+                                )
+                              ) : (
+                                '-'
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Reflections and journal history */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-foreground flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-emerald-500" />
+                Weekly Journal & Reflections
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {weeklyNotes.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm italic">
+                  No reflection notes written this week.
+                </div>
+              ) : (
+                <div className="grid gap-3 grid-cols-1 md:grid-cols-2 max-h-[350px] overflow-y-auto pr-1 scrollbar-hide">
+                  {weeklyNotes.map((note, idx) => (
+                    <div key={idx} className="p-4 bg-muted/20 rounded-xl border border-border/40 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-foreground bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-md">
+                          {note.habitName}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {format(new Date(note.date), 'EEEE, MMM d')}
+                        </span>
+                      </div>
+                      <p className="text-xs italic text-muted-foreground/90 leading-relaxed font-serif pl-2 border-l-2 border-amber-500/50">
+                        "{note.text}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </FadeIn>
       )}
     </div>
   );

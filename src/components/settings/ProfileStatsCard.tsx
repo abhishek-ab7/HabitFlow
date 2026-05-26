@@ -29,7 +29,7 @@ export function ProfileStatsCard({
 }: ProfileStatsCardProps) {
     const { displayName, setDisplayName } = useUserStore();
     const [isEditing, setIsEditing] = useState(false);
-    const [newName, setNewName] = useState(displayName || 'Habit Hero');
+    const [newName, setNewName] = useState(displayName || '');
     const { openRules } = useGamificationStore();
 
     const avatar = getAvatarById(avatarId);
@@ -75,7 +75,7 @@ export function ProfileStatsCard({
                             className="font-bold text-xl flex items-center gap-2 group cursor-pointer"
                             onClick={() => setIsEditing(true)}
                         >
-                            {displayName || 'Habit Hero'}
+                            {displayName || 'Your Name'}
                             <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
                         </div>
                     )}
