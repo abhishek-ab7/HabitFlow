@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useRef, useEffect } from 'react';
 import * as chrono from 'chrono-node';
 import { Calendar, Plus, X, Loader2, Mic } from 'lucide-react';

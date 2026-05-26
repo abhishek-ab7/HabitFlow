@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical, Snowflake, Edit3, MessageSquarePlus, Share2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { StreakRecoveryPrompt } from './StreakRecoveryPrompt';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -83,6 +84,29 @@ export function SortableHabitRow({
     const [tempNote, setTempNote] = useState('');
     const [tempValue, setTempValue] = useState(0);
     const [showShareModal, setShowShareModal] = useState(false);
+    const [showRecovery, setShowRecovery] = useState(false);
+
+    const yesterdayStr = useMemo(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        return d.toISOString().split('T')[0];
+    }, []);
+
+    const dayBeforeYesterdayStr = useMemo(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 2);
+        return d.toISOString().split('T')[0];
+    }, []);
+
+    const isStreakBrokenYesterday = useMemo(() => {
+        const yesterdayComp = completions.find(c => c.habitId === habit.id && c.date === yesterdayStr);
+        const dayBeforeComp = completions.find(c => c.habitId === habit.id && c.date === dayBeforeYesterdayStr);
+        
+        const missedYesterday = !yesterdayComp || (!yesterdayComp.completed && yesterdayComp.status !== 'frozen');
+        const completedDayBefore = dayBeforeComp && dayBeforeComp.completed && dayBeforeComp.status !== 'frozen';
+        
+        return missedYesterday && completedDayBefore;
+    }, [yesterdayStr, dayBeforeYesterdayStr, completions, habit.id]);
 
     const { triggerPop, triggerChime } = useFeedback();
     const { updateNote, updateValue } = useHabitStore();
@@ -197,7 +221,7 @@ export function SortableHabitRow({
     return (
         <div ref={setNodeRef} style={style} className="flex items-center py-2 group bg-background relative">
             {/* Habit info */}
-            <div className="w-36 md:w-52 flex-shrink-0 flex items-center gap-2 pr-3">
+            <div className="w-32 md:w-64 flex-shrink-0 flex items-center gap-2 pr-3 sticky left-0 bg-background z-20 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.05)] md:shadow-none">
                 {/* Drag Handle */}
                 <div
                     {...attributes}
@@ -211,7 +235,7 @@ export function SortableHabitRow({
                     <div className="flex items-center gap-2">
                         {habit.icon && <span className="text-lg">{habit.icon}</span>}
                         <div className="flex flex-col min-w-0">
-                            <span className="font-medium text-sm truncate">{habit.name}</span>
+                            <span className="font-medium text-sm break-words whitespace-normal leading-tight">{habit.name}</span>
                             {habit.isQuantitative && (
                                 <span className="text-[10px] text-muted-foreground font-mono">
                                     Target: {habit.targetValue} {habit.unit}
@@ -237,6 +261,43 @@ export function SortableHabitRow({
                                 <Flame className="h-2.5 w-2.5" />
                                 {streak}
                             </Badge>
+                        )}
+                        {isStreakBrokenYesterday && (
+                            <div className="relative">
+                                <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0 h-4 bg-red-500/10 border-red-500/20 text-red-500 animate-pulse cursor-pointer hover:bg-red-500/20"
+                                    onClick={() => setShowRecovery(true)}
+                                >
+                                    Recover
+                                </Badge>
+                                <AnimatePresence>
+                                    {showRecovery && (
+                                        <StreakRecoveryPrompt
+                                            habit={habit}
+                                            dateStr={yesterdayStr}
+                                            onRecover={async () => {
+                                                const { ensureComplete, updateNote, updateValue } = useHabitStore.getState();
+                                                await ensureComplete(habit.id, yesterdayStr);
+                                                await updateNote(habit.id, yesterdayStr, "Recovered via double completion.");
+                                                
+                                                const todayStr = new Date().toISOString().split('T')[0];
+                                                await ensureComplete(habit.id, todayStr);
+                                                if (habit.isQuantitative) {
+                                                    const target = habit.targetValue || 1;
+                                                    await updateValue(habit.id, todayStr, target * 2);
+                                                } else {
+                                                    await updateNote(habit.id, todayStr, "Double completion!");
+                                                }
+                                                
+                                                toast.success("Streak recovered! Completed double task today.");
+                                                setShowRecovery(false);
+                                            }}
+                                            onDismiss={() => setShowRecovery(false)}
+                                        />
+                                    )}
+                                </AnimatePresence>
+                            </div>
                         )}
                         {habitRoutines?.map((routine) => (
                             <Badge
@@ -302,7 +363,7 @@ export function SortableHabitRow({
                             onContextMenu={(e) => handleCellRightClick(e, dateStr, isFutureDate)}
                             disabled={isFutureDate}
                             className={cn(
-                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden",
+                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden flex-shrink-0",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                 isCompleted
                                     ? "bg-success/20 text-success hover:bg-success/30"
@@ -514,7 +575,7 @@ export function SortableHabitRow({
             </div>
 
             {/* Progress */}
-            <div className="w-16 md:w-24 flex-shrink-0 flex flex-col items-center gap-1 ml-auto">
+            <div className="w-16 md:w-24 flex-shrink-0 flex flex-col items-center gap-1 ml-auto bg-background z-10 sticky right-0 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.05)] md:shadow-none">
                 <span className="text-sm font-medium tabular-nums">
                     {monthlyCount}/{totalDays}
                 </span>

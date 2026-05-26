@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useShallow } from 'zustand/react/shallow'
 import { TaskCard } from "@/components/tasks/TaskCard"
 import { motion, AnimatePresence } from "framer-motion"
 import { CalendarCheck, ArrowRight, Loader2 } from "lucide-react"
@@ -10,7 +11,14 @@ import { useTaskStore } from "@/lib/stores/task-store"
 import type { Task } from "@/lib/types"
 
 export function TodayTasksWidget() {
-    const { loadTasks, tasks, toggleTaskComplete, isLoading } = useTaskStore()
+    const { loadTasks, tasks, toggleTaskComplete, isLoading } = useTaskStore(
+        useShallow((s) => ({
+            loadTasks: s.loadTasks,
+            tasks: s.tasks,
+            toggleTaskComplete: s.toggleTaskComplete,
+            isLoading: s.isLoading,
+        }))
+    )
     const router = useRouter()
     const [mounted, setMounted] = useState(false)
 

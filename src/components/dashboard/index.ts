@@ -9,3 +9,6 @@ export { AICoachWidget } from './AICoachWidget';
 export { PersonalizedQuote } from './PersonalizedQuote';
 export * from './SortableWidget';
 export * from './BentoGrid';
+export { default as DashboardContent } from './DashboardContent';
+export { WeeklyReviewWidget } from './WeeklyReviewWidget';
+

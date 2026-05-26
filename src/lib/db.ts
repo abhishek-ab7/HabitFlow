@@ -186,7 +186,9 @@ export async function createHabit(data: HabitFormData & { userId: string }): Pro
     isQuantitative: data.isQuantitative ?? false,
     targetValue: data.targetValue ?? 0,
     unit: data.unit ?? '',
+    difficulty: data.difficulty || 'medium',
   };
+
 
   await db.habits.add(habit);
   return habit;
@@ -629,14 +631,14 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: str
       },
       unlockedThemes: data.unlockedThemes || [],
       dashboardLayout: data.dashboardLayout || [
-        'hero',
-        'metrics',
-        'today-tasks',
-        'habit-overview',
-        'focus-goal',
-        'ai-quote',
-        'ai-coach',
-        'quick-actions'
+        { id: 'metrics', size: 'full', hidden: false, pinned: true },
+        { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
+        { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
+        { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
+        { id: 'ai-quote', size: 'full', hidden: false, pinned: false },
+        { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
+        { id: 'quick-actions', size: 'full', hidden: false, pinned: false },
+        { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
       ],
     };
     await db.userSettings.add(settings);
@@ -743,7 +745,13 @@ export async function createTask(data: TaskFormData & { userId: string }): Promi
     metadata: {},
     created_at: now,
     updated_at: now,
+    recurrenceRule: data.recurrenceRule || '',
+    estimatedTime: data.estimatedTime || 0,
+    actualTime: data.actualTime || 0,
+    isUrgent: data.isUrgent ?? false,
+    isImportant: data.isImportant ?? false,
   };
+
 
   await db.tasks.add(task);
   return task;

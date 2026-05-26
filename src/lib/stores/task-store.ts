@@ -28,6 +28,38 @@ interface TaskState {
     getTasksByDate: (date: string) => Task[]; // date in YYYY-MM-DD
 }
 
+function calculateNextDueDate(currentDueDateStr: string | undefined | null, rule: string): string {
+    const baseDate = currentDueDateStr ? new Date(currentDueDateStr) : new Date();
+    if (isNaN(baseDate.getTime())) return new Date().toISOString();
+
+    const nextDate = new Date(baseDate);
+    switch (rule) {
+        case 'daily':
+            nextDate.setDate(nextDate.getDate() + 1);
+            break;
+        case 'weekly':
+            nextDate.setDate(nextDate.getDate() + 7);
+            break;
+        case 'monthly':
+            nextDate.setMonth(nextDate.getMonth() + 1);
+            break;
+        case 'weekdays': {
+            const day = nextDate.getDay();
+            if (day === 5) {
+                nextDate.setDate(nextDate.getDate() + 3); // Fri -> Mon
+            } else if (day === 6) {
+                nextDate.setDate(nextDate.getDate() + 2); // Sat -> Mon
+            } else {
+                nextDate.setDate(nextDate.getDate() + 1); // Sun-Thu -> next day
+            }
+            break;
+        }
+        default:
+            nextDate.setDate(nextDate.getDate() + 1);
+    }
+    return nextDate.toISOString();
+}
+
 export const useTaskStore = create<TaskState>((set, get) => ({
     tasks: [],
     isLoading: false,
@@ -132,6 +164,28 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             await syncEngine.pushTask({ ...task, ...updates });
         } catch (error) {
             console.error('Failed to sync task completion:', error);
+        }
+
+        // If completed and is a recurring task, schedule the next occurrence
+        if (newStatus === 'done' && task.recurrenceRule) {
+            try {
+                const nextDueDate = calculateNextDueDate(task.due_date, task.recurrenceRule);
+                await get().addTask({
+                    title: task.title,
+                    description: task.description || undefined,
+                    priority: task.priority,
+                    due_date: nextDueDate,
+                    goal_id: task.goal_id || undefined,
+                    tags: task.tags || [],
+                    recurrenceRule: task.recurrenceRule,
+                    estimatedTime: task.estimatedTime,
+                    actualTime: 0,
+                    isUrgent: task.isUrgent,
+                    isImportant: task.isImportant
+                });
+            } catch (error) {
+                console.error('Failed to create recurring task occurrence:', error);
+            }
         }
     },
 

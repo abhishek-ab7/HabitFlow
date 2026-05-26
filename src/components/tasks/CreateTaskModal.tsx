@@ -27,6 +27,10 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
     const [priority, setPriority] = useState<"low" | "medium" | "high">("medium")
     const [dueDate, setDueDate] = useState(defaultDate ? defaultDate.toISOString().split('T')[0] : "")
     const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
+    const [isUrgent, setIsUrgent] = useState(false)
+    const [isImportant, setIsImportant] = useState(false)
+    const [estimatedTime, setEstimatedTime] = useState<number>(0)
+    const [recurrenceRule, setRecurrenceRule] = useState<string>("")
     const [subtasks, setSubtasks] = useState<{ id: string; title: string; completed: boolean }[]>([])
     const [newSubtask, setNewSubtask] = useState("")
     const [isGenerating, setIsGenerating] = useState(false)
@@ -113,6 +117,10 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                 priority,
                 due_date: dueDate ? new Date(dueDate).toISOString() : undefined,
                 goal_id: selectedGoalId === "none" ? undefined : selectedGoalId || undefined,
+                isUrgent,
+                isImportant,
+                estimatedTime: estimatedTime > 0 ? estimatedTime : undefined,
+                recurrenceRule: recurrenceRule || undefined,
                 metadata: { subtasks }
             })
 
@@ -134,6 +142,10 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
         setPriority("medium")
         setDueDate("")
         setSelectedGoalId(null)
+        setIsUrgent(false)
+        setIsImportant(false)
+        setEstimatedTime(0)
+        setRecurrenceRule("")
         setSubtasks([])
         setNewSubtask("")
     }
@@ -222,6 +234,62 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                                 ))}
                             </select>
                             <Target className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground ml-1">Estimated Time (mins)</label>
+                            <Input
+                                type="number"
+                                min="0"
+                                value={estimatedTime || ''}
+                                onChange={(e) => setEstimatedTime(Number(e.target.value))}
+                                placeholder="e.g. 30"
+                                className="bg-background/50 border-border/50 focus:bg-background"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground ml-1">Recurrence</label>
+                            <select
+                                value={recurrenceRule}
+                                onChange={(e) => setRecurrenceRule(e.target.value)}
+                                className="w-full h-10 rounded-md border border-border/50 bg-background/50 px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none"
+                            >
+                                <option value="">None</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-6 py-2 bg-muted/20 px-3 rounded-lg border border-border/30">
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="isUrgent"
+                                checked={isUrgent}
+                                onChange={(e) => setIsUrgent(e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer bg-background"
+                            />
+                            <label htmlFor="isUrgent" className="text-xs font-semibold select-none cursor-pointer">
+                                Urgent Task
+                            </label>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="isImportant"
+                                checked={isImportant}
+                                onChange={(e) => setIsImportant(e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer bg-background"
+                            />
+                            <label htmlFor="isImportant" className="text-xs font-semibold select-none cursor-pointer">
+                                Important Task
+                            </label>
                         </div>
                     </div>
 

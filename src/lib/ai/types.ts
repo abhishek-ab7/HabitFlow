@@ -15,6 +15,7 @@ export type AIFeature =
   | 'enhance-habit'
   | 'analyze-correlations'
   | 'optimize-deadline'
+  | 'analyze-goal'
   | 'generate-subtasks';
 
 export interface AIRequest<T = any> {

@@ -6,6 +6,46 @@ import type { Habit, HabitCompletion, Goal, Milestone, MoodLog, MoodType } from 
 import { useSyncStatusStore } from '../stores/sync-status-store';
 import { resolveConflict, mergeGamificationFields } from './conflict-resolution';
 
+const normalizeDashboardLayout = (layout?: any[]): any[] => {
+  const defaultLayout = [
+    { id: 'metrics', size: 'full', hidden: false, pinned: true },
+    { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
+    { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
+    { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
+    { id: 'ai-quote', size: 'full', hidden: false, pinned: false },
+    { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
+    { id: 'quick-actions', size: 'full', hidden: false, pinned: false },
+    { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
+  ];
+
+  if (!layout || !Array.isArray(layout) || layout.length === 0) {
+    return defaultLayout;
+  }
+
+  const normalized = layout.map(item => {
+    if (typeof item === 'string') {
+      const defaultMatch = defaultLayout.find(d => d.id === item);
+      return {
+        id: item,
+        size: defaultMatch?.size || 'full',
+        hidden: false,
+        pinned: item === 'hero' || item === 'metrics'
+      };
+    }
+    return {
+      id: item.id,
+      size: item.size || 'full',
+      hidden: !!item.hidden,
+      pinned: !!item.pinned
+    };
+  });
+
+  const existingIds = new Set(normalized.map(n => n.id));
+  const missing = defaultLayout.filter(d => !existingIds.has(d.id));
+
+  return [...normalized, ...missing];
+};
+
 // ===================
 // TYPES
 // ===================
@@ -586,6 +626,7 @@ export class SyncEngine {
       is_quantitative: habit.isQuantitative || false,
       target_value: habit.targetValue || 0,
       unit: habit.unit || '',
+      difficulty: habit.difficulty || 'medium',
     } as any);
 
     if (error) throw error;
@@ -607,6 +648,7 @@ export class SyncEngine {
       isQuantitative: Boolean(remote.is_quantitative),
       targetValue: remote.target_value || 0,
       unit: remote.unit || '',
+      difficulty: remote.difficulty || 'medium',
     };
 
     await db.habits.put(localHabit);
@@ -1541,6 +1583,11 @@ export class SyncEngine {
       tags: task.tags,
       created_at: task.created_at,
       updated_at: task.updated_at,
+      recurrence_rule: task.recurrenceRule || '',
+      estimated_time: task.estimatedTime || 0,
+      actual_time: task.actualTime || 0,
+      is_urgent: task.isUrgent ?? false,
+      is_important: task.isImportant ?? false,
     } as any);
   }
 
@@ -1560,6 +1607,11 @@ export class SyncEngine {
       metadata: {},
       created_at: remote.created_at,
       updated_at: remote.updated_at || remote.created_at,
+      recurrenceRule: remote.recurrence_rule || '',
+      estimatedTime: remote.estimated_time || 0,
+      actualTime: remote.actual_time || 0,
+      isUrgent: remote.is_urgent ?? false,
+      isImportant: remote.is_important ?? false,
     });
   }
 
@@ -1800,16 +1852,7 @@ export class SyncEngine {
         creativity: 1,
       },
       unlockedThemes: remoteSettings.unlocked_themes || [],
-      dashboardLayout: remoteSettings.dashboard_layout || [
-        'hero',
-        'metrics',
-        'today-tasks',
-        'habit-overview',
-        'focus-goal',
-        'ai-quote',
-        'ai-coach',
-        'quick-actions'
-      ],
+      dashboardLayout: normalizeDashboardLayout(remoteSettings.dashboard_layout),
       createdAt: remoteSettings.created_at || new Date().toISOString(),
       updatedAt: remoteSettings.updated_at || undefined,
     } : null;
@@ -1839,16 +1882,7 @@ export class SyncEngine {
           creativity: 1,
         },
         unlockedThemes: [],
-        dashboardLayout: [
-          'hero',
-          'metrics',
-          'today-tasks',
-          'habit-overview',
-          'focus-goal',
-          'ai-quote',
-          'ai-coach',
-          'quick-actions'
-        ],
+        dashboardLayout: normalizeDashboardLayout([]),
       });
       return;
     }
@@ -1893,16 +1927,7 @@ export class SyncEngine {
         streakShield: mergedGamification.streakShield,
         stats: mergedGamification.stats,
         unlockedThemes: mergedGamification.unlockedThemes,
-        dashboardLayout: winner.dashboardLayout || localSettings.dashboardLayout || [
-          'hero',
-          'metrics',
-          'today-tasks',
-          'habit-overview',
-          'focus-goal',
-          'ai-quote',
-          'ai-coach',
-          'quick-actions'
-        ],
+        dashboardLayout: normalizeDashboardLayout(winner.dashboardLayout || localSettings.dashboardLayout),
       };
 
       // Push merged settings to both local and remote to ensure consistency
@@ -1929,16 +1954,7 @@ export class SyncEngine {
       streak_shield: settings.streakShield || 0,
       stats: settings.stats || null,
       unlocked_themes: settings.unlockedThemes || [],
-      dashboard_layout: settings.dashboardLayout || [
-        'hero',
-        'metrics',
-        'today-tasks',
-        'habit-overview',
-        'focus-goal',
-        'ai-quote',
-        'ai-coach',
-        'quick-actions'
-      ],
+      dashboard_layout: normalizeDashboardLayout(settings.dashboardLayout),
       updated_at: new Date().toISOString(),
     } as any, {
       onConflict: 'user_id', // CRITICAL: Tell upsert which column to match on
@@ -1976,16 +1992,7 @@ export class SyncEngine {
         creativity: 1,
       },
       unlockedThemes: settings.unlockedThemes || [],
-      dashboardLayout: settings.dashboardLayout || [
-        'hero',
-        'metrics',
-        'today-tasks',
-        'habit-overview',
-        'focus-goal',
-        'ai-quote',
-        'ai-coach',
-        'quick-actions'
-      ],
+      dashboardLayout: normalizeDashboardLayout(settings.dashboardLayout),
     };
 
     // Check if settings exist for this user

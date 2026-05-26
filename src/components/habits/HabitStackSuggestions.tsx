@@ -199,17 +199,32 @@ export function HabitStackSuggestions() {
                 </Badge>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400">
-                  <Zap className="h-3 w-3" />
-                  Suggested Order:
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                  <Zap className="h-3.5 w-3.5 animate-bounce" />
+                  Visual Stack Sequence:
                 </div>
-                {stack.suggestedOrder?.map((step, i) => (
-                  <div key={i} className="flex items-start gap-2 text-sm pl-5">
-                    <span className="text-amber-600 dark:text-amber-500 font-bold shrink-0">{i + 1}.</span>
-                    <span>{step}</span>
-                  </div>
-                ))}
+                <div className="flex flex-col items-center gap-1.5 py-1">
+                  {stack.suggestedOrder?.map((step, i) => (
+                    <div key={i} className="flex flex-col items-center w-full">
+                      {i > 0 && (
+                        <div className="flex flex-col items-center my-1 text-amber-500/80">
+                          <svg className="w-4 h-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                          </svg>
+                        </div>
+                      )}
+                      <div className="w-full flex items-center justify-between p-3 rounded-xl border border-amber-200/50 dark:border-amber-900/30 bg-amber-500/5 dark:bg-amber-950/10 text-sm font-semibold shadow-sm hover:scale-[1.01] hover:border-amber-400/50 transition-all cursor-default">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-extrabold shadow-inner shrink-0">
+                            {i + 1}
+                          </div>
+                          <span className="text-foreground tracking-tight font-medium">{step}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">

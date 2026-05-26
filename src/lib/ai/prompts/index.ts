@@ -384,5 +384,29 @@ Create an inspiring yet informative habit description that:
   ]
 }
 
-Make it inspiring, evidence-based, and actionable!`;
+  Make it inspiring, evidence-based, and actionable!`;
 }
+
+export function buildGoalAnalysisPrompt(goal: any): string {
+  return `You are a SMART Goal Analysis expert. Evaluate the following goal against the SMART criteria (Specific, Measurable, Achievable, Relevant, Time-bound).
+
+Goal details:
+- Title: "${goal.title}"
+- Description: "${goal.description || 'Not provided'}"
+- Area of Life: "${goal.areaOfLife}"
+- Priority: "${goal.priority}"
+- Start Date: "${goal.startDate}"
+- Deadline: "${goal.deadline}"
+
+Instructions:
+1. Specific: Evaluate if the goal is clear, well-defined, and unambiguous. Give a score (0-100) and actionable feedback.
+2. Measurable: Evaluate if the goal has concrete criteria for measuring progress and completion. Give a score (0-100) and actionable feedback.
+3. Achievable: Evaluate if the goal is realistic and attainable given ordinary human capacity. Give a score (0-100) and actionable feedback.
+4. Relevant: Evaluate if the goal aligns with the area of life ("${goal.areaOfLife}"). Give a score (0-100) and actionable feedback.
+5. Time-bound: Evaluate if the goal has a clear, well-defined timeframe and target completion date. Give a score (0-100) and actionable feedback.
+6. Calculate an overall SMART Score (average of the 5 criteria).
+7. Provide 3 concrete, specific recommendations to improve this goal definition and make it more SMART.
+
+Return a JSON object matching the smartGoalAnalysisSchema.`;
+}
+

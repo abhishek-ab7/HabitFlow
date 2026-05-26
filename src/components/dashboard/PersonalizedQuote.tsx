@@ -19,8 +19,8 @@ export function PersonalizedQuote() {
   const [quoteId, setQuoteId] = useState<string | null>(null);
 
   const { user } = useAuth();
-  const { completions } = useHabitStore();
-  const { goals } = useGoalStore();
+  const completions = useHabitStore((s) => s.completions);
+  const goals = useGoalStore((s) => s.goals);
   const supabase = createClient();
 
   const fetchQuote = async (forceRefresh: boolean = false) => {

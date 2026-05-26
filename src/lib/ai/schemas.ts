@@ -262,3 +262,57 @@ export const habitDescriptionSchema = {
   },
   required: ['description', 'benefits', 'tips', 'difficultyAssessment', 'estimatedTimeMinutes']
 };
+
+// ========== SMART Goal Analysis Schema ==========
+export const smartGoalAnalysisSchema = {
+  type: 'object' as const,
+  properties: {
+    specific: {
+      type: 'object' as const,
+      properties: {
+        score: { type: 'number' as const, minimum: 0, maximum: 100 },
+        feedback: { type: 'string' as const }
+      },
+      required: ['score', 'feedback']
+    },
+    measurable: {
+      type: 'object' as const,
+      properties: {
+        score: { type: 'number' as const, minimum: 0, maximum: 100 },
+        feedback: { type: 'string' as const }
+      },
+      required: ['score', 'feedback']
+    },
+    achievable: {
+      type: 'object' as const,
+      properties: {
+        score: { type: 'number' as const, minimum: 0, maximum: 100 },
+        feedback: { type: 'string' as const }
+      },
+      required: ['score', 'feedback']
+    },
+    relevant: {
+      type: 'object' as const,
+      properties: {
+        score: { type: 'number' as const, minimum: 0, maximum: 100 },
+        feedback: { type: 'string' as const }
+      },
+      required: ['score', 'feedback']
+    },
+    timebound: {
+      type: 'object' as const,
+      properties: {
+        score: { type: 'number' as const, minimum: 0, maximum: 100 },
+        feedback: { type: 'string' as const }
+      },
+      required: ['score', 'feedback']
+    },
+    overallScore: { type: 'number' as const, minimum: 0, maximum: 100 },
+    recommendations: {
+      type: 'array' as const,
+      items: { type: 'string' as const }
+    }
+  },
+  required: ['specific', 'measurable', 'achievable', 'relevant', 'timebound', 'overallScore', 'recommendations']
+};
+

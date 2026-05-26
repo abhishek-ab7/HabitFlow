@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Category, ModalState } from '../types';
+import type { Category, ModalState, DashboardWidgetConfig } from '../types';
 
 interface UIState {
   // Theme
@@ -18,7 +18,7 @@ interface UIState {
   toasts: Toast[];
   
   // Dashboard Layout
-  dashboardLayout: string[];
+  dashboardLayout: DashboardWidgetConfig[];
   
   // Actions
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
@@ -29,7 +29,7 @@ interface UIState {
   setGlobalLoading: (loading: boolean) => void;
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
-  updateDashboardLayout: (layout: string[]) => void;
+  updateDashboardLayout: (layout: DashboardWidgetConfig[]) => void;
   loadDashboardLayout: (userId: string) => Promise<void>;
 }
 
@@ -41,22 +41,54 @@ interface Toast {
   duration?: number;
 }
 
+export const normalizeLayout = (layout?: any[]): DashboardWidgetConfig[] => {
+  const defaultLayout: DashboardWidgetConfig[] = [
+    { id: 'metrics', size: 'full', hidden: false, pinned: true },
+    { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
+    { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
+    { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
+    { id: 'ai-quote', size: 'full', hidden: false, pinned: false },
+    { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
+    { id: 'quick-actions', size: 'full', hidden: false, pinned: false },
+    { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
+  ];
+
+  if (!layout || !Array.isArray(layout) || layout.length === 0) {
+    return defaultLayout;
+  }
+
+  const normalized = layout.map(item => {
+    if (typeof item === 'string') {
+      const defaultMatch = defaultLayout.find(d => d.id === item);
+      return {
+        id: item,
+        size: defaultMatch?.size || 'full',
+        hidden: false,
+        pinned: item === 'hero' || item === 'metrics'
+      };
+    }
+    return {
+      id: item.id,
+      size: item.size || 'full',
+      hidden: !!item.hidden,
+      pinned: !!item.pinned
+    };
+  });
+
+  // Ensure all defaultLayout widgets exist in the returned layout
+  const existingIds = new Set(normalized.map(n => n.id));
+  const missing = defaultLayout.filter(d => !existingIds.has(d.id));
+
+  return [...normalized, ...missing];
+};
+
 export const useUIStore = create<UIState>((set, get) => ({
   theme: 'system',
   modal: { isOpen: false, type: null },
   sidebarOpen: false,
   globalLoading: false,
   toasts: [],
-  dashboardLayout: [
-    'hero',
-    'metrics',
-    'today-tasks',
-    'habit-overview',
-    'focus-goal',
-    'ai-quote',
-    'ai-coach',
-    'quick-actions'
-  ],
+  dashboardLayout: normalizeLayout([]),
 
   setTheme: (theme) => {
     set({ theme });
@@ -106,17 +138,14 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   updateDashboardLayout: (layout) => {
     set({ dashboardLayout: layout });
-    // Note: To persist this to DB/SyncEngine, it will be done via a dedicated hook or effect in the component
-    // or by importing getSettings/updateSettings here, but to avoid circular deps we'll do it where it's used.
   },
 
   loadDashboardLayout: async (userId) => {
     try {
-      // Dynamic import to avoid circular dependency issues
       const { getSettings } = await import('../db');
       const settings = await getSettings(userId);
-      if (settings?.dashboardLayout && settings.dashboardLayout.length > 0) {
-        set({ dashboardLayout: settings.dashboardLayout });
+      if (settings?.dashboardLayout) {
+        set({ dashboardLayout: normalizeLayout(settings.dashboardLayout) });
       }
     } catch (e) {
       console.error("Failed to load dashboard layout", e);

@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { AuthProvider } from '@/providers/auth-provider';
 import { SyncProvider } from '@/providers/sync-provider';
-import { Header, ShortcutsProvider } from '@/components/layout';
+import { Header, ShortcutsProvider, MobileNav } from '@/components/layout';
 import { ServiceWorkerRegistration } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { LevelUpModal } from '@/components/gamification/LevelUpModal';
@@ -70,11 +70,12 @@ export default function RootLayout({
           <AuthProvider>
             <SyncProvider>
               <ServiceWorkerRegistration />
-              <div className="relative flex min-h-screen flex-col">
+              <div className="relative flex min-h-screen flex-col pb-16 md:pb-0">
                 <Header />
                 <main className="flex-1">
                   {children}
                 </main>
+                <MobileNav />
               </div>
               <LevelUpModal />
               <GamificationRulesModal />

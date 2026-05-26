@@ -7,4 +7,6 @@ export { SmartHabitGenerator } from './SmartHabitGenerator';
 export { HabitTemplates } from './HabitTemplates';
 export { ArchivedHabitsModal } from './ArchivedHabitsModal';
 export { ShareCardModal } from './ShareCardModal';
-
+export { default as HabitsPageContent } from './HabitsPageContent';
+export * from './HabitDifficultySelector';
+export * from './StreakRecoveryPrompt';

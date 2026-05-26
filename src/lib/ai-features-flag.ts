@@ -13,5 +13,5 @@
  */
 
 export const isAIEnabled = (): boolean => {
-  return process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES === 'true';
+  return process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES !== 'false';
 };

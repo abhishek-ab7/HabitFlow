@@ -24,8 +24,8 @@ export function HeroSection({ userName }: HeroSectionProps) {
     author: '',
   });
 
-  const { getTodayProgress } = useHabitStore();
-  const { tasks } = useTaskStore();
+  const getTodayProgress = useHabitStore((s) => s.getTodayProgress);
+  const tasks = useTaskStore((s) => s.tasks);
 
   useEffect(() => {
     const { greeting, emoji } = getTimeGreeting();

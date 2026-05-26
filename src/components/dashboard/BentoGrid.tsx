@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   DndContext,
   closestCenter,
@@ -18,20 +19,29 @@ import {
 } from '@dnd-kit/sortable';
 import { useUIStore } from '@/lib/stores/ui-store';
 import { SortableWidget } from './SortableWidget';
-import { useUserStore } from '@/lib/stores/user-store';
+import { Button } from '@/components/ui/button';
+import { LayoutGrid, Check, Eye, RefreshCw, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { DashboardWidgetConfig } from '@/lib/types';
 
 interface BentoGridProps {
   widgets: Record<string, React.ReactNode>;
 }
 
 export function BentoGrid({ widgets }: BentoGridProps) {
-  const { dashboardLayout, updateDashboardLayout } = useUIStore();
-  const { saveDisplayNameToServer } = useUserStore(); // We'll just trigger sync engine separately if needed, or we just persist locally and rely on another process. But wait, updateSettings is best used directly.
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  
+  const { dashboardLayout, updateDashboardLayout } = useUIStore(
+    useShallow((s) => ({
+      dashboardLayout: s.dashboardLayout,
+      updateDashboardLayout: s.updateDashboardLayout
+    }))
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5,
+        distance: 8,
       },
     }),
     useSensor(KeyboardSensor, {
@@ -43,71 +53,239 @@ export function BentoGrid({ widgets }: BentoGridProps) {
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      const oldIndex = dashboardLayout.indexOf(active.id as string);
-      const newIndex = dashboardLayout.indexOf(over.id as string);
+      const oldIndex = dashboardLayout.findIndex(w => w.id === active.id);
+      const newIndex = dashboardLayout.findIndex(w => w.id === over.id);
 
-      const newLayout = arrayMove(dashboardLayout, oldIndex, newIndex);
-      updateDashboardLayout(newLayout);
-      
-      // We should ideally sync this to DB here.
-      import('@/lib/supabase/client').then(({ getSupabaseClient }) => {
-        getSupabaseClient().auth.getSession().then(({ data }) => {
-          if (data?.session?.user) {
-            import('@/lib/db').then(({ updateSettings }) => {
-              updateSettings({
-                userId: data.session!.user.id,
-                dashboardLayout: newLayout
-              });
-            });
-          }
-        });
-      });
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newLayout = arrayMove(dashboardLayout, oldIndex, newIndex);
+        updateDashboardLayout(newLayout);
+      }
     }
   };
 
   // Filter out any widgets from layout that are not provided in `widgets` prop
   const activeLayout = useMemo(() => {
-    // Add any widgets not in layout to the end
     const availableWidgets = Object.keys(widgets);
-    const layoutMap = new Set(dashboardLayout);
-    const missing = availableWidgets.filter(w => !layoutMap.has(w));
+    const layoutMap = new Set(dashboardLayout.map(w => w.id));
     
-    return [...dashboardLayout.filter(id => widgets[id]), ...missing];
+    // Default initializer for widgets not present in layout
+    const missing: DashboardWidgetConfig[] = availableWidgets
+      .filter(w => !layoutMap.has(w))
+      .map(w => {
+        let size: DashboardWidgetConfig['size'] = 'full';
+        if (w === 'habit-overview' || w === 'focus-goal' || w === 'weekly-review') {
+          size = '1/2';
+        }
+        return { id: w, size, hidden: false, pinned: false };
+      });
+    
+    // Keep configurations for widgets that actually exist in the widgets prop
+    const existing = dashboardLayout.filter(w => widgets[w.id]);
+    return [...existing, ...missing];
   }, [dashboardLayout, widgets]);
 
-  return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
-      <SortableContext
-        items={activeLayout}
-        strategy={rectSortingStrategy}
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 w-full">
-          {activeLayout.map((id) => {
-            // Provide different column spans based on the widget
-            let colSpan = 'lg:col-span-12'; // default full width
-            
-            if (id === 'habit-overview') colSpan = 'lg:col-span-6';
-            if (id === 'focus-goal') colSpan = 'lg:col-span-6';
-            if (id === 'ai-quote') colSpan = 'lg:col-span-12';
-            if (id === 'ai-coach') colSpan = 'lg:col-span-12';
-            if (id === 'quick-actions') colSpan = 'lg:col-span-12';
-            if (id === 'today-tasks') colSpan = 'lg:col-span-12';
-            if (id === 'metrics') colSpan = 'lg:col-span-12';
+  const visibleWidgets = useMemo(() => activeLayout.filter(w => !w.hidden), [activeLayout]);
+  const hiddenWidgets = useMemo(() => activeLayout.filter(w => w.hidden), [activeLayout]);
 
-            return (
-              <div key={id} className={`w-full ${colSpan}`}>
-                <SortableWidget id={id} disableDrag={id === 'hero'}>
-                  {widgets[id]}
-                </SortableWidget>
-              </div>
-            );
-          })}
+  const persistLayoutChanges = async (newLayout: DashboardWidgetConfig[]) => {
+    updateDashboardLayout(newLayout);
+    try {
+      const { getSupabaseClient } = await import('@/lib/supabase/client');
+      const supabase = getSupabaseClient();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.user) {
+        const { updateSettings } = await import('@/lib/db');
+        await updateSettings({
+          userId: data.session.user.id,
+          dashboardLayout: newLayout
+        });
+      }
+    } catch (e) {
+      console.error("Failed to sync layout configuration:", e);
+    }
+  };
+
+  const handleTogglePin = (widgetId: string) => {
+    const newLayout = dashboardLayout.map(w => {
+      if (w.id === widgetId) {
+        return { ...w, pinned: !w.pinned };
+      }
+      return w;
+    });
+    updateDashboardLayout(newLayout);
+  };
+
+  const handleResize = (widgetId: string, newSize: DashboardWidgetConfig['size']) => {
+    const newLayout = dashboardLayout.map(w => {
+      if (w.id === widgetId) {
+        return { ...w, size: newSize };
+      }
+      return w;
+    });
+    updateDashboardLayout(newLayout);
+  };
+
+  const handleHide = (widgetId: string) => {
+    const newLayout = dashboardLayout.map(w => {
+      if (w.id === widgetId) {
+        return { ...w, hidden: true };
+      }
+      return w;
+    });
+    updateDashboardLayout(newLayout);
+  };
+
+  const handleShow = (widgetId: string) => {
+    const newLayout = dashboardLayout.map(w => {
+      if (w.id === widgetId) {
+        return { ...w, hidden: false };
+      }
+      return w;
+    });
+    updateDashboardLayout(newLayout);
+  };
+
+  const handleResetLayout = async () => {
+    const defaultLayout: DashboardWidgetConfig[] = [
+      { id: 'metrics', size: 'full', hidden: false, pinned: true },
+      { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
+      { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
+      { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
+      { id: 'ai-quote', size: 'full', hidden: false, pinned: false },
+      { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
+      { id: 'quick-actions', size: 'full', hidden: false, pinned: false },
+      { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
+    ];
+    await persistLayoutChanges(defaultLayout);
+  };
+
+  const handleDoneCustomizing = async () => {
+    setIsCustomizing(false);
+    await persistLayoutChanges(dashboardLayout);
+  };
+
+  return (
+    <div className="space-y-6 w-full relative">
+      {/* Control bar */}
+      <div className="flex items-center justify-between bg-card/40 dark:bg-slate-900/30 backdrop-blur border border-border/40 p-3 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-2">
+          <LayoutGrid className="w-5 h-5 text-indigo-500" />
+          <span className="text-sm font-semibold text-foreground">Dashboard Customization</span>
         </div>
-      </SortableContext>
-    </DndContext>
+        <div className="flex gap-2">
+          {isCustomizing ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResetLayout}
+                className="text-xs h-8 border-border/80"
+              >
+                <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                Reset Layout
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleDoneCustomizing}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-8 shadow-md"
+              >
+                <Check className="w-3.5 h-3.5 mr-1" />
+                Done
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCustomizing(true)}
+              className="text-xs h-8 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 font-semibold"
+            >
+              <LayoutGrid className="w-3.5 h-3.5 mr-1" />
+              Customize Layout
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={visibleWidgets.map(w => w.id)}
+          strategy={rectSortingStrategy}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 w-full items-stretch">
+            {visibleWidgets.map((widget) => {
+              const id = widget.id;
+              
+              // Map size to grid layout classes
+              let colSpan = 'lg:col-span-12';
+              if (widget.size === '1/4') colSpan = 'lg:col-span-3 md:col-span-6 col-span-12';
+              else if (widget.size === '1/2') colSpan = 'lg:col-span-6 md:col-span-6 col-span-12';
+              else if (widget.size === '2/3') colSpan = 'lg:col-span-8 md:col-span-12 col-span-12';
+              else if (widget.size === 'full') colSpan = 'lg:col-span-12 md:col-span-12 col-span-12';
+
+              return (
+                <div key={id} className={`w-full h-full ${colSpan} transition-all duration-300`}>
+                  <SortableWidget
+                    id={id}
+                    disableDrag={widget.pinned || id === 'hero'}
+                    isCustomizing={isCustomizing}
+                    pinned={widget.pinned}
+                    size={widget.size}
+                    onTogglePin={() => handleTogglePin(id)}
+                    onResize={(sz) => handleResize(id, sz)}
+                    onHide={() => handleHide(id)}
+                  >
+                    {widgets[id]}
+                  </SortableWidget>
+                </div>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      {/* Hidden Widgets Drawer */}
+      <AnimatePresence>
+        {isCustomizing && hiddenWidgets.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="sticky bottom-6 left-0 right-0 bg-background/95 dark:bg-slate-900/95 backdrop-blur-md shadow-2xl rounded-2xl border border-indigo-500/30 p-4 z-40 max-w-4xl mx-auto"
+          >
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                <Eye className="w-4 h-4 text-indigo-500" />
+                Hidden Widgets ({hiddenWidgets.length})
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {hiddenWidgets.map((widget) => {
+                  const widgetName = widget.id
+                    .replace('-', ' ')
+                    .replace(/\b\w/g, c => c.toUpperCase());
+                  return (
+                    <Button
+                      key={widget.id}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleShow(widget.id)}
+                      className="text-xs h-8 border-indigo-200 dark:border-indigo-900 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 rounded-xl"
+                    >
+                      <Sparkles className="w-3 h-3 mr-1.5" />
+                      Add {widgetName}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

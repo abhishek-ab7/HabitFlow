@@ -53,6 +53,8 @@ export interface Habit {
   isQuantitative?: boolean;
   targetValue?: number;
   unit?: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  metadata?: Record<string, any>;
 }
 
 export type CompletionStatus = 'completed' | 'missed' | 'frozen';
@@ -112,6 +114,7 @@ export interface Goal {
   updatedAt?: string; // ISO timestamp - for conflict resolution
   completedAt?: string;
   archived: boolean;
+  metadata?: Record<string, any>;
 }
 
 export interface Milestone {
@@ -187,6 +190,11 @@ export interface RoutineCompletion {
 export type TaskStatus = 'todo' | 'in_progress' | 'done' | 'archived';
 
 export interface Task {
+  recurrenceRule?: string;
+  estimatedTime?: number;
+  actualTime?: number;
+  isUrgent?: boolean;
+  isImportant?: boolean;
   id: string;
   userId: string;
   title: string;
@@ -216,6 +224,13 @@ export interface UserStats {
   creativity: number;    // from 'personal' and 'fun'
 }
 
+export interface DashboardWidgetConfig {
+  id: string;
+  size: '1/4' | '1/2' | '2/3' | 'full';
+  hidden?: boolean;
+  pinned?: boolean;
+}
+
 export interface UserSettings {
   id: string;
   userId: string; // Added for data isolation
@@ -236,7 +251,7 @@ export interface UserSettings {
   hapticsEnabled?: boolean;
   stats?: UserStats;
   unlockedThemes?: string[];
-  dashboardLayout?: string[];
+  dashboardLayout?: (string | DashboardWidgetConfig)[];
 }
 
 // ============================================
@@ -312,7 +327,10 @@ export interface HabitFormData {
   isQuantitative?: boolean;
   targetValue?: number;
   unit?: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  metadata?: Record<string, any>;
 }
+
 
 export interface GoalFormData {
   title: string;
@@ -331,6 +349,11 @@ export interface MilestoneFormData {
 }
 
 export interface TaskFormData {
+  recurrenceRule?: string;
+  estimatedTime?: number;
+  actualTime?: number;
+  isUrgent?: boolean;
+  isImportant?: boolean;
   title: string;
   description?: string;
   priority: Priority;

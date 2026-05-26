@@ -22,6 +22,17 @@ export interface TemplateHabit {
 }
 
 const TEMPLATES: Record<string, { label: string; icon: any; items: TemplateHabit[] }> = {
+  marketplace: {
+    label: 'Marketplace Pathways (Premium)',
+    icon: Sparkles,
+    items: [
+      { name: 'Fat Loss Intake', icon: '🥗', category: 'health', targetDaysPerWeek: 7, isQuantitative: true, targetValue: 1500, unit: 'kcal', description: 'Maintain daily caloric deficit and track meals' },
+      { name: 'Full Stack Coding', icon: '💻', category: 'learning', targetDaysPerWeek: 5, isQuantitative: true, targetValue: 3, unit: 'hours', description: 'React, Node.js, and system architecture practice' },
+      { name: 'UPSC Exam Prep', icon: '🏛️', category: 'learning', targetDaysPerWeek: 6, isQuantitative: true, targetValue: 6, unit: 'hours', description: 'Current affairs syllabus, revision & mock test practice' },
+      { name: 'College Success Focus', icon: '🎓', category: 'personal', targetDaysPerWeek: 7, isQuantitative: true, targetValue: 2, unit: 'hours', description: 'Attend lectures, complete assignments, study' },
+      { name: 'Gym Beginner Workout', icon: '🏋️‍♂️', category: 'health', targetDaysPerWeek: 4, isQuantitative: true, targetValue: 45, unit: 'minutes', description: 'Progressive overload lifting sessions at the gym' }
+    ]
+  },
   morning: {
     label: 'Morning Routine',
     icon: Sparkles,

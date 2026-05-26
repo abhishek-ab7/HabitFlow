@@ -1,9 +1,12 @@
+'use client';
+
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, Lightbulb, Quote, Loader2, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/providers/auth-provider';
+import { useShallow } from 'zustand/react/shallow';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useTaskStore } from '@/lib/stores/task-store';
@@ -47,10 +50,17 @@ export function AICoachWidget() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const { habits } = useHabitStore();
-    const { tasks } = useTaskStore();
-    const { level } = useGamificationStore();
-    const { displayName, email, isLoading: isLoadingUser, loadUser } = useUserStore();
+    const habits = useHabitStore((s) => s.habits);
+    const tasks = useTaskStore((s) => s.tasks);
+    const level = useGamificationStore((s) => s.level);
+    const { displayName, email, isLoading: isLoadingUser, loadUser } = useUserStore(
+        useShallow((s) => ({
+            displayName: s.displayName,
+            email: s.email,
+            isLoading: s.isLoading,
+            loadUser: s.loadUser,
+        }))
+    );
 
     useEffect(() => {
         if (user) loadUser();
@@ -200,7 +210,7 @@ export function AICoachWidget() {
     const animatedFocus = useTypewriter(data?.focus || '', 15, !loading);
 
     return (
-        <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/30 via-white/40 to-purple-50/30 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md overflow-hidden relative shadow-lg">
+        <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/30 via-white/40 to-purple-50/30 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md overflow-hidden relative shadow-lg h-full flex flex-col">
             {/* Loading Overlay for User Data */}
             {isLoadingUser && (
                 <div className="absolute inset-0 bg-background/90 backdrop-blur-sm z-50 flex items-center justify-center">

@@ -37,7 +37,7 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
     const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
     const [loadingPriority, setLoadingPriority] = useState(false);
     
-    const { removeTask } = useTaskStore();
+    const { removeTask, editTask } = useTaskStore();
     
     const { 
         activeTaskId, 
@@ -320,6 +320,36 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                     <Calendar className={cn(compact ? "h-3 w-3" : "h-3.5 w-3.5")} />
                                     <span>{format(new Date(task.due_date), compact ? "MMM d" : "MMM d, h:mm a")}</span>
                                 </motion.div>
+                            )}
+
+                            {task.estimatedTime !== undefined && task.estimatedTime > 0 && (
+                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium bg-muted/40 px-2 py-0.5 rounded border border-border/50">
+                                    <span>Est: {task.estimatedTime}m</span>
+                                    {task.actualTime !== undefined && task.actualTime > 0 ? (
+                                        <span className={cn(
+                                            "ml-1 font-bold",
+                                            task.actualTime > task.estimatedTime ? "text-rose-500" : "text-emerald-500"
+                                        )}>
+                                            Act: {task.actualTime}m
+                                        </span>
+                                    ) : (
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const act = prompt("Enter actual time spent (in minutes):");
+                                                if (act !== null) {
+                                                    const mins = parseInt(act);
+                                                    if (!isNaN(mins)) {
+                                                        editTask(task.id, { actualTime: mins });
+                                                    }
+                                                }
+                                            }}
+                                            className="ml-1 text-primary hover:underline hover:text-primary/80 font-bold"
+                                        >
+                                            + Act
+                                        </button>
+                                    )}
+                                </div>
                             )}
 
                             {task.tags && task.tags.length > 0 && !compact && (

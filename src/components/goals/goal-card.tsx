@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, differenceInDays } from 'date-fns';
 import {
@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
+  Sparkles,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -28,9 +29,13 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ProgressRing, CountUp, ScaleOnHover, SuccessRipple } from '@/components/motion';
 import { cn } from '@/lib/utils';
-import { getDeadlineStatus } from '@/lib/calculations';
+import { getDeadlineStatus, calculateHabitStats } from '@/lib/calculations';
+import { useHabitStore } from '@/lib/stores/habit-store';
+import { GoalRoadmapView } from './GoalRoadmapView';
+import { SMARTGoalAnalysis } from './SMARTGoalAnalysis';
 import type { Goal, Milestone, GoalStats, GoalStatus, Priority, AreaOfLife } from '@/lib/types';
 
 interface GoalCardProps {
@@ -79,7 +84,52 @@ export function GoalCard({
   onAddMilestone,
 }: GoalCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [rippleMilestone, setRippleMilestone] = useState<string | null>(null);
+
+  const { habits, completions } = useHabitStore();
+
+  const healthScore = useMemo(() => {
+    const getLinkedCategories = (area: string): string[] => {
+      switch (area) {
+        case 'career': return ['work', 'learning'];
+        case 'health': return ['health'];
+        case 'relationships': return ['relationships'];
+        case 'personal_growth': return ['learning', 'personal'];
+        case 'finance': return ['finance'];
+        case 'fun': return ['personal'];
+        default: return [];
+      }
+    };
+
+    const linkedCats = getLinkedCategories(goal.areaOfLife);
+    const linkedHabits = habits.filter(h => !h.archived && linkedCats.includes(h.category));
+    
+    let consistency = 80;
+    if (linkedHabits.length > 0) {
+      const completionRates = linkedHabits.map(h => {
+        const stats = calculateHabitStats(h, completions);
+        return stats.completionRate;
+      });
+      consistency = completionRates.reduce((sum, rate) => sum + rate, 0) / completionRates.length;
+    } else if (habits.length > 0) {
+      const completionRates = habits.filter(h => !h.archived).map(h => {
+        const stats = calculateHabitStats(h, completions);
+        return stats.completionRate;
+      });
+      consistency = completionRates.reduce((sum, rate) => sum + rate, 0) / completionRates.length;
+    }
+
+    const milestoneProgress = stats.progress;
+    const totalDays = stats.totalDays || 1;
+    const daysRemaining = stats.daysRemaining;
+    let proximityScore = 100;
+    if (!stats.isOnTrack) {
+      proximityScore = Math.max(0, Math.min(100, (daysRemaining / totalDays) * 100));
+    }
+
+    return Math.round(consistency * 0.4 + milestoneProgress * 0.4 + proximityScore * 0.2);
+  }, [goal.areaOfLife, habits, completions, stats]);
 
   const deadlineInfo = getDeadlineStatus(goal.deadline);
   const statusStyle = STATUS_STYLES[goal.status];
@@ -111,10 +161,13 @@ export function GoalCard({
 
   return (
     <ScaleOnHover scale={1.01} lift className="h-full">
-      <Card className={cn(
-        "relative overflow-hidden transition-shadow h-full flex flex-col",
-        goal.isFocus && "ring-2 ring-primary/50"
-      )}>
+      <Card 
+        onClick={() => setDetailsModalOpen(true)}
+        className={cn(
+          "relative overflow-hidden transition-shadow h-full flex flex-col cursor-pointer hover:shadow-md",
+          goal.isFocus && "ring-2 ring-primary/50"
+        )}
+      >
         {/* Focus indicator */}
         {goal.isFocus && (
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-chart-4" />
@@ -129,6 +182,17 @@ export function GoalCard({
                 className={cn("mb-2", areaStyle.bg, areaStyle.text)}
               >
                 {areaStyle.icon} {goal.areaOfLife.replace('_', ' ')}
+              </Badge>
+
+              <Badge
+                variant="outline"
+                className={cn("ml-2 mb-2 font-bold", 
+                  healthScore >= 80 ? "border-emerald-500/30 text-emerald-500 bg-emerald-500/5" :
+                  healthScore >= 50 ? "border-amber-500/30 text-amber-500 bg-amber-500/5" :
+                  "border-rose-500/30 text-rose-500 bg-rose-500/5"
+                )}
+              >
+                Health: {healthScore}/100
               </Badge>
 
               {/* Title */}
@@ -154,7 +218,7 @@ export function GoalCard({
               {/* Actions */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => e.stopPropagation()}>
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -257,6 +321,7 @@ export function GoalCard({
               <Checkbox
                 checked={false}
                 onCheckedChange={() => handleMilestoneToggle(nextMilestone.id)}
+                onClick={(e) => e.stopPropagation()}
               />
               <span className="text-sm flex-1 truncate">{nextMilestone.title}</span>
               <span className="text-xs text-muted-foreground">Next</span>
@@ -267,7 +332,10 @@ export function GoalCard({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setExpanded(!expanded)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
             className="w-full gap-1"
           >
             {expanded ? (
@@ -306,6 +374,7 @@ export function GoalCard({
                         id={milestone.id}
                         checked={milestone.completed}
                         onCheckedChange={() => handleMilestoneToggle(milestone.id)}
+                        onClick={(e) => e.stopPropagation()}
                         className="data-[state=checked]:bg-success data-[state=checked]:border-success"
                       />
                       <label
@@ -332,7 +401,10 @@ export function GoalCard({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onAddMilestone(goal.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddMilestone(goal.id);
+                    }}
                     className="w-full gap-1 mt-2"
                   >
                     <Plus className="h-4 w-4" />
@@ -343,14 +415,49 @@ export function GoalCard({
             )}
           </AnimatePresence>
 
+          {/* Detailed Roadmap & SMART Coach trigger */}
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={(e) => {
+              e.stopPropagation();
+              setDetailsModalOpen(true);
+            }}
+            className="w-full gap-2 mt-3 border-primary/20 bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Roadmap & SMART Coach
+          </Button>
+
           {/* On track indicator */}
-          <div className="flex items-center justify-center pt-2 border-t">
+          <div className="flex items-center justify-center pt-2 border-t mt-3">
             <Badge variant={stats.isOnTrack ? 'default' : 'destructive'}>
               {stats.isOnTrack ? '✓ On Track' : '⚠ Behind Schedule'}
             </Badge>
           </div>
         </CardContent>
       </Card>
+
+      {/* Roadmap & SMART Coach Modal */}
+      <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
+        <DialogContent className="max-w-full sm:max-w-4xl lg:max-w-5xl max-h-[90vh] overflow-y-auto bg-background border-border shadow-2xl p-6 rounded-2xl">
+          <DialogHeader className="pb-4 border-b border-border/40">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Goal Roadmap & SMART Coach: {goal.title}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div>
+              <GoalRoadmapView goal={goal} milestones={milestones} stats={stats} />
+            </div>
+            <div>
+              <SMARTGoalAnalysis goal={goal} />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </ScaleOnHover>
   );
 }

@@ -244,7 +244,9 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       const today = new Date().toISOString().split('T')[0];
       if (date === today) {
         const habit = get().habits.find(h => h.id === habitId);
-        useGamificationStore.getState().addXp(XP_PER_HABIT, habit?.category);
+        const difficulty = habit?.difficulty || 'medium';
+        const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+        useGamificationStore.getState().addXp(xpAmount, habit?.category);
       }
     }
 
@@ -366,7 +368,9 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       const today = new Date().toISOString().split('T')[0];
       if (date === today) {
         const habit = get().habits.find(h => h.id === habitId);
-        useGamificationStore.getState().addXp(XP_PER_HABIT, habit?.category);
+        const difficulty = habit?.difficulty || 'medium';
+        const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+        useGamificationStore.getState().addXp(xpAmount, habit?.category);
       }
     }
 
@@ -407,12 +411,14 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     // Add XP for newly completed habits
     const today = new Date().toISOString().split('T')[0];
     if (date === today) {
-      const { useGamificationStore, XP_PER_HABIT } = await import('@/lib/stores/gamification-store');
+      const { useGamificationStore } = await import('@/lib/stores/gamification-store');
       results.forEach(r => {
         // Simple heuristic: if created recently or updated recently (in this transaction)
         if (r.updatedAt === r.createdAt || (new Date(r.updatedAt!).getTime() - new Date(r.createdAt!).getTime() < 1000)) {
            const habit = get().habits.find(h => h.id === r.habitId);
-           useGamificationStore.getState().addXp(XP_PER_HABIT, habit?.category);
+           const difficulty = habit?.difficulty || 'medium';
+           const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+           useGamificationStore.getState().addXp(xpAmount, habit?.category);
         }
       });
     }

@@ -20,6 +20,7 @@ import type { Habit, HabitFormData, Category, Routine } from '@/lib/types';
 import { useRoutineStore } from '@/lib/stores/routine-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { HabitTemplates, type TemplateHabit } from './HabitTemplates';
+import { HabitDifficultySelector } from './HabitDifficultySelector';
 
 interface HabitFormModalProps {
   open: boolean;
@@ -79,14 +80,16 @@ export function HabitFormModal({
   const [isQuantitative, setIsQuantitative] = useState(false);
   const [targetValue, setTargetValue] = useState(0);
   const [unit, setUnit] = useState('');
+  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [errors, setErrors] = useState<{ name?: string }>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showAllIcons, setShowAllIcons] = useState(false);
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<Set<string>>(new Set());
+  const [stackAfterHabitId, setStackAfterHabitId] = useState<string>('');
   const [loadingRoutines, setLoadingRoutines] = useState(false);
 
   const { routines, loadRoutines } = useRoutineStore();
-  const { linkToRoutine, unlinkFromRoutine, getHabitRoutines } = useHabitStore();
+  const { habits, linkToRoutine, unlinkFromRoutine, getHabitRoutines } = useHabitStore();
 
   const isEditing = !!habit;
 
@@ -105,6 +108,7 @@ export function HabitFormModal({
           setIsQuantitative(habit.isQuantitative || false);
           setTargetValue(habit.targetValue || 0);
           setUnit(habit.unit || '');
+          setDifficulty(habit.difficulty || 'medium');
 
           // Load routines this habit belongs to
           setLoadingRoutines(true);
@@ -112,6 +116,7 @@ export function HabitFormModal({
             setSelectedRoutineIds(new Set(habitRoutines.map(r => r.id)));
             setLoadingRoutines(false);
           });
+          setStackAfterHabitId(habit.metadata?.stackTriggerHabitId || '');
         } else {
           setName('');
           setCategory('personal');
@@ -120,7 +125,9 @@ export function HabitFormModal({
           setIsQuantitative(false);
           setTargetValue(0);
           setUnit('');
+          setDifficulty('medium');
           setSelectedRoutineIds(new Set());
+          setStackAfterHabitId('');
         }
         setErrors({});
       });
@@ -167,6 +174,11 @@ export function HabitFormModal({
       isQuantitative,
       targetValue: isQuantitative ? targetValue : undefined,
       unit: isQuantitative ? unit.trim() : undefined,
+      difficulty,
+      metadata: {
+        ...(habit?.metadata || {}),
+        stackTriggerHabitId: stackAfterHabitId || undefined,
+      }
     });
 
     // If editing, update routine links
@@ -351,6 +363,9 @@ export function HabitFormModal({
                 </p>
               </div>
 
+              {/* Difficulty selector */}
+              <HabitDifficultySelector value={difficulty} onChange={setDifficulty} />
+
               {/* Track Quantity */}
               <div className="p-4 rounded-xl border border-border bg-card space-y-4">
                 <div className="flex items-center justify-between">
@@ -462,6 +477,42 @@ export function HabitFormModal({
                           <p className="text-xs text-muted-foreground mt-1">
                             This habit can belong to multiple routines
                           </p>
+                        </div>
+
+                        {/* Habit Stacking */}
+                        <div className="pt-2 border-t border-border/40">
+                          <label className="text-sm font-medium mb-2 flex items-center gap-2">
+                            <Link2 className="w-4 h-4 text-amber-500" />
+                            Stack after Habit (optional)
+                          </label>
+                          <select
+                            value={stackAfterHabitId}
+                            onChange={(e) => setStackAfterHabitId(e.target.value)}
+                            className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          >
+                            <option value="">-- Select trigger habit --</option>
+                            {habits
+                              .filter((h) => !h.archived && (!habit || h.id !== habit.id))
+                              .map((h) => (
+                                <option key={h.id} value={h.id}>
+                                  {h.icon || '🎯'} {h.name}
+                                </option>
+                              ))}
+                          </select>
+                          {stackAfterHabitId && (
+                            <div className="mt-3 p-3 bg-muted/40 rounded-xl border border-border/40 flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Visual Sequence Stack</span>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="px-2.5 py-1 bg-muted border rounded-lg text-xs font-semibold">
+                                  {habits.find((h) => h.id === stackAfterHabitId)?.name || 'Trigger Habit'}
+                                </span>
+                                <span className="text-primary font-bold">➔</span>
+                                <span className="px-2.5 py-1 bg-primary/10 border border-primary/20 text-primary rounded-lg text-xs font-bold animate-pulse">
+                                  {name || 'New Habit'}
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </motion.div>
