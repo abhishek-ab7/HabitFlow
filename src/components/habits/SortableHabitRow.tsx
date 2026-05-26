@@ -221,7 +221,7 @@ export function SortableHabitRow({
     return (
         <div ref={setNodeRef} style={style} className="flex items-center py-2 group bg-background relative">
             {/* Habit info */}
-            <div className="w-32 md:w-64 flex-shrink-0 flex items-center gap-2 pr-3 sticky left-0 bg-background z-20 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.05)] md:shadow-none">
+            <div className="w-32 md:w-64 flex-shrink-0 flex items-center gap-2 pr-3">
                 {/* Drag Handle */}
                 <div
                     {...attributes}
@@ -363,7 +363,7 @@ export function SortableHabitRow({
                             onContextMenu={(e) => handleCellRightClick(e, dateStr, isFutureDate)}
                             disabled={isFutureDate}
                             className={cn(
-                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden flex-shrink-0",
+                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                 isCompleted
                                     ? "bg-success/20 text-success hover:bg-success/30"
@@ -575,7 +575,7 @@ export function SortableHabitRow({
             </div>
 
             {/* Progress */}
-            <div className="w-16 md:w-24 flex-shrink-0 flex flex-col items-center gap-1 ml-auto bg-background z-10 sticky right-0 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.05)] md:shadow-none">
+            <div className="w-16 md:w-24 flex-shrink-0 flex flex-col items-center gap-1 ml-auto">
                 <span className="text-sm font-medium tabular-nums">
                     {monthlyCount}/{totalDays}
                 </span>

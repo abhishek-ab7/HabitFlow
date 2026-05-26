@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react';
+import { useMemo, useState, useCallback, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
 import { Check } from 'lucide-react';
@@ -51,7 +51,6 @@ export const HabitGrid = memo(function HabitGrid({
   const [rippleCell, setRippleCell] = useState<string | null>(null);
   const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
   const [isMobile, setIsMobile] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const { getRoutinesForMultipleHabits, reorder, freezeHabit } = useHabitStore();
 
   // Handle window resizing to detect mobile
@@ -119,22 +118,18 @@ export const HabitGrid = memo(function HabitGrid({
     });
   }, [selectedMonth]);
 
-  useEffect(() => {
-    if (isMobile && scrollRef.current) {
-      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
-    }
-  }, [isMobile, selectedMonth]);
-
-  // Compute displayed days (scrollable on mobile, showing up to Today at end of scroll)
+  // Compute displayed days (3 days on mobile, full month on desktop)
   const displayedDays = useMemo(() => {
     if (!isMobile) return days;
 
-    // Filter out future days so Today is at the end of the scroll container
     const todayIndex = days.findIndex(d => d.isToday);
     if (todayIndex !== -1) {
-      return days.slice(0, todayIndex + 1);
+      // Show Day Before Yesterday, Yesterday, and Today
+      const start = Math.max(0, todayIndex - 2);
+      return days.slice(start, todayIndex + 1);
     }
-    return days;
+    // Return last 3 days of the selected month if today is not in it
+    return days.slice(-3);
   }, [days, isMobile]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -168,17 +163,17 @@ export const HabitGrid = memo(function HabitGrid({
   }
 
   return (
-    <div className="overflow-x-auto pb-4 scrollbar-hide" ref={scrollRef}>
+    <div className="overflow-x-auto pb-4 scrollbar-hide">
       <div className="min-w-full md:min-w-[800px]">
         {/* Header row with days */}
         <div className="flex items-center sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-2 border-b">
-          <div className="w-32 md:w-64 flex-shrink-0 sticky left-0 bg-background z-20 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.05)] md:shadow-none" /> {/* Responsive Spacer */}
+          <div className="w-32 md:w-64 flex-shrink-0" /> {/* Responsive Spacer */}
           <div className="flex gap-0.5">
             {displayedDays.map(({ day, dayLabel, isWeekend, isToday: isTodayDate }) => (
               <div
                 key={day}
                 className={cn(
-                  "w-9 h-14 flex flex-col items-center justify-center text-xs flex-shrink-0",
+                  "w-9 h-14 flex flex-col items-center justify-center text-xs",
                   isWeekend && "text-muted-foreground",
                   isTodayDate && "font-bold"
                 )}
@@ -198,7 +193,7 @@ export const HabitGrid = memo(function HabitGrid({
               </div>
             ))}
           </div>
-          <div className="w-16 md:w-24 flex-shrink-0 text-center text-xs text-muted-foreground ml-auto bg-background z-10 sticky right-0 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.05)] md:shadow-none">
+          <div className="w-16 md:w-24 flex-shrink-0 text-center text-xs text-muted-foreground ml-auto">
             Progress
           </div>
         </div>

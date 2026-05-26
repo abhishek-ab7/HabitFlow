@@ -72,16 +72,6 @@ export default function HabitsPageContent() {
   const [modalTab, setModalTab] = useState<'details' | 'templates'>('details');
   const [showArchivedModal, setShowArchivedModal] = useState(false);
   const [showAIAssist, setShowAIAssist] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
   // Check for ?new=true query param
   useEffect(() => {
@@ -357,30 +347,14 @@ export default function HabitsPageContent() {
               />
               {/* Drawer panel */}
               <motion.div
-                initial={{ 
-                  x: isMobile ? 0 : '100%', 
-                  y: isMobile ? '100%' : 0 
-                }}
-                animate={{ x: 0, y: 0 }}
-                exit={{ 
-                  x: isMobile ? 0 : '100%', 
-                  y: isMobile ? '100%' : 0 
-                }}
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className={cn(
-                  "fixed bg-background shadow-2xl z-50 flex flex-col",
-                  isMobile
-                    ? "bottom-0 left-0 right-0 h-[80vh] rounded-t-2xl border-t border-border/80"
-                    : "right-0 top-0 bottom-0 w-full max-w-md border-l border-border/80 h-full"
-                )}
+                className="fixed right-0 top-0 bottom-0 w-full max-w-md sm:max-w-lg bg-background border-l border-border/80 shadow-2xl z-50 flex flex-col h-full"
               >
-                {isMobile && (
-                  <div className="flex justify-center pt-2.5 pb-1 flex-shrink-0">
-                    <div className="w-12 h-1.5 bg-muted rounded-full" />
-                  </div>
-                )}
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-border/80 flex-shrink-0">
+                <div className="flex items-center justify-between p-4 border-b border-border/80">
                   <div className="flex items-center gap-2">
                     <Brain className="h-5 w-5 text-emerald-500" />
                     <h2 className="text-lg font-semibold tracking-tight">AI Assistant</h2>
