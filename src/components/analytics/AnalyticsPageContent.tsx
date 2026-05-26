@@ -398,13 +398,13 @@ export default function AnalyticsPageContent() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="flex p-1 bg-muted rounded-lg mr-2 border border-border/40 overflow-x-auto max-w-full">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+            <div className="flex p-1 bg-muted rounded-lg border border-border/40 overflow-x-auto max-w-full scrollbar-hide w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => setActiveView('analytics')}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0",
+                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
                   activeView === 'analytics' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -414,7 +414,7 @@ export default function AnalyticsPageContent() {
                 type="button"
                 onClick={() => setActiveView('rpg-skills')}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0",
+                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
                   activeView === 'rpg-skills' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -424,7 +424,7 @@ export default function AnalyticsPageContent() {
                 type="button"
                 onClick={() => setActiveView('predictive')}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0",
+                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
                   activeView === 'predictive' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -434,7 +434,7 @@ export default function AnalyticsPageContent() {
                 type="button"
                 onClick={() => setActiveView('weekly-review')}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0",
+                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
                   activeView === 'weekly-review' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -444,7 +444,7 @@ export default function AnalyticsPageContent() {
                 type="button"
                 onClick={() => setActiveView('wrapped')}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0",
+                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
                   activeView === 'wrapped' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -453,7 +453,9 @@ export default function AnalyticsPageContent() {
             </div>
 
             {activeView === 'analytics' && !noData && (
-              <TimeRangeTabs value={timeRange} onChange={setTimeRange} />
+              <div className="w-full sm:w-auto flex justify-end sm:justify-start">
+                <TimeRangeTabs value={timeRange} onChange={setTimeRange} />
+              </div>
             )}
           </div>
         </div>
@@ -649,7 +651,7 @@ export default function AnalyticsPageContent() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex justify-between items-center max-w-3xl mx-auto p-4 bg-muted/20 rounded-2xl border border-border/30">
+              <div className="flex justify-between items-center max-w-3xl mx-auto p-4 bg-muted/20 rounded-2xl border border-border/30 overflow-x-auto max-w-full pb-2 scrollbar-hide gap-3 sm:gap-0">
                 {last7Days.map((day) => {
                   const mood = getMoodForDate(day.dateStr);
                   const moodEmojiMap = {
@@ -697,7 +699,7 @@ export default function AnalyticsPageContent() {
               <div className="space-y-3">
                 {habits.filter(h => !h.archived).map((habit) => {
                   return (
-                    <div key={habit.id} className="flex items-center justify-between p-3 rounded-xl border bg-card/45 hover:bg-card/60 transition-colors">
+                    <div key={habit.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border bg-card/45 hover:bg-card/60 transition-colors gap-3 sm:gap-0">
                       <div className="flex items-center gap-2 min-w-0">
                         {habit.icon && <span className="text-lg">{habit.icon}</span>}
                         <div className="min-w-0">
@@ -708,7 +710,7 @@ export default function AnalyticsPageContent() {
                         </div>
                       </div>
                       
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 overflow-x-auto max-w-full pb-1 scrollbar-hide">
                         {last7Days.map((day) => {
                           const comp = completions.find(c => c.habitId === habit.id && c.date === day.dateStr);
                           const isCompleted = comp?.completed && comp?.status !== 'frozen';
