@@ -132,7 +132,12 @@ export function HeatmapCalendar({ data, weeks = 20 }: HeatmapCalendarProps) {
                 </div>
 
                 {/* Heatmap grid */}
-                <div className="flex gap-[2px]">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex gap-[2px]"
+                >
                   {weeksData.map((week, weekIndex) => (
                     <div key={weekIndex} className="flex flex-col gap-[2px]">
                       {week.map((day, dayIndex) => {
@@ -145,13 +150,7 @@ export function HeatmapCalendar({ data, weeks = 20 }: HeatmapCalendarProps) {
                         return (
                           <Tooltip key={dateStr}>
                             <TooltipTrigger asChild>
-                              <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                transition={{
-                                  delay: weekIndex * 0.005 + dayIndex * 0.002, // Reduced stagger for snappier animation
-                                  duration: 0.15, // Faster animation
-                                }}
+                              <div
                                 className={cn(
                                   "w-3 h-3 rounded-sm cursor-pointer transition-all hover:ring-2 hover:ring-primary/50",
                                   isFuture ? "bg-muted/30" : LEVEL_COLORS[level],
@@ -176,7 +175,7 @@ export function HeatmapCalendar({ data, weeks = 20 }: HeatmapCalendarProps) {
                       })}
                     </div>
                   ))}
-                </div>
+                </motion.div>
               </div>
 
               {/* Legend */}

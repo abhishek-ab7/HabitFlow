@@ -96,6 +96,7 @@ function GoalsPageContent() {
   // Load goals on mount AND when auth state changes
   useEffect(() => {
     if (isAuthenticated && user?.id) {
+      // NOTE: loadGoals() and loadAllMilestones() can be combined into a single Dexie transaction if performance becomes a bottleneck at scale.
       loadGoals();
       loadAllMilestones();
     }

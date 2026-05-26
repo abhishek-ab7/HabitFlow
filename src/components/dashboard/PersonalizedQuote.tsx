@@ -23,6 +23,24 @@ export function PersonalizedQuote() {
   const goals = useGoalStore((s) => s.goals);
   const supabase = createClient();
 
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const cachedDate = localStorage.getItem('personalized_quote_date');
+    const cachedData = localStorage.getItem('personalized_quote_data');
+    const cachedId = localStorage.getItem('personalized_quote_id');
+
+    if (cachedDate === today && cachedData) {
+      try {
+        setQuote(JSON.parse(cachedData));
+        if (cachedId) {
+          setQuoteId(cachedId);
+        }
+      } catch (e) {
+        console.error('Failed to parse cached quote:', e);
+      }
+    }
+  }, []);
+
   const fetchQuote = async (forceRefresh: boolean = false) => {
     if (!user) return;
 
@@ -61,6 +79,10 @@ export function PersonalizedQuote() {
       setQuote(newQuote);
       setReaction(null); // Reset reaction for new quote
 
+      // Cache locally
+      localStorage.setItem('personalized_quote_date', today);
+      localStorage.setItem('personalized_quote_data', JSON.stringify(newQuote));
+
       // Save quote to database
       try {
         const { data: savedQuote, error: saveError } = await (supabase
@@ -78,6 +100,7 @@ export function PersonalizedQuote() {
 
         if (!saveError && savedQuote) {
           setQuoteId(savedQuote.id);
+          localStorage.setItem('personalized_quote_id', savedQuote.id);
         }
       } catch (dbError) {
         console.error('Failed to save quote to database:', dbError);

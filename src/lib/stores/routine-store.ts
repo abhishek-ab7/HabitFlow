@@ -21,6 +21,7 @@ interface RoutineState {
     
     // Junction table methods
     getRoutineHabits: (routineId: string) => Promise<Habit[]>;
+    getHabitsForAllRoutines: () => Promise<Map<string, Habit[]>>;
     linkHabit: (habitId: string, routineId: string) => Promise<void>;
     unlinkHabit: (habitId: string, routineId: string) => Promise<void>;
 }
@@ -190,6 +191,28 @@ export const useRoutineStore = create<RoutineState>((set, get) => ({
 
     getRoutineHabits: async (routineId: string) => {
         return getHabitsForRoutine(routineId);
+    },
+
+    getHabitsForAllRoutines: async () => {
+        const links = await db.habitRoutines.toArray();
+        links.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+        const habitIds = Array.from(new Set(links.map(link => link.habitId)));
+        if (habitIds.length === 0) return new Map();
+        
+        const habits = await db.habits.where('id').anyOf(habitIds).toArray();
+        const habitMap = new Map(habits.map(h => [h.id, h]));
+        const habitsMap = new Map<string, Habit[]>();
+        
+        links.forEach(link => {
+            const habit = habitMap.get(link.habitId);
+            if (habit) {
+                const list = habitsMap.get(link.routineId) || [];
+                list.push(habit);
+                habitsMap.set(link.routineId, list);
+            }
+        });
+        
+        return habitsMap;
     },
 
     linkHabit: async (habitId: string, routineId: string) => {

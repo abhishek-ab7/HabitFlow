@@ -19,12 +19,13 @@ interface RoutineCardProps {
     onPlay: (routine: Routine) => void;
     onEdit: (routine: Routine) => void;
     onDelete: (id: string) => void;
+    preFetchedHabits?: Habit[];
 }
 
-export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardProps) {
+export function RoutineCard({ routine, onPlay, onEdit, onDelete, preFetchedHabits }: RoutineCardProps) {
     const { getHabitCompletions, completions, batchComplete, toggle } = useHabitStore();
     const { getRoutineHabits } = useRoutineStore();
-    const [routineHabits, setRoutineHabits] = useState<Habit[]>([]);
+    const [routineHabits, setRoutineHabits] = useState<Habit[]>(preFetchedHabits || []);
     const [isCompleted, setIsCompleted] = useState(false);
     const [loading, setLoading] = useState(true);
     const [isExpanded, setIsExpanded] = useState(false);
@@ -40,7 +41,10 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
         let mounted = true;
         const checkCompletion = async () => {
             try {
-                const habits = await getRoutineHabits(routine.id);
+                let habits = preFetchedHabits;
+                if (!habits) {
+                    habits = await getRoutineHabits(routine.id);
+                }
                 if (!mounted) return;
 
                 setRoutineHabits(habits);
@@ -77,7 +81,7 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete }: RoutineCardPr
         checkCompletion();
 
         return () => { mounted = false; };
-    }, [routine.id, completions, getRoutineHabits, getHabitCompletions]);
+    }, [routine.id, completions, getRoutineHabits, getHabitCompletions, preFetchedHabits]);
 
     // Calculate progress
     const { totalHabits, completedHabits, progressPercentage } = useMemo(() => {

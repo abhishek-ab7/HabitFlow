@@ -98,15 +98,30 @@ export function SortableHabitRow({
         return d.toISOString().split('T')[0];
     }, []);
 
+    const completionMap = useMemo(() => {
+        const map = new Map<string, HabitCompletion>();
+        for (let i = 0; i < completions.length; i++) {
+            const c = completions[i];
+            if (c.habitId === habit.id) {
+                map.set(c.date, c);
+            }
+        }
+        return map;
+    }, [completions, habit.id]);
+
+    const getCompletion = (dateStr: string) => {
+        return completionMap.get(dateStr);
+    };
+
     const isStreakBrokenYesterday = useMemo(() => {
-        const yesterdayComp = completions.find(c => c.habitId === habit.id && c.date === yesterdayStr);
-        const dayBeforeComp = completions.find(c => c.habitId === habit.id && c.date === dayBeforeYesterdayStr);
+        const yesterdayComp = completionMap.get(yesterdayStr);
+        const dayBeforeComp = completionMap.get(dayBeforeYesterdayStr);
         
         const missedYesterday = !yesterdayComp || (!yesterdayComp.completed && yesterdayComp.status !== 'frozen');
         const completedDayBefore = dayBeforeComp && dayBeforeComp.completed && dayBeforeComp.status !== 'frozen';
         
         return missedYesterday && completedDayBefore;
-    }, [yesterdayStr, dayBeforeYesterdayStr, completions, habit.id]);
+    }, [yesterdayStr, dayBeforeYesterdayStr, completionMap]);
 
     const { triggerPop, triggerChime } = useFeedback();
     const { updateNote, updateValue } = useHabitStore();
@@ -128,11 +143,13 @@ export function SortableHabitRow({
     };
 
     const getMonthlyCount = () => {
-        return completions.filter(c => c.habitId === habit.id && c.completed && c.status !== 'frozen').length;
-    };
-
-    const getCompletion = (dateStr: string) => {
-        return completions.find(c => c.habitId === habit.id && c.date === dateStr);
+        let count = 0;
+        completionMap.forEach(c => {
+            if (c.completed && c.status !== 'frozen') {
+                count++;
+            }
+        });
+        return count;
     };
 
     const handleOpenPopover = (dateStr: string) => {

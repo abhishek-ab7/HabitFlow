@@ -109,7 +109,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
 
           {/* Habit rows */}
           <div className="space-y-3">
-            {habits.slice(0, 7).map((habit, index) => (
+            {habits.slice(0, 5).map((habit, index) => (
               <motion.div
                 key={habit.id}
                 initial={{ opacity: 0, x: -20 }}
@@ -177,9 +177,9 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
             ))}
           </div>
 
-          {habits.length > 7 && (
+          {habits.length > 5 && (
             <p className="text-sm text-muted-foreground mt-4 text-center">
-              +{habits.length - 7} more habits
+              +{habits.length - 5} more habits
             </p>
           )}
         </CardContent>

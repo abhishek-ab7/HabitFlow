@@ -23,11 +23,13 @@ export function TodayTasksWidget() {
     const [mounted, setMounted] = useState(false)
 
     useEffect(() => {
-        loadTasks()
+        if (tasks.length === 0) {
+            loadTasks()
+        }
         Promise.resolve().then(() => {
             setMounted(true)
         })
-    }, [loadTasks])
+    }, [loadTasks, tasks.length])
 
     // Hydration safety: Don't render date-dependent logic until mounted
     if (!mounted) {

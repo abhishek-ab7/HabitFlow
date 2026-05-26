@@ -111,7 +111,13 @@ export default function AnalyticsPageContent() {
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd');
     
-    loadCompletions(startStr, endStr);
+    const cacheKey = 'analytics_completions_' + format(end, 'yyyy-MM-dd');
+    const cached = sessionStorage.getItem(cacheKey);
+    if (!cached) {
+      loadCompletions(startStr, endStr);
+      sessionStorage.setItem(cacheKey, '1');
+    }
+    
     loadMoodLogs(startStr, endStr);
   }, [loadHabits, loadCompletions, loadGoals, loadTasks, loadMoodLogs]);
 

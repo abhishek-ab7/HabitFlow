@@ -137,6 +137,7 @@ export default function DashboardContent() {
       }
 
       // ⚡ OPTIMIZATION: Load all data in parallel instead of sequential
+      // NOTE: loadGoals() and loadAllMilestones() can be combined into a single Dexie transaction if performance becomes a bottleneck at scale.
       await Promise.all([
         loadHabits(),
         loadGoals(),
@@ -170,10 +171,10 @@ export default function DashboardContent() {
   // Computed values - OPTIMIZED: Memoized to prevent recalculation
   const todayProgress = useMemo(() => getTodayProgress(), [habits, completions, getTodayProgress]);
   const monthlyProgress = useMemo(() => getMonthlyProgress(), [habits, completions, getMonthlyProgress]);
-  const streaks = getCurrentStreaks();
-  const focusGoals = getFocusGoals();
-  const activeGoalsCount = getActiveGoalsCount();
-  const upcomingDeadlines = getUpcomingDeadlines(7);
+  const streaks = useMemo(() => getCurrentStreaks(), [habits, completions, getCurrentStreaks]);
+  const focusGoals = useMemo(() => getFocusGoals(), [goals, getFocusGoals]);
+  const activeGoalsCount = useMemo(() => getActiveGoalsCount(), [goals, getActiveGoalsCount]);
+  const upcomingDeadlines = useMemo(() => getUpcomingDeadlines(7), [goals, getUpcomingDeadlines]);
 
   // Calculate best streak and current max streak
   const { currentMaxStreak, bestStreak } = useMemo(() => {

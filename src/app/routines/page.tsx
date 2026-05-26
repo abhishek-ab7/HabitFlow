@@ -6,7 +6,7 @@ import { useRoutineStore } from '@/lib/stores/routine-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { RoutineCard, RoutineModal, RoutinePlayer } from '@/components/routines';
-import { Routine } from '@/lib/types';
+import { Routine, Habit } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Plus, Loader2, Play, Sparkles, TrendingUp, Trophy, Zap, Sun, Moon, Sunset, Calendar, CheckCircle2 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export default function RoutinesPage() {
-    const { routines, loadRoutines, isLoading, deleteRoutine, optimizeRoutineSequences } = useRoutineStore();
+    const { routines, loadRoutines, isLoading, deleteRoutine, optimizeRoutineSequences, getHabitsForAllRoutines } = useRoutineStore();
     const { loadCompletions, completions, getHabitCompletions } = useHabitStore();
     const { stats } = useGamificationStore();
 
@@ -24,8 +24,10 @@ export default function RoutinesPage() {
     const [playingRoutine, setPlayingRoutine] = useState<Routine | null>(null);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [currentTime, setCurrentTime] = useState<Date>(new Date());
+    const [allRoutineHabits, setAllRoutineHabits] = useState<Map<string, Habit[]>>(new Map());
 
     useEffect(() => {
+        // NOTE: loadRoutines() and loadCompletions() can be combined into a single Dexie transaction if performance becomes a bottleneck at scale.
         loadRoutines();
         const today = new Date();
         const start = format(startOfMonth(today), 'yyyy-MM-dd');
@@ -36,6 +38,12 @@ export default function RoutinesPage() {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
         return () => clearInterval(timer);
     }, [loadRoutines, loadCompletions]);
+
+    useEffect(() => {
+        getHabitsForAllRoutines().then(habitsMap => {
+            setAllRoutineHabits(habitsMap);
+        });
+    }, [routines, getHabitsForAllRoutines]);
 
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -263,6 +271,7 @@ export default function RoutinesPage() {
                                             onPlay={setPlayingRoutine}
                                             onEdit={handleEdit}
                                             onDelete={handleDelete}
+                                            preFetchedHabits={allRoutineHabits.get(routine.id)}
                                         />
                                     ))
                                 )}
@@ -292,6 +301,7 @@ export default function RoutinesPage() {
                                             onPlay={setPlayingRoutine}
                                             onEdit={handleEdit}
                                             onDelete={handleDelete}
+                                            preFetchedHabits={allRoutineHabits.get(routine.id)}
                                         />
                                     ))
                                 )}
@@ -321,6 +331,7 @@ export default function RoutinesPage() {
                                             onPlay={setPlayingRoutine}
                                             onEdit={handleEdit}
                                             onDelete={handleDelete}
+                                            preFetchedHabits={allRoutineHabits.get(routine.id)}
                                         />
                                     ))
                                 )}
