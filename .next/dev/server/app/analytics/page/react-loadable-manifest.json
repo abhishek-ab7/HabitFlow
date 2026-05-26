@@ -1,9 +1,0 @@
-{
-  "[project]/src/components/analytics/index.ts [app-client] (ecmascript, next/dynamic entry)": {
-    "id": "[project]/src/components/analytics/index.ts [app-client] (ecmascript, next/dynamic entry)",
-    "files": [
-      "static/chunks/src_components_analytics_index_ts_cd00b3e4._.js",
-      "static/chunks/src_components_analytics_index_ts_99af64cd._.js"
-    ]
-  }
-}

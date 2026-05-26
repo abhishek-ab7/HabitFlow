@@ -1,1 +1,0 @@
-{"version":3,"sources":["../../../../src/app/habits/loading.tsx"],"sourcesContent":["import { HabitsSkeleton } from '@/components/skeletons';\n\nexport default function Loading() {\n  return <HabitsSkeleton />;\n}\n"],"names":[],"mappings":"uDAAA,EAAA,EAAA,CAAA,CAAA,OAEe,SAAS,IACtB,MAAO,CAAA,EAAA,EAAA,GAAA,EAAC,EAAA,cAAc,CAAA,CAAA,EACxB"}

@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///home/abhi/Downloads/fedora/habit-tracker/src/app/settings/loading.tsx"],"sourcesContent":["import { SettingsSkeleton } from '@/components/skeletons';\n\nexport default function Loading() {\n  return <SettingsSkeleton />;\n}\n"],"names":[],"mappings":";;;;;AAAA;;;AAEe,SAAS;IACtB,qBAAO,8OAAC,4JAAgB;;;;;AAC1B"}}]
-}

@@ -1,1 +1,0 @@
-{"version":3,"sources":["../../../../src/app/goals/loading.tsx"],"sourcesContent":["import { GoalsSkeleton } from '@/components/skeletons';\n\nexport default function Loading() {\n  return <GoalsSkeleton />;\n}\n"],"names":[],"mappings":"uDAAA,EAAA,EAAA,CAAA,CAAA,OAEe,SAAS,IACtB,MAAO,CAAA,EAAA,EAAA,GAAA,EAAC,EAAA,aAAa,CAAA,CAAA,EACvB"}
