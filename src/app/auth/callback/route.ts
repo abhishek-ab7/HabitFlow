@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get('code');
-  const next = getValidatedNextPath(requestUrl.searchParams, '/');
+  const next = getValidatedNextPath(requestUrl.searchParams, '/dashboard');
   const error = requestUrl.searchParams.get('error');
   const errorDescription = requestUrl.searchParams.get('error_description');
   const type = requestUrl.searchParams.get('type');
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     const redirectPath = isRecovery ? '/auth/reset-password' : next;
 
     // Create response with proper redirect (validated to prevent open redirects)
-    const validatedRedirectUrl = validateRedirectUrl(origin, redirectPath, '/');
+    const validatedRedirectUrl = validateRedirectUrl(origin, redirectPath, '/dashboard');
     return NextResponse.redirect(validatedRedirectUrl);
 
   } catch (err) {

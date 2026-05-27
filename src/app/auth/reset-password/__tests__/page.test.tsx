@@ -186,7 +186,7 @@ describe('ResetPasswordPage — form validation', () => {
     expect(mockUpdateUserFn).not.toHaveBeenCalled();
   });
 
-  it('calls updateUser and redirects to / on successful password reset', async () => {
+  it('calls updateUser and redirects to /dashboard on successful password reset', async () => {
     mockUpdateUserFn.mockResolvedValue({ error: null });
     await renderAndWaitForForm();
 
@@ -199,7 +199,7 @@ describe('ResetPasswordPage — form validation', () => {
       expect(mockUpdateUserFn).toHaveBeenCalledWith({ password: validPassword })
     );
     expect(mockToastSuccess).toHaveBeenCalledWith('Password updated successfully!');
-    expect(mockPush).toHaveBeenCalledWith('/');
+    expect(mockPush).toHaveBeenCalledWith('/dashboard');
   });
 
   it('shows an error toast when updateUser fails', async () => {

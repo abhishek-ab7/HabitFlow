@@ -15,7 +15,7 @@ export function AuthForm() {
   const { signIn, signUp, signInWithGoogle, resetPassword, isAuthenticated } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectedFrom = searchParams.get('redirectedFrom') || '/';
+  const redirectedFrom = searchParams.get('redirectedFrom') || '/dashboard';
 
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');

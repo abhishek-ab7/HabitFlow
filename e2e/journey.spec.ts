@@ -67,7 +67,7 @@ test.describe('Complete User Journey Flow', () => {
     await page.locator('form button[type="submit"]').click();
 
     // 3. Wait for redirect to Dashboard
-    await page.waitForURL('**/');
+    await page.waitForURL('**/dashboard');
     console.log('1. Logged in successfully!');
 
     // Dismiss focus overlay if it automatically opens

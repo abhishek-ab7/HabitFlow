@@ -63,7 +63,7 @@ describe('Middleware', () => {
   };
 
   it('skips public routes', async () => {
-    const req = createRequest('http://localhost:3000/login');
+    const req = createRequest('http://localhost:3000/auth/auth-code-error');
     const res = await middleware(req);
     
     expect(res.status).toBe(200); // NextResponse.next()
@@ -103,24 +103,26 @@ describe('Middleware', () => {
     expect(res.headers.get('X-Frame-Options')).toBe('DENY');
   });
 
-  it('redirects authenticated users away from login', async () => {
+  it('allows unauthenticated users to access login page', async () => {
     const req = createRequest('http://localhost:3000/login');
-    // Note: Middleware check for session on public routes happens AFTER the isPublicRoute check in the current implementation?
-    // Let's check middleware.ts again.
-    // Line 27: if (isPublicRoute) { return NextResponse.next(); } 
-    // Ah! Line 27 returns EARLY for login if it's in publicRoutes.
-    // Wait, let's look at line 131: if (session && pathname.startsWith('/login')) { ... }
-    // BUT line 43 returns NextResponse.next() if isPublicRoute.
-    // So line 131 is NEVER reached for /login because it returns at line 43.
-    // This looks like a bug in the middleware or my understanding.
-    
-    // Let's re-verify middleware.ts:
-    // 24: const publicRoutes = ['/login', ...];
-    // 25: const isPublicRoute = publicRoutes.some(...);
-    // 27: if (isPublicRoute) { ... 43: return NextResponse.next(); }
-    // 131: if (session && pathname.startsWith('/login')) { ... }
-    
-    // Yes, line 131 is unreachable for '/login'.
+    mockGetSession.mockResolvedValueOnce({ data: { session: null }, error: null });
+
+    const res = await middleware(req);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('redirects authenticated users away from login to dashboard', async () => {
+    const req = createRequest('http://localhost:3000/login');
+    mockGetSession.mockResolvedValueOnce({ 
+      data: { session: { user: { id: 'u1' } } }, 
+      error: null 
+    });
+
+    const res = await middleware(req);
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe('http://localhost:3000/dashboard');
   });
 
   it('applies rate limiting to /auth/callback', async () => {

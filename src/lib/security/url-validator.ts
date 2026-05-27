@@ -25,6 +25,7 @@ const ALLOWED_PATHS = [
     '/routines',
     '/settings',
     '/tasks',
+    '/dashboard',
 ];
 
 /**

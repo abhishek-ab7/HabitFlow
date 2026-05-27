@@ -67,13 +67,40 @@ export function AICoachWidget() {
         if (user) loadUser();
     }, [user, loadUser]);
 
-    // NEW: Auto-fetch AI coach data when user data finishes loading
+    // Load AI coach data from cache if available today, but DO NOT auto-fetch from API
     useEffect(() => {
         if (user && !isLoadingUser && email && !data && !loading) {
-            console.log('[AI Coach] User data ready, auto-fetching advice');
-            fetchAdvice();
+            const today = new Date().toISOString().split('T')[0];
+            const cacheKey = `ai_coach_advice_${user.id}`;
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    let currentUserName = 'Habit Hero';
+                    if (displayName && displayName.trim()) {
+                        const firstWord = displayName.trim().split(/\s+/)[0];
+                        currentUserName = firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+                    } else if (user.email) {
+                        const emailPrefix = user.email.split('@')[0];
+                        const match = emailPrefix.match(/^[a-zA-Z]+/);
+                        if (match && match[0]) {
+                            const name = match[0];
+                            currentUserName = name.charAt(0).toUpperCase() + name.slice(1);
+                        } else {
+                            currentUserName = user.email;
+                        }
+                    }
+
+                    if (parsed.date === today && parsed.userName === currentUserName) {
+                        console.log('[AI Coach] Loaded advice from cache');
+                        setData(parsed.data);
+                    }
+                } catch (e) {
+                    console.error("Cache parse error", e);
+                }
+            }
         }
-    }, [user, isLoadingUser, email]); // Trigger when isLoadingUser or email changes
+    }, [user, isLoadingUser, email, displayName, data, loading]);
 
     const fetchAdvice = async (force: boolean = false) => {
         if (!user) return;

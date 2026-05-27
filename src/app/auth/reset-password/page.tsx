@@ -109,7 +109,7 @@ export default function ResetPasswordPage() {
             } else {
                 toast.success('Password updated successfully!');
                 // Redirect to dashboard after successful password reset
-                router.push('/');
+                router.push('/dashboard');
             }
         } catch (err) {
             toast.error('An unexpected error occurred');

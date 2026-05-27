@@ -328,6 +328,7 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                         color: ["#ef4444", "#dc2626", "#ef4444"]
                                     } : {}}
                                     transition={isOverdue ? {
+                                        type: "keyframes",
                                         duration: 1.5,
                                         repeat: Infinity,
                                         ease: "easeInOut"

@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 
 const mobileNavItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/habits', label: 'Habits', icon: CheckSquare },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
   { href: '/goals', label: 'Goals', icon: Target },
@@ -22,6 +22,11 @@ export function MobileNav() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Hide the global mobile navigation on public landing page, login page, and auth callback pages
+  if (pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')) {
+    return null;
+  }
 
   if (!mounted) return null;
 

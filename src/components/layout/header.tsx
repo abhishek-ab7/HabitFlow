@@ -33,7 +33,7 @@ import { useState } from 'react';
 import { UserStatusHUD } from '@/components/gamification/UserStatusHUD';
 
 const navItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
   { href: '/routines', label: 'Routines', icon: Workflow },
   { href: '/habits', label: 'Habits', icon: CheckSquare },
@@ -50,6 +50,11 @@ export function Header() {
   const { isAuthenticated, user, signOut } = useAuth();
   const { syncStatus, isSyncing } = useSync();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Hide the global app header on public landing page, login page, and auth callback pages
+  if (pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')) {
+    return null;
+  }
 
   const handleSignOut = async () => {
     try {

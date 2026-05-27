@@ -40,7 +40,7 @@ describe('url-validator', () => {
         it('accepts allowed exact paths', () => {
             expect(isValidPath('/')).toBe(true);
             expect(isValidPath('/login')).toBe(true);
-            expect(isValidPath('/dashboard')).toBe(false); // /dashboard is not in ALLOWED_PATHS? Wait, let's look at ALLOWED_PATHS.
+            expect(isValidPath('/dashboard')).toBe(true);
         });
 
         it('accepts allowed subdirectories', () => {

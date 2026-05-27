@@ -24,7 +24,7 @@ export function useKeyboardShortcuts() {
 
       // Navigation Shortcuts
       if (key === 'd') {
-        router.push('/');
+        router.push('/dashboard');
       } else if (key === 'h') {
         router.push('/habits');
       } else if (key === 'g') {

@@ -343,7 +343,7 @@ export function RoutinePlayer({ routine, onClose }: RoutinePlayerProps) {
                                 {/* Meditative Breathing Pulsar */}
                                 <motion.div
                                     animate={{ scale: [1, 1.2, 1] }}
-                                    transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+                                    transition={{ type: "keyframes", duration: 6, repeat: Infinity, ease: "easeInOut" }}
                                     className="w-48 h-48 rounded-full border border-indigo-500/30 flex flex-col items-center justify-center bg-indigo-500/5 relative shadow-[0_0_50px_rgba(99,102,241,0.05)]"
                                 >
                                     <div className="absolute -inset-2 border border-purple-500/10 rounded-full animate-ping opacity-30" />

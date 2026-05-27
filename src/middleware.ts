@@ -20,38 +20,39 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Public routes that don't require authentication
-  const publicRoutes = ['/login', '/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout'];
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
+  // Public routes that don't require authentication.
+  // We exclude '/login' from isPublicRoute so middleware can check the session and redirect logged-in users.
+  const publicRoutes = ['/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout'];
+  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route)) || pathname === '/';
+
+  // Apply rate limiting to sensitive public routes
+  if (pathname.startsWith('/auth/callback')) {
+    const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+    if (!result.success) {
+      return rateLimitResponse(result.retryAfter);
+    }
+  }
+
+  if (pathname === '/login') {
+    const result = await rateLimit(request, { limit: 20, windowMs: 60 * 1000 }); // 20 req/min
+    if (!result.success) {
+      return rateLimitResponse(result.retryAfter);
+    }
+  }
+
+  if (pathname.startsWith('/auth/signout')) {
+    const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+    if (!result.success) {
+      return rateLimitResponse(result.retryAfter);
+    }
+  }
 
   if (isPublicRoute) {
-    // Apply rate limiting to sensitive public routes
-    if (pathname.startsWith('/auth/callback')) {
-      const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
-      if (!result.success) {
-        return rateLimitResponse(result.retryAfter);
-      }
-    }
-
-    if (pathname === '/login') {
-      const result = await rateLimit(request, { limit: 20, windowMs: 60 * 1000 }); // 20 req/min
-      if (!result.success) {
-        return rateLimitResponse(result.retryAfter);
-      }
-    }
-
-    if (pathname.startsWith('/auth/signout')) {
-      const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
-      if (!result.success) {
-        return rateLimitResponse(result.retryAfter);
-      }
-    }
-
     return NextResponse.next();
   }
 
   // Create a response object
-  let response = NextResponse.next({
+  const response = NextResponse.next({
     request: {
       headers: request.headers,
     },
@@ -119,7 +120,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // If not authenticated and trying to access protected route, redirect to login
-  if (!session && !isPublicRoute) {
+  if (!session && !isPublicRoute && pathname !== '/login') {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/login';
     redirectUrl.searchParams.set('redirectedFrom', pathname);
@@ -129,7 +130,7 @@ export async function middleware(request: NextRequest) {
   // If authenticated and trying to access login, redirect to dashboard
   if (session && pathname.startsWith('/login')) {
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = '/';
+    redirectUrl.pathname = '/dashboard';
     return NextResponse.redirect(redirectUrl);
   }
 
