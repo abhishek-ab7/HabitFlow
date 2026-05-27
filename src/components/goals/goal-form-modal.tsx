@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import type { Goal, GoalFormData, AreaOfLife, Priority } from '@/lib/types';
-import { GOAL_TEMPLATES } from './GoalTemplates';
+import { GOAL_TEMPLATES } from '@/lib/goal-templates';
 
 interface GoalFormModalProps {
   open: boolean;

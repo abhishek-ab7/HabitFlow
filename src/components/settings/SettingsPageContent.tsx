@@ -56,6 +56,11 @@ export default function SettingsPageContent() {
   const [showClearDataDialog, setShowClearDataDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [duplicateCounts, setDuplicateCounts] = useState<{
     habits: number;
     goals: number;
@@ -597,7 +602,7 @@ export default function SettingsPageContent() {
                   onClick={() => setTheme(opt.value as any)}
                   className={cn(
                     "p-3 rounded-xl flex items-center justify-center transition-all border outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                    theme === opt.value
+                    (mounted ? theme : 'system') === opt.value
                       ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/25 scale-105"
                       : "bg-background/50 hover:bg-background border-border text-muted-foreground hover:text-foreground"
                   )}

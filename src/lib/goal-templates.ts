@@ -35,6 +35,18 @@ export const GOAL_TEMPLATES: TemplateGoal[] = [
       'Log 8 hours of sleep for 20 days in a month'
     ]
   },
+  {
+    title: 'Drink 2L Water Daily',
+    description: 'Ensure daily cellular hydration by maintaining a strict water intake routine.',
+    areaOfLife: 'health',
+    priority: 'low',
+    durationDays: 30,
+    milestones: [
+      'Drink 1L of water before noon for 7 consecutive days',
+      'Track daily intake using a bottle or app for 15 days',
+      'Reach 2L goal daily for 25 days in a month'
+    ]
+  },
   // Career & Work
   {
     title: 'Build & Launch Side Project',
@@ -58,6 +70,18 @@ export const GOAL_TEMPLATES: TemplateGoal[] = [
       'Gather details & screenshots of 3 past projects',
       'Design portfolio layout',
       'Write case studies and publish portfolio website'
+    ]
+  },
+  {
+    title: 'Complete Professional Online Course',
+    description: 'Upskill and learn a new technology or framework.',
+    areaOfLife: 'career',
+    priority: 'high',
+    durationDays: 45,
+    milestones: [
+      'Complete first half of the course videos and quizzes',
+      'Build the midterm project or assignments',
+      'Finish final exam and claim certification'
     ]
   },
   // Personal Growth
@@ -84,6 +108,18 @@ export const GOAL_TEMPLATES: TemplateGoal[] = [
       'Maintain a 30-day streak on language app',
       'Hold a 5-minute basic conversation',
       'Watch a movie in the target language'
+    ]
+  },
+  {
+    title: 'Daily Meditation Routine',
+    description: 'Develop mindfulness, reduce stress, and improve mental focus.',
+    areaOfLife: 'personal_growth',
+    priority: 'low',
+    durationDays: 30,
+    milestones: [
+      'Meditate for 5 minutes daily for 7 days',
+      'Increase session time to 10 minutes for 10 days',
+      'Complete a 15-minute mindfulness session'
     ]
   },
   // Relationships
@@ -135,6 +171,18 @@ export const GOAL_TEMPLATES: TemplateGoal[] = [
       'Track all expenses for 2 weeks',
       'Categorize and set budget limits',
       'Stay under budget for 1 full month'
+    ]
+  },
+  {
+    title: 'Pay Off Credit Card Debt',
+    description: 'Pay down outstanding balances and improve credit health.',
+    areaOfLife: 'finance',
+    priority: 'high',
+    durationDays: 90,
+    milestones: [
+      'List all card balances, interest rates, and minimums',
+      'Allocate surplus funds and pay off first small balance',
+      'Reduce total outstanding debt by 50%'
     ]
   },
   // Fun & Recreation

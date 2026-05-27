@@ -569,19 +569,19 @@ export default function AnalyticsPageContent() {
               />
             </FadeIn>
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <FadeIn delay={0.3}>
-                <CategoryBreakdownChart data={analyticsData.categoryBreakdown} />
-              </FadeIn>
+            <FadeIn delay={0.3}>
+              <CategoryBreakdownChart data={analyticsData.categoryBreakdown} />
+            </FadeIn>
 
+            <div className="grid gap-6 md:grid-cols-2">
               <FadeIn delay={0.4}>
                 <WeekdayChart data={analyticsData.weekdayStats} />
               </FadeIn>
-            </div>
 
-            <FadeIn delay={0.5}>
-              <InsightsCards insights={insights} />
-            </FadeIn>
+              <FadeIn delay={0.5}>
+                <InsightsCards insights={insights} />
+              </FadeIn>
+            </div>
           </div>
 
           {/* Heatmap - Full Width */}

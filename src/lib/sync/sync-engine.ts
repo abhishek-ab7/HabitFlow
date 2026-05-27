@@ -10,17 +10,23 @@ import { logger } from '@/lib/logger';
 import {
   syncHabitsWithRetry,
   syncCompletionsWithRetry,
-  syncRoutinesWithRetry,
-  syncHabitRoutinesWithRetry,
-  syncRoutineCompletions,
   pushHabitToRemote
 } from './engines/habits-sync';
 
 import {
+  syncRoutinesWithRetry,
+  syncHabitRoutinesWithRetry,
+  syncRoutineCompletions
+} from './engines/routines-sync';
+
+import {
   syncGoalsWithRetry,
-  syncMilestonesWithRetry,
   pushGoalToRemote
 } from './engines/goals-sync';
+
+import {
+  syncMilestonesWithRetry
+} from './engines/milestones-sync';
 
 import {
   syncTasksWithRetry,

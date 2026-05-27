@@ -9,6 +9,11 @@ import { useSync } from '@/providers/sync-provider';
 export function SyncStatusPanel() {
     const { isSyncing, lastSyncTime, syncError, entityStatus, pendingChanges } = useSyncStatusStore();
     const { triggerSync } = useSync();
+    const [mounted, setMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const getEntityIcon = (status: SyncEntityStatus) => {
         switch (status) {
@@ -67,7 +72,7 @@ export function SyncStatusPanel() {
                 <div className="flex flex-col text-left">
                     <h3 className="text-sm font-bold dark:text-white text-gray-900 leading-none mb-1">{getStatusText()}</h3>
                     <p className="text-[10px] text-muted-foreground whitespace-nowrap leading-none">
-                        {lastSyncTime ? formatDistanceToNow(lastSyncTime, { addSuffix: true }) : 'Not synced'}
+                        {mounted && lastSyncTime ? formatDistanceToNow(lastSyncTime, { addSuffix: true }) : 'Not synced'}
                     </p>
                 </div>
             </div>

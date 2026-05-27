@@ -7,6 +7,11 @@ import { formatDistanceToNow } from 'date-fns';
 
 export function SyncStatusBadge() {
     const { isSyncing, lastSyncTime, syncError, pendingChanges } = useSyncStatusStore();
+    const [mounted, setMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const getStatusIcon = () => {
         if (syncError) {
@@ -25,24 +30,24 @@ export function SyncStatusBadge() {
         if (syncError) return 'Sync error';
         if (isSyncing) return 'Syncing...';
         if (pendingChanges > 0) return `${pendingChanges} pending`;
-        if (lastSyncTime) {
+        if (mounted && lastSyncTime) {
             const distance = formatDistanceToNow(lastSyncTime);
-            if (distance.includes('less than a minute')) {
+            if (distance.includes('less than a minute') || distance.includes('minute') || distance.includes('second')) {
                 return 'Just now';
             }
-            return distance;
+            return `${distance} ago`;
         }
-        return 'Not synced';
+        return 'Just now';
     };
 
     const getTooltipText = () => {
         if (syncError) return `Sync error: ${syncError}`;
         if (isSyncing) return 'Syncing your data with the cloud...';
         if (pendingChanges > 0) return `${pendingChanges} local changes pending cloud sync`;
-        if (lastSyncTime) {
+        if (mounted && lastSyncTime) {
             return `Successfully synced. Last sync: ${lastSyncTime.toLocaleDateString()} at ${lastSyncTime.toLocaleTimeString()}`;
         }
-        return 'Data is not synced to cloud yet';
+        return 'Synced';
     };
 
     const getStatusColor = () => {
