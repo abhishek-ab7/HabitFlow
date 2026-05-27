@@ -6,7 +6,13 @@ import * as rateLimit from '@/lib/security/rate-limit';
 const mockGetSession = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/security/rate-limit', () => ({
-  rateLimit: vi.fn(() => ({ success: true })),
+  rateLimit: vi.fn().mockResolvedValue({ success: true, remaining: 19, retryAfter: 0 }),
+  rateLimitResponse: vi.fn((retryAfter: number) =>
+    new Response(
+      JSON.stringify({ error: 'Too many requests', retryAfter }),
+      { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retryAfter) } }
+    )
+  ),
 }));
 
 vi.mock('@supabase/ssr', () => ({
@@ -119,11 +125,22 @@ describe('Middleware', () => {
 
   it('applies rate limiting to /auth/callback', async () => {
     const req = createRequest('http://localhost:3000/auth/callback');
-    vi.mocked(rateLimit.rateLimit).mockReturnValueOnce({ success: false, remaining: 0 });
+    vi.mocked(rateLimit.rateLimit).mockResolvedValueOnce({ success: false, remaining: 0, retryAfter: 60 });
 
     const res = await middleware(req);
 
     expect(res.status).toBe(429);
-    expect(await res.text()).toBe('Too Many Requests');
+    const body = await res.json();
+    expect(body).toMatchObject({ error: expect.any(String), retryAfter: 60 });
+    expect(res.headers.get('Retry-After')).toBe('60');
+  });
+
+  it('allows /auth/signout without authentication (publicRoute)', async () => {
+    const req = createRequest('http://localhost:3000/auth/signout');
+    const res = await middleware(req);
+
+    // signout is now public — middleware should return next() without session check
+    expect(mockGetSession).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
   });
 });

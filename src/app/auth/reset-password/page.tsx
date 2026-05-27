@@ -31,22 +31,51 @@ export default function ResetPasswordPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [isCheckingSession, setIsCheckingSession] = useState(true);
 
-    // Check if user has a valid session (from recovery link)
+    // Guard: only allow users arriving via a Supabase password-reset email link.
+    // Industry-standard pattern: listen for PASSWORD_RECOVERY auth event.
+    // Normal authenticated users are blocked and redirected to /login.
     useEffect(() => {
-        const checkSession = async () => {
-            const supabase = getSupabaseClient();
+        const supabase = getSupabaseClient();
+        let resolved = false;
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (resolved) return;
+
+            if (event === 'PASSWORD_RECOVERY') {
+                // ✅ User arrived via a password reset email — show the form
+                resolved = true;
+                setIsCheckingSession(false);
+            } else if (session) {
+                // 🚫 Normal authenticated user — not allowed on this page
+                resolved = true;
+                toast.error('Please use a password reset link from your email.');
+                router.push('/login');
+            }
+        });
+
+        // Fallback timeout: if no auth event fires within 5 seconds
+        // (e.g. slow network, or event already fired before subscription),
+        // check session state directly as a last resort.
+        const timeout = setTimeout(async () => {
+            if (resolved) return;
+            resolved = true;
+
             const { data: { session }, error } = await supabase.auth.getSession();
 
             if (error || !session) {
                 toast.error('Invalid or expired recovery link');
                 router.push('/login');
-                return;
+            } else {
+                // Has a valid session — the PASSWORD_RECOVERY event fired before we subscribed.
+                // Safe to show the form since they have a recovery-scoped session.
+                setIsCheckingSession(false);
             }
+        }, 5000);
 
-            setIsCheckingSession(false);
+        return () => {
+            subscription.unsubscribe();
+            clearTimeout(timeout);
         };
-
-        checkSession();
     }, [router]);
 
     const validatePassword = (password: string): boolean => {

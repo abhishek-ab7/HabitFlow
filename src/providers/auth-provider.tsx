@@ -91,9 +91,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     const supabase = getSupabaseClient();
+
+    // Phase 1: Clear client-side session immediately (fast path)
     await supabase.auth.signOut();
 
-    // Explicitly unregister service workers on sign out
+    // Phase 2: Clear server-side HttpOnly cookies via the server route.
+    // Use keepalive:true so the request completes even if the page navigates away.
+    // This is fire-and-forget — failures are silently ignored since the client
+    // session is already cleared. Cookies will expire naturally if this fails.
+    fetch('/auth/signout', {
+      method: 'POST',
+      keepalive: true,
+    }).catch(() => {
+      // Intentionally silent — client is already signed out
+    });
+
+    // Unregister service workers so cached data is cleared on next load
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       try {
         const registrations = await navigator.serviceWorker.getRegistrations();
@@ -104,7 +117,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('Failed to unregister service worker on sign out:', error);
       }
     }
-  }, []);
+
+    // Navigate immediately — don't wait for server response
+    router.push('/login');
+  }, [router]);
 
   const resetPassword = useCallback(async (email: string) => {
     const supabase = getSupabaseClient();

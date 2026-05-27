@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { rateLimit } from '@/lib/security/rate-limit';
+import { rateLimit, rateLimitResponse } from '@/lib/security/rate-limit';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -21,34 +21,33 @@ export async function middleware(request: NextRequest) {
   }
 
   // Public routes that don't require authentication
-  const publicRoutes = ['/login', '/auth/callback', '/auth/auth-code-error', '/auth/reset-password'];
+  const publicRoutes = ['/login', '/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout'];
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
 
   if (isPublicRoute) {
     // Apply rate limiting to sensitive public routes
     if (pathname.startsWith('/auth/callback')) {
-      const result = rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+      const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
       if (!result.success) {
-        return new NextResponse('Too Many Requests', { status: 429 });
+        return rateLimitResponse(result.retryAfter);
       }
     }
 
     if (pathname === '/login') {
-      const result = rateLimit(request, { limit: 20, windowMs: 60 * 1000 }); // 20 req/min
+      const result = await rateLimit(request, { limit: 20, windowMs: 60 * 1000 }); // 20 req/min
       if (!result.success) {
-        return new NextResponse('Too Many Requests', { status: 429 });
+        return rateLimitResponse(result.retryAfter);
+      }
+    }
+
+    if (pathname.startsWith('/auth/signout')) {
+      const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
+      if (!result.success) {
+        return rateLimitResponse(result.retryAfter);
       }
     }
 
     return NextResponse.next();
-  }
-
-  // Apply rate limiting to signout (even if it's protected, to prevent DoS)
-  if (pathname === '/auth/signout') {
-    const result = rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
-    if (!result.success) {
-      return new NextResponse('Too Many Requests', { status: 429 });
-    }
   }
 
   // Create a response object

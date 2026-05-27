@@ -183,6 +183,7 @@ export function AuthForm() {
                 className="pl-10"
                 required
                 disabled={isLoading}
+                autoComplete="email"
               />
             </div>
 
@@ -198,6 +199,7 @@ export function AuthForm() {
                   required
                   disabled={isLoading}
                   minLength={6}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                 />
                 <button
                   type="button"
@@ -246,7 +248,7 @@ export function AuthForm() {
                 </div>
               </div>
 
-              {/* Google Sign In - HIDDEN (change false to true to re-enable) */}
+              {/* Google Sign In */}
               <Button
                 type="button"
                 variant="outline"

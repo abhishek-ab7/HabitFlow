@@ -51,8 +51,11 @@ export async function GET(request: NextRequest) {
 
     console.log('Session exchange successful, user:', data.session.user.email);
 
-    // Check if this is a password recovery session
-    const isRecovery = type === 'recovery' || data.session.user.recovery_sent_at !== undefined;
+    // Check if this is a password recovery session.
+    // IMPORTANT: Only use the explicit `?type=recovery` query param sent by Supabase.
+    // Do NOT use `recovery_sent_at !== undefined` — that field persists on the user record
+    // permanently after any past reset request and causes false-positive redirects.
+    const isRecovery = type === 'recovery';
     const redirectPath = isRecovery ? '/auth/reset-password' : next;
 
     // Create response with proper redirect (validated to prevent open redirects)
