@@ -1,6 +1,5 @@
-const CACHE_NAME = 'habit-tracker-v1';
+const CACHE_NAME = 'habit-tracker-v2';
 const STATIC_ASSETS = [
-  '/login',
   '/manifest.json',
 ];
 
@@ -28,21 +27,28 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event - serve from cache, fall back to network
+// Fetch event - serve static assets from cache, bypass for HTML/API/navigations
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
+  // Only handle same-origin GET requests
   if (event.request.method !== 'GET') return;
-
-  // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) return;
 
+  const url = new URL(event.request.url);
+
+  // Skip API requests
+  if (url.pathname.startsWith('/api') || url.pathname.includes('/api/')) return;
+
+  // Skip page navigations and HTML requests to avoid caching redirects/login pages
+  const isNavigation = event.request.mode === 'navigate';
+  const isHtml = event.request.headers.get('Accept')?.includes('text/html');
+  if (isNavigation || isHtml) return;
+
+  // Serve static assets from cache, fallback to network and cache
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      // Return cached response if available
       if (cachedResponse) {
-        // Fetch in background to update cache
-        // Use event.request.url to avoid TypeError: Cannot fetch a request with mode 'navigate'
-        fetch(event.request.url).then((response) => {
+        // Fetch in background to update cache (non-navigation requests)
+        fetch(event.request).then((response) => {
           if (response.ok && !response.redirected) {
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, response);
@@ -52,9 +58,7 @@ self.addEventListener('fetch', (event) => {
         return cachedResponse;
       }
 
-      // Otherwise fetch from network
       return fetch(event.request).then((response) => {
-        // Cache successful responses
         if (response.ok && !response.redirected) {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
