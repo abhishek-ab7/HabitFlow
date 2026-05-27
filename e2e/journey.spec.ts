@@ -93,35 +93,35 @@ test.describe('Complete User Journey Flow', () => {
     await page.goto('/habits');
     await page.waitForURL('**/habits');
     // Verify that demo habits exist (e.g., Drink Water or Morning Meditation)
-    await expect(page.locator('text=Morning Meditation').or(page.locator('text=Drink Water'))).toBeVisible();
+    await expect(page.locator('text=Morning Meditation').or(page.locator('text=Drink Water')).first()).toBeVisible();
     console.log('4. Habits Page & demo habits verified!');
 
     // 7. Test Tasks Section
     await page.goto('/tasks');
     await page.waitForURL('**/tasks');
     // Verify that tasks exist in the Eisenhower Matrix or list
-    await expect(page.locator('text=Task').or(page.locator('text=Priority'))).toBeVisible();
+    await expect(page.locator('text=Task').or(page.locator('text=Priority')).first()).toBeVisible();
     console.log('5. Tasks Page verified!');
 
     // 8. Test Goals Section
     await page.goto('/goals');
     await page.waitForURL('**/goals');
     // Verify that demo goals exist (e.g. Health & Fitness)
-    await expect(page.locator('text=Goal').or(page.locator('text=Active Goals'))).toBeVisible();
+    await expect(page.locator('text=Goal').or(page.locator('text=Active Goals')).first()).toBeVisible();
     console.log('6. Goals Page verified!');
 
     // 9. Test Routines Section
     await page.goto('/routines');
     await page.waitForURL('**/routines');
     // Verify routines page and list
-    await expect(page.locator('text=Morning Routine').or(page.locator('text=Evening Routine')).or(page.locator('text=Routine'))).toBeVisible();
+    await expect(page.locator('text=Morning Routine').or(page.locator('text=Evening Routine')).or(page.locator('text=Routine')).first()).toBeVisible();
     console.log('7. Routines Page verified!');
 
     // 10. Test Analytics Section
     await page.goto('/analytics');
     await page.waitForURL('**/analytics');
     // Verify charts, category breakdown, or discipline radar are visible
-    await expect(page.locator('text=Completion Rate').or(page.locator('text=Analytics')).or(page.locator('canvas')).or(page.locator('svg'))).toBeVisible();
+    await expect(page.locator('text=Completion Rate').or(page.locator('text=Analytics')).or(page.locator('canvas')).or(page.locator('svg')).first()).toBeVisible();
     console.log('8. Analytics Page verified!');
 
     // 11. Sign Out

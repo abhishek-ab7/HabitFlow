@@ -1,9 +1,6 @@
 const CACHE_NAME = 'habit-tracker-v1';
 const STATIC_ASSETS = [
-  '/',
-  '/habits',
-  '/goals',
-  '/analytics',
+  '/login',
   '/manifest.json',
 ];
 
@@ -44,20 +41,21 @@ self.addEventListener('fetch', (event) => {
       // Return cached response if available
       if (cachedResponse) {
         // Fetch in background to update cache
-        fetch(event.request).then((response) => {
-          if (response.ok) {
+        // Use event.request.url to avoid TypeError: Cannot fetch a request with mode 'navigate'
+        fetch(event.request.url).then((response) => {
+          if (response.ok && !response.redirected) {
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(event.request, response);
             });
           }
-        });
+        }).catch(() => {});
         return cachedResponse;
       }
 
       // Otherwise fetch from network
       return fetch(event.request).then((response) => {
         // Cache successful responses
-        if (response.ok) {
+        if (response.ok && !response.redirected) {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseClone);

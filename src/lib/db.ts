@@ -683,7 +683,7 @@ export async function seedDemoData(userId: string): Promise<void> {
     {
       id: crypto.randomUUID(),
       userId: userId,
-      name: 'Meditate',
+      name: 'Morning Meditation',
       icon: '🧘',
       category: 'health',
       targetDaysPerWeek: 7,
