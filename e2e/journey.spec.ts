@@ -59,6 +59,7 @@ test.describe('Complete User Journey Flow', () => {
     // 1. Visit Login Page
     await page.goto('/login');
     await expect(page).toHaveTitle(/Habit Flow/);
+    await page.evaluate(() => localStorage.setItem('habitflow_onboarded', 'true'));
 
     // 2. Fill credentials and Sign In
     await page.getByPlaceholder('Email address').fill(TEST_EMAIL);

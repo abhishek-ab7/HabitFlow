@@ -139,16 +139,7 @@ export default function DashboardContent() {
         // Check if welcome wizard should be shown (only on brand new signup)
         const onboarded = localStorage.getItem('habitflow_onboarded');
         if (onboarded !== 'true') {
-          const justSignedUp = localStorage.getItem('habitflow_just_signed_up') === 'true';
-          const createdAt = session.user.created_at;
-          const lastSignInAt = session.user.last_sign_in_at;
-          
-          const isNewUser = createdAt && lastSignInAt && 
-            (new Date(lastSignInAt).getTime() - new Date(createdAt).getTime() < 120000); // 2 minutes
-
-          if (justSignedUp || isNewUser) {
-            setShowOnboarding(true);
-          }
+          setShowOnboarding(true);
         }
       }
 
