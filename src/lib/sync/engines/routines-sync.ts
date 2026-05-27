@@ -61,7 +61,14 @@ export async function syncRoutinesImpl(engine: any) {
         await updateLocalRoutine(engine, remote);
       }
     } else {
-      await pushRoutineToRemote(engine, local);
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Routine "${local.title}" was deleted on remote, deleting locally.`);
+        await db.routines.delete(local.id);
+        await db.habitRoutines.where('routineId').equals(local.id).delete();
+      } else {
+        await pushRoutineToRemote(engine, local);
+      }
     }
   }
 
@@ -135,16 +142,26 @@ export async function syncHabitRoutinesImpl(engine: any) {
 
   logger.info('[SyncEngine] 🔄 Starting habit-routines junction sync...');
 
-  // Note: habit_routines table doesn't have a user_id column.
-  // RLS scopes selecting from this table to the authenticated user's own habits,
-  // so we select all available records from habit_routines (which Postgres filters for us).
+  // 1. Fetch remote habits and routines to verify foreign key references
+  const [remoteHabitsRes, remoteRoutinesRes] = await Promise.all([
+    engine.supabase.from('habits').select('id').eq('user_id', engine.userId),
+    engine.supabase.from('routines').select('id').eq('user_id', engine.userId)
+  ]);
+
+  if (remoteHabitsRes.error) throw remoteHabitsRes.error;
+  if (remoteRoutinesRes.error) throw remoteRoutinesRes.error;
+
+  const remoteHabitIds = new Set((remoteHabitsRes.data || []).map((h: any) => h.id));
+  const remoteRoutineIds = new Set((remoteRoutinesRes.data || []).map((r: any) => r.id));
+
+  // 2. Fetch remote links
   const { data: remoteLinks, error } = await engine.supabase
     .from('habit_routines')
     .select('*');
 
   if (error) throw error;
 
-  // Retrieve user habits to filter local habitRoutines links
+  // 3. Retrieve user habits to filter local habitRoutines links
   const habits = await db.habits.where('userId').equals(engine.userId).toArray();
   const habitIds = habits.map(h => h.id);
   const localLinks = habitIds.length > 0
@@ -171,12 +188,24 @@ export async function syncHabitRoutinesImpl(engine: any) {
       );
 
       if (resolution.winner === 'local') {
-        await pushHabitRoutineToRemote(engine, local);
+        if (remoteHabitIds.has(local.habitId) && remoteRoutineIds.has(local.routineId)) {
+          await pushHabitRoutineToRemote(engine, local);
+        } else {
+          logger.warn(`[SyncEngine] Skipping habit-routine link push (conflict): habit ${local.habitId} or routine ${local.routineId} not found on remote`);
+        }
       } else if (resolution.winner === 'remote') {
         await updateLocalHabitRoutine(engine, remote);
       }
     } else {
-      await pushHabitRoutineToRemote(engine, local);
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Habit-routine link was deleted on remote, deleting locally.`);
+        await db.habitRoutines.delete(local.id);
+      } else if (remoteHabitIds.has(local.habitId) && remoteRoutineIds.has(local.routineId)) {
+        await pushHabitRoutineToRemote(engine, local);
+      } else {
+        logger.warn(`[SyncEngine] Skipping habit-routine link push: habit ${local.habitId} or routine ${local.routineId} not found on remote`);
+      }
     }
   }
 
@@ -224,6 +253,15 @@ export async function syncRoutineCompletions(engine: any) {
 
   logger.info('[SyncEngine] 🔄 Starting routine completions sync...');
 
+  // 1. Fetch remote routine IDs to verify foreign key references
+  const { data: remoteRoutines, error: routinesError } = await engine.supabase
+    .from('routines')
+    .select('id')
+    .eq('user_id', engine.userId);
+  if (routinesError) throw routinesError;
+  const remoteRoutineIds = new Set((remoteRoutines || []).map((r: any) => r.id));
+
+  // 2. Fetch remote completions
   const { data: remoteCompletions, error } = await engine.supabase
     .from('routine_completions')
     .select('*')
@@ -238,17 +276,25 @@ export async function syncRoutineCompletions(engine: any) {
   const toInsertRemote: any[] = [];
   for (const local of localCompletions) {
     if (!remoteById.has(local.id)) {
-      toInsertRemote.push({
-        id: local.id,
-        user_id: engine.userId,
-        routine_id: local.routineId,
-        date: local.date,
-        completed: local.completed,
-        completed_at: local.completedAt,
-        notes: local.notes,
-        created_at: local.createdAt,
-        updated_at: local.updatedAt,
-      });
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Routine completion for routine ${local.routineId} on date ${local.date} was deleted on remote, deleting locally.`);
+        await db.routineCompletions.delete(local.id);
+      } else if (remoteRoutineIds.has(local.routineId)) {
+        toInsertRemote.push({
+          id: local.id,
+          user_id: engine.userId,
+          routine_id: local.routineId,
+          date: local.date,
+          completed: local.completed,
+          completed_at: local.completedAt,
+          notes: local.notes,
+          created_at: local.createdAt,
+          updated_at: local.updatedAt,
+        });
+      } else {
+        logger.warn(`[SyncEngine] Skipping routine completion push: Routine ${local.routineId} not found on remote`);
+      }
     } else {
       const remote = remoteById.get(local.id) as any;
       const resolution = resolveConflict(
@@ -258,7 +304,11 @@ export async function syncRoutineCompletions(engine: any) {
       );
 
       if (resolution.winner === 'local') {
-        await pushRoutineCompletionToRemote(engine, local);
+        if (remoteRoutineIds.has(local.routineId)) {
+          await pushRoutineCompletionToRemote(engine, local);
+        } else {
+          logger.warn(`[SyncEngine] Skipping routine completion push (conflict): Routine ${local.routineId} not found on remote`);
+        }
       } else if (resolution.winner === 'remote') {
         await updateLocalRoutineCompletion(engine, remote);
       }

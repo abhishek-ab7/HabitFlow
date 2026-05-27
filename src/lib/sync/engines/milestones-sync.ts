@@ -26,6 +26,16 @@ export async function syncMilestones(engine: any) {
 export async function syncMilestonesImpl(engine: any) {
   if (!engine.userId) return;
 
+  // 1. Fetch remote goals to verify foreign key references
+  const { data: remoteGoals, error: goalsError } = await engine.supabase
+    .from('goals')
+    .select('id')
+    .eq('user_id', engine.userId);
+
+  if (goalsError) throw goalsError;
+  const remoteGoalIds = new Set((remoteGoals || []).map((g: any) => g.id));
+
+  // 2. Fetch remote milestones
   const { data: remoteMilestones, error } = await engine.supabase
     .from('milestones')
     .select('*')
@@ -33,7 +43,8 @@ export async function syncMilestonesImpl(engine: any) {
 
   if (error) throw error;
 
-  const localMilestones = await db.milestones.toArray();
+  // 3. Query local milestones belonging only to current user
+  const localMilestones = await db.milestones.where('userId').equals(engine.userId).toArray();
   const remoteMap = new Map((remoteMilestones || []).map((m: any) => [m.id, m]));
   const localMap = new Map(localMilestones.map(m => [m.id, m]));
 
@@ -45,17 +56,25 @@ export async function syncMilestonesImpl(engine: any) {
     const remote = remoteMap.get(local.id) as any;
 
     if (!remote) {
-      toInsertRemote.push({
-        id: local.id,
-        user_id: engine.userId,
-        goal_id: local.goalId,
-        title: local.title,
-        is_completed: local.completed,
-        completed_at: local.completedAt || null,
-        order_index: local.order,
-        created_at: local.createdAt || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Milestone "${local.title}" was deleted on remote, deleting locally.`);
+        await db.milestones.delete(local.id);
+      } else if (remoteGoalIds.has(local.goalId)) {
+        toInsertRemote.push({
+          id: local.id,
+          user_id: engine.userId,
+          goal_id: local.goalId,
+          title: local.title,
+          is_completed: local.completed,
+          completed_at: local.completedAt || null,
+          order_index: local.order,
+          created_at: local.createdAt || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      } else {
+        logger.warn(`[SyncEngine] Skipping milestone push: Goal ${local.goalId} not found on remote for milestone ${local.title}`);
+      }
     } else if (local.completed !== remote.is_completed || local.title !== remote.title) {
       const resolution = resolveConflict(
         { ...local, updatedAt: local.updatedAt || local.createdAt },
@@ -69,17 +88,21 @@ export async function syncMilestonesImpl(engine: any) {
       );
 
       if (resolution.winner === 'local') {
-        toUpdateRemote.push({
-          id: remote.id,
-          user_id: engine.userId,
-          goal_id: local.goalId,
-          title: local.title,
-          is_completed: local.completed,
-          completed_at: local.completedAt || null,
-          order_index: local.order,
-          updated_at: new Date().toISOString(),
-        });
-        logger.info(`[SyncEngine] 🔄 Milestone conflict (${local.title}): ${resolution.reason}`);
+        if (remoteGoalIds.has(local.goalId)) {
+          toUpdateRemote.push({
+            id: remote.id,
+            user_id: engine.userId,
+            goal_id: local.goalId,
+            title: local.title,
+            is_completed: local.completed,
+            completed_at: local.completedAt || null,
+            order_index: local.order,
+            updated_at: new Date().toISOString(),
+          });
+          logger.info(`[SyncEngine] 🔄 Milestone conflict (${local.title}): ${resolution.reason}`);
+        } else {
+          logger.warn(`[SyncEngine] Skipping milestone push (conflict): Goal ${local.goalId} not found on remote for milestone ${local.title}`);
+        }
       } else if (resolution.winner === 'remote') {
         toUpsertLocal.push({
           id: remote.id,

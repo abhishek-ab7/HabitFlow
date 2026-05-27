@@ -106,6 +106,11 @@ export class SyncEngine {
       const { data: { session } } = await this.supabase.auth.getSession();
       this.userId = session?.user?.id || null;
 
+      if (this.userId && typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem(`habit_sync_last_at_${this.userId}`);
+        if (stored) this.lastSyncAt = new Date(stored);
+      }
+
       logger.info('[SyncEngine] Auth setup complete, userId:', this.userId);
 
       // Resolve the auth ready promise
@@ -119,9 +124,16 @@ export class SyncEngine {
           logger.info('[SyncEngine] Auth state changed, new userId:', this.userId);
 
           if (newUserId) {
+            if (typeof localStorage !== 'undefined') {
+              const stored = localStorage.getItem(`habit_sync_last_at_${newUserId}`);
+              this.lastSyncAt = stored ? new Date(stored) : null;
+            } else {
+              this.lastSyncAt = null;
+            }
             this.syncAll();
             this.setupRealtime();
           } else {
+            this.lastSyncAt = null;
             this.cleanupRealtime();
             this.pendingOperations.clear();
           }
@@ -337,6 +349,9 @@ export class SyncEngine {
       }
 
       this.lastSyncAt = new Date();
+      if (this.userId && typeof localStorage !== 'undefined') {
+        localStorage.setItem(`habit_sync_last_at_${this.userId}`, this.lastSyncAt.toISOString());
+      }
       this.notifyStatus({
         type: 'success',
         message: 'All data synced',

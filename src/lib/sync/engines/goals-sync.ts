@@ -67,9 +67,16 @@ export async function syncGoalsImpl(engine: any) {
     } else if (remoteByTitle_ && remoteByTitle_.id !== local.id) {
       processedRemoteIds.add(remoteByTitle_.id);
       await mergeGoalToRemote(engine, local, remoteByTitle_);
-    } else if (!local.archived) {
-      await pushGoalToRemote(engine, local);
-      processedRemoteIds.add(local.id);
+    } else {
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Goal "${local.title}" was deleted on remote, deleting locally.`);
+        await db.goals.delete(local.id);
+        await db.milestones.where('goalId').equals(local.id).delete();
+      } else {
+        await pushGoalToRemote(engine, local);
+        processedRemoteIds.add(local.id);
+      }
     }
   }
 

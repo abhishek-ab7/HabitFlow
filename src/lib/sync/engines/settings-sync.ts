@@ -296,10 +296,11 @@ export async function syncMoodLogs(engine: any) {
 
   if (error) throw error;
 
-  const localMoods = await db.moodLogs
-    .where('date')
-    .aboveOrEqual(startDate)
-    .toArray();
+  const localMoods = (await db.moodLogs
+    .where('userId')
+    .equals(engine.userId)
+    .toArray())
+    .filter(m => m.date >= startDate);
 
   logger.info(`[SyncEngine] 📊 Mood logs count: Local=${localMoods.length}, Remote=${remoteMoods?.length || 0}`);
 
@@ -318,14 +319,20 @@ export async function syncMoodLogs(engine: any) {
     processedDates.add(key);
 
     if (!remote) {
-      toInsertRemote.push({
-        id: local.id,
-        user_id: engine.userId,
-        date: local.date,
-        mood: local.mood,
-        created_at: local.createdAt || new Date().toISOString(),
-        updated_at: local.updatedAt || new Date().toISOString(),
-      });
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Mood log on date ${local.date} was deleted on remote, deleting locally.`);
+        await db.moodLogs.delete(local.id);
+      } else {
+        toInsertRemote.push({
+          id: local.id,
+          user_id: engine.userId,
+          date: local.date,
+          mood: local.mood,
+          created_at: local.createdAt || new Date().toISOString(),
+          updated_at: local.updatedAt || new Date().toISOString(),
+        });
+      }
     } else if (local.mood !== remote.mood) {
       const localUpdated = local.updatedAt || local.createdAt || '';
       const remoteUpdated = remote.updated_at || remote.created_at || '';

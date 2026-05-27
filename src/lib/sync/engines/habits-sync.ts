@@ -73,7 +73,14 @@ export async function syncHabitsImpl(engine: any) {
       processedRemoteIds.add(remoteByKey_.id);
       await mergeHabitToRemote(engine, local, remoteByKey_);
     } else {
-      await pushHabitToRemote(engine, local);
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Habit "${local.name}" was deleted on remote, deleting locally.`);
+        await db.habits.delete(local.id);
+        await db.completions.where('habitId').equals(local.id).delete();
+      } else {
+        await pushHabitToRemote(engine, local);
+      }
     }
   }
 
@@ -240,8 +247,18 @@ export async function syncCompletionsImpl(engine: any) {
 
   logger.info('[SyncEngine] 🔄 Starting completions sync...');
 
+  // 1. Fetch remote habits to verify foreign key references
+  const { data: remoteHabits, error: habitsError } = await engine.supabase
+    .from('habits')
+    .select('id')
+    .eq('user_id', engine.userId);
+
+  if (habitsError) throw habitsError;
+  const remoteHabitIds = new Set((remoteHabits || []).map((h: any) => h.id));
+
   const startDate = engine.getStartDate();
 
+  // 2. Fetch remote completions
   const { data: remoteCompletions, error } = await engine.supabase
     .from('completions')
     .select('*')
@@ -250,10 +267,12 @@ export async function syncCompletionsImpl(engine: any) {
 
   if (error) throw error;
 
-  const localCompletions = await db.completions
-    .where('date')
-    .aboveOrEqual(startDate)
-    .toArray();
+  // 3. Query local completions belonging only to current user
+  const localCompletions = (await db.completions
+    .where('userId')
+    .equals(engine.userId)
+    .toArray())
+    .filter(c => c.date >= startDate);
 
   logger.info(`[SyncEngine] 📊 Completion counts: Local=${localCompletions.length}, Remote=${remoteCompletions?.length || 0}`);
 
@@ -280,7 +299,11 @@ export async function syncCompletionsImpl(engine: any) {
       );
 
       if (resolution.winner === 'local') {
-        await pushCompletionToRemote(engine, local);
+        if (remoteHabitIds.has(local.habitId)) {
+          await pushCompletionToRemote(engine, local);
+        } else {
+          logger.warn(`[SyncEngine] Skipping completion push (conflict): Habit ${local.habitId} not found on remote for completion date ${local.date}`);
+        }
       } else if (resolution.winner === 'remote') {
         await updateLocalCompletion(engine, remoteById_);
       }
@@ -288,7 +311,15 @@ export async function syncCompletionsImpl(engine: any) {
       processedRemoteIds.add(remoteByKey_.id);
       await mergeCompletionToRemote(engine, local, remoteByKey_);
     } else {
-      await pushCompletionToRemote(engine, local);
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Completion for habit ${local.habitId} on date ${local.date} was deleted on remote, deleting locally.`);
+        await db.completions.delete(local.id);
+      } else if (remoteHabitIds.has(local.habitId)) {
+        await pushCompletionToRemote(engine, local);
+      } else {
+        logger.warn(`[SyncEngine] Skipping completion push: Habit ${local.habitId} not found on remote for completion date ${local.date}`);
+      }
     }
   }
 

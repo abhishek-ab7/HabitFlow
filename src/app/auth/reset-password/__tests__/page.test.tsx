@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import ResetPasswordPage from '../page.tsx';
+import ResetPasswordPage from '../page';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ beforeEach(() => {
 
 /** Stub onAuthStateChange to fire the given event immediately on subscription */
 function stubAuthEvent(event: string, session: object | null = null) {
-  mockOnAuthStateChangeFn.mockImplementation((callback: Function) => {
+  mockOnAuthStateChangeFn.mockImplementation((callback: (...args: any[]) => any) => {
     callback(event, session);
     return { data: { subscription: { unsubscribe: vi.fn() } } };
   });

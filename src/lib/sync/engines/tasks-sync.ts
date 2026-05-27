@@ -27,6 +27,15 @@ export async function syncTasksImpl(engine: any) {
 
   logger.info('[SyncEngine] 🔄 Syncing tasks from Supabase...');
 
+  // 1. Fetch remote goals to verify task.goal_id foreign key references
+  const { data: remoteGoals, error: goalsError } = await engine.supabase
+    .from('goals')
+    .select('id')
+    .eq('user_id', engine.userId);
+  if (goalsError) throw goalsError;
+  const remoteGoalIds = new Set((remoteGoals || []).map((g: any) => g.id));
+
+  // 2. Fetch remote tasks
   const { data: remoteTasks, error } = await engine.supabase
     .from('tasks')
     .select('*')
@@ -39,27 +48,41 @@ export async function syncTasksImpl(engine: any) {
   const localById = new Map(localTasks.map(t => [t.id, t]));
 
   const sortedLocalTasks = [...localTasks].sort((a, b) => (a.depth || 0) - (b.depth || 0));
+  const remoteTaskIds = new Set((remoteTasks || []).map((t: any) => t.id));
+  const localTaskIds = new Set(localTasks.map(t => t.id));
 
   const toInsertRemote: any[] = [];
   for (const local of sortedLocalTasks) {
-    if (!remoteById.has(local.id)) {
-      toInsertRemote.push({
-        id: local.id,
-        user_id: engine.userId,
-        title: local.title,
-        description: local.description,
-        status: local.status,
-        priority: local.priority,
-        due_date: local.due_date,
-        goal_id: local.goal_id,
-        parent_task_id: local.parentTaskId || null,
-        depth: local.depth || 0,
-        tags: local.tags,
-        created_at: local.created_at,
-        updated_at: local.updated_at,
-      });
+    const remote = remoteById.get(local.id) as any;
+
+    const syncedGoalId = local.goal_id && remoteGoalIds.has(local.goal_id) ? local.goal_id : null;
+    const hasParent = local.parentTaskId && (localTaskIds.has(local.parentTaskId) || remoteTaskIds.has(local.parentTaskId));
+    const syncedParentId = hasParent ? local.parentTaskId : null;
+    const syncedDepth = hasParent ? local.depth || 0 : 0;
+
+    if (!remote) {
+      const isNewLocal = !engine.lastSyncAt || new Date(local.updated_at || local.created_at || 0) >= engine.lastSyncAt;
+      if (!isNewLocal) {
+        logger.info(`[SyncEngine] Task "${local.title}" was deleted on remote, deleting locally.`);
+        await db.tasks.delete(local.id);
+      } else {
+        toInsertRemote.push({
+          id: local.id,
+          user_id: engine.userId,
+          title: local.title,
+          description: local.description,
+          status: local.status,
+          priority: local.priority,
+          due_date: local.due_date,
+          goal_id: syncedGoalId,
+          parent_task_id: syncedParentId,
+          depth: syncedDepth,
+          tags: local.tags,
+          created_at: local.created_at,
+          updated_at: local.updated_at,
+        });
+      }
     } else {
-      const remote = remoteById.get(local.id) as any;
       const resolution = resolveConflict(
         { ...local, updatedAt: local.updated_at },
         { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
@@ -67,7 +90,26 @@ export async function syncTasksImpl(engine: any) {
       );
 
       if (resolution.winner === 'local') {
-        await pushTaskToRemote(engine, local);
+        await engine.supabase.from('tasks').upsert({
+          id: local.id,
+          user_id: engine.userId,
+          title: local.title,
+          description: local.description,
+          status: local.status,
+          priority: local.priority,
+          due_date: local.due_date,
+          goal_id: syncedGoalId,
+          parent_task_id: syncedParentId,
+          depth: syncedDepth,
+          tags: local.tags,
+          created_at: local.created_at,
+          updated_at: local.updated_at,
+          recurrence_rule: local.recurrenceRule || '',
+          estimated_time: local.estimatedTime || 0,
+          actual_time: local.actualTime || 0,
+          is_urgent: local.isUrgent ?? false,
+          is_important: local.isImportant ?? false,
+        } as any);
         logger.info(`[SyncEngine] 🔄 Task conflict (${local.title}): ${resolution.reason}`);
       } else if (resolution.winner === 'remote') {
         await updateLocalTask(engine, remote);
@@ -97,6 +139,34 @@ export async function syncTasksImpl(engine: any) {
 export async function pushTaskToRemote(engine: any, task: any) {
   if (!engine.userId) return;
 
+  // Verify goal_id exists on remote before pushing
+  let syncedGoalId = task.goal_id || null;
+  if (syncedGoalId) {
+    const { data: remoteGoals } = await engine.supabase
+      .from('goals')
+      .select('id')
+      .eq('user_id', engine.userId);
+    const remoteGoalIds = new Set((remoteGoals || []).map((g: any) => g.id));
+    if (!remoteGoalIds.has(syncedGoalId)) {
+      syncedGoalId = null;
+    }
+  }
+
+  // Verify parent_task_id exists on remote before pushing
+  let syncedParentId = task.parentTaskId || null;
+  let syncedDepth = task.depth || 0;
+  if (syncedParentId) {
+    const { data: remoteTasks } = await engine.supabase
+      .from('tasks')
+      .select('id')
+      .eq('user_id', engine.userId);
+    const remoteTaskIds = new Set((remoteTasks || []).map((t: any) => t.id));
+    if (!remoteTaskIds.has(syncedParentId)) {
+      syncedParentId = null;
+      syncedDepth = 0;
+    }
+  }
+
   await engine.supabase.from('tasks').upsert({
     id: task.id,
     user_id: engine.userId,
@@ -105,9 +175,9 @@ export async function pushTaskToRemote(engine: any, task: any) {
     status: task.status,
     priority: task.priority,
     due_date: task.due_date,
-    goal_id: task.goal_id,
-    parent_task_id: task.parentTaskId || null,
-    depth: task.depth || 0,
+    goal_id: syncedGoalId,
+    parent_task_id: syncedParentId,
+    depth: syncedDepth,
     tags: task.tags,
     created_at: task.created_at,
     updated_at: task.updated_at,
