@@ -86,9 +86,16 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
     return { completedCount: completed, totalCount: total, percentage: pct };
   }, [focusItems]);
 
+  const handleSkip = () => {
+    const userId = user?.id || 'guest';
+    localStorage.setItem(`focus_mode_started_${userId}_${todayStr}`, 'true');
+    onClose();
+  };
+
   const handleStartDay = async () => {
     // Save completion flag for today
-    localStorage.setItem(`focus_mode_started_${todayStr}`, 'true');
+    const userId = user?.id || 'guest';
+    localStorage.setItem(`focus_mode_started_${userId}_${todayStr}`, 'true');
     
     try {
       // Award 10 XP
@@ -125,7 +132,7 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
           <Button
             variant="ghost"
             size="icon"
-            onClick={onClose}
+            onClick={handleSkip}
             className="rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary"
             title="Skip focus screen"
           >
@@ -235,7 +242,7 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
               <div className="flex gap-3 w-full sm:w-auto justify-end">
                 <Button
                   variant="outline"
-                  onClick={onClose}
+                  onClick={handleSkip}
                   className="w-full sm:w-auto h-11 px-6 rounded-2xl border-border/80"
                 >
                   Skip

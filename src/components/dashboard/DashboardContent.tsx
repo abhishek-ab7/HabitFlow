@@ -34,12 +34,14 @@ import { ProgressRing } from '@/components/motion';
 
 import { useUIStore } from '@/lib/stores/ui-store';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { useAuth } from '@/providers/auth-provider';
 
 export default function DashboardContent() {
   const router = useRouter();
   const loadDashboardLayout = useUIStore((s) => s.loadDashboardLayout);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isFocusOpen, setIsFocusOpen] = useState(false);
+  const { user, isLoading: authLoading } = useAuth();
 
   const { displayName, loadUser } = useUserStore(
     useShallow((s) => ({
@@ -165,14 +167,15 @@ export default function DashboardContent() {
 
   // Auto-trigger daily Focus Mode
   useEffect(() => {
-    if (!showOnboarding && !isEmpty) {
+    if (!showOnboarding && !isEmpty && !authLoading) {
       const todayStr = new Date().toISOString().split('T')[0];
-      const started = localStorage.getItem(`focus_mode_started_${todayStr}`);
+      const userId = user?.id || 'guest';
+      const started = localStorage.getItem(`focus_mode_started_${userId}_${todayStr}`);
       if (started !== 'true') {
         setIsFocusOpen(true);
       }
     }
-  }, [showOnboarding, isEmpty]);
+  }, [showOnboarding, isEmpty, authLoading, user?.id]);
 
   // If we have habits or goals, we are an existing user. Disable onboarding if it's open.
   useEffect(() => {
