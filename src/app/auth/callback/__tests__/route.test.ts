@@ -56,7 +56,7 @@ describe('Auth Callback Route', () => {
 
     expect(mockSupabase.auth.exchangeCodeForSession).toHaveBeenCalledWith('valid_code');
     expect(res.status).toBe(307);
-    expect(res.headers.get('location')).toBe('http://localhost:3000/dashboard');
+    expect(res.headers.get('location')).toBe('http://localhost:3000/');
   });
 
   it('redirects to reset-password when type is recovery', async () => {
@@ -99,8 +99,8 @@ describe('Auth Callback Route', () => {
 
     expect(urlValidator.validateRedirectUrl).toHaveBeenCalledWith(
       'https://habitflow.app',
-      '/dashboard',
-      '/dashboard'
+      '/',
+      '/'
     );
   });
 });
