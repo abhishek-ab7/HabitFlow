@@ -9,7 +9,6 @@ export function createClient() {
       cookieOptions: {
         sameSite: 'lax',
         secure: true,
-        path: '/',
       }
     }
   );

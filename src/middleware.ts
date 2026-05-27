@@ -123,26 +123,14 @@ export async function middleware(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/login';
     redirectUrl.searchParams.set('redirectedFrom', pathname);
-    
-    const redirectResponse = NextResponse.redirect(redirectUrl);
-    // Copy updated cookies so they are not lost on redirect
-    response.cookies.getAll().forEach((cookie) => {
-      redirectResponse.cookies.set(cookie);
-    });
-    return redirectResponse;
+    return NextResponse.redirect(redirectUrl);
   }
 
   // If authenticated and trying to access login, redirect to dashboard
   if (session && pathname.startsWith('/login')) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/';
-    
-    const redirectResponse = NextResponse.redirect(redirectUrl);
-    // Copy updated cookies so they are not lost on redirect
-    response.cookies.getAll().forEach((cookie) => {
-      redirectResponse.cookies.set(cookie);
-    });
-    return redirectResponse;
+    return NextResponse.redirect(redirectUrl);
   }
 
   return response;

@@ -56,11 +56,6 @@ test.describe('Complete User Journey Flow', () => {
   });
 
   test('walks through habits, tasks, goals, routines, analytics, and gamification', async ({ page }) => {
-    // Bypass the onboarding wizard for this journey test to allow loading demo data
-    await page.addInitScript(() => {
-      window.localStorage.setItem('habitflow_onboarded', 'true');
-    });
-
     // 1. Visit Login Page
     await page.goto('/login');
     await expect(page).toHaveTitle(/Habit Flow/);

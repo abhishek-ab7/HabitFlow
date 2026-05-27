@@ -136,7 +136,20 @@ export default function DashboardContent() {
           loadUser(),
         ]);
 
-        // Onboarding is handled reactively below once habits and goals are loaded
+        // Check if welcome wizard should be shown (only on brand new signup)
+        const onboarded = localStorage.getItem('habitflow_onboarded');
+        if (onboarded !== 'true') {
+          const justSignedUp = localStorage.getItem('habitflow_just_signed_up') === 'true';
+          const createdAt = session.user.created_at;
+          const lastSignInAt = session.user.last_sign_in_at;
+          
+          const isNewUser = createdAt && lastSignInAt && 
+            (new Date(lastSignInAt).getTime() - new Date(createdAt).getTime() < 120000); // 2 minutes
+
+          if (justSignedUp || isNewUser) {
+            setShowOnboarding(true);
+          }
+        }
       }
 
       // ⚡ OPTIMIZATION: Load all data in parallel instead of sequential
@@ -164,28 +177,13 @@ export default function DashboardContent() {
     }
   }, [showOnboarding, isEmpty, authLoading, user?.id]);
 
-  // Handle onboarding wizard trigger based on user data
+  // If we have habits or goals, we are an existing user. Disable onboarding if it's open.
   useEffect(() => {
-    if (authLoading || habitsLoading || goalsLoading) return;
-
-    const onboarded = localStorage.getItem('habitflow_onboarded');
-    const hasData = habits.length > 0 || goals.length > 0;
-
-    if (hasData) {
-      // If we have data, we are an onboarded user.
-      if (showOnboarding) {
-        setShowOnboarding(false);
-      }
-      if (onboarded !== 'true') {
-        localStorage.setItem('habitflow_onboarded', 'true');
-      }
-    } else {
-      // If we have no data and haven't onboarded yet, show the wizard.
-      if (onboarded !== 'true' && !showOnboarding) {
-        setShowOnboarding(true);
-      }
+    if ((habits.length > 0 || goals.length > 0) && showOnboarding) {
+      setShowOnboarding(false);
+      localStorage.setItem('habitflow_onboarded', 'true');
     }
-  }, [authLoading, habitsLoading, goalsLoading, habits.length, goals.length, showOnboarding]);
+  }, [habits.length, goals.length, showOnboarding]);
 
   // Computed values - OPTIMIZED: Memoized to prevent recalculation
   const todayProgress = useMemo(() => getTodayProgress(), [habits, completions, getTodayProgress]);
