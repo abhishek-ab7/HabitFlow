@@ -37,7 +37,7 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
     const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
     const [loadingPriority, setLoadingPriority] = useState(false);
     
-    const { removeTask, editTask } = useTaskStore();
+    const { removeTask, editTask, addTask } = useTaskStore();
     
     const { 
         activeTaskId, 
@@ -148,24 +148,44 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                 layout
                 drag="x"
                 dragDirectionLock
-                dragConstraints={{ left: 0, right: 0 }}
+                dragConstraints={{ left: -100, right: 100 }}
                 dragElastic={{ left: 0.6, right: 0.6 }}
                 style={{ x }}
                 onDragEnd={async (event, info) => {
-                    const threshold = 100;
+                    const threshold = 60;
                     if (info.offset.x > threshold) {
                         if (onComplete) {
                             onComplete(task.id);
                         }
                     } else if (info.offset.x < -threshold) {
-                        if (confirm("Are you sure you want to delete this task?")) {
-                            try {
-                                await removeTask(task.id);
-                                toast.success("Task deleted successfully");
-                            } catch (err) {
-                                toast.error("Failed to delete task");
-                                console.error(err);
-                            }
+                        try {
+                            await removeTask(task.id);
+                            toast.success("Task deleted", {
+                                action: {
+                                    label: "Undo",
+                                    onClick: async () => {
+                                        try {
+                                            await addTask({
+                                                title: task.title,
+                                                description: task.description || undefined,
+                                                priority: task.priority,
+                                                due_date: task.due_date || undefined,
+                                                estimatedTime: task.estimatedTime,
+                                                actualTime: task.actualTime,
+                                                metadata: task.metadata || undefined,
+                                                tags: task.tags
+                                            });
+                                            toast.success("Task restored");
+                                        } catch (undoErr) {
+                                            toast.error("Failed to restore task");
+                                            console.error(undoErr);
+                                        }
+                                    }
+                                }
+                            });
+                        } catch (err) {
+                            toast.error("Failed to delete task");
+                            console.error(err);
                         }
                     }
                 }}

@@ -11,9 +11,10 @@ import { useTaskStore } from '@/lib/stores/task-store';
 
 interface HeroSectionProps {
   userName?: string;
+  currentStreak?: number;
 }
 
-export function HeroSection({ userName }: HeroSectionProps) {
+export function HeroSection({ userName, currentStreak }: HeroSectionProps) {
   // Use state to avoid hydration mismatch with time-based values
   const [mounted, setMounted] = useState(false);
   const [timeData, setTimeData] = useState({
@@ -28,15 +29,20 @@ export function HeroSection({ userName }: HeroSectionProps) {
   const tasks = useTaskStore((s) => s.tasks);
 
   useEffect(() => {
-    const { greeting, emoji } = getTimeGreeting();
+    const { greeting: baseGreeting, emoji } = getTimeGreeting();
     const gradientClass = getTimeGradient();
     const { quote, author } = getRandomQuote();
     
+    let finalGreeting = userName ? `${baseGreeting}, ${userName}` : baseGreeting;
+    if (currentStreak !== undefined && currentStreak > 0) {
+      finalGreeting = `Day ${currentStreak} streak, ${userName || 'Champion'}! 🔥`;
+    }
+    
     Promise.resolve().then(() => {
       setMounted(true);
-      setTimeData({ greeting, emoji, gradientClass, quote, author });
+      setTimeData({ greeting: finalGreeting, emoji, gradientClass, quote, author });
     });
-  }, []);
+  }, [userName, currentStreak]);
 
   const habitProgress = mounted ? getTodayProgress() : { completed: 0, total: 0 };
   const todayStr = mounted ? new Date().toISOString().split('T')[0] : '';

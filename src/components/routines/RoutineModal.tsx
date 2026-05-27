@@ -164,7 +164,7 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
 
                 {/* Main Content Area with Custom Scrollbar */}
                 <ScrollArea className="h-[60vh] w-full">
-                    <form id="routine-form" onSubmit={handleSubmit} className="px-8 py-6 pb-44 space-y-8">
+                    <form id="routine-form" onSubmit={handleSubmit} className="px-8 py-6 pb-24 space-y-8">
 
                         {/* Section 1: Essentials */}
                         <div className="space-y-5">

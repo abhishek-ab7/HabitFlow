@@ -52,11 +52,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   const signUp = useCallback(async (email: string, password: string, fullName?: string) => {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -92,6 +92,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const supabase = getSupabaseClient();
     await supabase.auth.signOut();
+
+    // Explicitly unregister service workers on sign out
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      } catch (error) {
+        console.error('Failed to unregister service worker on sign out:', error);
+      }
+    }
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {

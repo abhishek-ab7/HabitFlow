@@ -297,21 +297,27 @@ export function GoalCard({
               <span>{format(new Date(goal.startDate), 'MMM d')}</span>
               <span>{format(new Date(goal.deadline), 'MMM d, yyyy')}</span>
             </div>
-            <div className="relative h-2 bg-muted rounded-full overflow-hidden">
-              {/* Elapsed time */}
-              <div
-                className="absolute inset-y-0 left-0 bg-muted-foreground/30"
-                style={{ width: `${elapsedPercentage}%` }}
-              />
-              {/* Progress */}
-              <motion.div
-                className="absolute inset-y-0 left-0 bg-primary"
-                initial={{ width: 0 }}
-                animate={{ width: `${stats.progress}%` }}
-                transition={{ duration: 0.5 }}
-              />
+            <div className="relative pt-1 pb-1">
+              <div className="h-2 bg-muted rounded-full overflow-hidden relative">
+                {/* Elapsed time */}
+                <div
+                  className="absolute inset-y-0 left-0 bg-muted-foreground/30"
+                  style={{ width: `${elapsedPercentage}%` }}
+                />
+                {/* Progress */}
+                <motion.div
+                  className="absolute inset-y-0 left-0 bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${stats.progress}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
               {/* Today marker */}
-
+              <div
+                className="absolute top-1/2 -translate-y-1/2 w-1.5 h-3.5 bg-red-500 rounded-full border border-white dark:border-slate-950 shadow-md pointer-events-none z-10"
+                style={{ left: `${elapsedPercentage}%`, transform: 'translate(-50%, -50%)' }}
+                title="Today"
+              />
             </div>
           </div>
 

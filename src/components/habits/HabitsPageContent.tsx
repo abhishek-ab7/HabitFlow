@@ -18,6 +18,7 @@ import { FadeIn } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitFormData, Category } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 const CATEGORIES: { value: Category; label: string }[] = [
   { value: 'health', label: 'Health' },
@@ -72,6 +73,8 @@ export default function HabitsPageContent() {
   const [modalTab, setModalTab] = useState<'details' | 'templates'>('details');
   const [showArchivedModal, setShowArchivedModal] = useState(false);
   const [showAIAssist, setShowAIAssist] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [habitIdToDelete, setHabitIdToDelete] = useState<string | null>(null);
 
   // Check for ?new=true query param
   useEffect(() => {
@@ -131,11 +134,17 @@ export default function HabitsPageContent() {
     await editHabit(habitId, { archived: true });
   }, [editHabit]);
 
-  const handleDelete = useCallback(async (habitId: string) => {
-    if (confirm('Are you sure you want to delete this habit? All data will be lost.')) {
-      await removeHabit(habitId);
+  const handleDelete = useCallback((habitId: string) => {
+    setHabitIdToDelete(habitId);
+    setDeleteConfirmOpen(true);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (habitIdToDelete) {
+      await removeHabit(habitIdToDelete);
+      setHabitIdToDelete(null);
     }
-  }, [removeHabit]);
+  }, [habitIdToDelete, removeHabit]);
 
   const handleCategoryFilter = useCallback((category: Category) => {
     if (categoryFilter.includes(category)) {
@@ -330,6 +339,17 @@ export default function HabitsPageContent() {
       <ArchivedHabitsModal
         open={showArchivedModal}
         onOpenChange={setShowArchivedModal}
+      />
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Habit"
+        description="Are you sure you want to delete this habit? All data will be lost."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={handleConfirmDelete}
       />
 
       {/* AI Assist Drawer */}

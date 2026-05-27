@@ -7,6 +7,7 @@ import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useShallow } from 'zustand/react/shallow';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGoalStore } from '@/lib/stores/goal-store';
+import { useTaskStore } from '@/lib/stores/task-store';
 import { calculateMomentum } from '@/lib/calculations';
 import { isAIEnabled } from '@/lib/ai-features-flag';
 import {
@@ -28,6 +29,8 @@ import { FocusModeOverlay } from '@/components/dashboard/FocusModeOverlay';
 import { useUserStore } from '@/lib/stores/user-store';
 import { Button } from '@/components/ui/button';
 import { Sparkles } from 'lucide-react';
+import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
+import { ProgressRing } from '@/components/motion';
 
 import { useUIStore } from '@/lib/stores/ui-store';
 import { getSupabaseClient } from '@/lib/supabase/client';
@@ -99,6 +102,17 @@ export default function DashboardContent() {
     }))
   );
 
+  // Task store
+  const {
+    tasks,
+    loadTasks,
+  } = useTaskStore(
+    useShallow((s) => ({
+      tasks: s.tasks,
+      loadTasks: s.loadTasks,
+    }))
+  );
+
   // Check if we need to show onboarding
   const isEmpty = habits.length === 0 && goals.length === 0 && !habitsLoading && !goalsLoading;
 
@@ -137,12 +151,12 @@ export default function DashboardContent() {
       }
 
       // ⚡ OPTIMIZATION: Load all data in parallel instead of sequential
-      // NOTE: loadGoals() and loadAllMilestones() can be combined into a single Dexie transaction if performance becomes a bottleneck at scale.
       await Promise.all([
         loadHabits(),
         loadGoals(),
         loadAllMilestones(),
         loadCompletions(start, end),
+        loadTasks(),
       ]);
     };
 
@@ -189,6 +203,40 @@ export default function DashboardContent() {
     return calculateMomentum(completions);
   }, [completions]);
 
+  // Unified Today Momentum Score
+  const todayScore = useMemo(() => {
+    const todayCompleted = todayProgress.completed;
+    const todayTotal = todayProgress.total;
+    const habitRate = todayTotal > 0 ? (todayCompleted / todayTotal) : 1;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayTasksList = tasks.filter(t => {
+      if (t.status === 'archived') return false;
+      const isDueToday = t.due_date && t.due_date.startsWith(todayStr);
+      const isOverdueTodo = t.status === 'todo' && t.due_date && t.due_date <= todayStr + "T23:59:59";
+      return isDueToday || isOverdueTodo;
+    });
+    const totalTasks = todayTasksList.length;
+    const completedTasks = todayTasksList.filter(t => t.status === 'done').length;
+    const taskRate = totalTasks > 0 ? (completedTasks / totalTasks) : 1;
+
+    let score = 100;
+    if (todayTotal > 0 && totalTasks > 0) {
+      score = Math.round(habitRate * 60 + taskRate * 40);
+    } else if (todayTotal > 0) {
+      score = Math.round(habitRate * 100);
+    } else if (totalTasks > 0) {
+      score = Math.round(taskRate * 100);
+    }
+    return {
+      score,
+      todayCompleted,
+      todayTotal,
+      completedTasks,
+      totalTasks
+    };
+  }, [todayProgress, tasks]);
+
   const isLoading = habitsLoading || goalsLoading;
 
   // Handlers
@@ -215,10 +263,13 @@ export default function DashboardContent() {
   if (isEmpty) {
     return (
       <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
-        <HeroSection />
+        <HeroSection userName={displayName} currentStreak={currentMaxStreak} />
 
         <div className="flex flex-col items-center justify-center py-16">
           <div className="text-center max-w-md">
+            <div className="mb-6 flex justify-center">
+              <EmptyHabitsIllustration />
+            </div>
             <h2 className="text-2xl font-bold mb-4">Welcome to Habit Tracker!</h2>
             <p className="text-muted-foreground mb-8">
               Start building better habits and achieving your goals.
@@ -317,9 +368,43 @@ export default function DashboardContent() {
         </Button>
       </div>
 
-      <HeroSection userName={displayName} />
+      <HeroSection userName={displayName} currentStreak={currentMaxStreak} />
 
       <MoodCheckIn />
+
+      {/* Unified Today Score Ring Card */}
+      <div className="bg-card/45 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row items-center gap-6 mb-6 hover:border-primary/20 transition-all">
+        <ProgressRing progress={todayScore.score} size={100} strokeWidth={8} className="shrink-0">
+          <div className="flex flex-col items-center justify-center">
+            <span className="text-3xl font-black text-foreground tracking-tight">{todayScore.score}</span>
+            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Score</span>
+          </div>
+        </ProgressRing>
+        <div className="flex-1 text-center sm:text-left space-y-1.5">
+          <h3 className="text-xl font-bold text-foreground">Today's Momentum</h3>
+          <p className="text-sm text-muted-foreground max-w-xl">
+            {todayScore.score === 100 
+              ? "Flawless progress! All scheduled habits and due tasks completed. You are on fire today! 🔥"
+              : todayScore.score >= 80 
+              ? "Exceptional velocity! Just a few items remaining to secure a perfect daily score. 🚀"
+              : todayScore.score >= 50 
+              ? "Over halfway mark! Keep up the momentum to build consistency and unlock today's full XP reward. 💪"
+              : todayScore.score > 0 
+              ? "Good start! Keep moving down your checklist and complete your habits and tasks. 📈"
+              : "Let's kickstart the flow! Track your first habit or complete a task to begin today's momentum. 🌱"}
+          </p>
+          <div className="flex flex-wrap justify-center sm:justify-start gap-4 text-xs font-semibold text-muted-foreground pt-1">
+            <div className="flex items-center gap-1.5 bg-muted/50 px-3 py-1 rounded-full border border-border/20">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Habits: {todayScore.todayCompleted}/{todayScore.todayTotal}</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-muted/50 px-3 py-1 rounded-full border border-border/20">
+              <span className="w-2 h-2 rounded-full bg-indigo-500" />
+              <span>Tasks: {todayScore.completedTasks}/{todayScore.totalTasks}</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <BentoGrid widgets={widgets} />
 

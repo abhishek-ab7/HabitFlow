@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { Trophy, Diamond, Shield } from 'lucide-react';
@@ -14,9 +14,21 @@ export function UserStatusHUD() {
     const { xp, level, gems, streakShield, loadGamification, getBufferProgress, openRules } =
         useGamificationStore();
 
+    const [pulse, setPulse] = useState(false);
+    const prevXpRef = useRef(xp);
+
     useEffect(() => {
         loadGamification();
     }, [loadGamification]);
+
+    useEffect(() => {
+        if (xp > prevXpRef.current) {
+            setPulse(true);
+            const t = setTimeout(() => setPulse(false), 1000);
+            return () => clearTimeout(t);
+        }
+        prevXpRef.current = xp;
+    }, [xp]);
 
     const progress = getBufferProgress();
 
@@ -46,24 +58,45 @@ export function UserStatusHUD() {
             </TooltipProvider>
 
             {/* XP Bar */}
-            <div
-                className="block w-28 md:w-44 h-4 bg-muted/80 rounded-full overflow-hidden relative border border-border/40 cursor-pointer hover:opacity-90 transition-all shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]"
-                onClick={() => openRules('xp')}
-            >
-                <motion.div
-                    className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progress}%` }}
-                    transition={{ type: 'spring', damping: 20 }}
-                />
-                {/* Shimmer Overlay */}
-                <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.15)_50%,transparent_75%)] bg-[length:200%_100%] animate-[shimmer_3s_infinite] pointer-events-none" />
-                
-                {/* XP Text Indicator */}
-                <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold font-mono tracking-wider text-indigo-950 dark:text-indigo-50 mix-blend-difference">
-                    {xp} / {level * 100} XP
-                </div>
-            </div>
+            <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <motion.div
+                            animate={pulse ? {
+                                boxShadow: [
+                                    '0 0 0 rgba(99,102,241,0)',
+                                    '0 0 12px rgba(99,102,241,0.6)',
+                                    '0 0 0 rgba(99,102,241,0)'
+                                ]
+                            } : {}}
+                            transition={{ duration: 1 }}
+                            className="block w-24 md:w-48 h-4 bg-muted/80 rounded-full overflow-hidden relative border border-border/40 cursor-pointer hover:opacity-90 transition-all shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]"
+                            onClick={() => openRules('xp')}
+                        >
+                            <motion.div
+                                className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${progress}%` }}
+                                transition={{ type: 'spring', damping: 20 }}
+                            />
+                            {/* Shimmer Overlay */}
+                            <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.15)_50%,transparent_75%)] bg-[length:200%_100%] animate-[shimmer_3s_infinite] pointer-events-none" />
+                            
+                            {/* XP Text Indicator */}
+                            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold font-mono tracking-wider text-indigo-950 dark:text-indigo-50 mix-blend-difference">
+                                {xp} / {level * 100} XP
+                            </div>
+                        </motion.div>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                        <div className="text-xs">
+                            <p className="font-semibold">Level {level} Progress</p>
+                            <p>XP: {xp} / {level * 100} ({progress.toFixed(0)}%)</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">Click to see XP rules</p>
+                        </div>
+                    </TooltipContent>
+                </Tooltip>
+            </TooltipProvider>
 
             {/* Gems */}
             <TooltipProvider>

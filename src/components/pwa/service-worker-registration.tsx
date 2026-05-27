@@ -1,35 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useAuth } from '@/providers/auth-provider';
 
 export function ServiceWorkerRegistration() {
-  const { isAuthenticated, isLoading } = useAuth();
-
   useEffect(() => {
-    // Only register service worker after auth is loaded and user is authenticated
-    // This prevents issues with service worker caching login pages
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
       return;
     }
 
-    // Wait for auth to finish loading
-    if (isLoading) {
-      return;
-    }
-
-    // Only register if authenticated to avoid caching auth redirects
-    if (!isAuthenticated) {
-      // Unregister any existing service workers if user is not authenticated
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const registration of registrations) {
-          registration.unregister();
-        }
-      });
-      return;
-    }
-
-    // Register service worker after page load
     const registerSW = () => {
       navigator.serviceWorker
         .register('/sw.js', { scope: '/' })
@@ -52,7 +30,7 @@ export function ServiceWorkerRegistration() {
       window.addEventListener('load', registerSW);
       return () => window.removeEventListener('load', registerSW);
     }
-  }, [isAuthenticated, isLoading]);
+  }, []);
 
   return null;
 }

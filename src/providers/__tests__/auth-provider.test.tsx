@@ -4,11 +4,13 @@ import { AuthProvider, useAuth } from '../auth-provider';
 import * as supabaseClient from '@/lib/supabase/client';
 import React from 'react';
 
+const mockRouter = {
+  refresh: vi.fn(),
+};
+
 // Mock next/navigation
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    refresh: vi.fn(),
-  }),
+  useRouter: () => mockRouter,
 }));
 
 // Mock supabase client

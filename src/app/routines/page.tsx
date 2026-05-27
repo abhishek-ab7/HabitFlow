@@ -8,11 +8,13 @@ import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { RoutineCard, RoutineModal, RoutinePlayer } from '@/components/routines';
 import { Routine, Habit } from '@/lib/types';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { Plus, Loader2, Play, Sparkles, TrendingUp, Trophy, Zap, Sun, Moon, Sunset, Calendar, CheckCircle2 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 export default function RoutinesPage() {
     const { routines, loadRoutines, isLoading, deleteRoutine, optimizeRoutineSequences, getHabitsForAllRoutines } = useRoutineStore();
@@ -25,6 +27,8 @@ export default function RoutinesPage() {
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [currentTime, setCurrentTime] = useState<Date>(new Date());
     const [allRoutineHabits, setAllRoutineHabits] = useState<Map<string, Habit[]>>(new Map());
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [routineIdToDelete, setRoutineIdToDelete] = useState<string | null>(null);
 
     useEffect(() => {
         // NOTE: loadRoutines() and loadCompletions() can be combined into a single Dexie transaction if performance becomes a bottleneck at scale.
@@ -71,9 +75,15 @@ export default function RoutinesPage() {
         setIsModalOpen(true);
     };
 
-    const handleDelete = async (id: string) => {
-        if (confirm('Are you sure you want to delete this routine?')) {
-            await deleteRoutine(id);
+    const handleDelete = (id: string) => {
+        setRoutineIdToDelete(id);
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (routineIdToDelete) {
+            await deleteRoutine(routineIdToDelete);
+            setRoutineIdToDelete(null);
         }
     };
 
@@ -150,39 +160,26 @@ export default function RoutinesPage() {
         <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto space-y-8">
             
             {/* ATMOSPHERIC TIMELINE HEADER */}
-            <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-white via-indigo-50/50 to-purple-50 dark:from-slate-900 dark:via-purple-950/20 dark:to-slate-900 p-8 md:p-10 border border-slate-200/50 dark:border-slate-800/50 shadow-xl">
-                <div className="absolute inset-0 bg-white/20 dark:bg-slate-900/5 backdrop-blur-3xl z-0" />
-                
-                <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-                    <div className="space-y-3">
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-black uppercase tracking-wider">
-                            <Zap className="w-3.5 h-3.5 animate-pulse" />
-                            Flow Synchronization
-                        </div>
-                        <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-tight text-slate-800 dark:text-white">
-                            Your Routine Sanctuary
-                        </h1>
-                        <p className="text-sm md:text-base text-slate-500 dark:text-slate-400 max-w-xl font-semibold leading-relaxed">
-                            Form habits easily by linking them into automated time-of-day stacks. Minimize friction and master consistency.
-                        </p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3">
-                        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                            <Button
-                                size="lg"
-                                onClick={handleCreate}
-                                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black shadow-lg shadow-indigo-500/25 h-13 px-6 text-sm rounded-2xl transition-all border-none"
-                            >
-                                <Plus className="mr-1.5 h-5 w-5" />
-                                Create Routine
-                            </Button>
-                        </motion.div>
-                    </div>
-                </div>
-
+            <PageHeader
+                title="Your Routine Sanctuary"
+                description="Form habits easily by linking them into automated time-of-day stacks. Minimize friction and master consistency."
+                badgeText="Flow Synchronization"
+                badgeIcon={<Zap className="w-3.5 h-3.5 animate-pulse" />}
+                actions={
+                    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                        <Button
+                            size="lg"
+                            onClick={handleCreate}
+                            className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-black shadow-lg shadow-indigo-500/25 h-13 px-6 text-sm rounded-2xl transition-all border-none"
+                        >
+                            <Plus className="mr-1.5 h-5 w-5" />
+                            Create Routine
+                        </Button>
+                    </motion.div>
+                }
+            >
                 {/* HORIZONTAL DAILY FLOW SEGMENTS */}
-                <div className="relative z-10 grid grid-cols-3 gap-3 md:gap-4 mt-8 border-t border-slate-200/40 dark:border-slate-800/30 pt-6">
+                <div className="grid grid-cols-3 gap-3 md:gap-4">
                     <div className={cn(
                         "p-4 rounded-2xl border transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-2",
                         currentPhase === 'morning' 
@@ -237,7 +234,7 @@ export default function RoutinesPage() {
                         </span>
                     </div>
                 </div>
-            </div>
+            </PageHeader>
 
             {/* MAIN BENTO GRID */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -478,6 +475,17 @@ export default function RoutinesPage() {
             <RoutinePlayer
                 routine={playingRoutine}
                 onClose={() => setPlayingRoutine(null)}
+            />
+
+            <ConfirmDialog
+                open={deleteConfirmOpen}
+                onOpenChange={setDeleteConfirmOpen}
+                title="Delete Routine"
+                description="Are you sure you want to delete this routine?"
+                confirmLabel="Delete"
+                cancelLabel="Cancel"
+                variant="destructive"
+                onConfirm={handleConfirmDelete}
             />
         </div>
     );

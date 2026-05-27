@@ -28,9 +28,19 @@ interface SyncStatusStore extends SyncStatus {
     reset: () => void;
 }
 
+const getInitialLastSyncTime = (): Date | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const stored = localStorage.getItem('habitflow_last_sync_time');
+        return stored ? new Date(stored) : null;
+    } catch (e) {
+        return null;
+    }
+};
+
 const initialState: SyncStatus = {
     isSyncing: false,
-    lastSyncTime: null,
+    lastSyncTime: getInitialLastSyncTime(),
     syncError: null,
     entityStatus: {
         habits: 'synced',
@@ -48,7 +58,12 @@ export const useSyncStatusStore = create<SyncStatusStore>((set) => ({
 
     setIsSyncing: (syncing) => set({ isSyncing: syncing }),
 
-    setLastSyncTime: (time) => set({ lastSyncTime: time }),
+    setLastSyncTime: (time) => {
+        try {
+            localStorage.setItem('habitflow_last_sync_time', time.toISOString());
+        } catch (e) {}
+        set({ lastSyncTime: time });
+    },
 
     setSyncError: (error) => set({ syncError: error }),
 

@@ -319,6 +319,11 @@ export interface Database {
           default_category: string;
           created_at: string;
           updated_at: string;
+          xp: number;
+          level: number;
+          gems: number;
+          streak_shield: number;
+          avatar_id: string | null;
         };
         Insert: {
           id?: string;
@@ -328,6 +333,11 @@ export interface Database {
           default_category?: string;
           created_at?: string;
           updated_at?: string;
+          xp?: number;
+          level?: number;
+          gems?: number;
+          streak_shield?: number;
+          avatar_id?: string | null;
         };
         Update: {
           id?: string;
@@ -337,6 +347,11 @@ export interface Database {
           default_category?: string;
           created_at?: string;
           updated_at?: string;
+          xp?: number;
+          level?: number;
+          gems?: number;
+          streak_shield?: number;
+          avatar_id?: string | null;
         };
       };
     };

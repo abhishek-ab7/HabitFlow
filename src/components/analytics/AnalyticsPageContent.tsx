@@ -560,7 +560,7 @@ export default function AnalyticsPageContent() {
           </FadeIn>
 
           {/* Charts Grid */}
-          <div className="grid gap-6 md:grid-cols-2 mb-6">
+          <div className="space-y-6 mb-6">
             <FadeIn delay={0.2}>
               <ConsistencyChart
                 data={analyticsData.dailyStats}
@@ -569,13 +569,15 @@ export default function AnalyticsPageContent() {
               />
             </FadeIn>
 
-            <FadeIn delay={0.3}>
-              <CategoryBreakdownChart data={analyticsData.categoryBreakdown} />
-            </FadeIn>
+            <div className="grid gap-6 md:grid-cols-2">
+              <FadeIn delay={0.3}>
+                <CategoryBreakdownChart data={analyticsData.categoryBreakdown} />
+              </FadeIn>
 
-            <FadeIn delay={0.4}>
-              <WeekdayChart data={analyticsData.weekdayStats} />
-            </FadeIn>
+              <FadeIn delay={0.4}>
+                <WeekdayChart data={analyticsData.weekdayStats} />
+              </FadeIn>
+            </div>
 
             <FadeIn delay={0.5}>
               <InsightsCards insights={insights} />

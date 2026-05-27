@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Compass, 
@@ -16,6 +16,11 @@ import {
 } from 'lucide-react';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGoalStore } from '@/lib/stores/goal-store';
+import { useUserStore } from '@/lib/stores/user-store';
+import { AVATARS } from '@/lib/avatars';
+import { getSupabaseClient } from '@/lib/supabase/client';
+import { updateSettings, getSettings } from '@/lib/db';
+import { getSyncEngine } from '@/lib/sync';
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/types';
 
@@ -43,14 +48,27 @@ const HABIT_TEMPLATES: HabitTemplate[] = [
 ];
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+  const { displayName, setDisplayName, saveDisplayNameToServer, loadUser } = useUserStore();
   const [step, setStep] = useState(1);
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
   const [goalTitle, setGoalTitle] = useState('');
   const [goalCategory, setGoalCategory] = useState<Category>('learning');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [nameInput, setNameInput] = useState(displayName || '');
+  const [selectedAvatarId, setSelectedAvatarId] = useState('avatar-1');
 
   const { addHabit } = useHabitStore();
   const { addGoal } = useGoalStore();
+
+  useEffect(() => {
+    loadUser();
+  }, [loadUser]);
+
+  useEffect(() => {
+    if (displayName && !nameInput) {
+      setNameInput(displayName);
+    }
+  }, [displayName, nameInput]);
 
   const handleToggleTemplate = (id: string) => {
     setSelectedTemplates(prev => 
@@ -104,6 +122,24 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             'Check progress in 60 days',
           ]
         });
+      }
+
+      // Save name and avatar settings
+      if (nameInput.trim()) {
+        setDisplayName(nameInput.trim());
+        await saveDisplayNameToServer();
+      }
+
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (userId) {
+        await updateSettings({ userId, avatarId: selectedAvatarId });
+        const currentSettings = await getSettings(userId);
+        if (currentSettings) {
+          const syncEngine = getSyncEngine();
+          await syncEngine.pushUserSettings(currentSettings);
+        }
       }
 
       localStorage.setItem('habitflow_onboarded', 'true');
@@ -166,16 +202,66 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -15 }}
-                className="space-y-6 flex-1 flex flex-col justify-center text-center"
+                className="space-y-5 flex-1 flex flex-col justify-center"
               >
-                <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto text-primary">
-                  <Sparkles className="h-8 w-8 text-primary animate-pulse" />
+                <div className="space-y-1 text-center sm:text-left">
+                  <h3 className="text-xl font-bold tracking-tight">Set up your profile</h3>
+                  <p className="text-sm text-muted-foreground">Choose a name and select your companion avatar character.</p>
                 </div>
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-bold tracking-tight">Build the best version of yourself</h2>
-                  <p className="text-muted-foreground max-w-md mx-auto text-sm">
-                    HabitFlow helps you track habits, design routines, and complete high-impact 90-day goals. Let's customize your workspace in under 2 minutes.
-                  </p>
+
+                <div className="space-y-4 text-left">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What should we call you?</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Alex" 
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Select your avatar</label>
+                    <div className="grid grid-cols-4 gap-2 max-h-[160px] overflow-y-auto pr-1">
+                      {AVATARS.map((avatar) => {
+                        const isSelected = selectedAvatarId === avatar.id;
+                        return (
+                          <button
+                            key={avatar.id}
+                            type="button"
+                            onClick={() => setSelectedAvatarId(avatar.id)}
+                            className={cn(
+                              "relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all group aspect-square hover:bg-muted/30",
+                              isSelected 
+                                ? "border-primary bg-primary/5 shadow-sm" 
+                                : "border-border bg-card"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-inner bg-gradient-to-br transition-transform group-hover:scale-105",
+                              avatar.bgGradient
+                            )}>
+                              <img
+                                src={avatar.src}
+                                alt={avatar.name}
+                                className="w-8 h-8 object-contain drop-shadow-sm"
+                              />
+                            </div>
+                            <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground mt-1 truncate max-w-full">
+                              {avatar.name.split(' ').pop()}
+                            </span>
+                            {isSelected && (
+                              <div className="absolute top-1 right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm">
+                                <Check className="h-2 w-2" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -315,7 +401,8 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             {step < 4 ? (
               <button
                 onClick={handleNext}
-                className="flex items-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/95 transition-colors shadow-lg shadow-primary/20"
+                disabled={step === 1 && !nameInput.trim()}
+                className="flex items-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/95 transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Continue
                 <ArrowRight className="h-4 w-4" />

@@ -392,6 +392,8 @@ export function SortableHabitRow({
                                                 ? "bg-primary/10 border-2 border-dashed border-primary/30 hover:bg-primary/20"
                                                 : "bg-muted/40 hover:bg-muted/60",
                             )}
+                            animate={burstActive === dateStr ? { scale: [1, 1.4, 1] } : { scale: 1 }}
+                            transition={burstActive === dateStr ? { type: "spring", stiffness: 300, damping: 10 } : { scale: { duration: 0.2 } }}
                             whileHover={!isFutureDate ? { scale: 1.05 } : {}}
                             whileTap={!isFutureDate ? { scale: 0.95 } : {}}
                             title={isFutureDate ? undefined : "Left click: toggle/increment. Shift+click: decrement. Right click: freeze."}
@@ -478,6 +480,19 @@ export function SortableHabitRow({
                     return (
                         <div key={day} className="relative group/cell">
                             {finalButton}
+                            <AnimatePresence>
+                                {burstActive === dateStr && (
+                                    <motion.span
+                                        initial={{ opacity: 0, y: 8, scale: 0.8 }}
+                                        animate={{ opacity: 1, y: -26, scale: 1.1 }}
+                                        exit={{ opacity: 0, scale: 0.9 }}
+                                        transition={{ duration: 0.8, ease: "easeOut" }}
+                                        className="absolute bottom-full left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-500 dark:text-emerald-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] z-30 pointer-events-none whitespace-nowrap"
+                                    >
+                                        +15 XP
+                                    </motion.span>
+                                )}
+                            </AnimatePresence>
                             {!isFutureDate && (
                                 <Popover open={openPopoverDate === dateStr} onOpenChange={(open) => {
                                     if (open) {

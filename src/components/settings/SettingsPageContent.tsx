@@ -661,7 +661,7 @@ export default function SettingsPageContent() {
           </BentoGridItem>
 
           {/* DEBUG TOOLS */}
-          {isAuthenticated && (
+          {isAuthenticated && process.env.NODE_ENV === 'development' && (
             <BentoGridItem
               title="Debug Tools"
               icon={<RefreshCw className="h-5 w-5 text-orange-500" />}
