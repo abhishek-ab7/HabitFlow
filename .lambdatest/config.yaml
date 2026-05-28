@@ -1,7 +1,12 @@
-# LambdaTest / TestMu AI Cloud Configuration
-# Replace these placeholder IDs with the values found on your TestMu AI Dashboard
-project_id: ""
-folder_id: ""
-assignee: ""
-environment_id: ""
+# LambdaTest Configuration
+
+# Project and folder configuration
+project_id: "01KSPZ92895H03J73HA8EQWK2H"
+folder_id: "01KSPZ93W777Z04BXZDZ9PKN9K"
+
+# Test Run configuration
+assignee: 3311498
+environment_id: your_test_run_environment_id
+
+# Test URL for automation
 test_url: "https://habitflow.tech/"
