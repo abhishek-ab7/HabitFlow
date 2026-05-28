@@ -885,6 +885,25 @@ export class SyncEngine {
     }
   }
 
+  private async mergeDuplicateHabit(keepHabit: Habit, deleteHabit: Habit) {
+    this.log('info', `Cleaning up duplicate habit: ${deleteHabit.name}`);
+
+    const completions = await db.completions.where('habitId').equals(deleteHabit.id).toArray();
+    for (const c of completions) {
+      const exists = await db.completions
+        .where('[habitId+date]')
+        .equals([keepHabit.id, c.date])
+        .first();
+      if (!exists) {
+        await db.completions.update(c.id, { habitId: keepHabit.id });
+      } else {
+        await db.completions.delete(c.id);
+      }
+    }
+
+    await db.habits.delete(deleteHabit.id);
+  }
+
   private async cleanupLocalDuplicates() {
     if (!this.userId) return;
 
@@ -900,22 +919,7 @@ export class SyncEngine {
           const keepHabit = new Date(habit.createdAt) < new Date(existing.createdAt) ? habit : existing;
           const deleteHabit = keepHabit === habit ? existing : habit;
 
-          this.log('info', `Cleaning up duplicate habit: ${deleteHabit.name}`);
-
-          const completions = await db.completions.where('habitId').equals(deleteHabit.id).toArray();
-          for (const c of completions) {
-            const exists = await db.completions
-              .where('[habitId+date]')
-              .equals([keepHabit.id, c.date])
-              .first();
-            if (!exists) {
-              await db.completions.update(c.id, { habitId: keepHabit.id });
-            } else {
-              await db.completions.delete(c.id);
-            }
-          }
-
-          await db.habits.delete(deleteHabit.id);
+          await this.mergeDuplicateHabit(keepHabit, deleteHabit);
           habitKeys.set(key, keepHabit);
         } else {
           habitKeys.set(key, habit);
@@ -928,6 +932,7 @@ export class SyncEngine {
       this.log('error', 'Cleanup failed', error);
     }
   }
+
 
   private async cleanupLocalDuplicatesWithLogging() {
     if (!this.userId) return;
