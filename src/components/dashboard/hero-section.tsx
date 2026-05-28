@@ -9,29 +9,38 @@ import { FadeIn } from '@/components/motion';
 interface HeroSectionProps {
   userName?: string;
   currentStreak?: number;
+  isHydrated?: boolean;
 }
 
-export function HeroSection({ userName, currentStreak }: HeroSectionProps) {
+export function HeroSection({ userName, currentStreak, isHydrated = false }: HeroSectionProps) {
   // Use state to avoid hydration mismatch with time-based values
-  const [mounted, setMounted] = useState(false);
-  const [timeData, setTimeData] = useState({
-    greeting: 'Hello',
-    emoji: '👋',
-    gradientClass: 'from-slate-100 via-blue-50 to-indigo-100',
-    quote: '',
-    author: '',
+  const [mounted, setMounted] = useState(isHydrated);
+  const [timeData, setTimeData] = useState(() => {
+    if (isHydrated) {
+      const { greeting: baseGreeting, emoji } = getTimeGreeting();
+      const gradientClass = getTimeGradient();
+      const { quote, author } = getRandomQuote();
+      return { greeting: baseGreeting, emoji, gradientClass, quote, author };
+    }
+    return {
+      greeting: 'Hello',
+      emoji: '👋',
+      gradientClass: 'from-slate-100 via-blue-50 to-indigo-100',
+      quote: '',
+      author: '',
+    };
   });
 
   useEffect(() => {
+    if (mounted) return;
+    
     const { greeting: baseGreeting, emoji } = getTimeGreeting();
     const gradientClass = getTimeGradient();
     const { quote, author } = getRandomQuote();
     
-    Promise.resolve().then(() => {
-      setMounted(true);
-      setTimeData({ greeting: baseGreeting, emoji, gradientClass, quote, author });
-    });
-  }, [userName, currentStreak]);
+    setMounted(true);
+    setTimeData({ greeting: baseGreeting, emoji, gradientClass, quote, author });
+  }, [mounted]);
 
   // Render placeholder during SSR to avoid hydration mismatch
   if (!mounted) {

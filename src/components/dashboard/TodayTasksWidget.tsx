@@ -10,7 +10,11 @@ import { useRouter } from "next/navigation"
 import { useTaskStore } from "@/lib/stores/task-store"
 import type { Task } from "@/lib/types"
 
-export function TodayTasksWidget() {
+interface TodayTasksWidgetProps {
+    isHydrated?: boolean;
+}
+
+export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) {
     const { loadTasks, tasks, toggleTaskComplete, isLoading } = useTaskStore(
         useShallow((s) => ({
             loadTasks: s.loadTasks,
@@ -20,16 +24,15 @@ export function TodayTasksWidget() {
         }))
     )
     const router = useRouter()
-    const [mounted, setMounted] = useState(false)
+    const [mounted, setMounted] = useState(isHydrated)
 
     useEffect(() => {
         if (tasks.length === 0) {
             loadTasks()
         }
-        Promise.resolve().then(() => {
-            setMounted(true)
-        })
-    }, [loadTasks, tasks.length])
+        if (mounted) return;
+        setMounted(true)
+    }, [loadTasks, tasks.length, mounted])
 
     // Hydration safety: Don't render date-dependent logic until mounted
     if (!mounted) {

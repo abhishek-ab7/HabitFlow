@@ -21,6 +21,7 @@ import {
   PersonalizedQuote,
   BentoGrid,
   WeeklyReviewWidget,
+  DashboardCenterLoader,
 } from '@/components/dashboard';
 import OnboardingWizard from '@/components/dashboard/OnboardingWizard';
 import DashboardTour from '@/components/dashboard/DashboardTour';
@@ -117,47 +118,60 @@ export default function DashboardContent() {
     }))
   );
 
-  // Check if we need to show onboarding
-  const isEmpty = habits.length === 0 && goals.length === 0 && !habitsLoading && !goalsLoading;
-  const isLoading = habitsLoading || goalsLoading;
+  const [isInitializing, setIsInitializing] = useState(true);
+  const isLoading = habitsLoading || goalsLoading || isInitializing;
+  const isEmpty = habits.length === 0 && goals.length === 0 && !isLoading;
+
+
 
   // Initialize data on mount - OPTIMIZED: Parallel loading
   useEffect(() => {
-    const init = async () => {
-      // Calculate date range once
-      const today = new Date();
-      const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
-      const end = format(endOfMonth(today), 'yyyy-MM-dd');
+    if (authLoading) return;
 
-      // Load user layout settings
-      const supabase = getSupabaseClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
+    if (!user) {
+      setIsInitializing(false);
+      return;
+    }
+
+    let active = true;
+
+    const init = async () => {
+      try {
+        // Calculate date range once
+        const today = new Date();
+        const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
+        const end = format(endOfMonth(today), 'yyyy-MM-dd');
+
         await Promise.all([
-          loadDashboardLayout(session.user.id),
+          loadDashboardLayout(user.id),
           loadUser(),
+          loadHabits(),
+          loadGoals(),
+          loadAllMilestones(),
+          loadCompletions(start, end),
+          loadTasks(),
         ]);
 
         // Check if welcome wizard should be shown (only on brand new signup)
         const onboarded = localStorage.getItem('habitflow_onboarded');
-        if (onboarded !== 'true') {
+        if (onboarded !== 'true' && active) {
           setShowOnboarding(true);
         }
+      } catch (error) {
+        console.error('Failed to initialize dashboard data:', error);
+      } finally {
+        if (active) {
+          setIsInitializing(false);
+        }
       }
-
-      // ⚡ OPTIMIZATION: Load all data in parallel instead of sequential
-      await Promise.all([
-        loadHabits(),
-        loadGoals(),
-        loadAllMilestones(),
-        loadCompletions(start, end),
-        loadTasks(),
-      ]);
     };
 
     init();
-  }, [loadHabits, loadGoals, loadAllMilestones, loadCompletions, loadDashboardLayout, loadUser]);
+
+    return () => {
+      active = false;
+    };
+  }, [authLoading, user, loadHabits, loadGoals, loadAllMilestones, loadCompletions, loadDashboardLayout, loadUser, loadTasks]);
 
   // Trigger dashboard guided tour
   useEffect(() => {
@@ -263,6 +277,14 @@ export default function DashboardContent() {
     await toggleMilestoneComplete(milestoneId);
   };
 
+  if (isLoading) {
+    return (
+      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto flex flex-col items-center justify-center min-h-[500px]">
+        <DashboardCenterLoader />
+      </div>
+    );
+  }
+
   if (showOnboarding) {
     return <OnboardingWizard onComplete={() => setShowOnboarding(false)} />;
   }
@@ -302,23 +324,7 @@ export default function DashboardContent() {
         </div>
 
         <div className="mt-8">
-          <TodayTasksWidget />
-        </div>
-      </div>
-    );
-  }
-  if (isLoading) {
-    return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
-        <Skeleton className="h-40 rounded-2xl mb-8" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32 rounded-xl" />
-          ))}
-        </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Skeleton className="h-64 rounded-xl" />
-          <Skeleton className="h-64 rounded-xl" />
+          <TodayTasksWidget isHydrated={true} />
         </div>
       </div>
     );
@@ -338,7 +344,7 @@ export default function DashboardContent() {
         upcomingDeadlines={upcomingDeadlines.length}
       />
     ),
-    'today-tasks': <TodayTasksWidget />,
+    'today-tasks': <TodayTasksWidget isHydrated={true} />,
     'habit-overview': <HabitOverview habits={habits} completions={completions} onToggle={toggle} />,
     'focus-goal': (
       <FocusGoal
@@ -375,7 +381,7 @@ export default function DashboardContent() {
         </Button>
       </div>
 
-      <HeroSection userName={displayName} currentStreak={currentMaxStreak} />
+      <HeroSection userName={displayName} currentStreak={currentMaxStreak} isHydrated={true} />
 
       <MoodCheckIn />
 

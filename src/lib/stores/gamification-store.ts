@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { getSettings, updateSettings } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
-import type { UserStats, Category } from '../types';
+import type { UserStats, Category, Habit } from '../types';
 import { useHabitStore } from './habit-store';
 import { calculateCurrentStreak, calculateBestStreak } from '../calculations';
 
@@ -76,6 +76,128 @@ interface GamificationState {
     getBufferProgress: () => number; // Returns 0-100% for the current level bar
 }
 
+async function persistAndSyncGamification(
+  userId: string,
+  updates: {
+    xp?: number;
+    level?: number;
+    gems?: number;
+    streakShield?: number;
+    stats?: UserStats;
+    unlockedThemes?: string[];
+    motivation_text?: string;
+  }
+) {
+  await updateSettings({
+    userId,
+    ...updates
+  });
+
+  try {
+    const currentSettings = await getSettings(userId);
+    const syncEngine = getSyncEngine();
+    syncEngine.pushUserSettings({
+      userName: currentSettings?.userName,
+      weekStartsOn: currentSettings?.weekStartsOn ?? 0,
+      defaultCategory: currentSettings?.defaultCategory ?? 'health',
+      xp: currentSettings?.xp ?? 0,
+      level: currentSettings?.level ?? 1,
+      gems: currentSettings?.gems ?? 0,
+      streakShield: currentSettings?.streakShield ?? 0,
+      stats: currentSettings?.stats,
+      unlockedThemes: currentSettings?.unlockedThemes,
+      motivation_text: (currentSettings as any)?.motivation_text ?? '',
+      ...updates
+    });
+  } catch (error) {
+    console.error('Failed to sync gamification updates:', error);
+  }
+}
+
+function updateCategoryStat(stats: UserStats, category: Category, points: number) {
+  switch (category) {
+    case 'health':
+      stats.vitality = Math.max(1, stats.vitality + points);
+      break;
+    case 'learning':
+    case 'work':
+      stats.intelligence = Math.max(1, stats.intelligence + points);
+      break;
+    case 'personal':
+      stats.creativity = Math.max(1, stats.creativity + points);
+      break;
+    case 'finance':
+      stats.wealth = Math.max(1, stats.wealth + points);
+      break;
+    case 'relationships':
+      stats.charisma = Math.max(1, stats.charisma + points);
+      break;
+  }
+}
+
+function calculateUpdatedStats(stats: UserStats, amount: number, category?: Category): UserStats {
+  const newStats = { ...stats };
+  if (amount === 0) return newStats;
+
+  const isPositive = amount > 0;
+  const statPoints = Math.max(1, Math.floor(Math.abs(amount) / 10));
+
+  if (isPositive) {
+    newStats.discipline += statPoints;
+    if (category) {
+      updateCategoryStat(newStats, category, statPoints);
+    }
+  } else {
+    newStats.discipline = Math.max(1, newStats.discipline - statPoints);
+    if (category) {
+      updateCategoryStat(newStats, category, -statPoints);
+    }
+  }
+
+  return newStats;
+}
+
+function calculateStreakAndCompletionRates(
+  habits: Habit[],
+  completions: any[],
+  getTodayProgress: () => { completed: number; total: number; percentage: number }
+) {
+  if (!habits || habits.length === 0) {
+    return { maxCurrentStreak: 0, maxBestStreak: 0, todayCompletionRate: 0 };
+  }
+
+  const currentStreaks = habits.map(h => {
+    const habitCompletions = completions.filter(c => c.habitId === h.id);
+    return calculateCurrentStreak(habitCompletions);
+  });
+  const maxCurrentStreak = Math.max(...currentStreaks, 0);
+
+  const bestStreaks = habits.map(h => {
+    const habitCompletions = completions.filter(c => c.habitId === h.id);
+    return calculateBestStreak(habitCompletions);
+  });
+  const maxBestStreak = Math.max(...bestStreaks, 0);
+
+  const todayProgress = getTodayProgress();
+  const todayCompletionRate = todayProgress.total > 0 ? (todayProgress.completed / todayProgress.total) : 0;
+
+  return { maxCurrentStreak, maxBestStreak, todayCompletionRate };
+}
+
+function handleXpMigrationIfNeeded(userId: string, level: number, xp: number): number {
+  const minCumulativeXp = ((level - 1) * level / 2) * 100;
+  if (level > 1 && xp < minCumulativeXp) {
+    const migratedXp = minCumulativeXp + xp;
+    console.log(`[GamificationStore] Migrating settings.xp from progress-xp to cumulative-xp: ${migratedXp}`);
+    updateSettings({
+      userId,
+      xp: migratedXp
+    });
+    return migratedXp;
+  }
+  return xp;
+}
+
 export const useGamificationStore = create<GamificationState>((set, get) => ({
     totalXp: 0,
     xp: 0,
@@ -87,7 +209,6 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
     rulesModalOpen: false,
     activeRulesTab: 'xp',
 
-    // Default Stats (Will be overridden by DB)
     stats: {
         vitality: 1,
         intelligence: 1,
@@ -108,28 +229,9 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
             if (session?.user?.id) {
                 const settings = await getSettings(session.user.id);
                 if (settings) {
-                    // Fetch habits and completions to calculate real stats
                     const { habits, completions, getTodayProgress } = useHabitStore.getState();
-                    let maxCurrentStreak = 0;
-                    let maxBestStreak = 0;
-                    let todayCompletionRate = 0;
-
-                    if (habits && habits.length > 0) {
-                        const currentStreaks = habits.map(h => {
-                            const habitCompletions = completions.filter(c => c.habitId === h.id);
-                            return calculateCurrentStreak(habitCompletions);
-                        });
-                        maxCurrentStreak = Math.max(...currentStreaks, 0);
-
-                        const bestStreaks = habits.map(h => {
-                            const habitCompletions = completions.filter(c => c.habitId === h.id);
-                            return calculateBestStreak(habitCompletions);
-                        });
-                        maxBestStreak = Math.max(...bestStreaks, 0);
-
-                        const todayProgress = getTodayProgress();
-                        todayCompletionRate = todayProgress.total > 0 ? (todayProgress.completed / todayProgress.total) : 0;
-                    }
+                    const { maxCurrentStreak, maxBestStreak, todayCompletionRate } =
+                        calculateStreakAndCompletionRates(habits, completions, getTodayProgress);
 
                     const disciplineVal = Math.round(Math.min(100, (maxCurrentStreak / 30) * 100));
                     const focusVal = Math.round(Math.min(100, todayCompletionRate * 100));
@@ -143,20 +245,8 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                         resilience: resilienceVal,
                     };
 
-                    let dbXp = settings.xp ?? 0;
-                    let dbLevel = settings.level ?? 1;
-
-                    // Migrate old format (progress-xp) to cumulative total XP
-                    const minCumulativeXp = ((dbLevel - 1) * dbLevel / 2) * 100;
-                    if (dbLevel > 1 && dbXp < minCumulativeXp) {
-                        dbXp = minCumulativeXp + dbXp;
-                        console.log(`[GamificationStore] Migrating settings.xp from progress-xp to cumulative-xp: ${dbXp}`);
-                        // Persist immediately to local storage / IndexedDB
-                        updateSettings({
-                            userId: session.user.id,
-                            xp: dbXp
-                        });
-                    }
+                    const dbLevel = settings.level ?? 1;
+                    const dbXp = handleXpMigrationIfNeeded(session.user.id, dbLevel, settings.xp ?? 0);
 
                     const { level, xpInCurrentLevel } = calculateLevelFromXp(dbXp);
 
@@ -168,7 +258,6 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                         streakShield: settings.streakShield ?? 0,
                         stats: calculatedStats,
                         unlockedThemes: settings.unlockedThemes || [],
-                        // If DB doesn't have these fields yet, use defaults or mock
                         motivationText: (settings as any).motivation_text ?? '',
                     });
                 }
@@ -186,40 +275,16 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
 
     updateMotivation: async (text: string) => {
         set({ motivationText: text });
-        // Persist to DB
         const supabase = getSupabaseClient();
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-            try {
-                await updateSettings({
-                    userId: session.user.id,
-                    motivation_text: text
-                } as any);
-
-                // Sync to Supabase via sync engine
-                const currentSettings = await getSettings(session.user.id);
-                const syncEngine = getSyncEngine();
-                syncEngine.pushUserSettings({
-                    userName: currentSettings?.userName,
-                    weekStartsOn: currentSettings?.weekStartsOn ?? 0,
-                    defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                    xp: get().totalXp || get().xp,
-                    level: get().level,
-                    gems: get().gems,
-                    streakShield: get().streakShield,
-                    stats: get().stats,
-                    unlockedThemes: get().unlockedThemes,
-                    motivation_text: text
-                });
-            } catch (e) {
-                console.warn("Failed to persist motivation text", e);
-            }
+            await persistAndSyncGamification(session.user.id, { motivation_text: text });
         }
     },
 
     addXp: async (amount: number, category?: Category) => {
         const { totalXp, gems, streakShield, stats, unlockedThemes } = get();
-        const newTotalXp = Math.max(0, (totalXp || 0) + amount); // Prevent negative XP
+        const newTotalXp = Math.max(0, (totalXp || 0) + amount);
         
         const { level: oldLevel } = calculateLevelFromXp(totalXp || 0);
         const { level: newLevel, xpInCurrentLevel } = calculateLevelFromXp(newTotalXp);
@@ -233,36 +298,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
             leveledUp = true;
         }
 
-        // Calculate stat increments/reversions (1 point per 10 XP)
-        const newStats = { ...stats };
-        if (amount > 0) {
-            const statPoints = Math.max(1, Math.floor(amount / 10));
-            newStats.discipline += statPoints;
-            if (category) {
-                switch (category) {
-                    case 'health': newStats.vitality += statPoints; break;
-                    case 'learning':
-                    case 'work': newStats.intelligence += statPoints; break;
-                    case 'personal': newStats.creativity += statPoints; break;
-                    case 'finance': newStats.wealth += statPoints; break;
-                    case 'relationships': newStats.charisma += statPoints; break;
-                }
-            }
-        } else if (amount < 0) {
-            const absAmount = Math.abs(amount);
-            const statPoints = Math.max(1, Math.floor(absAmount / 10));
-            newStats.discipline = Math.max(1, newStats.discipline - statPoints);
-            if (category) {
-                switch (category) {
-                    case 'health': newStats.vitality = Math.max(1, newStats.vitality - statPoints); break;
-                    case 'learning':
-                    case 'work': newStats.intelligence = Math.max(1, newStats.intelligence - statPoints); break;
-                    case 'personal': newStats.creativity = Math.max(1, newStats.creativity - statPoints); break;
-                    case 'finance': newStats.wealth = Math.max(1, newStats.wealth - statPoints); break;
-                    case 'relationships': newStats.charisma = Math.max(1, newStats.charisma - statPoints); break;
-                }
-            }
-        }
+        const newStats = calculateUpdatedStats(stats, amount, category);
 
         set({ 
             totalXp: newTotalXp,
@@ -273,27 +309,10 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
             stats: newStats
         });
 
-        // Persist to DB
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            await updateSettings({
-                userId: session.user.id,
-                xp: newTotalXp, // Save total cumulative XP
-                level: newLevel,
-                gems: newGems,
-                streakShield,
-                stats: newStats,
-                unlockedThemes
-            });
-
-            // Sync to Supabase via sync engine with COMPLETE settings
-            const currentSettings = await getSettings(session.user.id);
-            const syncEngine = getSyncEngine();
-            syncEngine.pushUserSettings({
-                userName: currentSettings?.userName,
-                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
-                defaultCategory: currentSettings?.defaultCategory ?? 'health',
+            await persistAndSyncGamification(session.user.id, {
                 xp: newTotalXp,
                 level: newLevel,
                 gems: newGems,
@@ -316,24 +335,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { totalXp, xp, level, streakShield } = get();
-            await updateSettings({
-                userId: session.user.id,
-                gems: newGems
-            });
-
-            // Sync to Supabase with complete settings
-            const currentSettings = await getSettings(session.user.id);
-            const syncEngine = getSyncEngine();
-            syncEngine.pushUserSettings({
-                userName: currentSettings?.userName,
-                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
-                defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp: totalXp || xp,
-                level,
-                gems: newGems,
-                streakShield
-            });
+            await persistAndSyncGamification(session.user.id, { gems: newGems });
         }
         return true;
     },
@@ -346,23 +348,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { totalXp, xp, level, streakShield } = get();
-            await updateSettings({
-                userId: session.user.id,
-                gems: newGems
-            });
-
-            const currentSettings = await getSettings(session.user.id);
-            const syncEngine = getSyncEngine();
-            syncEngine.pushUserSettings({
-                userName: currentSettings?.userName,
-                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
-                defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp: totalXp || xp,
-                level,
-                gems: newGems,
-                streakShield
-            });
+            await persistAndSyncGamification(session.user.id, { gems: newGems });
         }
     },
 
@@ -378,22 +364,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { totalXp, xp, level } = get();
-            await updateSettings({
-                userId: session.user.id,
-                gems: newGems,
-                streakShield: newShields
-            });
-
-            // Sync to Supabase with complete settings
-            const currentSettings = await getSettings(session.user.id);
-            const syncEngine = getSyncEngine();
-            syncEngine.pushUserSettings({
-                userName: currentSettings?.userName,
-                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
-                defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp: totalXp || xp,
-                level,
+            await persistAndSyncGamification(session.user.id, {
                 gems: newGems,
                 streakShield: newShields
             });
@@ -411,22 +382,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { totalXp, xp, level, gems } = get();
-            await updateSettings({
-                userId: session.user.id,
-                streakShield: newShields
-            });
-
-            // Sync to Supabase with complete settings
-            const currentSettings = await getSettings(session.user.id);
-            const syncEngine = getSyncEngine();
-            syncEngine.pushUserSettings({
-                userName: currentSettings?.userName,
-                weekStartsOn: currentSettings?.weekStartsOn ?? 0,
-                defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp: totalXp || xp,
-                level,
-                gems,
+            await persistAndSyncGamification(session.user.id, {
                 streakShield: newShields
             });
         }

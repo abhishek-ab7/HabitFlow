@@ -1,5 +1,15 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, Routine, HabitRoutine, RoutineCompletion, MoodLog } from './types';
+import type { MoodType } from './types';
+
+// Domain Type Aliases to resolve Primitive Obsession
+export type UserId = string;
+export type HabitId = string;
+export type GoalId = string;
+export type MilestoneId = string;
+export type TaskId = string;
+export type RoutineId = string;
+export type ISODate = string;
 
 // Define the database schema
 const db = new Dexie('HabitFlowDB') as Dexie & {
@@ -26,7 +36,6 @@ db.version(5).stores({
   routines: 'id, userId, isActive, orderIndex',
   habitRoutines: 'id, habitId, routineId, [habitId+routineId]',
 }).upgrade(async tx => {
-  // Migrate existing routineId data to habitRoutines junction table
   const habits = await tx.table('habits').toArray();
   const habitRoutines = habits
     .filter((h: any) => h.routineId)
@@ -54,7 +63,6 @@ db.version(6).stores({
   routines: 'id, userId, isActive, orderIndex, updatedAt',
   habitRoutines: 'id, habitId, routineId, [habitId+routineId], updatedAt',
 }).upgrade(async tx => {
-  // Backfill updatedAt = createdAt for existing records (Option A)
   const now = new Date().toISOString();
 
   // Completions
@@ -130,7 +138,6 @@ db.version(7).stores({
   habitRoutines: 'id, habitId, routineId, [habitId+routineId], updatedAt',
   routineCompletions: 'id, userId, routineId, date, [routineId+date], updatedAt',
 }).upgrade(async tx => {
-  // Backfill depth = 0 for existing tasks
   const tasks = await tx.table('tasks').toArray();
   for (const task of tasks) {
     if (task.depth === undefined) {
@@ -157,24 +164,67 @@ db.version(8).stores({
 });
 
 // ==================
+// HELPERS FOR REFACTORING
+// ==================
+
+async function getOrCreateCompletion(
+  habitId: HabitId,
+  date: ISODate,
+  userId: UserId,
+  defaults: Partial<HabitCompletion> = {}
+): Promise<{ existing: boolean; completion: HabitCompletion }> {
+  const existing = await db.completions
+    .where('[habitId+date]')
+    .equals([habitId, date])
+    .first();
+
+  if (existing) {
+    return { existing: true, completion: existing };
+  }
+
+  const now = new Date().toISOString();
+  const completion: HabitCompletion = {
+    id: crypto.randomUUID(),
+    userId,
+    habitId,
+    date,
+    completed: false,
+    createdAt: now,
+    updatedAt: now,
+    ...defaults
+  };
+  return { existing: false, completion };
+}
+
+function resolveDuplicateEntity<T extends { id: string; createdAt: string }>(
+  existing: T,
+  current: T
+): { keepId: string; discardId: string } {
+  const isExistingOlder = new Date(existing.createdAt) < new Date(current.createdAt);
+  return isExistingOlder
+    ? { keepId: existing.id, discardId: current.id }
+    : { keepId: current.id, discardId: existing.id };
+}
+
+// ==================
 // HABIT FUNCTIONS
 // ==================
 
-export async function getHabits(userId: string): Promise<Habit[]> {
+export async function getHabits(userId: UserId): Promise<Habit[]> {
   if (!userId) return [];
   return db.habits.where('userId').equals(userId).filter(h => !h.archived).sortBy('order');
 }
 
-export async function getArchivedHabits(userId: string): Promise<Habit[]> {
+export async function getArchivedHabits(userId: UserId): Promise<Habit[]> {
   if (!userId) return [];
   return db.habits.where('userId').equals(userId).filter(h => !!h.archived).toArray();
 }
 
-export async function createHabit(data: HabitFormData & { userId: string }): Promise<Habit> {
+export async function createHabit(data: HabitFormData & { userId: UserId }): Promise<Habit> {
   const now = new Date().toISOString();
   const habit: Habit = {
     id: crypto.randomUUID(),
-    userId: data.userId, // Explicitly set
+    userId: data.userId,
     name: data.name,
     icon: data.icon || '✓',
     category: data.category,
@@ -189,27 +239,24 @@ export async function createHabit(data: HabitFormData & { userId: string }): Pro
     difficulty: data.difficulty || 'medium',
   };
 
-
   await db.habits.add(habit);
   return habit;
 }
 
-export async function updateHabit(id: string, data: Partial<Habit>): Promise<void> {
+export async function updateHabit(id: HabitId, data: Partial<Habit>): Promise<void> {
   await db.habits.update(id, { ...data, updatedAt: new Date().toISOString() });
 }
 
-export async function deleteHabit(id: string): Promise<void> {
-  // Soft delete - mark as archived with timestamp
+export async function deleteHabit(id: HabitId): Promise<void> {
   const now = new Date().toISOString();
   await db.habits.update(id, {
     archived: true,
     archivedAt: now,
     updatedAt: now
   });
-  // Note: We keep completions for history
 }
 
-export async function reorderHabits(orderedIds: string[]): Promise<void> {
+export async function reorderHabits(orderedIds: HabitId[]): Promise<void> {
   await db.transaction('rw', db.habits, async () => {
     for (let i = 0; i < orderedIds.length; i++) {
       await db.habits.update(orderedIds[i], { order: i });
@@ -221,103 +268,51 @@ export async function reorderHabits(orderedIds: string[]): Promise<void> {
 // COMPLETION FUNCTIONS
 // ==================
 
-export async function toggleCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion> {
-  const existing = await db.completions
-    .where('[habitId+date]')
-    .equals([habitId, date])
-    .first();
-
+export async function toggleCompletion(habitId: HabitId, date: ISODate, userId: UserId): Promise<HabitCompletion> {
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: true });
   const now = new Date().toISOString();
 
   if (existing) {
-    // Soft delete / Toggle - update status instead of deleting
-    const updated = {
-      ...existing,
-      completed: !existing.completed,
-      updatedAt: now
-    };
-    await db.completions.update(existing.id, updated);
-    return updated;
+    completion.completed = !completion.completed;
+    completion.updatedAt = now;
+    await db.completions.update(completion.id, completion);
   } else {
-    // Create new
-    const completion: HabitCompletion = {
-      id: crypto.randomUUID(),
-      userId,
-      habitId,
-      date,
-      completed: true,
-      createdAt: now,
-      updatedAt: now,
-    };
     await db.completions.add(completion);
-    return completion;
   }
+  return completion;
 }
 
-export async function freezeCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion> {
-  const existing = await db.completions
-    .where('[habitId+date]')
-    .equals([habitId, date])
-    .first();
-
+export async function freezeCompletion(habitId: HabitId, date: ISODate, userId: UserId): Promise<HabitCompletion> {
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: true, status: 'frozen' });
   const now = new Date().toISOString();
 
+  completion.completed = true;
+  completion.status = 'frozen';
+  completion.updatedAt = now;
+
   if (existing) {
-    const updated: HabitCompletion = {
-      ...existing,
-      completed: true, // Keep true so we don't break simple completion logic
-      status: 'frozen',
-      updatedAt: now
-    };
-    await db.completions.update(existing.id, updated);
-    return updated;
+    await db.completions.update(completion.id, completion);
   } else {
-    const completion: HabitCompletion = {
-      id: crypto.randomUUID(),
-      userId,
-      habitId,
-      date,
-      completed: true,
-      status: 'frozen',
-      createdAt: now,
-      updatedAt: now,
-    };
     await db.completions.add(completion);
-    return completion;
   }
+  return completion;
 }
 
-export async function unfreezeCompletion(habitId: string, date: string, userId: string): Promise<HabitCompletion> {
-  const existing = await db.completions
-    .where('[habitId+date]')
-    .equals([habitId, date])
-    .first();
-
+export async function unfreezeCompletion(habitId: HabitId, date: ISODate, userId: UserId): Promise<HabitCompletion> {
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: false });
   const now = new Date().toISOString();
 
+  completion.completed = false;
+  completion.status = undefined;
+  completion.updatedAt = now;
+
   if (existing) {
-    const updated: HabitCompletion = {
-      ...existing,
-      completed: false,
-      status: undefined,
-      updatedAt: now
-    };
-    await db.completions.update(existing.id, updated);
-    return updated;
-  } else {
-    return {
-      id: crypto.randomUUID(),
-      userId,
-      habitId,
-      date,
-      completed: false,
-      createdAt: now,
-      updatedAt: now,
-    };
+    await db.completions.update(completion.id, completion);
   }
+  return completion;
 }
 
-export async function batchCompleteHabits(habitIds: string[], date: string, userId: string): Promise<HabitCompletion[]> {
+export async function batchCompleteHabits(habitIds: HabitId[], date: ISODate, userId: UserId): Promise<HabitCompletion[]> {
   const results: HabitCompletion[] = [];
   
   await db.transaction('rw', db.completions, async () => {
@@ -362,7 +357,7 @@ export async function batchCompleteHabits(habitIds: string[], date: string, user
   return results;
 }
 
-export async function getAllCompletionsInRange(startDate: string, endDate: string, userId: string): Promise<HabitCompletion[]> {
+export async function getAllCompletionsInRange(startDate: ISODate, endDate: ISODate, userId: UserId): Promise<HabitCompletion[]> {
   return db.completions
     .where('date')
     .between(startDate, endDate, true, true)
@@ -371,23 +366,19 @@ export async function getAllCompletionsInRange(startDate: string, endDate: strin
 }
 
 export async function cleanupDuplicateCompletions(): Promise<number> {
-  // Find and remove duplicate completions (same habitId + date)
   const allCompletions = await db.completions.toArray();
-  const seen = new Map<string, string>(); // key: habitId-date, value: first completion id
+  const seen = new Map<string, string>();
   const duplicates: string[] = [];
 
   for (const completion of allCompletions) {
     const key = `${completion.habitId}-${completion.date}`;
     if (seen.has(key)) {
-      // This is a duplicate, mark for deletion
       duplicates.push(completion.id);
     } else {
-      // First occurrence, keep it
       seen.set(key, completion.id);
     }
   }
 
-  // Delete duplicates
   if (duplicates.length > 0) {
     await db.completions.bulkDelete(duplicates);
   }
@@ -396,48 +387,33 @@ export async function cleanupDuplicateCompletions(): Promise<number> {
 }
 
 export async function cleanupDuplicateHabits(): Promise<number> {
-  // Find and remove duplicate habits (same name + category)
   const allHabits = await db.habits.toArray();
-  const seen = new Map<string, Habit>(); // key: name-category, value: first habit
+  const seen = new Map<string, Habit>();
   const duplicates: string[] = [];
-  const completionUpdates: Array<{ id: string; habitId: string }> = [];
+  const completionUpdates: Array<{ id: string; habitId: HabitId }> = [];
 
   for (const habit of allHabits) {
     const key = `${habit.name}-${habit.category}`;
     const existing = seen.get(key);
 
     if (existing) {
-      // This is a duplicate
-      // Keep the one with earlier creation date
-      if (new Date(habit.createdAt) < new Date(existing.createdAt)) {
-        // Current habit is older, keep it and delete existing
-        duplicates.push(existing.id);
+      const { keepId, discardId } = resolveDuplicateEntity(existing, habit);
+      duplicates.push(discardId);
 
-        // Mark completions for update from existing to current
-        const comps = await db.completions.where('habitId').equals(existing.id).toArray();
-        comps.forEach(c => completionUpdates.push({ id: c.id, habitId: habit.id }));
+      const keptHabit = keepId === habit.id ? habit : existing;
+      seen.set(key, keptHabit);
 
-        seen.set(key, habit);
-      } else {
-        // Existing is older, delete current
-        duplicates.push(habit.id);
-
-        // Mark completions for update from current to existing
-        const comps = await db.completions.where('habitId').equals(habit.id).toArray();
-        comps.forEach(c => completionUpdates.push({ id: c.id, habitId: existing.id }));
-      }
+      const comps = await db.completions.where('habitId').equals(discardId).toArray();
+      comps.forEach(c => completionUpdates.push({ id: c.id, habitId: keepId }));
     } else {
-      // First occurrence, keep it
       seen.set(key, habit);
     }
   }
 
-  // Update completions to point to the kept habit
   for (const update of completionUpdates) {
     await db.completions.update(update.id, { habitId: update.habitId });
   }
 
-  // Delete duplicate habits
   if (duplicates.length > 0) {
     await db.habits.bulkDelete(duplicates);
   }
@@ -446,48 +422,33 @@ export async function cleanupDuplicateHabits(): Promise<number> {
 }
 
 export async function cleanupDuplicateGoals(): Promise<number> {
-  // Find and remove duplicate goals (same title, case-insensitive)
   const allGoals = await db.goals.toArray();
-  const seen = new Map<string, Goal>(); // key: title (lowercase), value: first goal
+  const seen = new Map<string, Goal>();
   const duplicates: string[] = [];
-  const milestoneUpdates: Array<{ id: string; goalId: string }> = [];
+  const milestoneUpdates: Array<{ id: string; goalId: GoalId }> = [];
 
   for (const goal of allGoals) {
     const key = goal.title.toLowerCase();
     const existing = seen.get(key);
 
     if (existing) {
-      // This is a duplicate
-      // Keep the one with earlier creation date
-      if (new Date(goal.createdAt) < new Date(existing.createdAt)) {
-        // Current goal is older, keep it and delete existing
-        duplicates.push(existing.id);
+      const { keepId, discardId } = resolveDuplicateEntity(existing, goal);
+      duplicates.push(discardId);
 
-        // Mark milestones for update from existing to current
-        const miles = await db.milestones.where('goalId').equals(existing.id).toArray();
-        miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: goal.id }));
+      const keptGoal = keepId === goal.id ? goal : existing;
+      seen.set(key, keptGoal);
 
-        seen.set(key, goal);
-      } else {
-        // Existing is older, delete current
-        duplicates.push(goal.id);
-
-        // Mark milestones for update from current to existing
-        const miles = await db.milestones.where('goalId').equals(goal.id).toArray();
-        miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: existing.id }));
-      }
+      const miles = await db.milestones.where('goalId').equals(discardId).toArray();
+      miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: keepId }));
     } else {
-      // First occurrence, keep it
       seen.set(key, goal);
     }
   }
 
-  // Update milestones to point to the kept goal
   for (const update of milestoneUpdates) {
     await db.milestones.update(update.id, { goalId: update.goalId });
   }
 
-  // Delete duplicate goals
   if (duplicates.length > 0) {
     await db.goals.bulkDelete(duplicates);
   }
@@ -499,12 +460,12 @@ export async function cleanupDuplicateGoals(): Promise<number> {
 // GOAL FUNCTIONS
 // ==================
 
-export async function getGoals(userId: string): Promise<Goal[]> {
+export async function getGoals(userId: UserId): Promise<Goal[]> {
   if (!userId) return [];
   return db.goals.where('userId').equals(userId).filter(g => !g.archived).toArray();
 }
 
-export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDate'> & { userId: string }): Promise<Goal> {
+export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDate'> & { userId: UserId }): Promise<Goal> {
   const now = new Date().toISOString();
   const goal: Goal = {
     id: crypto.randomUUID(),
@@ -518,19 +479,18 @@ export async function createGoal(data: Omit<Goal, 'id' | 'createdAt' | 'startDat
   return goal;
 }
 
-export async function updateGoal(id: string, data: Partial<Goal>): Promise<void> {
+export async function updateGoal(id: GoalId, data: Partial<Goal>): Promise<void> {
   await db.goals.update(id, { ...data, updatedAt: new Date().toISOString() });
 }
 
-export async function deleteGoal(id: string): Promise<void> {
+export async function deleteGoal(id: GoalId): Promise<void> {
   await db.goals.delete(id);
   await db.milestones.where('goalId').equals(id).delete();
 }
 
-export async function setFocusGoal(goalId: string): Promise<void> {
+export async function setFocusGoal(goalId: GoalId): Promise<void> {
   const goal = await db.goals.get(goalId);
   if (goal) {
-    // Toggle the focus status
     await db.goals.update(goalId, {
       isFocus: !goal.isFocus,
       updatedAt: new Date().toISOString()
@@ -542,7 +502,7 @@ export async function setFocusGoal(goalId: string): Promise<void> {
 // MILESTONE FUNCTIONS
 // ==================
 
-export async function getMilestones(goalId: string): Promise<Milestone[]> {
+export async function getMilestones(goalId: GoalId): Promise<Milestone[]> {
   return db.milestones.where('goalId').equals(goalId).sortBy('order');
 }
 
@@ -563,15 +523,15 @@ export async function createMilestone(data: Omit<Milestone, 'id' | 'completed' |
   return milestone;
 }
 
-export async function updateMilestone(id: string, data: Partial<Milestone>): Promise<void> {
+export async function updateMilestone(id: MilestoneId, data: Partial<Milestone>): Promise<void> {
   await db.milestones.update(id, { ...data, updatedAt: new Date().toISOString() });
 }
 
-export async function deleteMilestone(id: string): Promise<void> {
+export async function deleteMilestone(id: MilestoneId): Promise<void> {
   await db.milestones.delete(id);
 }
 
-export async function toggleMilestone(id: string): Promise<Milestone | null> {
+export async function toggleMilestone(id: MilestoneId): Promise<Milestone | null> {
   const milestone = await db.milestones.get(id);
   if (!milestone) return null;
 
@@ -591,12 +551,12 @@ export async function toggleMilestone(id: string): Promise<Milestone | null> {
 // USER SETTINGS FUNCTIONS
 // ==================
 
-export async function getSettings(userId: string): Promise<UserSettings | undefined> {
+export async function getSettings(userId: UserId): Promise<UserSettings | undefined> {
   if (!userId) return undefined;
   return db.userSettings.where('userId').equals(userId).first();
 }
 
-export async function updateSettings(data: Partial<UserSettings> & { userId: string }): Promise<void> {
+export async function updateSettings(data: Partial<UserSettings> & { userId: UserId }): Promise<void> {
   if (!data.userId) return;
   const existing = await getSettings(data.userId);
   const now = new Date().toISOString();
@@ -606,7 +566,7 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: str
   } else {
     const settings: UserSettings = {
       id: crypto.randomUUID(),
-      userId: data.userId, // Explicitly set
+      userId: data.userId,
       theme: data.theme || 'system',
       userName: data.userName,
       weekStartsOn: data.weekStartsOn ?? 0,
@@ -649,14 +609,10 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: str
 // DEMO DATA
 // ==================
 
-export async function seedDemoData(userId: string): Promise<void> {
-  // Clear existing data for this user
+export async function seedDemoData(userId: UserId): Promise<void> {
   await db.habits.where('userId').equals(userId).delete();
   await db.completions.where('userId').equals(userId).delete();
-  // Note: We might want to keep goals/milestones or clear them too if they are demo data
-  // For now, let's strictly clear what we are about to seed to avoid duplicates if run multiple times
 
-  // Create demo habits
   const demoHabits: Habit[] = [
     {
       id: crypto.randomUUID(),
@@ -695,7 +651,6 @@ export async function seedDemoData(userId: string): Promise<void> {
 
   await db.habits.bulkAdd(demoHabits);
 
-  // Create demo completions for the past week
   const today = new Date();
   const completions: HabitCompletion[] = [];
 
@@ -705,7 +660,6 @@ export async function seedDemoData(userId: string): Promise<void> {
     const dateStr = date.toISOString().split('T')[0];
 
     demoHabits.forEach((habit, index) => {
-      // Random completion pattern
       if (Math.random() > 0.3) {
         completions.push({
           id: crypto.randomUUID(),
@@ -725,12 +679,12 @@ export async function seedDemoData(userId: string): Promise<void> {
 // TASK FUNCTIONS
 // ==================
 
-export async function getTasks(userId: string): Promise<Task[]> {
+export async function getTasks(userId: UserId): Promise<Task[]> {
   if (!userId) return [];
   return db.tasks.where('userId').equals(userId).filter(t => t.status !== 'archived').reverse().sortBy('created_at');
 }
 
-export async function createTask(data: TaskFormData & { userId: string }): Promise<Task> {
+export async function createTask(data: TaskFormData & { userId: UserId }): Promise<Task> {
   const now = new Date().toISOString();
   const task: Task = {
     id: crypto.randomUUID(),
@@ -752,17 +706,15 @@ export async function createTask(data: TaskFormData & { userId: string }): Promi
     isImportant: data.isImportant ?? false,
   };
 
-
   await db.tasks.add(task);
   return task;
 }
 
-export async function updateTask(id: string, data: Partial<Task>): Promise<void> {
+export async function updateTask(id: TaskId, data: Partial<Task>): Promise<void> {
   await db.tasks.update(id, { ...data, updated_at: new Date().toISOString() });
 }
 
-export async function deleteTask(id: string): Promise<void> {
-  // Soft delete
+export async function deleteTask(id: TaskId): Promise<void> {
   await db.tasks.update(id, { status: 'archived', updated_at: new Date().toISOString() });
 }
 
@@ -770,8 +722,7 @@ export async function deleteTask(id: string): Promise<void> {
 // HABIT-ROUTINE JUNCTION FUNCTIONS
 // ==================
 
-export async function linkHabitToRoutine(habitId: string, routineId: string, orderIndex: number = 0): Promise<HabitRoutine> {
-  // Check if link already exists
+export async function linkHabitToRoutine(habitId: HabitId, routineId: RoutineId, orderIndex: number = 0): Promise<HabitRoutine> {
   const existing = await db.habitRoutines
     .where('[habitId+routineId]')
     .equals([habitId, routineId])
@@ -795,7 +746,7 @@ export async function linkHabitToRoutine(habitId: string, routineId: string, ord
   return link;
 }
 
-export async function unlinkHabitFromRoutine(habitId: string, routineId: string): Promise<void> {
+export async function unlinkHabitFromRoutine(habitId: HabitId, routineId: RoutineId): Promise<void> {
   const link = await db.habitRoutines
     .where('[habitId+routineId]')
     .equals([habitId, routineId])
@@ -806,7 +757,7 @@ export async function unlinkHabitFromRoutine(habitId: string, routineId: string)
   }
 }
 
-export async function getRoutinesForHabit(habitId: string): Promise<Routine[]> {
+export async function getRoutinesForHabit(habitId: HabitId): Promise<Routine[]> {
   const links = await db.habitRoutines.where('habitId').equals(habitId).toArray();
   const routineIds = links.map(link => link.routineId);
 
@@ -814,22 +765,14 @@ export async function getRoutinesForHabit(habitId: string): Promise<Routine[]> {
   return routines;
 }
 
-// Batch version to avoid N+1 queries - loads routines for multiple habits at once
-export async function getRoutinesForHabits(habitIds: string[]): Promise<Map<string, Routine[]>> {
-  // Load all habit-routine links for these habits in one query
+export async function getRoutinesForHabits(habitIds: HabitId[]): Promise<Map<HabitId, Routine[]>> {
   const links = await db.habitRoutines.where('habitId').anyOf(habitIds).toArray();
-
-  // Get unique routine IDs
   const routineIds = [...new Set(links.map(link => link.routineId))];
-
-  // Load all routines in one query
   const routines = await db.routines.where('id').anyOf(routineIds).toArray();
 
-  // Create a map of routineId -> Routine for fast lookup
   const routineMap = new Map(routines.map(r => [r.id, r]));
 
-  // Group routines by habitId
-  const result = new Map<string, Routine[]>();
+  const result = new Map<HabitId, Routine[]>();
   for (const link of links) {
     const routine = routineMap.get(link.routineId);
     if (routine) {
@@ -841,7 +784,7 @@ export async function getRoutinesForHabits(habitIds: string[]): Promise<Map<stri
   return result;
 }
 
-export async function getHabitsForRoutine(routineId: string): Promise<Habit[]> {
+export async function getHabitsForRoutine(routineId: RoutineId): Promise<Habit[]> {
   const links = await db.habitRoutines
     .where('routineId')
     .equals(routineId)
@@ -850,12 +793,11 @@ export async function getHabitsForRoutine(routineId: string): Promise<Habit[]> {
   const habitIds = links.map(link => link.habitId);
   const habits = await db.habits.where('id').anyOf(habitIds).toArray();
 
-  // Sort habits according to the order in the routine
   const habitMap = new Map(habits.map(h => [h.id, h]));
   return links.map(link => habitMap.get(link.habitId)).filter(Boolean) as Habit[];
 }
 
-export async function updateHabitRoutineOrder(habitId: string, routineId: string, newOrderIndex: number): Promise<void> {
+export async function updateHabitRoutineOrder(habitId: HabitId, routineId: RoutineId, newOrderIndex: number): Promise<void> {
   const link = await db.habitRoutines
     .where('[habitId+routineId]')
     .equals([habitId, routineId])
@@ -869,7 +811,7 @@ export async function updateHabitRoutineOrder(habitId: string, routineId: string
   }
 }
 
-export async function unlinkAllHabitsFromRoutine(routineId: string): Promise<void> {
+export async function unlinkAllHabitsFromRoutine(routineId: RoutineId): Promise<void> {
   const links = await db.habitRoutines.where('routineId').equals(routineId).toArray();
   const linkIds = links.map(link => link.id);
   await db.habitRoutines.bulkDelete(linkIds);
@@ -880,83 +822,51 @@ export async function unlinkAllHabitsFromRoutine(routineId: string): Promise<voi
 // ==================
 
 export async function updateCompletionNote(
-  habitId: string,
-  date: string,
+  habitId: HabitId,
+  date: ISODate,
   note: string,
-  userId: string
+  userId: UserId
 ): Promise<HabitCompletion> {
-  const existing = await db.completions
-    .where('[habitId+date]')
-    .equals([habitId, date])
-    .first();
-
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: true, note });
   const now = new Date().toISOString();
 
-  if (existing) {
-    const updated = {
-      ...existing,
-      note,
-      updatedAt: now,
-    };
-    await db.completions.update(existing.id, updated);
-    return updated;
-  } else {
-    const completion: HabitCompletion = {
-      id: crypto.randomUUID(),
-      userId,
-      habitId,
-      date,
-      completed: true, // Auto-complete when adding a note/journal entry
-      note,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.completions.add(completion);
-    return completion;
+  completion.note = note;
+  completion.updatedAt = now;
+  if (!existing) {
+    completion.completed = true;
   }
+
+  if (existing) {
+    await db.completions.update(completion.id, completion);
+  } else {
+    await db.completions.add(completion);
+  }
+  return completion;
 }
 
 export async function updateCompletionValue(
-  habitId: string,
-  date: string,
+  habitId: HabitId,
+  date: ISODate,
   value: number,
-  userId: string
+  userId: UserId
 ): Promise<HabitCompletion> {
-  const existing = await db.completions
-    .where('[habitId+date]')
-    .equals([habitId, date])
-    .first();
-
-  const now = new Date().toISOString();
-  
-  // Find the habit to know the target value
   const habit = await db.habits.get(habitId);
   const targetValue = habit?.targetValue || 1;
   const completed = value >= targetValue;
 
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed, value });
+  const now = new Date().toISOString();
+
+  completion.value = value;
+  completion.completed = completed;
+  completion.updatedAt = now;
+
   if (existing) {
-    const updated = {
-      ...existing,
-      value,
-      completed,
-      updatedAt: now,
-    };
-    await db.completions.update(existing.id, updated);
-    return updated;
+    await db.completions.update(completion.id, completion);
   } else {
-    const completion: HabitCompletion = {
-      id: crypto.randomUUID(),
-      userId,
-      habitId,
-      date,
-      completed,
-      value,
-      createdAt: now,
-      updatedAt: now,
-    };
     await db.completions.add(completion);
-    return completion;
   }
+  return completion;
 }
 
 // ==================
@@ -964,9 +874,9 @@ export async function updateCompletionValue(
 // ==================
 
 export async function getMoodLogs(
-  userId: string,
-  startDate: string,
-  endDate: string
+  userId: UserId,
+  startDate: ISODate,
+  endDate: ISODate
 ): Promise<MoodLog[]> {
   if (!userId) return [];
   return db.moodLogs
@@ -977,8 +887,8 @@ export async function getMoodLogs(
 }
 
 export async function setMoodLog(
-  userId: string,
-  date: string,
+  userId: UserId,
+  date: ISODate,
   mood: MoodType
 ): Promise<MoodLog> {
   const existing = await db.moodLogs
@@ -1009,7 +919,5 @@ export async function setMoodLog(
     return newLog;
   }
 }
-
-import type { MoodType } from './types';
 
 export { db };
