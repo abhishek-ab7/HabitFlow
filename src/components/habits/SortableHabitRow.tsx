@@ -220,8 +220,17 @@ export function SortableHabitRow({
         if (isFutureDate || !onFreeze) return;
         
         const cellKey = `${habit.id}-${dateStr}`;
+        const comp = getCompletion(dateStr);
+        const isCurrentlyFrozen = comp?.status === 'frozen';
+
         setRippleCell(cellKey);
         triggerPop(); // Provide feedback for freeze too
+
+        if (!isCurrentlyFrozen) {
+            setBurstActive(dateStr);
+            setTimeout(() => setBurstActive(null), 800);
+        }
+
         try {
             await onFreeze(habit.id, dateStr);
         } catch (err) {
@@ -374,13 +383,16 @@ export function SortableHabitRow({
                     const cellKey = `${habit.id}-${dateStr}`;
                     const showRipple = rippleCell === cellKey && (isCompleted || isFrozen);
 
+                    const difficulty = habit.difficulty || 'medium';
+                    const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+
                     const innerButton = (
                         <motion.button
                             onClick={(e) => handleCellClick(dateStr, isFutureDate, e.shiftKey)}
                             onContextMenu={(e) => handleCellRightClick(e, dateStr, isFutureDate)}
                             disabled={isFutureDate}
                             className={cn(
-                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden",
+                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden flex-shrink-0",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                 isCompleted
                                     ? "bg-success/20 text-success hover:bg-success/30"
@@ -392,8 +404,8 @@ export function SortableHabitRow({
                                                 ? "bg-primary/10 border-2 border-dashed border-primary/30 hover:bg-primary/20"
                                                 : "bg-muted/40 hover:bg-muted/60",
                             )}
-                            animate={burstActive === dateStr ? { scale: [1, 1.4, 1] } : { scale: 1 }}
-                            transition={burstActive === dateStr ? { type: "spring", stiffness: 300, damping: 10 } : { scale: { duration: 0.2 } }}
+                            animate={{ scale: burstActive === dateStr ? 1.25 : 1 }}
+                            transition={{ type: "spring", stiffness: 500, damping: 15 }}
                             whileHover={!isFutureDate ? { scale: 1.05 } : {}}
                             whileTap={!isFutureDate ? { scale: 0.95 } : {}}
                             title={isFutureDate ? undefined : "Left click: toggle/increment. Shift+click: decrement. Right click: freeze."}
@@ -405,7 +417,9 @@ export function SortableHabitRow({
                                         const distance = 20 + Math.random() * 15;
                                         const x = Math.cos((angle * Math.PI) / 180) * distance;
                                         const y = Math.sin((angle * Math.PI) / 180) * distance;
-                                        const colorClass = ['bg-emerald-400', 'bg-teal-400', 'bg-green-400', 'bg-yellow-400'][i % 4];
+                                        const colorClass = isFrozen
+                                            ? ['bg-sky-400', 'bg-cyan-400', 'bg-blue-300', 'bg-sky-200'][i % 4]
+                                            : ['bg-emerald-400', 'bg-teal-400', 'bg-green-400', 'bg-yellow-400'][i % 4];
                                         return (
                                             <motion.div
                                                 key={i}
@@ -459,7 +473,7 @@ export function SortableHabitRow({
                                 <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500" />
                             )}
 
-                            <SuccessRipple trigger={showRipple} />
+                            <SuccessRipple trigger={showRipple} color={isFrozen ? "bg-sky-400/40" : "bg-success/30"} />
                         </motion.button>
                     );
 
@@ -487,9 +501,12 @@ export function SortableHabitRow({
                                         animate={{ opacity: 1, y: -26, scale: 1.1 }}
                                         exit={{ opacity: 0, scale: 0.9 }}
                                         transition={{ duration: 0.8, ease: "easeOut" }}
-                                        className="absolute bottom-full left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-500 dark:text-emerald-400 drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] z-30 pointer-events-none whitespace-nowrap"
+                                        className={cn(
+                                            "absolute bottom-full left-1/2 -translate-x-1/2 text-[10px] font-extrabold drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] z-30 pointer-events-none whitespace-nowrap",
+                                            isFrozen ? "text-sky-500 dark:text-sky-400" : "text-emerald-500 dark:text-emerald-400"
+                                        )}
                                     >
-                                        +15 XP
+                                        {isFrozen ? "STREAK SAFE" : `+${xpAmount} XP`}
                                     </motion.span>
                                 )}
                             </AnimatePresence>
