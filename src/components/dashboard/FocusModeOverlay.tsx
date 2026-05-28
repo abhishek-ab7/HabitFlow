@@ -45,6 +45,15 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
   }, [displayName, user]);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const [xpClaimedToday, setXpClaimedToday] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const userId = user?.id || 'guest';
+      const claimed = localStorage.getItem(`focus_mode_xp_claimed_${userId}_${todayStr}`) === 'true';
+      setXpClaimedToday(claimed);
+    }
+  }, [user, todayStr]);
 
   // Compute today's focus items (habits and tasks)
   const focusItems = useMemo(() => {
@@ -93,9 +102,16 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
   };
 
   const handleStartDay = async () => {
-    // Save completion flag for today
     const userId = user?.id || 'guest';
+    if (xpClaimedToday) {
+      toast.error('You have already started the day and claimed your XP today!');
+      return;
+    }
+
+    // Save completion flags for today
     localStorage.setItem(`focus_mode_started_${userId}_${todayStr}`, 'true');
+    localStorage.setItem(`focus_mode_xp_claimed_${userId}_${todayStr}`, 'true');
+    setXpClaimedToday(true);
     
     try {
       // Award 10 XP
@@ -249,10 +265,11 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
                 </Button>
                 <Button
                   onClick={handleStartDay}
-                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold h-11 px-8 rounded-2xl shadow-lg shadow-indigo-500/20"
+                  disabled={xpClaimedToday}
+                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold h-11 px-8 rounded-2xl shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Play className="w-4 h-4 mr-2 fill-current" />
-                  Start Day
+                  {xpClaimedToday ? 'Day Started' : 'Start Day'}
                 </Button>
               </div>
             </div>

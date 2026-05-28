@@ -26,6 +26,11 @@ jobs:
       - name: Run tests with coverage
         run: npm run test -- --coverage
 
+      - name: Build application
+        run: npm run build -- --webpack
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4
         with:
