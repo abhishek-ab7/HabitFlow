@@ -20,7 +20,9 @@ import {
   Info, 
   Zap, 
   ArrowRight,
-  BookOpen
+  BookOpen,
+  Snowflake,
+  Pencil
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -239,37 +241,67 @@ export default function TutorialPage() {
                         <h2 className="text-xl font-bold tracking-tight">Habits Tracking & Streaks</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Consistent repetition is what triggers behavioral change. HabitFlow includes advanced options for quantitative logs, streaks, freezes, and reminders.
+                        Consistent repetition is what triggers behavioral change. HabitFlow includes advanced options for streak protection, freeze states, and customizable daily notes.
                       </p>
                     </div>
 
-                    <div className="space-y-4">
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start col-span-1 sm:col-span-2">
                         <Flame className="w-6 h-6 text-orange-500 animate-pulse shrink-0 mt-0.5" />
                         <div className="space-y-1">
                           <h4 className="text-sm font-bold text-foreground">The Streak Engine</h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Completing a habit consecutively builds your **Streak Count**. Stacking streaks earns custom reward badges and companion levels.
+                            Completing a habit consecutively builds your **Streak Count**. Stacking streaks earns custom reward badges, extra experience points (XP), and companion levels.
                           </p>
                         </div>
                       </div>
 
                       <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
+                        <Snowflake className="w-6 h-6 text-sky-500 shrink-0 mt-0.5" />
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-bold text-foreground">Freezing a Habit</h4>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            When life gets in the way, freeze a habit for a specific day to protect your active streaks:
+                          </p>
+                          <div className="text-xs space-y-1.5 text-muted-foreground bg-background/50 p-2.5 rounded-lg border border-border/40">
+                            <div>
+                              <span className="font-bold text-sky-600 dark:text-sky-400 block text-[10px] uppercase">🖥️ Desktop (Grid View)</span>
+                              <p className="pl-1">Right-click on any habit date cell to instantly toggle the frozen state.</p>
+                            </div>
+                            <div>
+                              <span className="font-bold text-sky-600 dark:text-sky-400 block text-[10px] uppercase">📱 Mobile (Menu View)</span>
+                              <p className="pl-1">Tap the <strong className="text-foreground">...</strong> menu icon next to the habit name, then select <strong className="text-foreground">"Freeze Today"</strong>.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
+                        <Pencil className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+                        <div className="space-y-1.5">
+                          <h4 className="text-sm font-bold text-foreground">Writing Notes & Reflections</h4>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            Attach qualitative comments or adjust target counts:
+                          </p>
+                          <div className="text-xs space-y-1.5 text-muted-foreground bg-background/50 p-2.5 rounded-lg border border-border/40">
+                            <div>
+                              <span className="font-bold text-amber-600 dark:text-amber-400 block text-[10px] uppercase">📝 Accessing Note Popover</span>
+                              <p className="pl-1">Hover over a date cell in the grid and click the small <strong className="text-foreground">Pencil icon</strong> that appears in the top-right corner.</p>
+                            </div>
+                            <div>
+                              <span className="font-bold text-amber-600 dark:text-amber-400 block text-[10px] uppercase">💬 Journal Entries & Metrics</span>
+                              <p className="pl-1">Write your reflection or adjust numerical progress (for quantitative habits). Saved notes show up as a colored dot indicator on the grid cell.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start col-span-1 sm:col-span-2">
                         <Shield className="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
                         <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">Streak Freeze Protection</h4>
+                          <h4 className="text-sm font-bold text-foreground">Streak Freeze Protection Rules</h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Life happens. Spend earned **Gems** in settings to secure **Streak Shields**. If you miss a scheduled habit, a shield is consumed to freeze your streak and prevent reset!
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
-                        <Info className="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" />
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">Quantitative & Qualitative Habits</h4>
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            You can track binary habits (e.g. read yes/no) or quantitative parameters (e.g. log 3000ml water, log 45min gym). Add custom notes to record thoughts during logging.
+                            You get **one free weekly freeze** per habit. For subsequent misses within the same week, spend earned **Gems** in the settings store to buy **Streak Shields** to protect your streaks automatically!
                           </p>
                         </div>
                       </div>

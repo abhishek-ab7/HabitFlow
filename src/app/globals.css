@@ -472,3 +472,18 @@
     animation: none !important;
   }
 }
+
+/* ============================================
+   GLOBAL SCROLLBAR HIDING
+   ============================================ */
+
+html, body {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE and Edge */
+}
+
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}

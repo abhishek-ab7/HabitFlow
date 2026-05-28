@@ -100,6 +100,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
   const [activeRect, setActiveRect] = useState<DOMRect | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const cardRef = useRef<HTMLDivElement>(null);
+  const isTransitioningRef = useRef(false);
 
   // Initialize audio preference
   useEffect(() => {
@@ -154,28 +155,65 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
 
   const currentStepData = TOUR_STEPS[currentStep];
 
-  // Track target element coordinates
+  // Track target element coordinates with intelligent smooth scrolling and transition safety
   useEffect(() => {
     if (showPrompt) return;
 
-    const updateCoordinates = () => {
+    const updateCoordinates = (forceScroll = false) => {
       if (currentStepData.target === 'body') {
         setActiveRect(null);
         return;
       }
 
-      const element = document.querySelector(currentStepData.target);
+      const element = document.querySelector(currentStepData.target) as HTMLElement;
       if (element) {
         const rect = element.getBoundingClientRect();
         
-        // Element must be visible in layout to get correct dimensions
         if (rect.width > 0 && rect.height > 0) {
-          setActiveRect(rect);
-          
-          // Smooth scroll to element to center it in viewport if out of bounds
-          const padding = 150;
-          if (rect.top < padding || rect.bottom > window.innerHeight - padding) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (forceScroll) {
+            isTransitioningRef.current = true;
+            
+            // Calculate absolute page coordinates
+            const elementTop = rect.top + window.scrollY;
+            const elementLeft = rect.left + window.scrollX;
+            const elementHeight = rect.height;
+            
+            // Intelligently center the target element vertically in the viewport
+            const targetScrollY = elementTop - (window.innerHeight / 2) + (elementHeight / 2);
+            const maxScrollY = document.documentElement.scrollHeight - window.innerHeight;
+            const safeScrollY = Math.max(0, Math.min(targetScrollY, maxScrollY));
+            
+            // Smoothly scroll the window to focus
+            window.scrollTo({ top: safeScrollY, behavior: 'smooth' });
+            
+            // Calculate what the viewport coordinates will be AFTER the smooth scroll completes
+            const finalViewportTop = elementTop - safeScrollY;
+            const finalViewportLeft = elementLeft - window.scrollX;
+            
+            const finalRect = {
+              x: finalViewportLeft,
+              y: finalViewportTop,
+              width: rect.width,
+              height: rect.height,
+              top: finalViewportTop,
+              bottom: finalViewportTop + rect.height,
+              left: finalViewportLeft,
+              right: finalViewportLeft + rect.width,
+              toJSON: () => {}
+            } as DOMRect;
+            
+            setActiveRect(finalRect);
+            
+            // Unblock coordinates recalculations after transition finishes
+            setTimeout(() => {
+              isTransitioningRef.current = false;
+              const currentElement = document.querySelector(currentStepData.target);
+              if (currentElement) {
+                setActiveRect(currentElement.getBoundingClientRect());
+              }
+            }, 600);
+          } else if (!isTransitioningRef.current) {
+            setActiveRect(rect);
           }
         } else {
           setActiveRect(null);
@@ -185,16 +223,23 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
       }
     };
 
-    // Delay calculation slightly to allow layout and page scroll animation to settle
-    const timer = setTimeout(updateCoordinates, 250);
+    // Calculate coordinates and trigger centering scroll instantly on step change
+    updateCoordinates(true);
 
-    window.addEventListener('resize', updateCoordinates);
-    window.addEventListener('scroll', updateCoordinates);
+    const handleScrollOrResize = () => {
+      if (!isTransitioningRef.current) {
+        window.requestAnimationFrame(() => {
+          updateCoordinates(false);
+        });
+      }
+    };
+
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize);
 
     return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', updateCoordinates);
-      window.removeEventListener('scroll', updateCoordinates);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize);
     };
   }, [currentStep, showPrompt, currentStepData.target]);
 
@@ -228,43 +273,43 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
   };
 
   const getTooltipStyle = () => {
-    if (!activeRect) {
-      return {
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        position: 'fixed' as const,
-        zIndex: 1050,
-      };
-    }
-
     const windowHeight = window.innerHeight;
     const windowWidth = window.innerWidth;
-    const tooltipWidth = 340; // Tooltip card approximate width
-    const tooltipHeight = 240; // Tooltip card approximate height
+    const tooltipWidth = 340; // Tooltip card width
+    const tooltipHeight = 240; // Tooltip card height
 
     let top = 0;
     let left = 0;
+
+    if (!activeRect) {
+      top = windowHeight / 2 - tooltipHeight / 2;
+      left = windowWidth / 2 - tooltipWidth / 2;
+      return {
+        top: `${top}px`,
+        left: `${left}px`,
+      };
+    }
 
     const spaceBelow = windowHeight - activeRect.bottom;
     const spaceAbove = activeRect.top;
 
     if (currentStepData.placement === 'bottom' && spaceBelow > tooltipHeight + 20) {
-      top = activeRect.bottom + window.scrollY + 12;
+      top = activeRect.bottom + 12;
     } else if (currentStepData.placement === 'top' && spaceAbove > tooltipHeight + 20) {
-      top = activeRect.top + window.scrollY - tooltipHeight - 12;
+      top = activeRect.top - tooltipHeight - 12;
     } else {
       // Auto-fallback
       if (spaceBelow > spaceAbove) {
-        top = activeRect.bottom + window.scrollY + 12;
+        top = activeRect.bottom + 12;
       } else {
-        top = activeRect.top + window.scrollY - tooltipHeight - 12;
+        top = activeRect.top - tooltipHeight - 12;
       }
     }
 
     // Keep top coordinate within viewport boundaries
-    if (top < window.scrollY + 16) {
-      top = window.scrollY + 16;
+    if (top < 16) top = 16;
+    if (top + tooltipHeight > windowHeight - 16) {
+      top = windowHeight - tooltipHeight - 16;
     }
 
     // Center horizontally
@@ -279,8 +324,6 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
     return {
       top: `${top}px`,
       left: `${left}px`,
-      position: 'absolute' as const,
-      zIndex: 1050,
     };
   };
 
@@ -313,11 +356,14 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
                 {/* Fully covers screen in solid white */}
                 <rect width="100%" height="100%" fill="white" />
                 {/* Spotlight hole in black (cutout) */}
-                <rect
-                  x={activeRect.x - 8}
-                  y={activeRect.y - 8}
-                  width={activeRect.width + 16}
-                  height={activeRect.height + 16}
+                <motion.rect
+                  animate={{
+                    x: activeRect.x - 8,
+                    y: activeRect.y - 8,
+                    width: activeRect.width + 16,
+                    height: activeRect.height + 16
+                  }}
+                  transition={{ type: 'spring', damping: 28, stiffness: 180 }}
                   rx="16"
                   fill="black"
                 />
@@ -350,6 +396,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
           {showPrompt ? (
             /* Prompt Invitation Modal */
             <motion.div
+              key="prompt"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -384,100 +431,118 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
               </div>
             </motion.div>
           ) : (
-            /* Tooltip Step Dialog Card */
+            /* Tooltip Step Dialog Card (slides smoothly between targets) */
             <motion.div
-              key={currentStep}
+              key="tour-card"
               ref={cardRef}
-              style={getTooltipStyle()}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              style={{
+                position: 'absolute' as const,
+                zIndex: 1050,
+              }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ 
+                opacity: 1, 
+                scale: 1,
+                ...getTooltipStyle()
+              }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 180 }}
               className="w-[340px] bg-card/95 dark:bg-slate-900/95 backdrop-blur-xl border border-white/10 dark:border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 text-left border-indigo-500/20"
             >
-              {/* Header */}
-              <div className="flex items-center justify-between pb-1 border-b border-border/40">
-                <div className="flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-indigo-500 fill-current" />
-                  <span className="text-[11px] font-black uppercase text-indigo-500 tracking-wider">
-                    Tutorial Tour
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {/* Sound Toggle */}
-                  <button
-                    onClick={toggleSoundPreference}
-                    className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors"
-                    title={audioEnabled ? "Disable sound" : "Enable sound"}
-                  >
-                    {audioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                  </button>
-                  {/* Close button */}
-                  <button 
-                    onClick={handleSkipOrClose}
-                    className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={currentStep}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex flex-col gap-4 w-full h-full"
+                >
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-1 border-b border-border/40">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-indigo-500 fill-current" />
+                      <span className="text-[11px] font-black uppercase text-indigo-500 tracking-wider">
+                        Tutorial Tour
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {/* Sound Toggle */}
+                      <button
+                        onClick={toggleSoundPreference}
+                        className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+                        title={audioEnabled ? "Disable sound" : "Enable sound"}
+                      >
+                        {audioEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                      </button>
+                      {/* Close button */}
+                      <button 
+                        onClick={handleSkipOrClose}
+                        className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Title & Body */}
-              <div className="space-y-1.5">
-                <h4 className="text-base font-bold text-foreground leading-snug">
-                  {currentStepData.title}
-                </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {currentStepData.content}
-                </p>
-              </div>
+                  {/* Title & Body */}
+                  <div className="space-y-1.5">
+                    <h4 className="text-base font-bold text-foreground leading-snug">
+                      {currentStepData.title}
+                    </h4>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {currentStepData.content}
+                    </p>
+                  </div>
 
-              {/* Gamified Benefit Box */}
-              <div className="bg-indigo-500/5 dark:bg-indigo-400/5 border border-indigo-500/10 p-3 rounded-xl flex items-start gap-2">
-                <span className="text-sm mt-0.5">💡</span>
-                <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold leading-relaxed">
-                  {currentStepData.benefit}
-                </p>
-              </div>
+                  {/* Gamified Benefit Box */}
+                  <div className="bg-indigo-500/5 dark:bg-indigo-400/5 border border-indigo-500/10 p-3 rounded-xl flex items-start gap-2">
+                    <span className="text-sm mt-0.5">💡</span>
+                    <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold leading-relaxed">
+                      {currentStepData.benefit}
+                    </p>
+                  </div>
 
-              {/* Navigation Actions */}
-              <div className="flex items-center justify-between mt-1 pt-3 border-t border-border/40">
-                {/* Step indicators */}
-                <div className="text-[10px] font-bold text-muted-foreground font-mono">
-                  {currentStep + 1} / {TOUR_STEPS.length}
-                </div>
+                  {/* Navigation Actions */}
+                  <div className="flex items-center justify-between mt-1 pt-3 border-t border-border/40">
+                    {/* Step indicators */}
+                    <div className="text-[10px] font-bold text-muted-foreground font-mono">
+                      {currentStep + 1} / {TOUR_STEPS.length}
+                    </div>
 
-                <div className="flex gap-2">
-                  {currentStep > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleBack}
-                      className="h-8 rounded-lg text-xs font-semibold px-3 flex items-center gap-1 hover:bg-muted"
-                    >
-                      <ArrowLeft className="w-3 h-3" />
-                      Prev
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    onClick={handleNext}
-                    className="h-8 rounded-lg text-xs font-bold px-4 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/25 flex items-center gap-1"
-                  >
-                    {currentStep === TOUR_STEPS.length - 1 ? (
-                      <>
-                        Finish
-                        <Check className="w-3.5 h-3.5 ml-0.5" />
-                      </>
-                    ) : (
-                      <>
-                        Next
-                        <ArrowRight className="w-3 h-3 ml-0.5" />
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
+                    <div className="flex gap-2">
+                      {currentStep > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleBack}
+                          className="h-8 rounded-lg text-xs font-semibold px-3 flex items-center gap-1 hover:bg-muted"
+                        >
+                          <ArrowLeft className="w-3 h-3" />
+                          Prev
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        onClick={handleNext}
+                        className="h-8 rounded-lg text-xs font-bold px-4 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/25 flex items-center gap-1"
+                      >
+                        {currentStep === TOUR_STEPS.length - 1 ? (
+                          <>
+                            Finish
+                            <Check className="w-3.5 h-3.5 ml-0.5" />
+                          </>
+                        ) : (
+                          <>
+                            Next
+                            <ArrowRight className="w-3 h-3 ml-0.5" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
