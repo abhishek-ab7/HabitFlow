@@ -153,8 +153,7 @@ export function BentoGrid({ widgets }: BentoGridProps) {
       { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
       { id: 'ai-quote', size: 'full', hidden: false, pinned: false },
       { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
-      { id: 'weekly-review', size: '1/2', hidden: false, pinned: false },
-      { id: 'quick-actions', size: 'full', hidden: false, pinned: false }
+      { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
     ];
     await persistLayoutChanges(defaultLayout);
   };
@@ -166,6 +165,47 @@ export function BentoGrid({ widgets }: BentoGridProps) {
 
   return (
     <div className="space-y-6 w-full relative">
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={visibleWidgets.map(w => w.id)}
+          strategy={rectSortingStrategy}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 w-full items-stretch">
+            {visibleWidgets.map((widget) => {
+              const id = widget.id;
+              
+              // Map size to grid layout classes
+              let colSpan = 'lg:col-span-12';
+              if (widget.size === '1/4') colSpan = 'lg:col-span-3 md:col-span-6 col-span-12';
+              else if (widget.size === '1/2') colSpan = 'lg:col-span-6 md:col-span-6 col-span-12';
+              else if (widget.size === '2/3') colSpan = 'lg:col-span-8 md:col-span-12 col-span-12';
+              else if (widget.size === 'full') colSpan = 'lg:col-span-12 md:col-span-12 col-span-12';
+
+              return (
+                <div key={id} className={`w-full h-full ${colSpan} transition-all duration-300`}>
+                  <SortableWidget
+                    id={id}
+                    disableDrag={widget.pinned || id === 'hero'}
+                    isCustomizing={isCustomizing}
+                    pinned={widget.pinned}
+                    size={widget.size}
+                    onTogglePin={() => handleTogglePin(id)}
+                    onResize={(sz) => handleResize(id, sz)}
+                    onHide={() => handleHide(id)}
+                  >
+                    {widgets[id]}
+                  </SortableWidget>
+                </div>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
+
       {/* Control bar */}
       <div className="flex items-center justify-between bg-card/40 dark:bg-slate-900/30 backdrop-blur border border-border/40 p-3 rounded-2xl shadow-sm">
         <div className="flex items-center gap-2">
@@ -207,47 +247,6 @@ export function BentoGrid({ widgets }: BentoGridProps) {
           )}
         </div>
       </div>
-
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={visibleWidgets.map(w => w.id)}
-          strategy={rectSortingStrategy}
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 w-full items-stretch">
-            {visibleWidgets.map((widget) => {
-              const id = widget.id;
-              
-              // Map size to grid layout classes
-              let colSpan = 'lg:col-span-12';
-              if (widget.size === '1/4') colSpan = 'lg:col-span-3 md:col-span-6 col-span-12';
-              else if (widget.size === '1/2') colSpan = 'lg:col-span-6 md:col-span-6 col-span-12';
-              else if (widget.size === '2/3') colSpan = 'lg:col-span-8 md:col-span-12 col-span-12';
-              else if (widget.size === 'full') colSpan = 'lg:col-span-12 md:col-span-12 col-span-12';
-
-              return (
-                <div key={id} className={`w-full h-full ${colSpan} transition-all duration-300`}>
-                  <SortableWidget
-                    id={id}
-                    disableDrag={widget.pinned || id === 'hero'}
-                    isCustomizing={isCustomizing}
-                    pinned={widget.pinned}
-                    size={widget.size}
-                    onTogglePin={() => handleTogglePin(id)}
-                    onResize={(sz) => handleResize(id, sz)}
-                    onHide={() => handleHide(id)}
-                  >
-                    {widgets[id]}
-                  </SortableWidget>
-                </div>
-              );
-            })}
-          </div>
-        </SortableContext>
-      </DndContext>
 
       {/* Hidden Widgets Drawer */}
       <AnimatePresence>

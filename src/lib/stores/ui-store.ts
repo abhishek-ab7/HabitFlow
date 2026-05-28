@@ -49,8 +49,7 @@ export const normalizeLayout = (layout?: any[]): DashboardWidgetConfig[] => {
     { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
     { id: 'ai-quote', size: 'full', hidden: false, pinned: false },
     { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
-    { id: 'weekly-review', size: '1/2', hidden: false, pinned: false },
-    { id: 'quick-actions', size: 'full', hidden: false, pinned: false }
+    { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
   ];
 
   if (!layout || !Array.isArray(layout) || layout.length === 0) {

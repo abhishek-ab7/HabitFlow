@@ -4,14 +4,17 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getTimeGreeting, getTimeGradient } from '@/lib/design-tokens';
 import { getRandomQuote } from '@/lib/quotes';
+import { Button } from '@/components/ui/button';
+import { Sparkles } from 'lucide-react';
 
 interface HeroSectionProps {
   userName?: string;
   currentStreak?: number;
   isHydrated?: boolean;
+  onFocusClick?: () => void;
 }
 
-export function HeroSection({ userName, currentStreak, isHydrated = false }: HeroSectionProps) {
+export function HeroSection({ userName, currentStreak, isHydrated = false, onFocusClick }: HeroSectionProps) {
   // Use state to avoid hydration mismatch with time-based values
   const [mounted, setMounted] = useState(isHydrated);
   const [timeData, setTimeData] = useState(() => {
@@ -119,6 +122,25 @@ export function HeroSection({ userName, currentStreak, isHydrated = false }: Her
               — {timeData.author}
             </p>
           </motion.div>
+
+          {onFocusClick && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 }}
+              className="shrink-0 self-start md:self-center"
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onFocusClick}
+                className="gap-2 text-xs border-indigo-200 dark:border-indigo-900/60 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 font-semibold rounded-xl h-8 bg-background/50 backdrop-blur-sm shadow-sm"
+              >
+                <Sparkles className="w-3.5 h-3.5 fill-current" />
+                Focus Mode
+              </Button>
+            </motion.div>
+          )}
         </div>
       </div>
     </div>

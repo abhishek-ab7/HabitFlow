@@ -15,7 +15,6 @@ import {
   MetricCards,
   HabitOverview,
   FocusGoal,
-  QuickActions,
   TodayTasksWidget,
   AICoachWidget,
   PersonalizedQuote,
@@ -29,8 +28,6 @@ import DashboardTour from '@/components/dashboard/DashboardTour';
 import { MoodCheckIn } from '@/components/dashboard/MoodCheckIn';
 import { FocusModeOverlay } from '@/components/dashboard/FocusModeOverlay';
 import { useUserStore } from '@/lib/stores/user-store';
-import { Button } from '@/components/ui/button';
-import { Sparkles } from 'lucide-react';
 import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
 import { ProgressRing } from '@/components/motion';
 
@@ -246,19 +243,6 @@ export default function DashboardContent() {
   }, [todayProgress, tasks]);
 
 
-  // Handlers
-  const handleMarkTodayHabits = () => {
-    router.push('/habits');
-  };
-
-  const handleAddHabit = () => {
-    router.push('/habits?new=true');
-  };
-
-  const handleAddGoal = () => {
-    router.push('/goals?new=true');
-  };
-
   const handleToggleMilestone = async (milestoneId: string) => {
     await toggleMilestoneComplete(milestoneId);
   };
@@ -342,32 +326,17 @@ export default function DashboardContent() {
     ),
     ...(isAIEnabled() ? { 'ai-quote': <PersonalizedQuote /> } : {}),
     ...(isAIEnabled() ? { 'ai-coach': <AICoachWidget /> } : {}),
-    'quick-actions': (
-      <QuickActions
-        onMarkTodayHabits={handleMarkTodayHabits}
-        onAddHabit={handleAddHabit}
-        onAddGoal={handleAddGoal}
-      />
-    ),
     'weekly-review': <WeeklyReviewWidget />
   };
 
   return (
     <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
-      <div className="flex justify-between items-center shrink-0">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setIsFocusOpen(true)}
-          className="gap-2 text-xs border-indigo-200 dark:border-indigo-900/60 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 text-indigo-600 dark:text-indigo-400 font-semibold rounded-xl h-8"
-        >
-          <Sparkles className="w-3.5 h-3.5 fill-current" />
-          Focus Mode
-        </Button>
-      </div>
-
-      <HeroSection userName={displayName} currentStreak={currentMaxStreak} isHydrated={true} />
+      <HeroSection
+        userName={displayName}
+        currentStreak={currentMaxStreak}
+        isHydrated={true}
+        onFocusClick={() => setIsFocusOpen(true)}
+      />
 
       <MoodCheckIn />
 
