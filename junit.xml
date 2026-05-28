@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="133" failures="0" errors="0" time="11.858">
+    <testsuite name="src/__tests__/middleware.test.ts" timestamp="2026-05-28T12:12:24.801Z" hostname="fedora" tests="8" failures="0" errors="0" skipped="0" time="0.045106752">
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; skips public routes" time="0.014502332">
+        </testcase>
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; skips static files" time="0.002242604">
+        </testcase>
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; redirects unauthenticated users to login" time="0.00676616">
+        </testcase>
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; allows authenticated users to access protected routes" time="0.003244556">
+        </testcase>
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; allows unauthenticated users to access login page" time="0.004006454">
+        </testcase>
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; redirects authenticated users away from login to dashboard" time="0.002041485">
+        </testcase>
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; applies rate limiting to /auth/callback" time="0.007700027">
+        </testcase>
+        <testcase classname="src/__tests__/middleware.test.ts" name="Middleware &gt; allows /auth/signout without authentication (publicRoute)" time="0.001615972">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/__tests__/utils.test.ts" timestamp="2026-05-28T12:12:24.806Z" hostname="fedora" tests="4" failures="0" errors="0" skipped="0" time="0.021618089">
+        <testcase classname="src/lib/__tests__/utils.test.ts" name="utils &gt; cn &gt; merges class names correctly" time="0.016166922">
+        </testcase>
+        <testcase classname="src/lib/__tests__/utils.test.ts" name="utils &gt; cn &gt; handles conditional classes" time="0.000488403">
+        </testcase>
+        <testcase classname="src/lib/__tests__/utils.test.ts" name="utils &gt; cn &gt; merges tailwind classes using tailwind-merge" time="0.001320747">
+        </testcase>
+        <testcase classname="src/lib/__tests__/utils.test.ts" name="utils &gt; cn &gt; handles arrays and objects" time="0.000395223">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/providers/__tests__/auth-provider.test.tsx" timestamp="2026-05-28T12:12:24.807Z" hostname="fedora" tests="3" failures="0" errors="0" skipped="0" time="0.089420561">
+        <testcase classname="src/providers/__tests__/auth-provider.test.tsx" name="AuthProvider &gt; renders loading state initially" time="0.060543547">
+            <system-err>
+An update to AuthProvider inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/providers/__tests__/auth-provider.test.tsx" name="AuthProvider &gt; updates state when session is found" time="0.016126065">
+        </testcase>
+        <testcase classname="src/providers/__tests__/auth-provider.test.tsx" name="AuthProvider &gt; updates state when auth state changes" time="0.009844871">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/dashboard/__tests__/TodayTasksWidget.test.tsx" timestamp="2026-05-28T12:12:24.808Z" hostname="fedora" tests="3" failures="0" errors="0" skipped="0" time="0.160800236">
+        <testcase classname="src/components/dashboard/__tests__/TodayTasksWidget.test.tsx" name="TodayTasksWidget &gt; renders loading state initially" time="0.060710692">
+        </testcase>
+        <testcase classname="src/components/dashboard/__tests__/TodayTasksWidget.test.tsx" name="TodayTasksWidget &gt; renders empty state when no tasks" time="0.02803939">
+        </testcase>
+        <testcase classname="src/components/dashboard/__tests__/TodayTasksWidget.test.tsx" name="TodayTasksWidget &gt; renders tasks due today" time="0.068960378">
+            <system-err>
+Received `true` for a non-boolean attribute `layout`.
+
+If you want to write it to the DOM, pass a string instead: layout=&quot;true&quot; or layout={value.toString()}.
+React does not recognize the `dragDirectionLock` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `dragdirectionlock` instead. If you accidentally passed it from a parent component, remove it from the DOM element.
+React does not recognize the `dragConstraints` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `dragconstraints` instead. If you accidentally passed it from a parent component, remove it from the DOM element.
+React does not recognize the `dragElastic` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `dragelastic` instead. If you accidentally passed it from a parent component, remove it from the DOM element.
+React does not recognize the `whileHover` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `whilehover` instead. If you accidentally passed it from a parent component, remove it from the DOM element.
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/components/routines/__tests__/RoutineModal.test.tsx" timestamp="2026-05-28T12:12:24.810Z" hostname="fedora" tests="3" failures="0" errors="0" skipped="0" time="1.098564238">
+        <testcase classname="src/components/routines/__tests__/RoutineModal.test.tsx" name="RoutineModal &gt; renders correctly when creating a new routine" time="0.7432071">
+            <system-err>
+React does not recognize the `whileHover` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `whilehover` instead. If you accidentally passed it from a parent component, remove it from the DOM element.
+React does not recognize the `whileTap` prop on a DOM element. If you intentionally want it to appear in the DOM as a custom attribute, spell it as lowercase `whiletap` instead. If you accidentally passed it from a parent component, remove it from the DOM element.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/components/routines/__tests__/RoutineModal.test.tsx" name="RoutineModal &gt; renders correctly when editing a routine" time="0.192110717">
+            <system-err>
+An update to RoutineModal inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RoutineModal inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() =&gt; {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you&apos;re testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/components/routines/__tests__/RoutineModal.test.tsx" name="RoutineModal &gt; calls onClose when Cancel is clicked" time="0.160951416">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/calculations/__tests__/index.test.ts" timestamp="2026-05-28T12:12:24.811Z" hostname="fedora" tests="17" failures="0" errors="0" skipped="0" time="0.048346322">
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; formatDate &gt; formats Date and string inputs correctly" time="0.00814868">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCurrentStreak &gt; returns 0 for no completions" time="0.003059317">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCurrentStreak &gt; returns correct count for consecutive days" time="0.017532937">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCurrentStreak &gt; gap breaks streak" time="0.000911646">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCurrentStreak &gt; streak remains active if yesterday was completed but not today" time="0.000542606">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCurrentStreak &gt; returns 0 if last completion was before yesterday" time="0.000384253">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateBestStreak &gt; finds longest run" time="0.002290107">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCompletionRate &gt; returns 0 for 0 totalDays" time="0.001375745">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCompletionRate &gt; calculates correct percentage" time="0.000458479">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateMomentum &gt; returns UP when last 7 days better than previous 7" time="0.00118822">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateMomentum &gt; returns DOWN when last 7 days worse than previous 7" time="0.000508751">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateMomentum &gt; returns STABLE when equal" time="0.000438017">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; getDeadlineStatus &gt; returns overdue status" time="0.000999503">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; getDeadlineStatus &gt; returns due today status" time="0.000510611">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; getDeadlineStatus &gt; returns due tomorrow status" time="0.001096735">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; getDeadlineStatus &gt; returns upcoming status" time="0.000686912">
+        </testcase>
+        <testcase classname="src/lib/calculations/__tests__/index.test.ts" name="calculations &gt; calculateCategoryBreakdown &gt; filters by category and calculates percentages" time="0.003750554">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/security/__tests__/rate-limit.test.ts" timestamp="2026-05-28T12:12:24.817Z" hostname="fedora" tests="10" failures="0" errors="0" skipped="0" time="0.017697315">
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimit (in-memory backend) &gt; allows first request and returns correct remaining count" time="0.00279618">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimit (in-memory backend) &gt; tracks request count correctly" time="0.000464777">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimit (in-memory backend) &gt; blocks when limit is exceeded" time="0.000437068">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimit (in-memory backend) &gt; resets correctly after the time window expires" time="0.00042689">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimit (in-memory backend) &gt; keys independently by IP and path" time="0.000342426">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimit (in-memory backend) &gt; prefers leftmost IP from x-forwarded-for" time="0.000266586">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimitResponse &gt; returns 429 status" time="0.004323475">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimitResponse &gt; returns JSON content-type" time="0.000649591">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimitResponse &gt; sets Retry-After header correctly" time="0.000324095">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/rate-limit.test.ts" name="rateLimitResponse &gt; returns body with error and retryAfter fields" time="0.004235428">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/security/__tests__/url-validator.test.ts" timestamp="2026-05-28T12:12:24.820Z" hostname="fedora" tests="16" failures="0" errors="0" skipped="0" time="0.024222173">
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidOrigin &gt; accepts allowed hosts" time="0.006412318">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidOrigin &gt; accepts allowed subdomains" time="0.000864197">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidOrigin &gt; rejects unknown domains" time="0.001052606">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidOrigin &gt; blocks non-http protocols" time="0.001867091">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidOrigin &gt; handles totally invalid URLs safely" time="0.000617999">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidPath &gt; accepts allowed exact paths" time="0.000622576">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidPath &gt; accepts allowed subdirectories" time="0.000354446">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidPath &gt; rejects protocol-relative // URLs" time="0.000333131">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidPath &gt; rejects paths not starting with /" time="0.000323573">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; isValidPath &gt; rejects unlisted paths" time="0.000354737">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; validateRedirectUrl &gt; returns validated URL when both origin and path are valid" time="0.00086905">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; validateRedirectUrl &gt; falls back when origin is invalid" time="0.003387769">
+            <system-err>
+Invalid origin detected: https://evil.com, using fallback
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; validateRedirectUrl &gt; falls back when path is invalid" time="0.001163184">
+            <system-err>
+Invalid path detected: //evil.com, using fallback
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; getValidatedNextPath &gt; extracts valid next param" time="0.001349694">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; getValidatedNextPath &gt; returns fallback for missing param" time="0.000411035">
+        </testcase>
+        <testcase classname="src/lib/security/__tests__/url-validator.test.ts" name="url-validator &gt; getValidatedNextPath &gt; returns fallback for invalid param" time="0.000422835">
+            <system-err>
+Invalid &apos;next&apos; parameter: //evil.com, using fallback
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/stores/__tests__/achievement-store.test.ts" timestamp="2026-05-28T12:12:24.826Z" hostname="fedora" tests="4" failures="0" errors="0" skipped="0" time="0.028494605">
+        <testcase classname="src/lib/stores/__tests__/achievement-store.test.ts" name="useAchievementStore &gt; should calculate initial achievements as locked" time="0.013483049">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/achievement-store.test.ts" name="useAchievementStore &gt; should unlock Discipline Starter when progress is achieved" time="0.00122626">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/achievement-store.test.ts" name="useAchievementStore &gt; should unlock streak achievements correctly" time="0.000696685">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/achievement-store.test.ts" name="useAchievementStore &gt; should allow claiming rewards and updating gamification store" time="0.003285849">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/stores/__tests__/gamification-store.test.ts" timestamp="2026-05-28T12:12:24.827Z" hostname="fedora" tests="12" failures="0" errors="0" skipped="0" time="0.016754852">
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; Initial state has xp=0, level=1, gems=0" time="0.003818275">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; addXp increments XP correctly" time="0.00191123">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; addXp triggers level-up at threshold and awards gems" time="0.000895578">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; addXp carries over excess XP after level-up" time="0.000550187">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; spendGems deducts correctly" time="0.000674944">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; spendGems fails if insufficient gems" time="0.000468513">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; buyShield costs SHIELD_COST gems and increments shields" time="0.000803899">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; buyShield fails if insufficient gems" time="0.000829516">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; getBufferProgress returns 0-100 range" time="0.000655244">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; useShield decrements streakShield and returns true if shields &gt; 0" time="0.000966258">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; useShield returns false and does not decrement if shields is 0" time="0.000445336">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/gamification-store.test.ts" name="gamification-store &gt; negative XP reverts stats and XP correctly" time="0.00147626">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/stores/__tests__/goal-store.test.ts" timestamp="2026-05-28T12:12:24.831Z" hostname="fedora" tests="7" failures="0" errors="0" skipped="0" time="0.019570196">
+        <testcase classname="src/lib/stores/__tests__/goal-store.test.ts" name="goal-store &gt; Initial state is empty" time="0.002773234">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/goal-store.test.ts" name="goal-store &gt; addGoal creates goal and milestones" time="0.003069061">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/goal-store.test.ts" name="goal-store &gt; editGoal updates goal" time="0.006846283">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/goal-store.test.ts" name="goal-store &gt; removeGoal removes goal and associated milestones" time="0.00083565">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/goal-store.test.ts" name="goal-store &gt; setFocus handles limits" time="0.002596336">
+            <system-err>
+Maximum of 2 focus goals allowed
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/goal-store.test.ts" name="goal-store &gt; getFilteredGoals filters correctly" time="0.000934588">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/goal-store.test.ts" name="goal-store &gt; toggleMilestoneComplete updates state" time="0.000584567">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/stores/__tests__/habit-store.test.ts" timestamp="2026-05-28T12:12:24.833Z" hostname="fedora" tests="8" failures="0" errors="0" skipped="0" time="0.026936822">
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; should have initial state" time="0.002875035">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; should calculate today progress correctly" time="0.010450734">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; should filter archived habits from progress" time="0.000400261">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; loadArchivedHabits should call getArchivedHabits and return archived habits" time="0.002057029">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; freezeHabit should unfreeze if already frozen" time="0.001303679">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; freezeHabit should allow free weekly freeze if no other freezes in the same week" time="0.004320914">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; freezeHabit should consume shield if another freeze exists in the same week and shield use succeeds" time="0.001372881">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/habit-store.test.ts" name="HabitStore &gt; freezeHabit should throw error if another freeze exists in the same week and shield use fails" time="0.002359498">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/stores/__tests__/mood-store.test.ts" timestamp="2026-05-28T12:12:24.836Z" hostname="fedora" tests="4" failures="0" errors="0" skipped="0" time="0.010714612">
+        <testcase classname="src/lib/stores/__tests__/mood-store.test.ts" name="MoodStore &gt; should have initial state" time="0.003769384">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/mood-store.test.ts" name="MoodStore &gt; should load mood logs correctly" time="0.002728695">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/mood-store.test.ts" name="MoodStore &gt; should log mood and trigger sync" time="0.001641696">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/mood-store.test.ts" name="MoodStore &gt; should get mood for a specific date" time="0.000381154">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/stores/__tests__/pomodoro-store.test.ts" timestamp="2026-05-28T12:12:24.837Z" hostname="fedora" tests="7" failures="0" errors="0" skipped="0" time="0.054768403">
+        <testcase classname="src/lib/stores/__tests__/pomodoro-store.test.ts" name="PomodoroStore &gt; should have initial state" time="0.007060308">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/pomodoro-store.test.ts" name="PomodoroStore &gt; should start timer and set task status to in_progress" time="0.019094186">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/pomodoro-store.test.ts" name="PomodoroStore &gt; should pause and resume timer" time="0.009323674">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/pomodoro-store.test.ts" name="PomodoroStore &gt; should handle timer ticks and complete session" time="0.006591149">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/pomodoro-store.test.ts" name="PomodoroStore &gt; should reset timer to mode default duration" time="0.000615929">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/pomodoro-store.test.ts" name="PomodoroStore &gt; should adjust duration when not running" time="0.006442541">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/pomodoro-store.test.ts" name="PomodoroStore &gt; should not adjust duration when running" time="0.000926034">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/lib/stores/__tests__/task-store.test.ts" timestamp="2026-05-28T12:12:24.839Z" hostname="fedora" tests="7" failures="0" errors="0" skipped="0" time="0.019305037">
+        <testcase classname="src/lib/stores/__tests__/task-store.test.ts" name="task-store &gt; Initial state is empty" time="0.004789171">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/task-store.test.ts" name="task-store &gt; addTask creates task and syncs" time="0.004057829">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/task-store.test.ts" name="task-store &gt; editTask updates task" time="0.001027399">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/task-store.test.ts" name="task-store &gt; removeTask removes task" time="0.001167931">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/task-store.test.ts" name="task-store &gt; toggleTaskComplete toggles status and awards XP" time="0.002913469">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/task-store.test.ts" name="task-store &gt; getActiveTasks and getCompletedTasks filter correctly" time="0.00117017">
+        </testcase>
+        <testcase classname="src/lib/stores/__tests__/task-store.test.ts" name="task-store &gt; getTasksByDate filters by due_date" time="0.00097986">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/app/auth/reset-password/__tests__/page.test.tsx" timestamp="2026-05-28T12:12:24.840Z" hostname="fedora" tests="12" failures="0" errors="0" skipped="0" time="3.167629031">
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — session guard &gt; shows a spinner while session is being determined" time="0.222730406">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — session guard &gt; shows the reset form when PASSWORD_RECOVERY event fires" time="0.1644714">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — session guard &gt; redirects to /login when a normal SIGNED_IN event fires (non-recovery user blocked)" time="0.015257551">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — session guard &gt; 5-second timeout fallback &gt; redirects to /login after timeout if no session exists" time="0.016278845">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — session guard &gt; 5-second timeout fallback &gt; shows form after timeout if a session exists (event fired before subscription)" time="0.041778009">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — session guard &gt; 5-second timeout fallback &gt; redirects to /login after timeout if getSession returns an error" time="0.0078944">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — form validation &gt; shows password requirements checklist when the user starts typing" time="0.573647985">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — form validation &gt; prevents submit when passwords do not match" time="0.575323127">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — form validation &gt; prevents submit when password does not meet requirements" time="0.535023944">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — form validation &gt; calls updateUser and redirects to /dashboard on successful password reset" time="0.503079287">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — form validation &gt; shows an error toast when updateUser fails" time="0.388736088">
+        </testcase>
+        <testcase classname="src/app/auth/reset-password/__tests__/page.test.tsx" name="ResetPasswordPage — form validation &gt; toggles password visibility when the eye button is clicked" time="0.118716624">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/app/auth/callback/__tests__/route.test.ts" timestamp="2026-05-28T12:12:24.843Z" hostname="fedora" tests="6" failures="0" errors="0" skipped="0" time="0.07088917">
+        <testcase classname="src/app/auth/callback/__tests__/route.test.ts" name="Auth Callback Route &gt; redirects to error page when no code is provided" time="0.037419658">
+            <system-out>
+Callback received: { code: false, error: null, next: &apos;/dashboard&apos;, type: null }
+
+            </system-out>
+            <system-err>
+No code provided in callback
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/app/auth/callback/__tests__/route.test.ts" name="Auth Callback Route &gt; redirects to error page when provider returns error" time="0.005625639">
+            <system-out>
+Callback received: { code: false, error: &apos;access_denied&apos;, next: &apos;/dashboard&apos;, type: null }
+
+            </system-out>
+            <system-err>
+OAuth error: access_denied User aborted
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/app/auth/callback/__tests__/route.test.ts" name="Auth Callback Route &gt; exchanges code for session and redirects to dashboard" time="0.008361351">
+            <system-out>
+Callback received: { code: true, error: null, next: &apos;/dashboard&apos;, type: null }
+Session exchange successful, user: test@example.com
+
+            </system-out>
+        </testcase>
+        <testcase classname="src/app/auth/callback/__tests__/route.test.ts" name="Auth Callback Route &gt; redirects to reset-password when type is recovery" time="0.004576271">
+            <system-out>
+Callback received: { code: true, error: null, next: &apos;/dashboard&apos;, type: &apos;recovery&apos; }
+Session exchange successful, user: test@example.com
+
+            </system-out>
+        </testcase>
+        <testcase classname="src/app/auth/callback/__tests__/route.test.ts" name="Auth Callback Route &gt; handles exchange errors gracefully" time="0.003830171">
+            <system-out>
+Callback received: { code: true, error: null, next: &apos;/dashboard&apos;, type: null }
+
+            </system-out>
+            <system-err>
+Exchange error: Invalid code
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/app/auth/callback/__tests__/route.test.ts" name="Auth Callback Route &gt; uses x-forwarded headers for origin if present" time="0.005142147">
+            <system-out>
+Callback received: { code: true, error: null, next: &apos;/dashboard&apos;, type: null }
+Session exchange successful, user: test@example.com
+
+            </system-out>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/app/auth/signout/__tests__/route.test.ts" timestamp="2026-05-28T12:12:24.846Z" hostname="fedora" tests="2" failures="0" errors="0" skipped="0" time="0.02014862">
+        <testcase classname="src/app/auth/signout/__tests__/route.test.ts" name="Auth Signout Route &gt; signs out and redirects to login" time="0.01346356">
+        </testcase>
+        <testcase classname="src/app/auth/signout/__tests__/route.test.ts" name="Auth Signout Route &gt; uses x-forwarded headers for origin" time="0.004805004">
+        </testcase>
+    </testsuite>
+</testsuites>
