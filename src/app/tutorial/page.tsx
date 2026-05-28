@@ -569,22 +569,18 @@ export default function TutorialPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground">
-                          <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                          <div className="grid gap-3 sm:grid-cols-3 mt-2">
                             <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
-                              <span className="font-semibold text-foreground">Quick Add Task</span>
+                              <span className="font-semibold text-foreground">Create New Habit</span>
                               <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">N</kbd>
                             </div>
                             <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
-                              <span className="font-semibold text-foreground">Command & Search Menu</span>
-                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">S</kbd>
+                              <span className="font-semibold text-foreground">Create New Goal</span>
+                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">C</kbd>
                             </div>
                             <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
-                              <span className="font-semibold text-foreground">Complete High Task</span>
-                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">Space</kbd>
-                            </div>
-                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
-                              <span className="font-semibold text-foreground">Toggle Help Academy</span>
-                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">?</kbd>
+                              <span className="font-semibold text-foreground">Toggle Shortcuts Menu</span>
+                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">Shift+?</kbd>
                             </div>
                           </div>
                         </CardContent>
@@ -597,39 +593,23 @@ export default function TutorialPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground">
-                          <p className="mb-3 leading-relaxed">Press numeric keys to instantly switch between layout tabs:</p>
+                          <p className="mb-3 leading-relaxed">Press keys to instantly switch between layout tabs:</p>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
                               <span>Dashboard</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">1</kbd>
-                            </div>
-                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
-                              <span>Tasks</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">2</kbd>
-                            </div>
-                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
-                              <span>Routines</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">3</kbd>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">D</kbd>
                             </div>
                             <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
                               <span>Habits</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">4</kbd>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">H</kbd>
                             </div>
                             <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
                               <span>Goals</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">5</kbd>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">G</kbd>
                             </div>
                             <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
                               <span>Analytics</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">6</kbd>
-                            </div>
-                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
-                              <span>Leaderboard</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">7</kbd>
-                            </div>
-                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
-                              <span>Settings</span>
-                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">8</kbd>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">A</kbd>
                             </div>
                           </div>
                         </CardContent>
