@@ -66,7 +66,7 @@ export function TodayTasksWidget() {
     )
 
     return (
-        <section className="bg-card/30 backdrop-blur-2xl backdrop-saturate-150 rounded-3xl border border-white/10 shadow-2xl overflow-hidden">
+        <section className="bg-card/30 backdrop-blur-2xl backdrop-saturate-150 rounded-3xl border border-white/10 shadow-2xl overflow-hidden tour-tasks-widget">
             <div className="p-6 md:p-8 space-y-6">
                 <div className="flex items-center justify-between">
                     <div className="space-y-1.5">

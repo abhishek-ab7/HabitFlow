@@ -36,7 +36,7 @@ export function HeroSection({ userName, currentStreak }: HeroSectionProps) {
   // Render placeholder during SSR to avoid hydration mismatch
   if (!mounted) {
     return (
-      <div className="relative overflow-hidden rounded-2xl mb-8">
+      <div className="relative overflow-hidden rounded-2xl mb-8 tour-hero-section">
         <div className="bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-indigo-950/50 dark:to-slate-900 p-8 md:p-10">
           <div className="relative z-10">
             <span className="text-3xl mb-2 block">👋</span>
@@ -52,7 +52,7 @@ export function HeroSection({ userName, currentStreak }: HeroSectionProps) {
   }
 
   return (
-    <FadeIn className="relative overflow-hidden rounded-2xl mb-8">
+    <FadeIn className="relative overflow-hidden rounded-2xl mb-8 tour-hero-section">
       <div className={`bg-gradient-to-br ${timeData.gradientClass} dark:from-slate-900 dark:via-indigo-950/50 dark:to-slate-900 p-8 md:p-10`}>
         {/* Background decorative elements */}
         <div className="absolute inset-0 overflow-hidden">

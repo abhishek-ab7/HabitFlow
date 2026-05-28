@@ -116,7 +116,7 @@ export function WeeklyReviewWidget() {
 
   return (
     <>
-      <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/40 via-white/50 to-purple-50/40 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md shadow-lg overflow-hidden h-full flex flex-col justify-between">
+      <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/40 via-white/50 to-purple-50/40 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md shadow-lg overflow-hidden h-full flex flex-col justify-between tour-weekly-review-widget">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg font-bold flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
             <BarChart3 className="w-5 h-5 text-indigo-500" />

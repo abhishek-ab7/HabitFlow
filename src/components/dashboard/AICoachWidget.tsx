@@ -238,7 +238,7 @@ export function AICoachWidget() {
     const animatedFocus = useTypewriter(data?.focus || '', 15, !loading);
 
     return (
-        <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/30 via-white/40 to-purple-50/30 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md overflow-hidden relative shadow-lg h-full flex flex-col">
+        <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/30 via-white/40 to-purple-50/30 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md overflow-hidden relative shadow-lg h-full flex flex-col tour-ai-coach-widget">
             {/* Loading Overlay for User Data */}
             {isLoadingUser && (
                 <div className="absolute inset-0 bg-background/90 backdrop-blur-sm z-50 flex items-center justify-center">

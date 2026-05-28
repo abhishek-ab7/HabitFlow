@@ -23,6 +23,7 @@ import {
   WeeklyReviewWidget,
 } from '@/components/dashboard';
 import OnboardingWizard from '@/components/dashboard/OnboardingWizard';
+import DashboardTour from '@/components/dashboard/DashboardTour';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MoodCheckIn } from '@/components/dashboard/MoodCheckIn';
 import { FocusModeOverlay } from '@/components/dashboard/FocusModeOverlay';
@@ -40,6 +41,7 @@ export default function DashboardContent() {
   const router = useRouter();
   const loadDashboardLayout = useUIStore((s) => s.loadDashboardLayout);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showTour, setShowTour] = useState(false);
   const [isFocusOpen, setIsFocusOpen] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
 
@@ -117,6 +119,7 @@ export default function DashboardContent() {
 
   // Check if we need to show onboarding
   const isEmpty = habits.length === 0 && goals.length === 0 && !habitsLoading && !goalsLoading;
+  const isLoading = habitsLoading || goalsLoading;
 
   // Initialize data on mount - OPTIMIZED: Parallel loading
   useEffect(() => {
@@ -156,9 +159,20 @@ export default function DashboardContent() {
     init();
   }, [loadHabits, loadGoals, loadAllMilestones, loadCompletions, loadDashboardLayout, loadUser]);
 
+  // Trigger dashboard guided tour
+  useEffect(() => {
+    if (!showOnboarding && !isLoading && !isEmpty) {
+      const onboarded = localStorage.getItem('habitflow_onboarded');
+      const tourCompleted = localStorage.getItem('habitflow_dashboard_tutorial_completed');
+      if (onboarded === 'true' && tourCompleted !== 'true') {
+        setShowTour(true);
+      }
+    }
+  }, [showOnboarding, isLoading, isEmpty]);
+
   // Auto-trigger daily Focus Mode
   useEffect(() => {
-    if (!showOnboarding && !isEmpty && !authLoading) {
+    if (!showOnboarding && !showTour && !isEmpty && !authLoading) {
       const todayStr = new Date().toISOString().split('T')[0];
       const userId = user?.id || 'guest';
       const started = localStorage.getItem(`focus_mode_started_${userId}_${todayStr}`);
@@ -166,7 +180,7 @@ export default function DashboardContent() {
         setIsFocusOpen(true);
       }
     }
-  }, [showOnboarding, isEmpty, authLoading, user?.id]);
+  }, [showOnboarding, showTour, isEmpty, authLoading, user?.id]);
 
   // If we have habits or goals, we are an existing user. Disable onboarding if it's open.
   useEffect(() => {
@@ -231,7 +245,6 @@ export default function DashboardContent() {
     };
   }, [todayProgress, tasks]);
 
-  const isLoading = habitsLoading || goalsLoading;
 
   // Handlers
   const handleMarkTodayHabits = () => {
@@ -367,7 +380,7 @@ export default function DashboardContent() {
       <MoodCheckIn />
 
       {/* Unified Today Score Ring Card */}
-      <div className="bg-card/45 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row items-center gap-6 mb-6 hover:border-primary/20 transition-all">
+      <div className="bg-card/45 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row items-center gap-6 mb-6 hover:border-primary/20 transition-all tour-momentum-card">
         <ProgressRing progress={todayScore.score} size={100} strokeWidth={8} className="shrink-0">
           <div className="flex flex-col items-center justify-center">
             <span className="text-3xl font-black text-foreground tracking-tight">{todayScore.score}</span>
@@ -403,6 +416,7 @@ export default function DashboardContent() {
       <BentoGrid widgets={widgets} />
 
       <FocusModeOverlay isOpen={isFocusOpen} onClose={() => setIsFocusOpen(false)} />
+      {showTour && <DashboardTour onClose={() => setShowTour(false)} />}
     </div>
   );
 }

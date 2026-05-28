@@ -33,7 +33,7 @@ export function UserStatusHUD() {
     const progress = getBufferProgress();
 
     return (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 tour-hud-container">
             {/* Level Badge */}
             <TooltipProvider>
                 <Tooltip>

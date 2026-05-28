@@ -61,7 +61,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
 
   if (habits.length === 0) {
     return (
-      <FadeIn delay={0.2}>
+      <FadeIn delay={0.2} className="tour-habits-widget">
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground mb-4">No habits yet. Start building your routine!</p>
@@ -75,7 +75,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
   }
 
   return (
-    <FadeIn delay={0.2} className="h-full flex flex-col">
+    <FadeIn delay={0.2} className="h-full flex flex-col tour-habits-widget">
       <Card className="h-full flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>

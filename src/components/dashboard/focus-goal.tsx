@@ -132,7 +132,7 @@ function SingleGoalCard({ goal, milestones, stats, onToggleMilestone }: SingleGo
 export function FocusGoal({ goals, getMilestones, getStats, onToggleMilestone }: FocusGoalProps) {
   if (goals.length === 0) {
     return (
-      <FadeIn delay={0.3}>
+      <FadeIn delay={0.3} className="tour-goals-widget">
         <Card className="h-full">
           <CardHeader>
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
@@ -157,7 +157,7 @@ export function FocusGoal({ goals, getMilestones, getStats, onToggleMilestone }:
   }
 
   return (
-    <FadeIn delay={0.3} className="h-full flex flex-col">
+    <FadeIn delay={0.3} className="h-full flex flex-col tour-goals-widget">
       <Card className="h-full flex flex-col">
         <CardHeader>
           <div className="flex items-center justify-between">

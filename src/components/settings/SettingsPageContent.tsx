@@ -21,8 +21,11 @@ import {
   VolumeX,
   Vibrate,
   VibrateOff,
-  Mail
+  Mail,
+  BookOpen,
+  HelpCircle
 } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,6 +76,14 @@ export default function SettingsPageContent() {
 
   const { displayName, email, setDisplayName, saveDisplayNameToServer, loadUser } = useUserStore();
   const { xp, level, gems, streakShield, loadGamification } = useGamificationStore();
+
+  const handleReplayTour = () => {
+    localStorage.removeItem('habitflow_dashboard_tutorial_completed');
+    toast.success('Tour reset! Redirecting to dashboard...');
+    setTimeout(() => {
+      window.location.href = '/dashboard';
+    }, 1000);
+  };
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -662,6 +673,44 @@ export default function SettingsPageContent() {
                   {settings.hapticsEnabled ? "On" : "Off"}
                 </Button>
               </div>
+            </div>
+          </BentoGridItem>
+
+          {/* HELP & ACADEMY */}
+          <BentoGridItem
+            title="Help & Academy"
+            icon={<HelpCircle className="h-5 w-5 text-indigo-500" />}
+            span={1}
+            className="md:col-span-1"
+            disableHover
+          >
+            <div className="flex flex-col gap-3 mt-4">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Replay the interactive guided tour or read the detailed platform guide.
+              </p>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReplayTour}
+                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-indigo-500/30 hover:bg-indigo-500/10 hover:text-indigo-600 hover:border-indigo-500/50"
+                title="Restart Guided Tour"
+              >
+                <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+                <span>Replay Walkthrough</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-indigo-500/30 hover:bg-indigo-500/10 hover:text-indigo-600 hover:border-indigo-500/50"
+              >
+                <Link href="/tutorial" className="flex items-center justify-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span>View Help Guides</span>
+                </Link>
+              </Button>
             </div>
           </BentoGridItem>
 
