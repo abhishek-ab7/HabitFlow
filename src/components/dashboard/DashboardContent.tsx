@@ -37,6 +37,7 @@ import { ProgressRing } from '@/components/motion';
 import { useUIStore } from '@/lib/stores/ui-store';
 
 import { useAuth } from '@/providers/auth-provider';
+import { useSync } from '@/providers/sync-provider';
 
 export default function DashboardContent() {
   const router = useRouter();
@@ -45,20 +46,17 @@ export default function DashboardContent() {
   const [showTour, setShowTour] = useState(false);
   const [isFocusOpen, setIsFocusOpen] = useState(false);
   const { user, isLoading: authLoading } = useAuth();
+  const { isDataReady } = useSync();
 
-  const { displayName, loadUser } = useUserStore(
+  const { displayName } = useUserStore(
     useShallow((s) => ({
       displayName: s.displayName,
-      loadUser: s.loadUser,
     }))
   );
 
-  // Habit store
   const {
     habits,
     completions,
-    isLoading: habitsLoading,
-    loadHabits,
     loadCompletions,
     initializeWithDemoData,
     getTodayProgress,
@@ -69,8 +67,6 @@ export default function DashboardContent() {
     useShallow((s) => ({
       habits: s.habits,
       completions: s.completions,
-      isLoading: s.isLoading,
-      loadHabits: s.loadHabits,
       loadCompletions: s.loadCompletions,
       initializeWithDemoData: s.initializeWithDemoData,
       getTodayProgress: s.getTodayProgress,
@@ -80,11 +76,8 @@ export default function DashboardContent() {
     }))
   );
 
-  // Goal store
   const {
     goals,
-    isLoading: goalsLoading,
-    loadGoals,
     loadAllMilestones,
     getFocusGoals,
     getGoalStats,
@@ -95,8 +88,6 @@ export default function DashboardContent() {
   } = useGoalStore(
     useShallow((s) => ({
       goals: s.goals,
-      isLoading: s.isLoading,
-      loadGoals: s.loadGoals,
       loadAllMilestones: s.loadAllMilestones,
       getFocusGoals: s.getFocusGoals,
       getGoalStats: s.getGoalStats,
@@ -107,24 +98,20 @@ export default function DashboardContent() {
     }))
   );
 
-  // Task store
   const {
     tasks,
-    loadTasks,
   } = useTaskStore(
     useShallow((s) => ({
       tasks: s.tasks,
-      loadTasks: s.loadTasks,
     }))
   );
 
   const [isInitializing, setIsInitializing] = useState(true);
-  const isLoading = habitsLoading || goalsLoading || isInitializing;
+  const isLoading = isInitializing;
   const isEmpty = habits.length === 0 && goals.length === 0 && !isLoading;
 
-  // Initialize ALL dashboard data on mount
-  // SyncProvider only syncs IndexedDB in background — it does NOT load stores.
-  // This component is the sole owner of store loading.
+  // Wait for SyncProvider to finish loading core data (habits, goals, tasks, user),
+  // then load supplementary dashboard-specific data (layout, milestones, completions).
   useEffect(() => {
     if (authLoading) return;
 
@@ -132,6 +119,9 @@ export default function DashboardContent() {
       setIsInitializing(false);
       return;
     }
+
+    // Wait for SyncProvider's isDataReady signal
+    if (!isDataReady) return;
 
     let active = true;
 
@@ -141,14 +131,12 @@ export default function DashboardContent() {
         const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
         const end = format(endOfMonth(today), 'yyyy-MM-dd');
 
+        // Only load supplementary data — core stores are already
+        // loaded by SyncProvider (habits, goals, tasks, user, routines)
         await Promise.all([
           loadDashboardLayout(user.id),
-          loadUser(),
-          loadHabits(),
-          loadGoals(),
           loadAllMilestones(),
           loadCompletions(start, end),
-          loadTasks(),
         ]);
 
         const onboarded = localStorage.getItem('habitflow_onboarded');
@@ -169,7 +157,7 @@ export default function DashboardContent() {
     return () => {
       active = false;
     };
-  }, [authLoading, user, loadHabits, loadGoals, loadAllMilestones, loadCompletions, loadDashboardLayout, loadUser, loadTasks]);
+  }, [authLoading, user, isDataReady, loadAllMilestones, loadCompletions, loadDashboardLayout]);
 
   // Trigger dashboard guided tour
   useEffect(() => {

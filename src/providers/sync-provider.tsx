@@ -3,6 +3,11 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { getSyncEngine, SyncStatus } from '@/lib/sync';
 import { useAuth } from './auth-provider';
+import { useGoalStore } from '@/lib/stores/goal-store';
+import { useHabitStore } from '@/lib/stores/habit-store';
+import { useTaskStore } from '@/lib/stores/task-store';
+import { useRoutineStore } from '@/lib/stores/routine-store';
+import { useUserStore } from '@/lib/stores/user-store';
 
 interface SyncContextType {
   syncStatus: SyncStatus;
@@ -10,6 +15,8 @@ interface SyncContextType {
   isOnline: boolean;
   pendingChanges: number;
   lastSyncAt: string | null;
+  /** True once SyncProvider has finished syncing + loading stores */
+  isDataReady: boolean;
   triggerSync: () => Promise<void>;
 }
 
@@ -27,6 +34,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [isOnline, setIsOnline] = useState(true);
   const [pendingChanges, setPendingChanges] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+  const [isDataReady, setIsDataReady] = useState(false);
 
   // Update metadata periodically
   const updateMetadata = useCallback(() => {
@@ -37,17 +45,18 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     setIsOnline(metadata.isOnline);
   }, []);
 
-  // Background sync - syncs Supabase → IndexedDB silently.
-  // Does NOT call store load functions or block rendering.
-  // The dashboard handles its own store loading independently.
+  // Background sync: Supabase → IndexedDB → Zustand stores
+  // Always renders children immediately — never blocks UI.
   useEffect(() => {
     if (!isAuthenticated || !userId) {
       hasInitializedRef.current = false;
       lastUserIdRef.current = null;
+      setIsDataReady(true); // Not authenticated — nothing to load
       return;
     }
 
     if (hasInitializedRef.current && lastUserIdRef.current === userId) {
+      setIsDataReady(true);
       return;
     }
 
@@ -61,11 +70,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     let metadataInterval: NodeJS.Timeout | null = null;
     let unsubscribe: (() => void) | null = null;
 
-    const backgroundSync = async () => {
+    const initializeData = async () => {
       try {
         const syncEngine = getSyncEngine();
 
-        // Subscribe to sync status for UI feedback
         unsubscribe = syncEngine.onSyncStatusChange((status) => {
           if (active) {
             setSyncStatus(status);
@@ -73,26 +81,34 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
-        // STEP 1: Check and run migrations if needed
+        // STEP 1: Migrations
         if (active) setSyncStatus({ type: 'syncing', message: 'Checking migrations...', progress: 10 });
         await syncEngine.checkAndRunMigrations();
 
         if (!active) return;
 
-        // STEP 2: Sync from Supabase to IndexedDB (background only)
+        // STEP 2: Sync Supabase → IndexedDB
         if (active) setSyncStatus({ type: 'syncing', message: 'Syncing from cloud...', progress: 40 });
         await syncEngine.syncAll();
 
         if (!active) return;
 
-        // NOTE: We intentionally do NOT call store load functions here.
-        // Store loading (loadHabits, loadGoals, etc.) is handled by each
-        // page component (e.g. DashboardContent) to avoid toggling
-        // isLoading flags and causing UI blinks.
+        // STEP 3: Load IndexedDB → Zustand stores
+        if (active) setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 80 });
+        await Promise.all([
+          useUserStore.getState().loadUser(),
+          useGoalStore.getState().loadGoals(),
+          useHabitStore.getState().loadHabits(),
+          useTaskStore.getState().loadTasks(),
+          useRoutineStore.getState().loadRoutines(),
+        ]);
+
+        if (!active) return;
 
         hasInitializedRef.current = true;
         lastUserIdRef.current = userId;
-        setSyncStatus({ type: 'success', message: 'Sync complete' });
+        setIsDataReady(true);
+        setSyncStatus({ type: 'success', message: 'All data loaded' });
 
         updateMetadata();
 
@@ -101,16 +117,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         }, 30000);
 
       } catch (error) {
-        console.error('[SyncProvider] Background sync failed:', error);
+        console.error('[SyncProvider] Initialization failed:', error);
         if (active) {
-          setSyncStatus({ type: 'error', message: 'Sync failed' });
+          setSyncStatus({ type: 'error', message: 'Failed to load data' });
+          setIsDataReady(true); // Still render even if sync fails
         }
       } finally {
         isInitializingRef.current = false;
       }
     };
 
-    backgroundSync();
+    initializeData();
 
     return () => {
       active = false;
@@ -141,7 +158,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     updateMetadata();
   }, [isAuthenticated, updateMetadata]);
 
-  // Always render children immediately — sync runs in background
+  // Always render children immediately — NO blocking render
   return (
     <SyncContext.Provider value={{
       syncStatus,
@@ -149,6 +166,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       isOnline,
       pendingChanges,
       lastSyncAt,
+      isDataReady,
       triggerSync
     }}>
       {children}
@@ -163,4 +181,3 @@ export function useSync() {
   }
   return context;
 }
-
