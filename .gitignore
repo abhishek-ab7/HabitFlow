@@ -60,4 +60,4 @@ dev.log
 # Test reports
 /playwright-report/
 /test-results/
-
+/LT
