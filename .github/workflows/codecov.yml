@@ -30,9 +30,9 @@ jobs:
         run: npm run build
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-          NEXT_PUBLIC_SUPABASE_URL: "https://mock.supabase.co"
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: "mock-key"
-          NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+          NEXT_PUBLIC_SUPABASE_URL: "https://zqzegbvtoyqxidxuuzim.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxemVnYnZ0b3lxeGlkeHV1emltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5NzcwODQsImV4cCI6MjA4NDU1MzA4NH0.3ML4sc6DlmtzOUfXS6zUDRY5klzITgGSriD7f6QOmC8"
+          NEXT_PUBLIC_APP_URL: "https://habitflow.tech"
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4
