@@ -511,7 +511,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-md bg-card/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/10 dark:border-white/5 rounded-3xl p-6 md:p-8 shadow-2xl z-[1050] text-center space-y-6"
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-md bg-card/90 dark:bg-slate-900/90 backdrop-blur-xl border border-border/80 dark:border-white/5 rounded-3xl p-6 md:p-8 shadow-2xl z-[1050] text-center space-y-6"
             >
               <div className="mx-auto w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-500">
                 <HelpCircle className="w-8 h-8 animate-pulse" />
@@ -558,14 +558,14 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
               }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ type: 'spring', damping: 28, stiffness: 180 }}
-              className="w-[340px] bg-card/95 dark:bg-slate-900/95 backdrop-blur-xl border border-white/10 dark:border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 text-left border-indigo-500/20"
+              className="w-[340px] bg-card/95 dark:bg-slate-900/95 backdrop-blur-xl border border-border/80 dark:border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 text-left"
             >
               {/* Tooltip Card Connection Arrow */}
               {arrowDetails && (
                 <div
                   style={{ left: arrowDetails.left }}
                   className={cn(
-                    "absolute w-3.5 h-3.5 bg-card border-indigo-500/20 dark:border-white/5 rotate-45 z-10 transition-all duration-300",
+                    "absolute w-3.5 h-3.5 bg-card border-border/85 dark:border-white/5 rotate-45 z-10 transition-all duration-300",
                     arrowDetails.isBelow 
                       ? "bottom-full translate-y-1.5 border-t border-l" 
                       : "top-full -translate-y-1.5 border-b border-r"

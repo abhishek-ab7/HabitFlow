@@ -301,27 +301,27 @@ export default function LeaderboardPage() {
 
       {/* User Inspection Modal */}
       <Dialog open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
-        <DialogContent className="max-w-md border-indigo-500/20 bg-slate-900 text-white rounded-2xl shadow-2xl overflow-hidden p-6">
+        <DialogContent className="max-w-md border-slate-200/50 dark:border-indigo-500/20 bg-card text-foreground rounded-2xl shadow-2xl overflow-hidden p-6">
           {selectedUser && (
             <>
-              <DialogHeader className="flex flex-col items-center pb-4 border-b border-white/5">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white/10 flex items-center justify-center font-bold text-3xl text-white shadow-xl mb-3">
+              <DialogHeader className="flex flex-col items-center pb-4 border-b border-border/40">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-slate-200/50 dark:border-white/10 flex items-center justify-center font-bold text-3xl text-white shadow-xl mb-3">
                   {getAvatarLetter(selectedUser.user_name)}
                 </div>
-                <DialogTitle className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                <DialogTitle className="text-xl font-bold tracking-tight flex items-center gap-2">
                   {selectedUser.user_name || 'Anonymous'}
-                  <Badge className="bg-indigo-500/20 text-indigo-400 border-0">
+                  <Badge className="bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-0">
                     Lv.{selectedUser.level}
                   </Badge>
                 </DialogTitle>
-                <p className="text-sm text-slate-400 mt-1">Total score: {selectedUser.xp} XP</p>
+                <p className="text-sm text-muted-foreground mt-1">Total score: {selectedUser.xp} XP</p>
               </DialogHeader>
 
               <div className="py-6 space-y-6">
                 {selectedUser.stats ? (
                   <DisciplineRadar stats={selectedUser.stats} />
                 ) : (
-                  <div className="h-[200px] flex flex-col items-center justify-center border border-white/5 rounded-2xl bg-white/5 text-slate-400 text-sm">
+                  <div className="h-[200px] flex flex-col items-center justify-center border border-border/40 rounded-2xl bg-muted/20 text-muted-foreground text-sm">
                     <Sparkles className="w-8 h-8 text-indigo-500/40 mb-2" />
                     <span>No stats unlocked yet</span>
                   </div>
