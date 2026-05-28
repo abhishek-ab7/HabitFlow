@@ -142,9 +142,9 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-background/90 dark:bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto"
+        className="fixed inset-0 z-[100] bg-background/90 dark:bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto"
       >
-        <div className="absolute top-4 right-4 z-55">
+        <div className="absolute top-4 right-4 z-[110]">
           <Button
             variant="ghost"
             size="icon"
