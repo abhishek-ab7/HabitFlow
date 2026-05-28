@@ -23,14 +23,20 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
   const displayName = useUserStore((s) => s.displayName);
   const addXp = useGamificationStore((s) => s.addXp);
 
-  const { habits, completions } = useHabitStore(
+  const { habits, completions, toggle: toggleHabit } = useHabitStore(
     useShallow((s) => ({
       habits: s.habits,
       completions: s.completions,
+      toggle: s.toggle,
     }))
   );
 
-  const tasks = useTaskStore((s) => s.tasks);
+  const { tasks, toggleTaskComplete } = useTaskStore(
+    useShallow((s) => ({
+      tasks: s.tasks,
+      toggleTaskComplete: s.toggleTaskComplete,
+    }))
+  );
 
   // Compute greeting name
   const greetingName = useMemo(() => {
@@ -71,17 +77,21 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
       icon: h.icon || '🎯',
     }));
 
-    const pendingTasks = tasks.filter((t) => t.status !== 'done' && t.status !== 'archived');
-    const todayTasks = pendingTasks.filter((t) => {
+    const activeTasks = tasks.filter((t) => t.status !== 'archived');
+    const todayTasks = activeTasks.filter((t) => {
       if (!t.due_date) return false;
-      return t.due_date.split('T')[0] <= todayStr;
+      const dueDateStr = t.due_date.split('T')[0];
+      if (t.status === 'done') {
+        return dueDateStr === todayStr;
+      }
+      return dueDateStr <= todayStr;
     });
 
     const taskItems = todayTasks.map((t) => ({
       id: t.id,
       title: t.title,
       type: 'task' as const,
-      completed: false,
+      completed: t.status === 'done',
       icon: '📝',
     }));
 
@@ -94,6 +104,21 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { completedCount: completed, totalCount: total, percentage: pct };
   }, [focusItems]);
+
+  const handleToggleItem = async (item: { id: string; type: 'habit' | 'task'; completed: boolean }) => {
+    try {
+      if (item.type === 'habit') {
+        await toggleHabit(item.id, todayStr);
+        toast.success(item.completed ? 'Habit marked incomplete' : 'Habit completed! 🎉');
+      } else {
+        await toggleTaskComplete(item.id);
+        toast.success(item.completed ? 'Task marked incomplete' : 'Task completed! 🎉');
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error((error as Error).message || 'Failed to update completion');
+    }
+  };
 
   const handleSkip = () => {
     const userId = user?.id || 'guest';
@@ -203,11 +228,12 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
                   {focusItems.slice(0, 5).map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between p-3.5 rounded-2xl bg-card border border-border/50 shadow-sm"
+                      onClick={() => handleToggleItem(item)}
+                      className="flex items-center justify-between p-3.5 rounded-2xl bg-card border border-border/50 shadow-sm cursor-pointer hover:bg-secondary/40 dark:hover:bg-slate-800/40 transition-colors group select-none"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-xl shrink-0 select-none">{item.icon}</span>
-                        <span className="text-sm font-semibold text-foreground truncate">
+                        <span className="text-xl shrink-0 select-none group-hover:scale-110 transition-transform">{item.icon}</span>
+                        <span className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
                           {item.title}
                         </span>
                       </div>
@@ -216,11 +242,11 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
                           {item.type}
                         </span>
                         {item.completed ? (
-                          <div className="w-5 h-5 rounded-full bg-success/20 text-success flex items-center justify-center border border-success/30">
+                          <div className="w-5 h-5 rounded-full bg-success/20 text-success flex items-center justify-center border border-success/30 group-hover:bg-success/30 transition-colors">
                             <Check className="w-3.5 h-3.5" />
                           </div>
                         ) : (
-                          <div className="w-5 h-5 rounded-full border border-muted-foreground/30 flex items-center justify-center bg-card" />
+                          <div className="w-5 h-5 rounded-full border border-muted-foreground/30 flex items-center justify-center bg-card group-hover:border-primary/50 transition-colors" />
                         )}
                       </div>
                     </div>
