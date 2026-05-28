@@ -13,9 +13,73 @@ import { useTaskStore } from '@/lib/stores/task-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { toast } from 'sonner';
 
+import type { Habit, HabitCompletion, Task } from '@/lib/types';
+
 interface FocusModeOverlayProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+interface FocusItem {
+  id: string;
+  title: string;
+  type: 'habit' | 'task';
+  completed: boolean;
+  icon: string;
+}
+
+// Extracted pure helper to compute greeting name
+export function getGreetingName(displayName: string | null | undefined, email?: string | null): string {
+  if (displayName && displayName.trim()) {
+    return displayName.trim().split(/\s+/)[0];
+  }
+  if (email) {
+    const prefix = email.split('@')[0];
+    return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  }
+  return 'Habit Hero';
+}
+
+// Extracted pure helper to calculate today's focus items
+export function getTodayFocusItems(
+  habits: Habit[],
+  completions: HabitCompletion[],
+  tasks: Task[],
+  todayStr: string
+): FocusItem[] {
+  const todayCompletedHabitIds = new Set(
+    completions.filter((c) => c.date === todayStr && c.completed).map((c) => c.habitId)
+  );
+
+  const activeHabits = habits.filter((h) => !h.archived);
+  
+  const habitItems = activeHabits.map((h) => ({
+    id: h.id,
+    title: h.name,
+    type: 'habit' as const,
+    completed: todayCompletedHabitIds.has(h.id),
+    icon: h.icon || '🎯',
+  }));
+
+  const activeTasks = tasks.filter((t) => t.status !== 'archived');
+  const todayTasks = activeTasks.filter((t) => {
+    if (!t.due_date) return false;
+    const dueDateStr = t.due_date.split('T')[0];
+    if (t.status === 'done') {
+      return dueDateStr === todayStr;
+    }
+    return dueDateStr <= todayStr;
+  });
+
+  const taskItems = todayTasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    type: 'task' as const,
+    completed: t.status === 'done',
+    icon: '📝',
+  }));
+
+  return [...habitItems, ...taskItems];
 }
 
 export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
@@ -40,15 +104,8 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
 
   // Compute greeting name
   const greetingName = useMemo(() => {
-    if (displayName && displayName.trim()) {
-      return displayName.trim().split(/\s+/)[0];
-    }
-    if (user?.email) {
-      const prefix = user.email.split('@')[0];
-      return prefix.charAt(0).toUpperCase() + prefix.slice(1);
-    }
-    return 'Habit Hero';
-  }, [displayName, user]);
+    return getGreetingName(displayName, user?.email);
+  }, [displayName, user?.email]);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [xpClaimedToday, setXpClaimedToday] = useState(false);
@@ -61,41 +118,9 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
     }
   }, [user, todayStr]);
 
-  // Compute today's focus items (habits and tasks)
+  // Compute today's focus items (habits and tasks) using helper function
   const focusItems = useMemo(() => {
-    const todayCompletedHabitIds = new Set(
-      completions.filter((c) => c.date === todayStr && c.completed).map((c) => c.habitId)
-    );
-
-    const activeHabits = habits.filter((h) => !h.archived);
-    
-    const habitItems = activeHabits.map((h) => ({
-      id: h.id,
-      title: h.name,
-      type: 'habit' as const,
-      completed: todayCompletedHabitIds.has(h.id),
-      icon: h.icon || '🎯',
-    }));
-
-    const activeTasks = tasks.filter((t) => t.status !== 'archived');
-    const todayTasks = activeTasks.filter((t) => {
-      if (!t.due_date) return false;
-      const dueDateStr = t.due_date.split('T')[0];
-      if (t.status === 'done') {
-        return dueDateStr === todayStr;
-      }
-      return dueDateStr <= todayStr;
-    });
-
-    const taskItems = todayTasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      type: 'task' as const,
-      completed: t.status === 'done',
-      icon: '📝',
-    }));
-
-    return [...habitItems, ...taskItems];
+    return getTodayFocusItems(habits, completions, tasks, todayStr);
   }, [habits, completions, tasks, todayStr]);
 
   const { completedCount, totalCount, percentage } = useMemo(() => {
