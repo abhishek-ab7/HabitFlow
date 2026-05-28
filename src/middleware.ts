@@ -23,7 +23,13 @@ export async function middleware(request: NextRequest) {
   // Public routes that don't require authentication.
   // We exclude '/login' from isPublicRoute so middleware can check the session and redirect logged-in users.
   const publicRoutes = ['/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout'];
-  const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route)) || pathname === '/';
+  const cleanPath = pathname.replace(/\/+$/, '') || '/';
+  
+  // We skip middleware logic for static routes / authentication callback endpoints early,
+  // but allow the root page '/' to proceed down so that session cookies can be validated/refreshed
+  // on public homepage hits before server components render.
+  const isSkipPublicRoute = publicRoutes.some(route => cleanPath.startsWith(route));
+  const isPublicRoute = isSkipPublicRoute || cleanPath === '/';
 
   // Apply rate limiting to sensitive public routes
   if (pathname.startsWith('/auth/callback')) {
@@ -47,45 +53,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (isPublicRoute) {
+  if (isSkipPublicRoute) {
     return NextResponse.next();
   }
 
   // Create a response object
-  const response = NextResponse.next({
+  let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
-
-  // Add Security Headers
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  // Content Security Policy (CSP)
-  // Allow scripts from self and trusted sources (Supabase, Vercel)
-  const cspHeader = `
-    default-src 'self';
-    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://va.vercel-scripts.com;
-    style-src 'self' 'unsafe-inline';
-    img-src 'self' blob: data: https://*.supabase.co https://*.userusercontent.com;
-    font-src 'self' data:;
-    connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.supabase.net wss://*.supabase.co wss://*.supabase.in wss://*.supabase.net https://generativelanguage.googleapis.com;
-    object-src 'none';
-    base-uri 'self';
-    form-action 'self';
-    frame-ancestors 'none';
-    block-all-mixed-content;
-    upgrade-insecure-requests;
-  `.replace(/\s{2,}/g, ' ').trim();
-
-  response.headers.set('Content-Security-Policy', cspHeader);
-
-  response.headers.set(
-    'Strict-Transport-Security',
-    'max-age=31536000; includeSubDomains'
-  );
 
   // Create Supabase client with proper cookie handling
   const supabase = createServerClient(
@@ -97,6 +74,18 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set({
+              name,
+              value,
+              ...options,
+            });
+          });
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          });
           cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set({
               name,
@@ -133,6 +122,31 @@ export async function middleware(request: NextRequest) {
     redirectUrl.pathname = '/dashboard';
     return NextResponse.redirect(redirectUrl);
   }
+
+  // Add Security Headers to final response
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  
+  // Content Security Policy (CSP)
+  const cspHeader = `
+    default-src 'self';
+    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://va.vercel-scripts.com;
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' blob: data: https://*.supabase.co https://*.userusercontent.com;
+    font-src 'self' data:;
+    connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.supabase.net wss://*.supabase.co wss://*.supabase.in wss://*.supabase.net https://generativelanguage.googleapis.com;
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+    frame-ancestors 'none';
+    block-all-mixed-content;
+    upgrade-insecure-requests;
+  `.replace(/\s{2,}/g, ' ').trim();
+
+  response.headers.set('Content-Security-Policy', cspHeader);
+  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
   return response;
 }
