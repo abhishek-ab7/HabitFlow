@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { codecovNextJSWebpackPlugin } from "@codecov/nextjs-webpack-plugin";
 
 const nextConfig: NextConfig = {
   // ⚡ PERFORMANCE OPTIMIZATIONS
@@ -48,6 +49,18 @@ const nextConfig: NextConfig = {
           ],
       },
     ];
+  },
+
+  webpack: (config, options) => {
+    config.plugins.push(
+      codecovNextJSWebpackPlugin({
+        enableBundleAnalysis: process.env.CODECOV_TOKEN !== undefined,
+        bundleName: "habit-flow",
+        uploadToken: process.env.CODECOV_TOKEN,
+        webpack: options.webpack,
+      })
+    );
+    return config;
   },
 };
 
