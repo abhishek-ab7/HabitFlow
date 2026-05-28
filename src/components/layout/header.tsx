@@ -145,17 +145,15 @@ export function Header() {
         {/* Desktop Navigation */}
         <nav className="nav-container hidden md:flex items-center justify-center flex-1 -ml-6 lg:-ml-10">
           <style dangerouslySetInnerHTML={{ __html: `
-            @media (max-width: 1535px) {
-              .nav-link {
-                width: 2.5rem;
-                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
-              }
-              .nav-container:hover .nav-link {
-                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
-              }
-              .nav-link:hover ~ .nav-link {
-                transform: translateX(85px);
-              }
+            .nav-link {
+              width: 2.5rem;
+              transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
+            }
+            .nav-container:hover .nav-link {
+              transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
+            }
+            .nav-link:hover ~ .nav-link {
+              transform: translateX(85px);
             }
             .nav-link svg {
               transition: stroke 0.3s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -199,13 +197,13 @@ export function Header() {
                     />
                     <Icon className="h-[20px] w-[20px] shrink-0 relative z-10" />
                   </span>
-                  <span className="absolute left-10 opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-1 2xl:relative 2xl:left-0 2xl:opacity-100 2xl:pointer-events-auto 2xl:ml-2">
+                  <span className="absolute left-10 opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-1">
                     {item.label}
                   </span>
                 </span>
                 
                 {/* Premium progress underline effect on hover */}
-                <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-gradient-to-r from-primary to-purple-600 transform scale-x-0 origin-left transition-transform duration-300 ease-out group-hover:scale-x-100 2xl:hidden" />
+                <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-gradient-to-r from-primary to-purple-600 transform scale-x-0 origin-left transition-transform duration-300 ease-out group-hover:scale-x-100" />
 
                 {isActive && (
                   <div
