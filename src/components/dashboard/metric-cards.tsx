@@ -48,8 +48,8 @@ export function MetricCards({
   return (
     <StaggerContainer className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-8">
       {/* Today's Habits */}
-      <StaggerItem>
-        <Card className="relative overflow-hidden hover-lift">
+      <StaggerItem className="h-full">
+        <Card className="relative overflow-hidden hover-lift h-full">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent" />
           <CardContent className="p-6 relative">
             <div className="flex items-start justify-between">
@@ -78,8 +78,8 @@ export function MetricCards({
       </StaggerItem>
 
       {/* Monthly Rate */}
-      <StaggerItem>
-        <Card className="relative overflow-hidden hover-lift">
+      <StaggerItem className="h-full">
+        <Card className="relative overflow-hidden hover-lift h-full">
           <div className="absolute inset-0 bg-gradient-to-br from-chart-2/5 to-transparent" />
           <CardContent className="p-6 relative">
             <div className="flex items-start justify-between">
@@ -116,9 +116,9 @@ export function MetricCards({
       </StaggerItem>
 
       {/* Current Streak */}
-      <StaggerItem>
+      <StaggerItem className="h-full">
         <Card className={cn(
-          "relative overflow-hidden hover-lift",
+          "relative overflow-hidden hover-lift h-full",
           isStreakMilestone && "ring-2 ring-warning/50"
         )}>
           <div className="absolute inset-0 bg-gradient-to-br from-warning/5 to-transparent" />
@@ -158,8 +158,8 @@ export function MetricCards({
       </StaggerItem>
 
       {/* Active Goals */}
-      <StaggerItem>
-        <Card className="relative overflow-hidden hover-lift">
+      <StaggerItem className="h-full">
+        <Card className="relative overflow-hidden hover-lift h-full">
           <div className="absolute inset-0 bg-gradient-to-br from-chart-4/5 to-transparent" />
           <CardContent className="p-6 relative">
             <div className="flex items-start justify-between">
@@ -172,11 +172,9 @@ export function MetricCards({
                     <CountUp value={activeGoals} />
                   </span>
                 </div>
-                {upcomingDeadlines > 0 && (
-                  <p className="text-xs text-warning mt-1">
-                    {upcomingDeadlines} due soon
-                  </p>
-                )}
+                <p className={cn("text-xs mt-1", upcomingDeadlines > 0 ? "text-warning" : "text-muted-foreground")}>
+                  {upcomingDeadlines > 0 ? `${upcomingDeadlines} due soon` : 'No upcoming deadlines'}
+                </p>
               </div>
               <div className={cn(
                 "flex items-center justify-center w-12 h-12 rounded-xl",
