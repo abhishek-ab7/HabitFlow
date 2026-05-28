@@ -101,14 +101,36 @@ export class SyncEngine {
   // INITIALIZATION
   // ===================
 
+  private getLastSyncTime(userId: string): Date | null {
+    if (typeof localStorage === 'undefined') return null;
+    const stored = localStorage.getItem(`habit_sync_last_at_${userId}`);
+    return stored ? new Date(stored) : null;
+  }
+
+  private handleAuthStateChange(newUserId: string | null) {
+    if (newUserId === this.userId) return;
+
+    this.userId = newUserId;
+    logger.info('[SyncEngine] Auth state changed, new userId:', this.userId);
+
+    if (newUserId) {
+      this.lastSyncAt = this.getLastSyncTime(newUserId);
+      this.syncAll();
+      this.setupRealtime();
+    } else {
+      this.lastSyncAt = null;
+      this.cleanupRealtime();
+      this.pendingOperations.clear();
+    }
+  }
+
   private async setupAuth() {
     try {
       const { data: { session } } = await this.supabase.auth.getSession();
       this.userId = session?.user?.id || null;
 
-      if (this.userId && typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem(`habit_sync_last_at_${this.userId}`);
-        if (stored) this.lastSyncAt = new Date(stored);
+      if (this.userId) {
+        this.lastSyncAt = this.getLastSyncTime(this.userId);
       }
 
       logger.info('[SyncEngine] Auth setup complete, userId:', this.userId);
@@ -116,28 +138,9 @@ export class SyncEngine {
       // Resolve the auth ready promise
       this.authReadyResolve();
 
-      this.supabase.auth.onAuthStateChange((event, session) => {
+      this.supabase.auth.onAuthStateChange((_event, session) => {
         const newUserId = session?.user?.id || null;
-
-        if (newUserId !== this.userId) {
-          this.userId = newUserId;
-          logger.info('[SyncEngine] Auth state changed, new userId:', this.userId);
-
-          if (newUserId) {
-            if (typeof localStorage !== 'undefined') {
-              const stored = localStorage.getItem(`habit_sync_last_at_${newUserId}`);
-              this.lastSyncAt = stored ? new Date(stored) : null;
-            } else {
-              this.lastSyncAt = null;
-            }
-            this.syncAll();
-            this.setupRealtime();
-          } else {
-            this.lastSyncAt = null;
-            this.cleanupRealtime();
-            this.pendingOperations.clear();
-          }
-        }
+        this.handleAuthStateChange(newUserId);
       });
 
       if (this.userId) {
@@ -149,6 +152,7 @@ export class SyncEngine {
       this.authReadyResolve();
     }
   }
+
 
   private setupNetworkListeners() {
     if (typeof window === 'undefined') return;
