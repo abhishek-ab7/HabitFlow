@@ -75,6 +75,114 @@ let cachedStreaks: Map<string, number> | null = null;
 let lastHabitsRef: Habit[] | null = null;
 let lastCompletionsRef: HabitCompletion[] | null = null;
 
+function awardXpForCompletionDiff(
+  habit: Habit | undefined,
+  date: string,
+  completed: boolean,
+  wasCompleted: boolean
+) {
+  const today = new Date().toISOString().split('T')[0];
+  if (date !== today) return;
+  if (completed === wasCompleted) return;
+
+  const difficulty = habit?.difficulty || 'medium';
+  const base = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+  const xpAmount = completed ? base : -base;
+  useGamificationStore.getState().addXp(xpAmount, habit?.category);
+}
+
+async function updateLocalAndSync(
+  set: (fn: (state: HabitState) => Partial<HabitState> | HabitState) => void,
+  result: HabitCompletion
+) {
+  set(state => ({
+    completions: [
+      ...state.completions.filter(c => !(c.habitId === result.habitId && c.date === result.date)),
+      result
+    ]
+  }));
+  try {
+    const syncEngine = getSyncEngine();
+    await syncEngine.pushCompletion(result);
+  } catch (error) {
+    console.error('Failed to sync completion:', error);
+  }
+}
+
+async function handleWeeklyFreezeVerification(completions: HabitCompletion[], date: string) {
+  const dateObj = parseISO(date);
+  const startStr = format(startOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const endStr = format(endOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+
+  const hasWeeklyFreeze = completions.some(
+    c => c.status === 'frozen' && c.date >= startStr && c.date <= endStr
+  );
+
+  if (hasWeeklyFreeze) {
+    const success = await useGamificationStore.getState().useShield();
+    if (!success) {
+      throw new Error("No free weekly freezes or purchased streak shields left! Buy a shield in Settings.");
+    }
+  }
+}
+
+function awardXpForBatch(habits: Habit[], results: HabitCompletion[], date: string) {
+  const today = new Date().toISOString().split('T')[0];
+  if (date !== today) return;
+
+  results.forEach(r => {
+    const isNew = r.updatedAt === r.createdAt || 
+      (new Date(r.updatedAt!).getTime() - new Date(r.createdAt!).getTime() < 1000);
+    if (isNew) {
+      const habit = habits.find(h => h.id === r.habitId);
+      const difficulty = habit?.difficulty || 'medium';
+      const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+      useGamificationStore.getState().addXp(xpAmount, habit?.category);
+    }
+  });
+}
+
+async function syncBatchCompletions(results: HabitCompletion[]) {
+  try {
+    const syncEngine = getSyncEngine();
+    for (const result of results) {
+      await syncEngine.pushCompletion(result);
+    }
+  } catch (error) {
+    console.error('Failed to sync batch completions:', error);
+  }
+}
+
+function isRangeAlreadyLoaded(
+  loadedRange: { start: string; end: string } | null,
+  start: string,
+  end: string
+): boolean {
+  if (!loadedRange) return false;
+  return start >= loadedRange.start && end <= loadedRange.end;
+}
+
+function calculateUnionRange(
+  loadedRange: { start: string; end: string } | null,
+  start: string,
+  end: string
+) {
+  if (!loadedRange) {
+    return { start, end };
+  }
+  return {
+    start: start < loadedRange.start ? start : loadedRange.start,
+    end: end > loadedRange.end ? end : loadedRange.end,
+  };
+}
+
+function isCacheValid(
+  habits: Habit[],
+  completions: HabitCompletion[]
+): boolean {
+  return !!cachedStreaks && habits === lastHabitsRef && completions === lastCompletionsRef;
+}
+
 export const useHabitStore = create<HabitState>((set, get) => ({
   habits: [],
   completions: [],
@@ -115,10 +223,8 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   },
 
   loadCompletions: async (startDate: string, endDate: string) => {
-    // Check if the requested range is already fully covered by loadedRange
-    const { loadedRange, completions: existingCompletions } = get();
-    if (loadedRange && startDate >= loadedRange.start && endDate <= loadedRange.end) {
-      return; // Already loaded!
+    if (isRangeAlreadyLoaded(get().loadedRange, startDate, endDate)) {
+      return;
     }
 
     try {
@@ -132,21 +238,15 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
       const completions = await getAllCompletionsInRange(startDate, endDate, session.user.id);
       
-      // Merge: Filter out any existing completions that fall in [startDate, endDate]
-      // and append the newly fetched ones to keep everything loaded outside this range intact.
-      const filteredExisting = existingCompletions.filter(c => c.date < startDate || c.date > endDate);
+      const filteredExisting = get().completions.filter(
+        c => c.date < startDate || c.date > endDate
+      );
       
-      // Calculate union range
-      let newStart = startDate;
-      let newEnd = endDate;
-      if (loadedRange) {
-        newStart = startDate < loadedRange.start ? startDate : loadedRange.start;
-        newEnd = endDate > loadedRange.end ? endDate : loadedRange.end;
-      }
+      const unionRange = calculateUnionRange(get().loadedRange, startDate, endDate);
 
       set({
         completions: [...filteredExisting, ...completions],
-        loadedRange: { start: newStart, end: newEnd }
+        loadedRange: unionRange
       });
     } catch (error) {
       set({ error: (error as Error).message });
@@ -239,39 +339,10 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     const result = await toggleCompletion(habitId, date, session.user.id);
 
-    const today = new Date().toISOString().split('T')[0];
-    if (date === today) {
-      const habit = get().habits.find(h => h.id === habitId);
-      const difficulty = habit?.difficulty || 'medium';
-      const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
-      
-      if (result.completed) {
-        useGamificationStore.getState().addXp(xpAmount, habit?.category);
-      } else {
-        useGamificationStore.getState().addXp(-xpAmount, habit?.category);
-      }
-    }
+    const habit = get().habits.find(h => h.id === habitId);
+    awardXpForCompletionDiff(habit, date, result.completed, !result.completed);
 
-    set(state => {
-      // Remove existing for this habit/date
-      const filtered = state.completions.filter(
-        c => !(c.habitId === habitId && c.date === date)
-      );
-
-      // Add updated result (whether true or false)
-      // We keep 'false' completions in store so UI knows they exist (and synced)
-      // Filters in UI should check c.completed
-      return { completions: [...filtered, result] };
-    });
-
-    // Sync to cloud
-    try {
-      const syncEngine = getSyncEngine();
-      // Always push the update (whether true or false)
-      await syncEngine.pushCompletion(result);
-    } catch (error) {
-      console.error('Failed to sync completion:', error);
-    }
+    await updateLocalAndSync(set, result);
   },
 
   freezeHabit: async (habitId: string, date: string) => {
@@ -284,52 +355,14 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     if (isCurrentlyFrozen) {
       const result = await unfreezeCompletion(habitId, date, session.user.id);
-      set(state => {
-        const filtered = state.completions.filter(
-          c => !(c.habitId === habitId && c.date === date)
-        );
-        return { completions: [...filtered, result] };
-      });
-
-      try {
-        const syncEngine = getSyncEngine();
-        await syncEngine.pushCompletion(result);
-      } catch (error) {
-        console.error('Failed to sync unfreeze completion:', error);
-      }
+      await updateLocalAndSync(set, result);
       return;
     }
 
-    const dateObj = parseISO(date);
-    const startStr = format(startOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-    const endStr = format(endOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-
-    const hasWeeklyFreeze = get().completions.some(
-      c => c.status === 'frozen' && c.date >= startStr && c.date <= endStr
-    );
-
-    if (hasWeeklyFreeze) {
-      const success = await useGamificationStore.getState().useShield();
-      if (!success) {
-        throw new Error("No free weekly freezes or purchased streak shields left! Buy a shield in Settings.");
-      }
-    }
+    await handleWeeklyFreezeVerification(get().completions, date);
 
     const result = await freezeCompletion(habitId, date, session.user.id);
-
-    set(state => {
-      const filtered = state.completions.filter(
-        c => !(c.habitId === habitId && c.date === date)
-      );
-      return { completions: [...filtered, result] };
-    });
-
-    try {
-      const syncEngine = getSyncEngine();
-      await syncEngine.pushCompletion(result);
-    } catch (error) {
-      console.error('Failed to sync freeze completion:', error);
-    }
+    await updateLocalAndSync(set, result);
   },
 
   updateNote: async (habitId: string, date: string, note: string) => {
@@ -338,21 +371,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     if (!session?.user?.id) throw new Error("User not authenticated");
 
     const result = await updateCompletionNote(habitId, date, note, session.user.id);
-
-    set(state => {
-      const filtered = state.completions.filter(
-        c => !(c.habitId === habitId && c.date === date)
-      );
-      return { completions: [...filtered, result] };
-    });
-
-    // Sync to cloud
-    try {
-      const syncEngine = getSyncEngine();
-      await syncEngine.pushCompletion(result);
-    } catch (error) {
-      console.error('Failed to sync completion note:', error);
-    }
+    await updateLocalAndSync(set, result);
   },
 
   updateValue: async (habitId: string, date: string, value: number) => {
@@ -360,44 +379,19 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
 
-    // If completed is true and wasn't completed before, award XP
     const prevComp = get().completions.find(c => c.habitId === habitId && c.date === date);
     const wasCompleted = prevComp?.completed && prevComp?.status !== 'frozen';
 
     const result = await updateCompletionValue(habitId, date, value, session.user.id);
     
-    const today = new Date().toISOString().split('T')[0];
-    if (date === today) {
-      const habit = get().habits.find(h => h.id === habitId);
-      const difficulty = habit?.difficulty || 'medium';
-      const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
-      
-      if (result.completed && !wasCompleted) {
-        useGamificationStore.getState().addXp(xpAmount, habit?.category);
-      } else if (!result.completed && wasCompleted) {
-        useGamificationStore.getState().addXp(-xpAmount, habit?.category);
-      }
-    }
+    const habit = get().habits.find(h => h.id === habitId);
+    awardXpForCompletionDiff(habit, date, result.completed, !!wasCompleted);
 
-    set(state => {
-      const filtered = state.completions.filter(
-        c => !(c.habitId === habitId && c.date === date)
-      );
-      return { completions: [...filtered, result] };
-    });
-
-    // Sync to cloud
-    try {
-      const syncEngine = getSyncEngine();
-      await syncEngine.pushCompletion(result);
-    } catch (error) {
-      console.error('Failed to sync completion value:', error);
-    }
+    await updateLocalAndSync(set, result);
   },
 
   ensureComplete: async (habitId: string, date: string) => {
     const { completions, toggle } = get();
-    // Check if truly completed (exists AND completed=true)
     const isCompleted = completions.some(c => c.habitId === habitId && c.date === date && c.completed);
 
     if (!isCompleted) {
@@ -413,20 +407,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     const { batchCompleteHabits } = await import('@/lib/db');
     const results = await batchCompleteHabits(habitIds, date, session.user.id);
     
-    // Add XP for newly completed habits
-    const today = new Date().toISOString().split('T')[0];
-    if (date === today) {
-      const { useGamificationStore } = await import('@/lib/stores/gamification-store');
-      results.forEach(r => {
-        // Simple heuristic: if created recently or updated recently (in this transaction)
-        if (r.updatedAt === r.createdAt || (new Date(r.updatedAt!).getTime() - new Date(r.createdAt!).getTime() < 1000)) {
-           const habit = get().habits.find(h => h.id === r.habitId);
-           const difficulty = habit?.difficulty || 'medium';
-           const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
-           useGamificationStore.getState().addXp(xpAmount, habit?.category);
-        }
-      });
-    }
+    awardXpForBatch(get().habits, results, date);
 
     set(state => {
       const filtered = state.completions.filter(
@@ -435,15 +416,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       return { completions: [...filtered, ...results] };
     });
 
-    // Sync to cloud
-    try {
-      const syncEngine = getSyncEngine();
-      for (const result of results) {
-        await syncEngine.pushCompletion(result);
-      }
-    } catch (error) {
-      console.error('Failed to sync batch completions:', error);
-    }
+    await syncBatchCompletions(results);
   },
 
   reorder: async (orderedIds: string[]) => {
@@ -454,7 +427,6 @@ export const useHabitStore = create<HabitState>((set, get) => ({
         return habit ? { ...habit, order: index } : null;
       }).filter(Boolean) as Habit[];
 
-      // Sync all reordered habits to cloud
       try {
         const syncEngine = getSyncEngine();
         reordered.forEach(habit => syncEngine.pushHabit(habit));
@@ -484,7 +456,6 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       await seedDemoData(session.user.id);
       await get().loadHabits();
 
-      // Load completions for current and previous month
       const today = new Date();
       const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
       const end = format(endOfMonth(today), 'yyyy-MM-dd');
@@ -513,7 +484,6 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       c => c.date === today && c.completed && activeHabits.some(h => h.id === c.habitId)
     );
 
-    // Deduplicate by habitId - only count each habit once
     const uniqueHabitIds = new Set(todayCompletions.map(c => c.habitId));
     const completed = uniqueHabitIds.size;
     const total = activeHabits.length;
@@ -547,9 +517,8 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   getCurrentStreaks: () => {
     const { habits, completions } = get();
     
-    // Return cached value if reference equality holds
-    if (cachedStreaks && habits === lastHabitsRef && completions === lastCompletionsRef) {
-      return cachedStreaks;
+    if (isCacheValid(habits, completions)) {
+      return cachedStreaks!;
     }
 
     const streaks = new Map<string, number>();

@@ -39,6 +39,19 @@ import {
   pushUserSettingsToRemote
 } from './engines/settings-sync';
 
+const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
+  habits: syncHabitsWithRetry,
+  completions: syncCompletionsWithRetry,
+  goals: syncGoalsWithRetry,
+  tasks: syncTasksWithRetry,
+  milestones: syncMilestonesWithRetry,
+  routines: syncRoutinesWithRetry,
+  user_settings: syncUserSettingsWithRetry,
+  habit_routines: syncHabitRoutinesWithRetry,
+  routine_completions: syncRoutineCompletions,
+  mood_logs: syncMoodLogsWithRetry,
+};
+
 export type SyncStatus =
   | { type: 'idle'; message?: string }
   | { type: 'syncing'; message: string; progress?: number }
@@ -259,6 +272,27 @@ export class SyncEngine {
     };
   }
 
+  private updateSyncStore(store: any, status: SyncStatus) {
+    switch (status.type) {
+      case 'syncing':
+        store.setIsSyncing(true);
+        if (status.message) store.setSyncError(null);
+        break;
+      case 'success':
+        store.setIsSyncing(false);
+        store.setLastSyncTime(status.syncedAt || new Date());
+        store.setSyncError(null);
+        break;
+      case 'error':
+        store.setIsSyncing(false);
+        store.setSyncError(status.message);
+        break;
+      case 'idle':
+        store.setIsSyncing(false);
+        break;
+    }
+  }
+
   public notifyStatus(status: SyncStatus) {
     this.syncCallbacks.forEach(cb => {
       try {
@@ -270,19 +304,7 @@ export class SyncEngine {
 
     try {
       const store = useSyncStatusStore.getState();
-      if (status.type === 'syncing') {
-        store.setIsSyncing(true);
-        if (status.message) store.setSyncError(null);
-      } else if (status.type === 'success') {
-        store.setIsSyncing(false);
-        store.setLastSyncTime(status.syncedAt || new Date());
-        store.setSyncError(null);
-      } else if (status.type === 'error') {
-        store.setIsSyncing(false);
-        store.setSyncError(status.message);
-      } else if (status.type === 'idle') {
-        store.setIsSyncing(false);
-      }
+      this.updateSyncStore(store, status);
     } catch (error) {
       logger.warn('Failed to update sync status store', error);
     }
@@ -493,7 +515,7 @@ export class SyncEngine {
     await pushHabitToRemote(this, habit);
   }
 
-  async archiveHabit(habitId: string) {
+  private async softDeleteHabit(habitId: string) {
     if (!this.userId) return;
 
     const now = new Date().toISOString();
@@ -521,32 +543,27 @@ export class SyncEngine {
     if (error) throw error;
   }
 
-  async deleteHabit(habitId: string) {
+  private async deleteEntity(table: any, id: string) {
     if (!this.userId) return;
-
-    const now = new Date().toISOString();
 
     if (!this.isOnline) {
       this.queueOperation({
-        type: 'update',
-        table: 'habits',
-        data: {
-          id: habitId,
-          user_id: this.userId,
-          is_archived: true,
-          archived_at: now,
-          updated_at: now,
-        },
+        type: 'delete',
+        table,
+        data: { id },
       });
       return;
     }
 
-    const { error } = await (this.supabase.from('habits') as any).update({
-      is_archived: true,
-      updated_at: now,
-    } as any).eq('id', habitId).eq('user_id', this.userId);
+    await this.supabase.from(table).delete().eq('id', id);
+  }
 
-    if (error) throw error;
+  async archiveHabit(habitId: string) {
+    await this.softDeleteHabit(habitId);
+  }
+
+  async deleteHabit(habitId: string) {
+    await this.softDeleteHabit(habitId);
   }
 
   async pushCompletion(completion: HabitCompletion) {
@@ -572,18 +589,7 @@ export class SyncEngine {
   }
 
   async deleteCompletion(completionId: string) {
-    if (!this.userId) return;
-
-    if (!this.isOnline) {
-      this.queueOperation({
-        type: 'delete',
-        table: 'completions',
-        data: { id: completionId },
-      });
-      return;
-    }
-
-    await this.supabase.from('completions').delete().eq('id', completionId);
+    await this.deleteEntity('completions', completionId);
   }
 
   async pushGoal(goal: Goal) {
@@ -651,18 +657,7 @@ export class SyncEngine {
   }
 
   async deleteMilestone(milestoneId: string) {
-    if (!this.userId) return;
-
-    if (!this.isOnline) {
-      this.queueOperation({
-        type: 'delete',
-        table: 'milestones',
-        data: { id: milestoneId },
-      });
-      return;
-    }
-
-    await this.supabase.from('milestones').delete().eq('id', milestoneId);
+    await this.deleteEntity('milestones', milestoneId);
   }
 
   async pushTask(task: any) {
@@ -684,18 +679,7 @@ export class SyncEngine {
   }
 
   async deleteTask(taskId: string) {
-    if (!this.userId) return;
-
-    if (!this.isOnline) {
-      this.queueOperation({
-        type: 'delete',
-        table: 'tasks' as any,
-        data: { id: taskId },
-      });
-      return;
-    }
-
-    await this.supabase.from('tasks').delete().eq('id', taskId);
+    await this.deleteEntity('tasks' as any, taskId);
   }
 
   async pushUserSettings(settings: any) {
@@ -812,37 +796,9 @@ export class SyncEngine {
       this.log('info', `Realtime change detected in ${table}, syncing...`);
 
       try {
-        switch (table) {
-          case 'habits':
-            await syncHabitsWithRetry(this);
-            break;
-          case 'completions':
-            await syncCompletionsWithRetry(this);
-            break;
-          case 'goals':
-            await syncGoalsWithRetry(this);
-            break;
-          case 'tasks':
-            await syncTasksWithRetry(this);
-            break;
-          case 'milestones':
-            await syncMilestonesWithRetry(this);
-            break;
-          case 'routines':
-            await syncRoutinesWithRetry(this);
-            break;
-          case 'user_settings':
-            await syncUserSettingsWithRetry(this);
-            break;
-          case 'habit_routines':
-            await syncHabitRoutinesWithRetry(this);
-            break;
-          case 'routine_completions':
-            await syncRoutineCompletions(this);
-            break;
-          case 'mood_logs':
-            await syncMoodLogsWithRetry(this);
-            break;
+        const syncFn = syncTableMap[table];
+        if (syncFn) {
+          await syncFn(this);
         }
 
         this.notifyStatus({ type: 'success', message: 'Data updated' });
@@ -946,7 +902,8 @@ export class SyncEngine {
 
       const after = await countAllDuplicates();
 
-      if (before.completions > 0 || before.habits > 0 || before.goals > 0) {
+      const hasDuplicatesBefore = before.completions > 0 || before.habits > 0 || before.goals > 0;
+      if (hasDuplicatesBefore) {
         this.log('warn', `🧹 Cleaned duplicates: ${before.completions} completions, ${before.habits} habits, ${before.goals} goals`);
       }
     } catch (error) {
