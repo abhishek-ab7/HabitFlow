@@ -476,6 +476,7 @@ export function RoutinePlayer({ routine, onClose }: RoutinePlayerProps) {
                                             )}
                                             strokeWidth="5"
                                             strokeDasharray={timerCircumference}
+                                            initial={{ strokeDashoffset: 0 }}
                                             animate={{ strokeDashoffset }}
                                             transition={{ duration: 1, ease: "linear" }}
                                             strokeLinecap="round"

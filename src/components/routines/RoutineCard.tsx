@@ -217,6 +217,7 @@ export function RoutineCard({ routine, onPlay, onEdit, onDelete, preFetchedHabit
                                 )}
                                 strokeWidth={strokeWidth}
                                 strokeDasharray={circumference}
+                                initial={{ strokeDashoffset: circumference }}
                                 animate={{ strokeDashoffset }}
                                 transition={{ duration: 0.5 }}
                                 strokeLinecap="round"
