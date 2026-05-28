@@ -11,7 +11,8 @@ import {
   Play, 
   Check, 
   Volume2, 
-  VolumeX 
+  VolumeX,
+  Keyboard
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -28,91 +29,37 @@ interface TourStep {
   placement: 'top' | 'bottom' | 'center';
 }
 
-const TOUR_STEPS: TourStep[] = [
-  {
-    target: 'body',
-    title: 'Welcome to HabitFlow! 🚀',
-    content: 'HabitFlow is your gamified discipline control center. Let\'s take a 1-minute interactive tour to show you how to maximize your workflow, gain XP, and build consistency.',
-    benefit: 'Taking this quick tour sets you up for long-term consistency and stats growth.',
-    placement: 'center'
-  },
-  {
-    target: '.tour-hud-container',
-    title: 'Character Status & Progression 🏆',
-    content: 'This is your Level, XP (Experience Points), Gems, and Streak Shields. Every checked habit, milestone, and task completed adds XP and levels you up!',
-    benefit: 'Levels show your discipline level. Gems can be spent, and Shields protect your streaks from resetting.',
-    placement: 'bottom'
-  },
-  {
-    target: '.tour-momentum-card',
-    title: 'Daily Momentum Score ⚡',
-    content: 'Your daily momentum score integrates completed habits (60%) and tasks (40%). Completing items pushes this score up to 100%.',
-    benefit: 'Maintaining high momentum multiplies your daily XP collection and levels you up faster.',
-    placement: 'bottom'
-  },
-  {
-    target: '.tour-habits-widget',
-    title: 'Habits & Consistency Grid 🗓️',
-    content: 'Check off habits daily. See your weekly activity grid at a glance. Long streaks reflect deeper neural rewiring.',
-    benefit: 'Consistency builds character. Complete habits daily to stack discipline multipliers.',
-    placement: 'bottom'
-  },
-  {
-    target: '.tour-tasks-widget',
-    title: 'Today\'s Focus Tasks List 📋',
-    content: 'Focus is everything. Track high-priority items due today with dates, notes, and checklist cards.',
-    benefit: 'Clears mental clutter so you know exactly what requires your immediate focus.',
-    placement: 'top'
-  },
-  {
-    target: '.tour-goals-widget',
-    title: '90-Day Focus Goals 🎯',
-    content: 'Set long-term life outcomes and log progress milestones. Your active focus goal sits right on your dashboard.',
-    benefit: 'Keeps major vision targets top of mind instead of buried in folders.',
-    placement: 'top'
-  },
-  {
-    target: '.tour-ai-coach-widget',
-    title: 'AI Behavioral Coach 🧠',
-    content: 'Get personalized insights, smart advice, and custom habit recommendations tailored to your daily consistency patterns.',
-    benefit: 'Provides algorithmic checkups and tips to optimize your energy levels and routines.',
-    placement: 'top'
-  },
-  {
-    target: '.tour-weekly-review-widget',
-    title: 'Weekly Summary Review 📊',
-    content: 'Get a clean visual breakdown of your weekly achievements. Every Sunday morning, a comprehensive review logs your performance trends.',
-    benefit: 'Allows you to reflect on what went well and identify areas needing course corrections.',
-    placement: 'top'
-  },
-  {
-    target: '.nav-container',
-    title: 'Collapsible Nav Bar 📱',
-    content: 'Easily navigate between your Dashboard, Tasks, Routines, Habits, Goals, Leaderboard, and Settings.',
-    benefit: 'Items collapse to space-saving icons and smoothly slide open to reveal labels on hover.',
-    placement: 'bottom'
-  }
-];
-
 export default function DashboardTour({ onClose }: DashboardTourProps) {
   const [showPrompt, setShowPrompt] = useState(true);
   const [currentStep, setCurrentStep] = useState(0);
   const [activeRect, setActiveRect] = useState<DOMRect | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(false);
+  
   const cardRef = useRef<HTMLDivElement>(null);
   const isTransitioningRef = useRef(false);
 
-  // Initialize audio preference
+  // Initialize responsive state & sound preferences
   useEffect(() => {
+    setIsDesktop(window.innerWidth >= 768);
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    window.addEventListener('resize', handleResize);
+
     const feedbackSettings = localStorage.getItem('feedback_settings');
     if (feedbackSettings) {
       try {
         setAudioEnabled(JSON.parse(feedbackSettings).sound !== false);
       } catch (e) {}
     }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
-  // Synthesize soft premium UI chimes using Web Audio API
+  // Soft premium UI chimes via Web Audio API
   const playTourSound = (type: 'pop' | 'success' | 'close') => {
     if (!audioEnabled) return;
     try {
@@ -153,9 +100,101 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
     }
   };
 
-  const currentStepData = TOUR_STEPS[currentStep];
+  // Build steps list dynamically based on device features (desktop shortcuts)
+  const getTourSteps = (): TourStep[] => {
+    const steps: TourStep[] = [
+      {
+        target: 'body',
+        title: 'Welcome to HabitFlow! 🚀',
+        content: 'HabitFlow is your gamified discipline workspace. Let\'s take a short interactive walkthrough to understand the workflow and tabs.',
+        benefit: 'Complete this quick tour to learn the streak mechanics, shortcut keys, and tabs.',
+        placement: 'center'
+      },
+      // 1. MINIMAL DASHBOARD STEPS
+      {
+        target: '.tour-hero-section',
+        title: 'Dashboard Workspace 🏠',
+        content: 'Your daily center. This displays your today\'s focus, habits grid, and helpful insights from your AI Coach.',
+        benefit: 'Consolidates all high-level inputs in a single premium viewport.',
+        placement: 'bottom'
+      },
+      {
+        target: '.tour-momentum-card',
+        title: 'Daily Progress & Streaks ⚡',
+        content: 'Your Momentum Score updates live based on checked habits (60% weight) and completed tasks (40% weight). Log items consecutively to maintain streaks.',
+        benefit: 'Stack streaks to earn Gems, XP, and keep your leveling progression active.',
+        placement: 'bottom'
+      },
+      // 2. NAVBAR SECTIONS
+      {
+        target: '.tour-nav-dashboard, .tour-mobile-nav-dashboard',
+        title: 'Dashboard Tab 🏠',
+        content: 'Access your daily productivity logs, quick stats, and check-in panels in a single layout.',
+        benefit: 'Your main routine checklist page.',
+        placement: 'bottom'
+      },
+      {
+        target: '.tour-nav-tasks, .tour-mobile-nav-tasks',
+        title: 'Tasks Planner 📋',
+        content: 'Create checklists, group by priority labels (High, Med, Low), set deadlines, and organize items via the Eisenhower Priority matrix.',
+        benefit: 'Keeps your daily tasks clear and reduces decision fatigue.',
+        placement: 'bottom'
+      },
+      {
+        target: '.tour-nav-routines, .tour-mobile-nav-routines',
+        title: 'Routine Builder 🌅',
+        content: 'Build morning and evening stacks. Chain habits consecutively (habit stacking) to execute them smoothly.',
+        benefit: 'Helps automate routines so you baseline your consistency early in the day.',
+        placement: 'bottom'
+      },
+      {
+        target: '.tour-nav-habits, .tour-mobile-nav-habits',
+        title: 'Habits Consistency 🗓️',
+        content: 'Set recurring habits, track Streaks, and write notes. If you are busy, freeze a habit (Right-click cell on Desktop or tap dropdown option on Mobile) to protect your streak. Freezing uses Streak Shields purchased in settings.',
+        benefit: 'Streak Shield protection blocks streak resets so your hard work isn\'t lost.',
+        placement: 'bottom'
+      },
+      {
+        target: '.tour-nav-goals, .tour-mobile-nav-goals',
+        title: '90-Day Goals 🎯',
+        content: 'Set long-term life vision targets and outline sub-milestones to build focus loops.',
+        benefit: 'Visual progress meters track sub-milestones towards your overall target.',
+        placement: 'bottom'
+      },
+      {
+        target: '.tour-nav-analytics, .tour-mobile-nav-analytics',
+        title: 'Productivity Analytics 📊',
+        content: 'Review consistency charts, check-in activity heatmaps, and unlock your comprehensive Sunday morning reviews.',
+        benefit: 'Track historical trends to optimize your daily schedules.',
+        placement: 'bottom'
+      },
+      {
+        target: '.tour-nav-leaderboard, .tour-mobile-nav-leaderboard',
+        title: 'Competitive Leaderboard 🏆',
+        content: 'Earn XP, unlock custom badges, and compare scores with peers on weekly league leaderboards.',
+        benefit: 'Gamified ranks maintain accountability and friendly discipline.',
+        placement: 'bottom'
+      }
+    ];
 
-  // Track target element coordinates with intelligent smooth scrolling and transition safety
+    // Conditional: Add keyboard shortcuts step ONLY on desktop
+    if (isDesktop) {
+      steps.push({
+        target: '.tour-nav-shortcuts',
+        title: 'Keyboard Shortcuts ⌨️',
+        content: 'Boost your tracking speed! Quickly trigger actions without taking your hands off the keyboard.',
+        benefit: 'Press ? to toggle the shortcuts panel anytime.',
+        placement: 'bottom'
+      });
+    }
+
+    return steps;
+  };
+
+  const steps = getTourSteps();
+  const currentStepData = steps[currentStep] || steps[0];
+
+  // Auto Scroll, centering, and coordinates calculation hook
   useEffect(() => {
     if (showPrompt) return;
 
@@ -255,7 +294,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
   };
 
   const handleNext = () => {
-    if (currentStep < TOUR_STEPS.length - 1) {
+    if (currentStep < steps.length - 1) {
       playTourSound('pop');
       setCurrentStep(prev => prev + 1);
     } else {
@@ -276,7 +315,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
     const windowHeight = window.innerHeight;
     const windowWidth = window.innerWidth;
     const tooltipWidth = 340; // Tooltip card width
-    const tooltipHeight = 240; // Tooltip card height
+    const tooltipHeight = 260; // Tooltip card height
 
     let top = 0;
     let left = 0;
@@ -493,6 +532,32 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {currentStepData.content}
                     </p>
+                    
+                    {/* Render Keyboard Shortcuts custom UI block on desktop */}
+                    {currentStepData.target === '.tour-nav-shortcuts' && (
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-3 pt-3 border-t border-border/40 text-[11px] font-medium text-muted-foreground">
+                        <div className="flex items-center justify-between">
+                          <span>Quick Add Task</span>
+                          <kbd className="px-1.5 py-0.5 rounded border bg-muted text-[10px] font-mono font-bold shadow-sm">N</kbd>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Command Menu</span>
+                          <kbd className="px-1.5 py-0.5 rounded border bg-muted text-[10px] font-mono font-bold shadow-sm">S</kbd>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Navigate Tabs</span>
+                          <kbd className="px-1.5 py-0.5 rounded border bg-muted text-[10px] font-mono font-bold shadow-sm">1-7</kbd>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Toggle Task</span>
+                          <kbd className="px-1.5 py-0.5 rounded border bg-muted text-[10px] font-mono font-bold shadow-sm">Space</kbd>
+                        </div>
+                        <div className="flex items-center justify-between col-span-2 mt-1 pt-1 border-t border-dashed border-border/30">
+                          <span>Open Help / Academy</span>
+                          <kbd className="px-1.5 py-0.5 rounded border bg-muted text-[10px] font-mono font-bold shadow-sm">?</kbd>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Gamified Benefit Box */}
@@ -507,7 +572,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
                   <div className="flex items-center justify-between mt-1 pt-3 border-t border-border/40">
                     {/* Step indicators */}
                     <div className="text-[10px] font-bold text-muted-foreground font-mono">
-                      {currentStep + 1} / {TOUR_STEPS.length}
+                      {currentStep + 1} / {steps.length}
                     </div>
 
                     <div className="flex gap-2">
@@ -527,7 +592,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
                         onClick={handleNext}
                         className="h-8 rounded-lg text-xs font-bold px-4 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/25 flex items-center gap-1"
                       >
-                        {currentStep === TOUR_STEPS.length - 1 ? (
+                        {currentStep === steps.length - 1 ? (
                           <>
                             Finish
                             <Check className="w-3.5 h-3.5 ml-0.5" />

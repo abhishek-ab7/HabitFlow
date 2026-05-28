@@ -176,6 +176,7 @@ export function Header() {
                 href={item.href}
                 className={cn(
                   "nav-link relative flex items-center justify-start h-10 px-3 py-2 rounded-lg group",
+                  `tour-nav-${item.label.toLowerCase()}`,
                   isActive && "nav-link-active"
                 )}
               >
@@ -258,7 +259,7 @@ export function Header() {
             variant="ghost"
             size="icon"
             onClick={() => window.dispatchEvent(new CustomEvent('toggle-shortcuts'))}
-            className="h-9 w-9 text-muted-foreground hover:text-foreground hidden md:inline-flex"
+            className="h-9 w-9 text-muted-foreground hover:text-foreground hidden md:inline-flex tour-nav-shortcuts"
             title="Keyboard Shortcuts (?)"
           >
             <Keyboard className="h-5 w-5" />

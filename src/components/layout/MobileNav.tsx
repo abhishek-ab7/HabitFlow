@@ -42,6 +42,7 @@ export function MobileNav() {
               href={item.href}
               className={cn(
                 "relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors",
+                `tour-mobile-nav-${item.label.toLowerCase() === 'profile' ? 'settings' : item.label.toLowerCase()}`,
                 isActive && "text-primary"
               )}
             >

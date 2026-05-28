@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, 
@@ -22,12 +22,12 @@ import {
   ArrowRight,
   BookOpen,
   Snowflake,
-  Pencil
+  Pencil,
+  Keyboard
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 
 interface HelpCategory {
@@ -40,7 +40,7 @@ interface HelpCategory {
 
 const HELP_CATEGORIES: HelpCategory[] = [
   { id: 'dashboard', title: 'Dashboard', subtitle: 'Overview & workspace', icon: LayoutDashboard, color: 'text-indigo-500 bg-indigo-500/10' },
-  { id: 'habits', title: 'Habits System', subtitle: 'Tracking & streak mechanics', icon: CheckSquare, color: 'text-emerald-500 bg-emerald-500/10' },
+  { id: 'habits', title: 'Habits System', subtitle: 'Streaks & freeze protections', icon: CheckSquare, color: 'text-emerald-500 bg-emerald-500/10' },
   { id: 'tasks', title: 'Task Manager', subtitle: 'Priority lists & deadlines', icon: ListTodo, color: 'text-sky-500 bg-sky-500/10' },
   { id: 'goals', title: 'Goals & Milestones', subtitle: '90-day focus targets', icon: Target, color: 'text-rose-500 bg-rose-500/10' },
   { id: 'routines', title: 'Routine Builder', subtitle: 'Morning & evening stacks', icon: Workflow, color: 'text-amber-500 bg-amber-500/10' },
@@ -52,6 +52,16 @@ const HELP_CATEGORIES: HelpCategory[] = [
 
 export default function TutorialPage() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    setIsDesktop(window.innerWidth >= 768);
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const tabVariants = {
     initial: { opacity: 0, x: 15 },
@@ -83,6 +93,25 @@ export default function TutorialPage() {
     playClickSound();
     setActiveTab(id);
   };
+
+  // Build categories dynamically (shortcuts ONLY on desktop)
+  const categories = [...HELP_CATEGORIES];
+  if (isDesktop) {
+    categories.push({
+      id: 'shortcuts',
+      title: 'Keyboard Shortcuts',
+      subtitle: 'Speed workflows',
+      icon: Keyboard,
+      color: 'text-orange-500 bg-orange-500/10'
+    });
+  }
+
+  // Ensure active tab fallback if shortcuts category is active but screen size collapses
+  useEffect(() => {
+    if (activeTab === 'shortcuts' && !isDesktop) {
+      setActiveTab('dashboard');
+    }
+  }, [isDesktop, activeTab]);
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-slate-50/50 dark:bg-slate-950/20 py-8 px-4 md:px-6 lg:px-8">
@@ -121,7 +150,7 @@ export default function TutorialPage() {
               Help Categories
             </div>
             <nav className="space-y-1.5">
-              {HELP_CATEGORIES.map((cat) => {
+              {categories.map((cat) => {
                 const isActive = activeTab === cat.id;
                 const Icon = cat.icon;
                 return (
@@ -182,7 +211,7 @@ export default function TutorialPage() {
                         <h2 className="text-xl font-bold tracking-tight">Dashboard Overview</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        The dashboard serves as your primary control panel. It consolidates active habits, priority tasks, long-term goals, and AI-powered coach check-ins in one clean unified viewport.
+                        The dashboard is your daily hub, providing a quick summary of active routines, active goal tracking, and daily focus items.
                       </p>
                     </div>
 
@@ -190,44 +219,24 @@ export default function TutorialPage() {
                       <Card className="border-indigo-500/10 bg-indigo-500/5">
                         <CardHeader className="p-4 pb-2">
                           <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300">
-                            <Zap className="w-4 h-4 fill-current" />
-                            Daily Momentum
+                            Daily Overview & Progress
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground leading-relaxed">
-                          Your **Momentum Score (0-100)** displays your productivity velocity. It combines your habits (60% weight) and tasks (40% weight) scheduled for today. Complete them all for a perfect multiplier!
+                          View your live daily momentum velocity, status level progression, and gamified XP tallies to check how consistent you are today.
                         </CardContent>
                       </Card>
 
                       <Card className="border-indigo-500/10 bg-indigo-500/5">
                         <CardHeader className="p-4 pb-2">
                           <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300">
-                            <Compass className="w-4 h-4" />
-                            Focus Mode
+                            Quick Insights
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground leading-relaxed">
-                          Toggle **Focus Mode** to dim distractions and run a focused workspace. It outlines your current high-priority checklist and counts down focus sessions smoothly.
+                          Read dynamic, personalized feedback and energy recommendations calculated directly by your local AI Coach.
                         </CardContent>
                       </Card>
-                    </div>
-
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-black uppercase text-foreground tracking-wider">Your Daily Workflow:</h4>
-                      <ol className="space-y-3 text-xs text-muted-foreground">
-                        <li className="flex gap-2">
-                          <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center font-bold text-[10px] text-foreground shrink-0 mt-0.5">1</span>
-                          <p className="leading-relaxed">**Log Mood Check-In**: Start your day with a quick mood selection to baseline your emotional logs.</p>
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center font-bold text-[10px] text-foreground shrink-0 mt-0.5">2</span>
-                          <p className="leading-relaxed">**Execute Habits**: Mark completed habits on the checklist to accumulate XP and build streak counts.</p>
-                        </li>
-                        <li className="flex gap-2">
-                          <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center font-bold text-[10px] text-foreground shrink-0 mt-0.5">3</span>
-                          <p className="leading-relaxed">**Complete Today's Focus**: Execute priority tasks from your daily task planner to clear deadlines.</p>
-                        </li>
-                      </ol>
                     </div>
                   </div>
                 )}
@@ -241,67 +250,57 @@ export default function TutorialPage() {
                         <h2 className="text-xl font-bold tracking-tight">Habits Tracking & Streaks</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Consistent repetition is what triggers behavioral change. HabitFlow includes advanced options for streak protection, freeze states, and customizable daily notes.
+                        Track recurring practices, build streak multipliers, protect consistency from resetting, and log thoughts.
                       </p>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start col-span-1 sm:col-span-2">
-                        <Flame className="w-6 h-6 text-orange-500 animate-pulse shrink-0 mt-0.5" />
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">The Streak Engine</h4>
+                    <div className="space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="p-4 border bg-muted/20 rounded-xl space-y-1.5">
+                          <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                            <CheckSquare className="w-4 h-4 text-emerald-500" />
+                            Creating & Tracking
+                          </h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Completing a habit consecutively builds your **Streak Count**. Stacking streaks earns custom reward badges, extra experience points (XP), and companion levels.
+                            Build binary (Yes/No) or quantitative habits (e.g., gym time, water volume). Click completion cells in the daily grid to log progress.
                           </p>
                         </div>
-                      </div>
 
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
-                        <Snowflake className="w-6 h-6 text-sky-500 shrink-0 mt-0.5" />
-                        <div className="space-y-1.5">
-                          <h4 className="text-sm font-bold text-foreground">Freezing a Habit</h4>
+                        <div className="p-4 border bg-muted/20 rounded-xl space-y-1.5">
+                          <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                            <Flame className="w-4 h-4 text-orange-500" />
+                            Maintaining Streaks
+                          </h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            When life gets in the way, freeze a habit for a specific day to protect your active streaks:
+                            Log completions on consecutive days to build up your **Streak Count**. High streaks award bonus XP, gems, and profile achievements.
                           </p>
-                          <div className="text-xs space-y-1.5 text-muted-foreground bg-background/50 p-2.5 rounded-lg border border-border/40">
-                            <div>
-                              <span className="font-bold text-sky-600 dark:text-sky-400 block text-[10px] uppercase">🖥️ Desktop (Grid View)</span>
-                              <p className="pl-1">Right-click on any habit date cell to instantly toggle the frozen state.</p>
-                            </div>
-                            <div>
-                              <span className="font-bold text-sky-600 dark:text-sky-400 block text-[10px] uppercase">📱 Mobile (Menu View)</span>
-                              <p className="pl-1">Tap the <strong className="text-foreground">...</strong> menu icon next to the habit name, then select <strong className="text-foreground">"Freeze Today"</strong>.</p>
-                            </div>
+                        </div>
+
+                        <div className="p-4 border bg-muted/20 rounded-xl space-y-1.5 col-span-2">
+                          <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                            <Snowflake className="w-4 h-4 text-sky-500" />
+                            Streak Freeze Feature
+                          </h4>
+                          <div className="text-xs text-muted-foreground space-y-2 leading-relaxed">
+                            <p>
+                              <strong>How it works:</strong> You get **one free weekly freeze** per habit. For subsequent misses within the same week, the system consumes a **Streak Shield** purchased in Settings.
+                            </p>
+                            <p>
+                              <strong>When to use:</strong> Use freezes when you are sick, travelling, or taking a planned rest day.
+                            </p>
+                            <p>
+                              <strong>How it protects:</strong> Freezing marks the cell with a snowflake icon, skipping that day without resetting your hard-earned streak count to zero.
+                            </p>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
-                        <Pencil className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
-                        <div className="space-y-1.5">
-                          <h4 className="text-sm font-bold text-foreground">Writing Notes & Reflections</h4>
+                        <div className="p-4 border bg-muted/20 rounded-xl space-y-1.5 col-span-2">
+                          <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                            <Pencil className="w-4 h-4 text-amber-500" />
+                            Qualitative Notes & Reflections
+                          </h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Attach qualitative comments or adjust target counts:
-                          </p>
-                          <div className="text-xs space-y-1.5 text-muted-foreground bg-background/50 p-2.5 rounded-lg border border-border/40">
-                            <div>
-                              <span className="font-bold text-amber-600 dark:text-amber-400 block text-[10px] uppercase">📝 Accessing Note Popover</span>
-                              <p className="pl-1">Hover over a date cell in the grid and click the small <strong className="text-foreground">Pencil icon</strong> that appears in the top-right corner.</p>
-                            </div>
-                            <div>
-                              <span className="font-bold text-amber-600 dark:text-amber-400 block text-[10px] uppercase">💬 Journal Entries & Metrics</span>
-                              <p className="pl-1">Write your reflection or adjust numerical progress (for quantitative habits). Saved notes show up as a colored dot indicator on the grid cell.</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start col-span-1 sm:col-span-2">
-                        <Shield className="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">Streak Freeze Protection Rules</h4>
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            You get **one free weekly freeze** per habit. For subsequent misses within the same week, spend earned **Gems** in the settings store to buy **Streak Shields** to protect your streaks automatically!
+                            Hover over any completed grid cell and click the small **Pencil icon** in the top-right corner. Use the popover to add a journal reflection or log exact numeric quantities. Saved notes display as a small colored dot indicator on the cell.
                           </p>
                         </div>
                       </div>
@@ -315,10 +314,10 @@ export default function TutorialPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sky-500">
                         <ListTodo className="w-6 h-6" />
-                        <h2 className="text-xl font-bold tracking-tight">Tasks & Focus Checklists</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Tasks & Priorities</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Organize one-off items, milestones, and work targets. The task manager supports due dates, priority labels, and Eisenhower classification.
+                        Manage one-off targets, due dates, priority labels, and Eisenhower quadrants to coordinate your tasks.
                       </p>
                     </div>
 
@@ -326,33 +325,24 @@ export default function TutorialPage() {
                       <Card className="border-sky-500/10 bg-sky-500/5">
                         <CardHeader className="p-4 pb-2">
                           <CardTitle className="text-xs uppercase font-bold text-sky-700 dark:text-sky-300">
-                            Eisenhower Matrix
+                            Creating & Tracking
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground leading-relaxed">
-                          Sort tasks into **4 quadrants**: Urgent/Important, Important/Not Urgent, Urgent/Not Important, and Not Urgent/Not Important to delegate correctly.
+                          Quickly add one-off items with target deadlines. Mark completed items directly to collect XP rewards and clear milestones.
                         </CardContent>
                       </Card>
 
                       <Card className="border-sky-500/10 bg-sky-500/5">
                         <CardHeader className="p-4 pb-2">
                           <CardTitle className="text-xs uppercase font-bold text-sky-700 dark:text-sky-300">
-                            Priorities & Deadlines
+                            Managing Priorities
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground leading-relaxed">
-                          Set task priorities to **High, Medium, or Low**. High priority tasks display first on your dashboard "Today's Focus" list to secure quick execution.
+                          Sort items into High, Medium, or Low priority. High priority items appear first under your dashboard "Today's Focus" list.
                         </CardContent>
                       </Card>
-                    </div>
-
-                    <div className="p-4 border border-dashed rounded-2xl bg-muted/10">
-                      <h4 className="text-xs font-bold text-foreground mb-2">Pro Task Hacks:</h4>
-                      <ul className="list-disc pl-4 space-y-1.5 text-xs text-muted-foreground">
-                        <li>Tasks completed on time reward you with **Gems** and **XP**.</li>
-                        <li>Overdue tasks show up highlighted in red on your dashboard.</li>
-                        <li>Keep your daily tasks count below 5 to prevent decision paralysis.</li>
-                      </ul>
                     </div>
                   </div>
                 )}
@@ -363,25 +353,25 @@ export default function TutorialPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-rose-500">
                         <Target className="w-6 h-6" />
-                        <h2 className="text-xl font-bold tracking-tight">Goals & Actionable Milestones</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Goals & Milestones</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        A goal without milestones is just a wish. HabitFlow structures your life vision into **90-Day Focus Goals** and sub-milestones.
+                        Format long-term aspirations into structured 90-Day Goals and break them down into progressive milestones.
                       </p>
                     </div>
 
                     <div className="space-y-4">
                       <div className="p-4 bg-muted/20 border rounded-2xl space-y-2">
-                        <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">SMART Goal Framework</h4>
+                        <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Goal Tracking & Milestones</h4>
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          Create Specific, Measurable, Actionable, Relevant, and Time-bound targets. The goals creator formats your description and guides deadline alignment.
+                          Create specific outcomes and map them into actionable 3-5 sub-milestones.
                         </p>
                       </div>
 
                       <div className="p-4 bg-muted/20 border rounded-2xl space-y-2">
-                        <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Sub-Milestone Checklists</h4>
+                        <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Progress Monitoring</h4>
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          Break goals into 3-5 key checkpoints. Checking off milestones increments the goal progress bar on the dashboard and feeds into your gamified discipline stats.
+                          Checking off milestones increments progress bars directly, feeding discipline stats and showing overall completion velocity.
                         </p>
                       </div>
                     </div>
@@ -394,10 +384,10 @@ export default function TutorialPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-amber-500">
                         <Workflow className="w-6 h-6" />
-                        <h2 className="text-xl font-bold tracking-tight">Morning & Evening Routines</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Routines Stack</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Habit stacking (anchoring new habits to existing actions) simplifies routine execution. The Routine Builder lets you bundle habits into morning or evening blocks.
+                        Anchor habits to time-blocks (Morning/Evening) to build consecutive workflows.
                       </p>
                     </div>
 
@@ -405,19 +395,19 @@ export default function TutorialPage() {
                       <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
                         <span className="text-2xl mt-0.5">🌅</span>
                         <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">Morning Stack</h4>
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            Define your wakeup stack (e.g. stretch, drink water, read). Running the Morning Stack overlay guides you through them consecutively.
-                          </p>
+                          <h4 className="text-sm font-bold text-foreground">Morning & Evening Stacks</h4>
+                           <p className="text-xs text-muted-foreground leading-relaxed">
+                             Build a wakeup stack (e.g. stretch, drink water, read) or sleep wind-down routines. Stacking helps automate sequential workflows.
+                           </p>
                         </div>
                       </div>
 
                       <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
-                        <span className="text-2xl mt-0.5">🌃</span>
+                        <span className="text-2xl mt-0.5">📅</span>
                         <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">Evening Wind-Down</h4>
+                          <h4 className="text-sm font-bold text-foreground">Daily Consistency</h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Structure your sleep hygiene stack (e.g. journal, plan tasks, stretch) to sign off cleanly and recharge.
+                            Executing routine stacks baseline your focus loops early, ensuring you do not skip basic core habits.
                           </p>
                         </div>
                       </div>
@@ -431,75 +421,52 @@ export default function TutorialPage() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-teal-500">
                         <BarChart3 className="w-6 h-6" />
-                        <h2 className="text-xl font-bold tracking-tight">Performance Charts & Trends</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Productivity Analytics</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Data-driven discipline leads to insights. The Analytics page displays visual charts, weekly review summaries, and monthly reports.
+                        Data-driven insights to monitor historical progress and consistency velocities.
                       </p>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-3 text-center">
-                      <div className="p-4 bg-muted/20 border rounded-2xl">
-                        <span className="text-xl block mb-1">📅</span>
-                        <span className="text-xs font-bold text-foreground block">Heatmap Calendar</span>
-                        <span className="text-[10px] text-muted-foreground">View density patterns</span>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="p-4 bg-muted/20 border rounded-xl">
+                        <span className="text-xs font-bold text-foreground block mb-1">Consistency Charts & Reports</span>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          View performance rates, weekly reviews, and heatmap grids to check complete log density patterns.
+                        </p>
                       </div>
-                      <div className="p-4 bg-muted/20 border rounded-2xl">
-                        <span className="text-xl block mb-1">📈</span>
-                        <span className="text-xs font-bold text-foreground block">Consistency rates</span>
-                        <span className="text-[10px] text-muted-foreground">Track percentage over time</span>
-                      </div>
-                      <div className="p-4 bg-muted/20 border rounded-2xl">
-                        <span className="text-xl block mb-1">🧠</span>
-                        <span className="text-xs font-bold text-foreground block">Predictive Trends</span>
-                        <span className="text-[10px] text-muted-foreground">Identify fatigue days</span>
+                      <div className="p-4 bg-muted/20 border rounded-xl">
+                        <span className="text-xs font-bold text-foreground block mb-1">Productivity Insights</span>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          Identify fatigue days, track correlation scores, and review dynamic recommendations to adjust logs.
+                        </p>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* 7. GAMIFICATION */}
+                {/* 7. GAMIFICATION & LEADERBOARD */}
                 {activeTab === 'gamification' && (
                   <div className="space-y-6">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-purple-500">
                         <Trophy className="w-6 h-6" />
-                        <h2 className="text-xl font-bold tracking-tight">XP, Levels & Leaderboard Rewards</h2>
+                        <h2 className="text-xl font-bold tracking-tight">Gamification & Rankings</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        Treat your life like a role-playing game. Earn experience points (XP), collect gems, shield your achievements, and climb up the leaderboard ranks.
+                        Complete challenges, earn experience points (XP), collect gems, and climb up the leaderboard ranks.
                       </p>
                     </div>
 
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-black uppercase text-foreground tracking-wider">XP reward structure:</h4>
-                      <div className="grid gap-3 sm:grid-cols-2 text-xs">
-                        <div className="p-3 border rounded-xl bg-card">
-                          <span className="font-bold text-primary block">+10 XP</span>
-                          <span className="text-muted-foreground">Completing a daily habit</span>
+                    <div className="space-y-4">
+                      <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-2xl flex gap-3 items-center">
+                        <Trophy className="w-8 h-8 text-purple-500 shrink-0" />
+                        <div className="text-xs">
+                          <span className="font-bold text-foreground block">Competitive Motivation & Rankings</span>
+                          <p className="text-muted-foreground leading-relaxed">
+                            Earn weekly XP to climb the ranks on peer league tables, fostering accountability and fun.
+                          </p>
                         </div>
-                        <div className="p-3 border rounded-xl bg-card">
-                          <span className="font-bold text-primary block">+15 XP</span>
-                          <span className="text-muted-foreground">Completing a high-priority task</span>
-                        </div>
-                        <div className="p-3 border rounded-xl bg-card">
-                          <span className="font-bold text-primary block">+50 XP</span>
-                          <span className="text-muted-foreground">Reaching a goal milestone</span>
-                        </div>
-                        <div className="p-3 border rounded-xl bg-card">
-                          <span className="font-bold text-primary block">+100 XP</span>
-                          <span className="text-muted-foreground">Completing a 90-day focus goal</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-purple-500/5 border border-purple-500/20 rounded-2xl p-4 flex gap-3 items-center">
-                      <Trophy className="w-8 h-8 text-purple-500 shrink-0" />
-                      <div className="text-xs">
-                        <span className="font-bold text-foreground block">Global Leaderboard Rankings</span>
-                        <p className="text-muted-foreground leading-relaxed">
-                          Climb the league tables by collecting XP. Compare consistency scores weekly with peers to foster accountability and competitive fun.
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -580,19 +547,110 @@ export default function TutorialPage() {
                   </div>
                 )}
 
+                {/* 10. KEYBOARD SHORTCUTS (DESKTOP ONLY) */}
+                {activeTab === 'shortcuts' && isDesktop && (
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-orange-500">
+                        <Keyboard className="w-6 h-6" />
+                        <h2 className="text-xl font-bold tracking-tight">Keyboard Shortcuts</h2>
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        HabitFlow is designed for high-speed tracking. Complete logs, navigate between tabs, and search fields instantly without lifting your hands from the keyboard.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Card className="border-orange-500/10 bg-orange-500/5 col-span-2">
+                        <CardHeader className="p-4 pb-2">
+                          <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-orange-700 dark:text-orange-300">
+                            <Keyboard className="w-4 h-4" />
+                            Core Action Keys
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0 text-xs text-muted-foreground">
+                          <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
+                              <span className="font-semibold text-foreground">Quick Add Task</span>
+                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">N</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
+                              <span className="font-semibold text-foreground">Command & Search Menu</span>
+                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">S</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
+                              <span className="font-semibold text-foreground">Complete High Task</span>
+                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">Space</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40">
+                              <span className="font-semibold text-foreground">Toggle Help Academy</span>
+                              <kbd className="px-2 py-1 rounded bg-muted border font-mono font-bold text-[10px] shadow-sm">?</kbd>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-orange-500/10 bg-orange-500/5 col-span-2">
+                        <CardHeader className="p-4 pb-2">
+                          <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-orange-700 dark:text-orange-300">
+                            Navigation Shortcuts
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0 text-xs text-muted-foreground">
+                          <p className="mb-3 leading-relaxed">Press numeric keys to instantly switch between layout tabs:</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Dashboard</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">1</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Tasks</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">2</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Routines</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">3</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Habits</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">4</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Goals</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">5</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Analytics</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">6</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Leaderboard</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">7</kbd>
+                            </div>
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-background border border-border/40 text-[11px]">
+                              <span>Settings</span>
+                              <kbd className="px-1.5 py-0.5 rounded bg-muted border font-mono text-[9px]">8</kbd>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                )}
+
                 {/* Next Step footer inside categories */}
                 <div className="flex items-center justify-between border-t border-border/40 pt-4 mt-6">
                   <div className="text-xs text-muted-foreground">
-                    Section {HELP_CATEGORIES.findIndex(c => c.id === activeTab) + 1} of {HELP_CATEGORIES.length}
+                    Section {categories.findIndex(c => c.id === activeTab) + 1} of {categories.length}
                   </div>
                   <Button 
                     variant="outline" 
                     onClick={() => {
-                      const idx = HELP_CATEGORIES.findIndex(c => c.id === activeTab);
-                      if (idx < HELP_CATEGORIES.length - 1) {
-                        handleTabChange(HELP_CATEGORIES[idx + 1].id);
+                      const idx = categories.findIndex(c => c.id === activeTab);
+                      if (idx < categories.length - 1) {
+                        handleTabChange(categories[idx + 1].id);
                       } else {
-                        handleTabChange(HELP_CATEGORIES[0].id);
+                        handleTabChange(categories[0].id);
                       }
                     }}
                     className="rounded-xl h-9 text-xs font-semibold px-4 gap-1 hover:bg-muted"
