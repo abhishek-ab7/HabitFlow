@@ -1,0 +1,7 @@
+# LambdaTest / TestMu AI Cloud Configuration
+# Replace these placeholder IDs with the values found on your TestMu AI Dashboard
+project_id: ""
+folder_id: ""
+assignee: ""
+environment_id: ""
+test_url: "https://habitflow.tech/"
