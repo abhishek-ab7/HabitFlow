@@ -25,7 +25,7 @@ import {
 } from '@/components/dashboard';
 import OnboardingWizard from '@/components/dashboard/OnboardingWizard';
 import DashboardTour from '@/components/dashboard/DashboardTour';
-import { Skeleton } from '@/components/ui/skeleton';
+
 import { MoodCheckIn } from '@/components/dashboard/MoodCheckIn';
 import { FocusModeOverlay } from '@/components/dashboard/FocusModeOverlay';
 import { useUserStore } from '@/lib/stores/user-store';
@@ -35,7 +35,7 @@ import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
 import { ProgressRing } from '@/components/motion';
 
 import { useUIStore } from '@/lib/stores/ui-store';
-import { getSupabaseClient } from '@/lib/supabase/client';
+
 import { useAuth } from '@/providers/auth-provider';
 
 export default function DashboardContent() {
@@ -122,9 +122,9 @@ export default function DashboardContent() {
   const isLoading = habitsLoading || goalsLoading || isInitializing;
   const isEmpty = habits.length === 0 && goals.length === 0 && !isLoading;
 
-
-
-  // Initialize data on mount - OPTIMIZED: Parallel loading
+  // Initialize ALL dashboard data on mount
+  // SyncProvider only syncs IndexedDB in background — it does NOT load stores.
+  // This component is the sole owner of store loading.
   useEffect(() => {
     if (authLoading) return;
 
@@ -137,7 +137,6 @@ export default function DashboardContent() {
 
     const init = async () => {
       try {
-        // Calculate date range once
         const today = new Date();
         const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
         const end = format(endOfMonth(today), 'yyyy-MM-dd');
@@ -152,7 +151,6 @@ export default function DashboardContent() {
           loadTasks(),
         ]);
 
-        // Check if welcome wizard should be shown (only on brand new signup)
         const onboarded = localStorage.getItem('habitflow_onboarded');
         if (onboarded !== 'true' && active) {
           setShowOnboarding(true);

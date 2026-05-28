@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getTimeGreeting, getTimeGradient } from '@/lib/design-tokens';
 import { getRandomQuote } from '@/lib/quotes';
-import { FadeIn } from '@/components/motion';
 
 interface HeroSectionProps {
   userName?: string;
@@ -61,7 +60,7 @@ export function HeroSection({ userName, currentStreak, isHydrated = false }: Her
   }
 
   return (
-    <FadeIn className="relative overflow-hidden rounded-2xl mb-8 tour-hero-section">
+    <div className="relative overflow-hidden rounded-2xl mb-8 tour-hero-section">
       <div className={`bg-gradient-to-br ${timeData.gradientClass} dark:from-slate-900 dark:via-indigo-950/50 dark:to-slate-900 p-8 md:p-10`}>
         {/* Background decorative elements */}
         <div className="absolute inset-0 overflow-hidden">
@@ -122,6 +121,6 @@ export function HeroSection({ userName, currentStreak, isHydrated = false }: Her
           </motion.div>
         </div>
       </div>
-    </FadeIn>
+    </div>
   );
 }
