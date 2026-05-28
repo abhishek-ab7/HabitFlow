@@ -84,7 +84,7 @@ export function DisciplineRadar({ stats: customStats }: { stats?: UserStats }) {
         <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full h-auto min-h-[380px] flex flex-col items-center justify-center bg-gradient-to-b from-white/10 to-transparent dark:from-white/5 dark:to-transparent rounded-3xl border border-white/20 dark:border-white/10 p-6 shadow-xl backdrop-blur-md"
+            className="w-full h-auto min-h-[380px] flex flex-col items-center justify-center bg-gradient-to-b from-slate-100/50 via-slate-50/10 to-transparent dark:from-white/5 dark:to-transparent rounded-3xl border border-slate-200/60 dark:border-white/10 p-6 shadow-xl backdrop-blur-md"
         >
             <div className="flex items-center justify-between w-full mb-4 px-2">
                 <h3 className="text-sm font-bold text-foreground/80 uppercase tracking-widest">Mastery Radar</h3>
@@ -149,7 +149,7 @@ export function DisciplineRadar({ stats: customStats }: { stats?: UserStats }) {
 
 function StatItem({ label, value, color }: { label: string, value: number, color?: string }) {
     return (
-        <div className="flex flex-col items-center bg-white/5 rounded-lg py-2 border border-white/5">
+        <div className="flex flex-col items-center bg-slate-100/50 dark:bg-white/5 rounded-lg py-2 border border-slate-200/50 dark:border-white/5">
             <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</span>
             <span className={cn("font-bold text-xl", color)}>{value}</span>
         </div>
