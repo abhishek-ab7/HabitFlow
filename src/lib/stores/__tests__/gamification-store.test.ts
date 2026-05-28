@@ -30,11 +30,20 @@ describe('gamification-store', () => {
     beforeEach(() => {
         // Reset store state before each test
         useGamificationStore.setState({
+            totalXp: 0,
             xp: 0,
             level: 1,
             gems: 0,
             streakShield: 0,
             showLevelUp: false,
+            stats: {
+                vitality: 1,
+                intelligence: 1,
+                discipline: 1,
+                charisma: 1,
+                wealth: 1,
+                creativity: 1,
+            }
         });
         vi.clearAllMocks();
     });
@@ -169,5 +178,39 @@ describe('gamification-store', () => {
 
         const state = useGamificationStore.getState();
         expect(state.streakShield).toBe(0);
+    });
+
+    it('negative XP reverts stats and XP correctly', async () => {
+        // Set state to Level 2 with some XP and stats
+        useGamificationStore.setState({
+            totalXp: 150,
+            xp: 50,
+            level: 2,
+            gems: 5,
+            stats: {
+                vitality: 1,
+                intelligence: 1,
+                discipline: 10,
+                charisma: 1,
+                wealth: 1,
+                creativity: 1,
+            }
+        });
+
+        const { addXp } = useGamificationStore.getState();
+        
+        // Subtract 60 XP
+        // New cumulative XP = 90 (Level 1, 90 XP)
+        await addXp(-60, 'health');
+
+        const state = useGamificationStore.getState();
+        expect(state.totalXp).toBe(90);
+        expect(state.level).toBe(1);
+        expect(state.xp).toBe(90);
+        
+        // Stats: amount was -60, so statPoints = Math.max(1, Math.floor(60/10)) = 6.
+        // Discipline: 10 - 6 = 4. Vitality: 1 - 6 = -5 -> capped at 1.
+        expect(state.stats.discipline).toBe(4);
+        expect(state.stats.vitality).toBe(1);
     });
 });

@@ -153,8 +153,8 @@ export function BentoGrid({ widgets }: BentoGridProps) {
       { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
       { id: 'ai-quote', size: 'full', hidden: false, pinned: false },
       { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
-      { id: 'quick-actions', size: 'full', hidden: false, pinned: false },
-      { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
+      { id: 'weekly-review', size: '1/2', hidden: false, pinned: false },
+      { id: 'quick-actions', size: 'full', hidden: false, pinned: false }
     ];
     await persistLayoutChanges(defaultLayout);
   };

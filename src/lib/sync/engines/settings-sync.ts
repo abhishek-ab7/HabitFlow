@@ -136,8 +136,13 @@ export async function syncUserSettings(engine: any) {
     const isRemoteReset = mappedRemoteSettings.level === 1 && mappedRemoteSettings.xp === 0 && mappedRemoteSettings.gems === 0;
     const isRemoteNewer = new Date(mappedRemoteSettings.updatedAt || 0) > new Date(localSettings.updatedAt || localSettings.createdAt || 0);
 
+    const isLocalReset = localSettings.level === 1 && localSettings.xp === 0 && localSettings.gems === 0;
+    const isLocalNewer = new Date(localSettings.updatedAt || localSettings.createdAt || 0) > new Date(mappedRemoteSettings.updatedAt || 0);
+
     const mergedGamification = (isRemoteReset && isRemoteNewer)
       ? mappedRemoteSettings
+      : (isLocalReset && isLocalNewer)
+      ? localSettings
       : mergeGamificationFields(
           localSettings,
           mappedRemoteSettings

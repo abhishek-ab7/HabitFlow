@@ -239,14 +239,16 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     const result = await toggleCompletion(habitId, date, session.user.id);
 
-    // If completed is true, add XP
-    if (result.completed) {
-      const today = new Date().toISOString().split('T')[0];
-      if (date === today) {
-        const habit = get().habits.find(h => h.id === habitId);
-        const difficulty = habit?.difficulty || 'medium';
-        const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+    const today = new Date().toISOString().split('T')[0];
+    if (date === today) {
+      const habit = get().habits.find(h => h.id === habitId);
+      const difficulty = habit?.difficulty || 'medium';
+      const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+      
+      if (result.completed) {
         useGamificationStore.getState().addXp(xpAmount, habit?.category);
+      } else {
+        useGamificationStore.getState().addXp(-xpAmount, habit?.category);
       }
     }
 
@@ -358,19 +360,22 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
 
-    const result = await updateCompletionValue(habitId, date, value, session.user.id);
-
     // If completed is true and wasn't completed before, award XP
     const prevComp = get().completions.find(c => c.habitId === habitId && c.date === date);
     const wasCompleted = prevComp?.completed && prevComp?.status !== 'frozen';
+
+    const result = await updateCompletionValue(habitId, date, value, session.user.id);
     
-    if (result.completed && !wasCompleted) {
-      const today = new Date().toISOString().split('T')[0];
-      if (date === today) {
-        const habit = get().habits.find(h => h.id === habitId);
-        const difficulty = habit?.difficulty || 'medium';
-        const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+    const today = new Date().toISOString().split('T')[0];
+    if (date === today) {
+      const habit = get().habits.find(h => h.id === habitId);
+      const difficulty = habit?.difficulty || 'medium';
+      const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+      
+      if (result.completed && !wasCompleted) {
         useGamificationStore.getState().addXp(xpAmount, habit?.category);
+      } else if (!result.completed && wasCompleted) {
+        useGamificationStore.getState().addXp(-xpAmount, habit?.category);
       }
     }
 

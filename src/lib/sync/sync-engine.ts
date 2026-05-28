@@ -993,6 +993,20 @@ export class SyncEngine {
   getOnlineStatus(): boolean {
     return this.isOnline;
   }
+
+  public reset() {
+    this.cleanupRealtime();
+    this.pendingOperations.clear();
+    if (this.duplicateCleanupInterval) {
+      clearInterval(this.duplicateCleanupInterval);
+      this.duplicateCleanupInterval = null;
+    }
+    this.lastSyncAt = null;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('habit_sync_pending');
+    }
+    this.log('info', '🔄 SyncEngine reset. Cleared in-memory queues and unsubscribed realtime.');
+  }
 }
 
 let syncEngine: SyncEngine | null = null;

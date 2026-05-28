@@ -12,7 +12,39 @@ export const XP_PER_ROUTINE = 50;
 export const GEMS_PER_LEVEL = 5;
 export const SHIELD_COST = 20;
 
+export function calculateLevelFromXp(cumulativeXp: number): {
+  level: number;
+  xpInCurrentLevel: number;
+  xpRequiredForNextLevel: number;
+} {
+  const xp = Math.max(0, cumulativeXp);
+  let level = 1;
+  while (true) {
+    const cumulativeXpNeededForNext = (level * (level + 1) / 2) * 100;
+    if (xp < cumulativeXpNeededForNext) {
+      break;
+    }
+    level++;
+  }
+  const cumulativeXpNeededForCurrent = ((level - 1) * level / 2) * 100;
+  const xpInCurrentLevel = xp - cumulativeXpNeededForCurrent;
+  const xpRequiredForNextLevel = level * 100;
+
+  return {
+    level,
+    xpInCurrentLevel,
+    xpRequiredForNextLevel,
+  };
+}
+
+export function calculateTotalXp(level: number, levelProgressXp: number): number {
+  const cumulativeXpNeededForCurrent = ((level - 1) * level / 2) * 100;
+  return cumulativeXpNeededForCurrent + levelProgressXp;
+}
+
+
 interface GamificationState {
+    totalXp: number;
     xp: number;
     level: number;
     gems: number;
@@ -45,6 +77,7 @@ interface GamificationState {
 }
 
 export const useGamificationStore = create<GamificationState>((set, get) => ({
+    totalXp: 0,
     xp: 0,
     level: 1,
     gems: 0,
@@ -110,9 +143,27 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                         resilience: resilienceVal,
                     };
 
+                    let dbXp = settings.xp ?? 0;
+                    let dbLevel = settings.level ?? 1;
+
+                    // Migrate old format (progress-xp) to cumulative total XP
+                    const minCumulativeXp = ((dbLevel - 1) * dbLevel / 2) * 100;
+                    if (dbLevel > 1 && dbXp < minCumulativeXp) {
+                        dbXp = minCumulativeXp + dbXp;
+                        console.log(`[GamificationStore] Migrating settings.xp from progress-xp to cumulative-xp: ${dbXp}`);
+                        // Persist immediately to local storage / IndexedDB
+                        updateSettings({
+                            userId: session.user.id,
+                            xp: dbXp
+                        });
+                    }
+
+                    const { level, xpInCurrentLevel } = calculateLevelFromXp(dbXp);
+
                     set({
-                        xp: settings.xp ?? 0,
-                        level: settings.level ?? 1,
+                        totalXp: dbXp,
+                        xp: xpInCurrentLevel,
+                        level: level,
                         gems: settings.gems ?? 0,
                         streakShield: settings.streakShield ?? 0,
                         stats: calculatedStats,
@@ -152,7 +203,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                     userName: currentSettings?.userName,
                     weekStartsOn: currentSettings?.weekStartsOn ?? 0,
                     defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                    xp: get().xp,
+                    xp: get().totalXp || get().xp,
                     level: get().level,
                     gems: get().gems,
                     streakShield: get().streakShield,
@@ -167,39 +218,60 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
     },
 
     addXp: async (amount: number, category?: Category) => {
-        const { xp, level, gems, streakShield, stats, unlockedThemes } = get();
-        let newXp = xp + amount;
-        let newLevel = level;
+        const { totalXp, gems, streakShield, stats, unlockedThemes } = get();
+        const newTotalXp = Math.max(0, (totalXp || 0) + amount); // Prevent negative XP
+        
+        const { level: oldLevel } = calculateLevelFromXp(totalXp || 0);
+        const { level: newLevel, xpInCurrentLevel } = calculateLevelFromXp(newTotalXp);
+        
         let newGems = gems;
         let leveledUp = false;
 
-        // Calculate stat increments (1 point per 10 XP)
-        const statPoints = Math.max(1, Math.floor(amount / 10));
-        const newStats = { ...stats };
-        newStats.discipline += statPoints; // Always give discipline
-
-        if (category) {
-            switch (category) {
-                case 'health': newStats.vitality += statPoints; break;
-                case 'learning':
-                case 'work': newStats.intelligence += statPoints; break;
-                case 'personal': newStats.creativity += statPoints; break;
-                case 'finance': newStats.wealth += statPoints; break;
-                case 'relationships': newStats.charisma += statPoints; break;
-            }
-        }
-
-        // Formula: XP required for next level = Level * 100
-        const xpRequired = level * 100;
-
-        if (newXp >= xpRequired) {
-            newLevel += 1;
-            newXp = newXp - xpRequired; // Carry over excess XP
-            newGems += GEMS_PER_LEVEL;
+        if (newLevel > oldLevel) {
+            const levelsGained = newLevel - oldLevel;
+            newGems += levelsGained * GEMS_PER_LEVEL;
             leveledUp = true;
         }
 
-        set({ xp: newXp, level: newLevel, gems: newGems, showLevelUp: leveledUp, stats: newStats });
+        // Calculate stat increments/reversions (1 point per 10 XP)
+        const newStats = { ...stats };
+        if (amount > 0) {
+            const statPoints = Math.max(1, Math.floor(amount / 10));
+            newStats.discipline += statPoints;
+            if (category) {
+                switch (category) {
+                    case 'health': newStats.vitality += statPoints; break;
+                    case 'learning':
+                    case 'work': newStats.intelligence += statPoints; break;
+                    case 'personal': newStats.creativity += statPoints; break;
+                    case 'finance': newStats.wealth += statPoints; break;
+                    case 'relationships': newStats.charisma += statPoints; break;
+                }
+            }
+        } else if (amount < 0) {
+            const absAmount = Math.abs(amount);
+            const statPoints = Math.max(1, Math.floor(absAmount / 10));
+            newStats.discipline = Math.max(1, newStats.discipline - statPoints);
+            if (category) {
+                switch (category) {
+                    case 'health': newStats.vitality = Math.max(1, newStats.vitality - statPoints); break;
+                    case 'learning':
+                    case 'work': newStats.intelligence = Math.max(1, newStats.intelligence - statPoints); break;
+                    case 'personal': newStats.creativity = Math.max(1, newStats.creativity - statPoints); break;
+                    case 'finance': newStats.wealth = Math.max(1, newStats.wealth - statPoints); break;
+                    case 'relationships': newStats.charisma = Math.max(1, newStats.charisma - statPoints); break;
+                }
+            }
+        }
+
+        set({ 
+            totalXp: newTotalXp,
+            xp: xpInCurrentLevel,
+            level: newLevel,
+            gems: newGems,
+            showLevelUp: leveledUp,
+            stats: newStats
+        });
 
         // Persist to DB
         const supabase = getSupabaseClient();
@@ -207,7 +279,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         if (session?.user) {
             await updateSettings({
                 userId: session.user.id,
-                xp: newXp,
+                xp: newTotalXp, // Save total cumulative XP
                 level: newLevel,
                 gems: newGems,
                 streakShield,
@@ -222,7 +294,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 userName: currentSettings?.userName,
                 weekStartsOn: currentSettings?.weekStartsOn ?? 0,
                 defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp: newXp,
+                xp: newTotalXp,
                 level: newLevel,
                 gems: newGems,
                 streakShield,
@@ -244,7 +316,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { xp, level, streakShield } = get();
+            const { totalXp, xp, level, streakShield } = get();
             await updateSettings({
                 userId: session.user.id,
                 gems: newGems
@@ -257,7 +329,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 userName: currentSettings?.userName,
                 weekStartsOn: currentSettings?.weekStartsOn ?? 0,
                 defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp,
+                xp: totalXp || xp,
                 level,
                 gems: newGems,
                 streakShield
@@ -274,7 +346,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { xp, level, streakShield } = get();
+            const { totalXp, xp, level, streakShield } = get();
             await updateSettings({
                 userId: session.user.id,
                 gems: newGems
@@ -286,7 +358,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 userName: currentSettings?.userName,
                 weekStartsOn: currentSettings?.weekStartsOn ?? 0,
                 defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp,
+                xp: totalXp || xp,
                 level,
                 gems: newGems,
                 streakShield
@@ -306,7 +378,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { xp, level } = get();
+            const { totalXp, xp, level } = get();
             await updateSettings({
                 userId: session.user.id,
                 gems: newGems,
@@ -320,7 +392,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 userName: currentSettings?.userName,
                 weekStartsOn: currentSettings?.weekStartsOn ?? 0,
                 defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp,
+                xp: totalXp || xp,
                 level,
                 gems: newGems,
                 streakShield: newShields
@@ -339,7 +411,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         const supabase = getSupabaseClient();
         const { data: { session } = {} } = await supabase.auth.getSession();
         if (session?.user) {
-            const { xp, level, gems } = get();
+            const { totalXp, xp, level, gems } = get();
             await updateSettings({
                 userId: session.user.id,
                 streakShield: newShields
@@ -352,7 +424,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                 userName: currentSettings?.userName,
                 weekStartsOn: currentSettings?.weekStartsOn ?? 0,
                 defaultCategory: currentSettings?.defaultCategory ?? 'health',
-                xp,
+                xp: totalXp || xp,
                 level,
                 gems,
                 streakShield: newShields
@@ -364,7 +436,11 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
     closeLevelUp: () => set({ showLevelUp: false }),
 
     getBufferProgress: () => {
-        const { xp, level } = get();
+        const { totalXp, xp, level } = get();
+        if (totalXp && totalXp > 0) {
+            const { xpInCurrentLevel, xpRequiredForNextLevel } = calculateLevelFromXp(totalXp);
+            return Math.min(100, (xpInCurrentLevel / xpRequiredForNextLevel) * 100);
+        }
         const xpRequired = level * 100;
         return Math.min(100, (xp / xpRequired) * 100);
     }

@@ -328,22 +328,59 @@ export default function SettingsPageContent() {
       return;
     }
     try {
-      const supabase = getSupabaseClient();
+      const { getSyncEngine } = await import('@/lib/sync');
+      getSyncEngine().reset();
+
+      const supabase = getSupabaseClient() as any;
       const uid = user.id;
 
+      // 1. Fetch habits first to safely delete junction habit_routines rows
+      const { data: userHabits } = await supabase.from('habits').select('id').eq('user_id', uid);
+      const habitIds = (userHabits || []).map((h: any) => h.id);
+      
+      // 2. Clear remote Supabase data in parallel
       await Promise.all([
         supabase.from('habit_completions').delete().eq('user_id', uid),
         supabase.from('completions').delete().eq('user_id', uid),
         supabase.from('milestones').delete().eq('user_id', uid),
         supabase.from('tasks').delete().eq('user_id', uid),
         supabase.from('routine_completions').delete().eq('user_id', uid),
+        supabase.from('mood_logs').delete().eq('user_id', uid),
       ]);
+
+      if (habitIds.length > 0) {
+        await supabase.from('habit_routines').delete().in('habit_id', habitIds);
+      }
+
       await supabase.from('habits').delete().eq('user_id', uid);
-      await supabase.from('habit_routines').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('routines').delete().eq('user_id', uid);
       await supabase.from('goals').delete().eq('user_id', uid);
-      await supabase.from('user_settings').delete().eq('user_id', uid);
 
+      // 3. Reset settings in Supabase to defaults rather than deleting the row
+      await supabase.from('user_settings').update({
+        user_name: user.user_metadata?.full_name || 'Anonymous',
+        avatar_id: 'avatar-1',
+        week_start_day: 0,
+        default_category: 'health',
+        xp: 0,
+        level: 1,
+        gems: 0,
+        streak_shield: 0,
+        stats: {
+          vitality: 1,
+          intelligence: 1,
+          discipline: 1,
+          charisma: 1,
+          wealth: 1,
+          creativity: 1,
+        },
+        unlocked_themes: [],
+        motivation_text: '',
+        dashboard_layout: [],
+        updated_at: new Date().toISOString(),
+      } as any).eq('user_id', uid);
+
+      // 4. Clear all local Dexie DB tables
       await db.habits.clear();
       await db.completions.clear();
       await db.goals.clear();
@@ -353,9 +390,52 @@ export default function SettingsPageContent() {
       await db.habitRoutines.clear();
       await db.routineCompletions.clear();
       await db.userSettings.clear();
+      await db.moodLogs.clear();
 
-      localStorage.removeItem('habit_sync_pending');
-      localStorage.removeItem(`sync_version_${uid}`);
+      // 5. Add default settings locally to ensure hydration sync on reload starts fresh
+      const defaultSettings = {
+        id: crypto.randomUUID(),
+        userId: uid,
+        theme: 'system',
+        userName: user.user_metadata?.full_name || 'Anonymous',
+        weekStartsOn: 0,
+        showMotivationalQuotes: true,
+        defaultCategory: 'health',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        xp: 0,
+        level: 1,
+        gems: 0,
+        streakShield: 0,
+        avatarId: 'avatar-1',
+        stats: {
+          vitality: 1,
+          intelligence: 1,
+          discipline: 1,
+          charisma: 1,
+          wealth: 1,
+          creativity: 1,
+        },
+        unlockedThemes: [],
+        motivation_text: '',
+        dashboardLayout: [],
+      };
+      await db.userSettings.add(defaultSettings as any);
+
+      // 6. Delete all cached local storage keys related to habitflow, onboarding, and focus modes
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (
+          key.startsWith('habitflow_') || 
+          key.startsWith('focus_mode_') || 
+          key.startsWith('sync_version_') ||
+          key === 'habit_sync_pending'
+        )) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
 
       toast.success('All data permanently deleted. Refreshing...');
       setTimeout(() => window.location.reload(), 1500);

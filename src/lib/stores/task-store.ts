@@ -148,6 +148,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
         if (newStatus === 'done') {
             useGamificationStore.getState().addXp(XP_PER_TASK);
+        } else if (newStatus === 'todo' && task.status === 'done') {
+            useGamificationStore.getState().addXp(-XP_PER_TASK);
         }
 
         const updates = { status: newStatus };

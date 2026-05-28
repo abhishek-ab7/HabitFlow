@@ -122,10 +122,10 @@ describe('task-store', () => {
     
     vi.clearAllMocks();
     
-    // Uncomplete task -> Should NOT add XP
+    // Uncomplete task -> Should subtract XP
     await toggleTaskComplete('t1');
     expect(useTaskStore.getState().tasks[0].status).toBe('todo');
-    expect(addXpMock).not.toHaveBeenCalled();
+    expect(addXpMock).toHaveBeenCalledWith(-XP_PER_TASK);
   });
 
   it('getActiveTasks and getCompletedTasks filter correctly', () => {
