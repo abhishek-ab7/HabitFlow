@@ -217,15 +217,25 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
             const elementLeft = rect.left + window.scrollX;
             const elementHeight = rect.height;
             
-            // Intelligently center the target element vertically in the viewport
-            const targetScrollY = elementTop - (window.innerHeight / 2) + (elementHeight / 2);
-            const maxScrollY = document.documentElement.scrollHeight - window.innerHeight;
-            const safeScrollY = Math.max(0, Math.min(targetScrollY, maxScrollY));
+            // Smart Check: Only scroll if the element is not already fully visible in the viewport
+            const padding = 100;
+            const isFullyVisible = rect.top >= padding && 
+                                   rect.bottom <= window.innerHeight - padding &&
+                                   rect.left >= 0 &&
+                                   rect.right <= window.innerWidth;
             
-            // Smoothly scroll the window to focus
-            window.scrollTo({ top: safeScrollY, behavior: 'smooth' });
+            let safeScrollY = window.scrollY;
+            if (!isFullyVisible) {
+              // Intelligently center the target element vertically in the viewport
+              const targetScrollY = elementTop - (window.innerHeight / 2) + (elementHeight / 2);
+              const maxScrollY = document.documentElement.scrollHeight - window.innerHeight;
+              safeScrollY = Math.max(0, Math.min(targetScrollY, maxScrollY));
+              
+              // Smoothly scroll the window to focus
+              window.scrollTo({ top: safeScrollY, behavior: 'smooth' });
+            }
             
-            // Calculate what the viewport coordinates will be AFTER the smooth scroll completes
+            // Calculate what the viewport coordinates will be AFTER the scroll completes
             const finalViewportTop = elementTop - safeScrollY;
             const finalViewportLeft = elementLeft - window.scrollX;
             
@@ -366,6 +376,42 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
     };
   };
 
+  // Math calculation to center the tooltip connection arrow precisely to the highlighted element
+  const getArrowDetails = () => {
+    if (!activeRect) return null;
+
+    const windowHeight = window.innerHeight;
+    const tooltipWidth = 340;
+    const tooltipHeight = 260;
+
+    let isBelow = true;
+    const spaceBelow = windowHeight - activeRect.bottom;
+    const spaceAbove = activeRect.top;
+
+    if (currentStepData.placement === 'bottom' && spaceBelow > tooltipHeight + 20) {
+      isBelow = true;
+    } else if (currentStepData.placement === 'top' && spaceAbove > tooltipHeight + 20) {
+      isBelow = false;
+    } else {
+      isBelow = spaceBelow > spaceAbove;
+    }
+
+    const tooltipStyle = getTooltipStyle();
+    const cardLeft = parseFloat(tooltipStyle.left);
+    const elementCenter = activeRect.left + activeRect.width / 2;
+    
+    // Relative offset inside the card container
+    let arrowLeft = elementCenter - cardLeft;
+    
+    // Safety padding so arrow does not slip past card's rounded borders
+    arrowLeft = Math.max(24, Math.min(tooltipWidth - 24, arrowLeft));
+
+    return {
+      isBelow,
+      left: `${arrowLeft}px`
+    };
+  };
+
   const toggleSoundPreference = () => {
     const nextVal = !audioEnabled;
     setAudioEnabled(nextVal);
@@ -378,6 +424,8 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
     }
     localStorage.setItem('feedback_settings', JSON.stringify({ ...current, sound: nextVal }));
   };
+
+  const arrowDetails = getArrowDetails();
 
   return (
     <div className="fixed inset-0 z-[1000] overflow-y-auto">
@@ -418,6 +466,30 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
               style={{ pointerEvents: 'auto' }}
             />
           </motion.svg>
+        )}
+      </AnimatePresence>
+
+      {/* Pulsing highlight overlay ring with outer ping radar */}
+      <AnimatePresence>
+        {!showPrompt && activeRect && (
+          <motion.div
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              x: activeRect.x - 6,
+              y: activeRect.y - 6,
+              width: activeRect.width + 12,
+              height: activeRect.height + 12,
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 180 }}
+            className="fixed pointer-events-none z-[1002] rounded-xl border-2 border-primary shadow-[0_0_15px_rgba(99,102,241,0.55)]"
+            style={{ position: 'fixed' }}
+          >
+            {/* Animated pulsing outer ring */}
+            <span className="absolute -inset-1.5 rounded-xl border-2 border-primary/45 animate-ping opacity-60 pointer-events-none" />
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -488,6 +560,19 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
               transition={{ type: 'spring', damping: 28, stiffness: 180 }}
               className="w-[340px] bg-card/95 dark:bg-slate-900/95 backdrop-blur-xl border border-white/10 dark:border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 text-left border-indigo-500/20"
             >
+              {/* Tooltip Card Connection Arrow */}
+              {arrowDetails && (
+                <div
+                  style={{ left: arrowDetails.left }}
+                  className={cn(
+                    "absolute w-3.5 h-3.5 bg-card border-indigo-500/20 dark:border-white/5 rotate-45 z-10 transition-all duration-300",
+                    arrowDetails.isBelow 
+                      ? "bottom-full translate-y-1.5 border-t border-l" 
+                      : "top-full -translate-y-1.5 border-b border-r"
+                  )}
+                />
+              )}
+
               <AnimatePresence mode="wait">
                 <motion.div
                   key={currentStep}
