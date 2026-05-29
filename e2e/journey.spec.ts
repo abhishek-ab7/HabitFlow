@@ -107,8 +107,8 @@ test.describe('Complete User Journey Flow', () => {
     // 8. Test Goals Section
     await page.goto('/goals');
     await page.waitForURL('**/goals');
-    // Verify that demo goals exist (e.g. Health & Fitness)
-    await expect(page.locator('text=Goal').or(page.locator('text=Active Goals')).first()).toBeVisible();
+    // Verify that Goals page is loaded (displays Goal Planner)
+    await expect(page.getByText('Goal Planner').first()).toBeVisible();
     console.log('6. Goals Page verified!');
 
     // 9. Test Routines Section
@@ -122,7 +122,7 @@ test.describe('Complete User Journey Flow', () => {
     await page.goto('/analytics');
     await page.waitForURL('**/analytics');
     // Verify charts, category breakdown, or discipline radar are visible
-    await expect(page.locator('text=Completion Rate').or(page.locator('text=Analytics')).or(page.locator('canvas')).or(page.locator('svg')).first()).toBeVisible();
+    await expect(page.getByText('Analytics & Review').first()).toBeVisible();
     console.log('8. Analytics Page verified!');
 
     // 11. Sign Out
