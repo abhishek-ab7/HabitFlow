@@ -5,6 +5,16 @@ const instrumenter = createInstrumenter({
   produceSourceMap: true,
   autoWrap: true,
   esModules: true,
+  parserPlugins: [
+    'typescript',
+    'jsx',
+    'decorators-legacy',
+    'classProperties',
+    'objectRestSpread',
+    'dynamicImport',
+    'optionalChaining',
+    'nullishCoalescingOperator',
+  ],
 });
 
 module.exports = function (source, map) {
