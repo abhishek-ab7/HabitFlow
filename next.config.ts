@@ -60,6 +60,20 @@ const nextConfig: NextConfig = {
         webpack: options.webpack,
       })
     );
+
+    if (process.env.INSTRUMENT_COVERAGE === 'true' && !options.isServer) {
+      config.module.rules.push({
+        test: /\.(js|jsx|ts|tsx)$/,
+        include: /src/,
+        exclude: /node_modules/,
+        use: [
+          {
+            loader: require.resolve('./scripts/istanbul-loader.js'),
+          },
+        ],
+      });
+    }
+
     return config;
   },
 };
