@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { createClient } from '@supabase/supabase-js';
 
 // Get credentials from environment variables loaded by Playwright from .env.local
