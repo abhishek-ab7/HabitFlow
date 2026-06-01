@@ -159,8 +159,8 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                     <span>New Task</span>
                 </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px] bg-card/95 backdrop-blur-xl border-border/50">
-                <DialogHeader>
+            <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col bg-card/95 backdrop-blur-xl border-border/50">
+                <DialogHeader className="shrink-0">
                     <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent w-fit">
                         Create Task
                     </DialogTitle>
@@ -168,7 +168,8 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                         Add a new task to your list. Fill in the details below.
                     </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+                <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden min-h-0">
+                    <div className="flex-1 overflow-y-auto space-y-4 my-4 pr-1 scrollbar-hide">
                     <div className="space-y-2">
                         <Input
                             placeholder="What needs to be done?"
@@ -354,8 +355,9 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                             </div>
                         </div>
                     </div>
+                    </div>
 
-                    <div className="pt-2 flex justify-end gap-2">
+                    <div className="pt-3 flex justify-end gap-2 border-t border-border/50 shrink-0">
                         <Button
                             type="button"
                             variant="ghost"
