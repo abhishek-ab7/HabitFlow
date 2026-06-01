@@ -211,73 +211,73 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="max-w-2xl w-full bg-card/40 dark:bg-slate-900/30 border border-border/80 rounded-3xl p-6 md:p-10 shadow-2xl relative overflow-hidden backdrop-blur-2xl"
+          className="max-w-lg w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-2xl relative overflow-hidden"
         >
           {/* Subtle glowing elements */}
-          <div className="absolute -top-10 -left-10 w-40 h-40 bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500/10 dark:bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -top-10 -left-10 w-32 h-32 bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-purple-500/10 dark:bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="space-y-8 relative z-10 text-center md:text-left">
+          <div className="space-y-4 relative z-10 text-center md:text-left">
             {/* Header Greeting */}
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-200/50 dark:border-indigo-800/30">
-                <Sparkles className="w-3.5 h-3.5 fill-current" />
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-semibold border border-indigo-200/50 dark:border-indigo-800/30">
+                <Sparkles className="w-2.5 h-2.5 fill-current" />
                 Focus Mode active
               </div>
-              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight">
                 Good Morning, <span className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">{greetingName}</span> 🌅
               </h1>
-              <p className="text-muted-foreground text-sm max-w-md">
+              <p className="text-muted-foreground text-[11px] leading-normal max-w-md">
                 Here is your roadmap for today. Let's make continuous progress and start the day strong.
               </p>
             </div>
 
             {/* Today's Focus List */}
-            <div className="space-y-4 text-left">
-              <div className="flex items-center justify-between border-b border-border/40 pb-2">
-                <span className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <Target className="w-4 h-4 text-indigo-500" />
+            <div className="space-y-2 text-left">
+              <div className="flex items-center justify-between border-b border-border/40 pb-1">
+                <span className="text-[11px] font-bold text-foreground flex items-center gap-1">
+                  <Target className="w-3 h-3 text-indigo-500" />
                   Today's Focus ({focusItems.length})
                 </span>
-                <span className="text-xs font-semibold text-muted-foreground">
+                <span className="text-[9px] font-semibold text-muted-foreground">
                   {completedCount}/{totalCount} Completed
                 </span>
               </div>
 
               {focusItems.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground text-sm italic border border-dashed border-border/60 rounded-2xl bg-muted/5">
+                <div className="py-5 text-center text-muted-foreground text-[11px] italic border border-dashed border-border/60 rounded-lg bg-muted/5">
                   No focus tasks or habits configured for today yet.
                 </div>
               ) : (
-                <div className="grid gap-3 max-h-[250px] overflow-y-auto pr-1 scrollbar-thin">
+                <div className="grid gap-1.5 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
                   {focusItems.slice(0, 5).map((item) => (
                     <div
                       key={item.id}
                       onClick={() => handleToggleItem(item)}
-                      className="flex items-center justify-between p-3.5 rounded-2xl bg-card border border-border/50 shadow-sm cursor-pointer hover:bg-secondary/40 dark:hover:bg-slate-800/40 transition-colors group select-none"
+                      className="flex items-center justify-between p-2 rounded-lg bg-card border border-border/50 shadow-sm cursor-pointer hover:bg-secondary/40 dark:hover:bg-slate-800/40 transition-colors group select-none"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-xl shrink-0 select-none group-hover:scale-110 transition-transform">{item.icon}</span>
-                        <span className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0 select-none group-hover:scale-110 transition-transform">{item.icon}</span>
+                        <span className="text-[11px] font-semibold text-foreground truncate group-hover:text-primary transition-colors">
                           {item.title}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-muted text-muted-foreground border">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] uppercase font-bold tracking-wider px-1 py-0.5 rounded bg-muted text-muted-foreground border">
                           {item.type}
                         </span>
                         {item.completed ? (
-                          <div className="w-5 h-5 rounded-full bg-success/20 text-success flex items-center justify-center border border-success/30 group-hover:bg-success/30 transition-colors">
-                            <Check className="w-3.5 h-3.5" />
+                          <div className="w-3.5 h-3.5 rounded-full bg-success/20 text-success flex items-center justify-center border border-success/30 group-hover:bg-success/30 transition-colors">
+                            <Check className="w-2.5 h-2.5" />
                           </div>
                         ) : (
-                          <div className="w-5 h-5 rounded-full border border-muted-foreground/30 flex items-center justify-center bg-card group-hover:border-primary/50 transition-colors" />
+                          <div className="w-3.5 h-3.5 rounded-full border border-muted-foreground/30 flex items-center justify-center bg-card group-hover:border-primary/50 transition-colors" />
                         )}
                       </div>
                     </div>
                   ))}
                   {focusItems.length > 5 && (
-                    <div className="text-xs font-semibold text-muted-foreground text-center pt-1.5">
+                    <div className="text-[9px] font-semibold text-muted-foreground text-center pt-0.5">
                       + {focusItems.length - 5} more focus items today
                     </div>
                   )}
@@ -287,39 +287,39 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
 
             {/* Progress metrics */}
             {totalCount > 0 && (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-sm font-semibold">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px] font-semibold">
                   <span className="text-muted-foreground">Focus Progress</span>
                   <span className="text-indigo-600 dark:text-indigo-400">{percentage}%</span>
                 </div>
                 <Progress
                   value={percentage}
-                  className="h-3 bg-secondary"
+                  className="h-1.5 bg-secondary"
                   indicatorClassName="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
                 />
               </div>
             )}
 
             {/* Action panel */}
-            <div className="flex flex-col sm:flex-row gap-3 items-center pt-4 justify-between border-t border-border/40">
-              <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                <Compass className="w-4 h-4 text-amber-500" />
+            <div className="flex flex-col sm:flex-row gap-2 items-center pt-2.5 justify-between border-t border-border/40">
+              <div className="text-[9px] font-medium text-muted-foreground flex items-center gap-1">
+                <Compass className="w-3 h-3 text-amber-500" />
                 "Start Day" grants you 10 XP towards levels.
               </div>
-              <div className="flex gap-3 w-full sm:w-auto justify-end">
+              <div className="flex gap-1.5 w-full sm:w-auto justify-end">
                 <Button
                   variant="outline"
                   onClick={handleSkip}
-                  className="w-full sm:w-auto h-11 px-6 rounded-2xl border-border/80"
+                  className="w-full sm:w-auto h-8 px-3 rounded-lg border-border/80 text-[11px]"
                 >
                   Skip
                 </Button>
                 <Button
                   onClick={handleStartDay}
                   disabled={xpClaimedToday}
-                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold h-11 px-8 rounded-2xl shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold h-8 px-4 rounded-lg shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
                 >
-                  <Play className="w-4 h-4 mr-2 fill-current" />
+                  <Play className="w-3 h-3 mr-1 fill-current" />
                   {xpClaimedToday ? 'Day Started' : 'Start Day'}
                 </Button>
               </div>
