@@ -162,9 +162,8 @@ export function GoalCard({
   return (
     <ScaleOnHover scale={1.01} lift className="h-full">
       <Card 
-        onClick={() => setDetailsModalOpen(true)}
         className={cn(
-          "relative overflow-hidden transition-shadow h-full flex flex-col cursor-pointer hover:shadow-md",
+          "relative overflow-hidden transition-shadow h-full flex flex-col hover:shadow-md",
           goal.isFocus && "ring-2 ring-primary/50"
         )}
       >
