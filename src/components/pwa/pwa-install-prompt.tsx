@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, X, Share, Plus, HelpCircle, ArrowRight, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
 
 export function PWAInstallPrompt() {
   const [isVisible, setIsVisible] = useState(false);
@@ -14,26 +13,36 @@ export function PWAInstallPrompt() {
   const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
-    // 1. Detect if running in standalone mode (already installed)
+    // 1. Check if user already installed the app (cached or current standalone mode)
     const checkStandalone = () => {
       const isStandaloneMode = 
         window.matchMedia('(display-mode: standalone)').matches || 
-        (navigator as any).standalone === true ||
-        localStorage.getItem('habitflow_pwa_installed') === 'true';
-      
-      if (isStandaloneMode) {
-        localStorage.setItem('habitflow_pwa_installed', 'true');
-        setIsStandalone(true);
-      }
+        (navigator as any).standalone === true;
+      setIsStandalone(isStandaloneMode);
       return isStandaloneMode;
     };
 
     const standalone = checkStandalone();
+    const isAlreadyInstalled = localStorage.getItem('habitflow_pwa_installed') === 'true';
+
+    if (isAlreadyInstalled) {
+      return;
+    }
+
+    if (standalone) {
+      localStorage.setItem('habitflow_pwa_installed', 'true');
+      return;
+    }
     
-    // 2. Check user's dismissal preference (Session-level & Daily-level)
+    // 2. Check user's dismissal preference (daily reset)
     const todayStr = new Date().toISOString().split('T')[0];
-    const isSessionDismissed = sessionStorage.getItem('habitflow_pwa_session_dismissed') === 'true';
-    const isDailyPrompted = localStorage.getItem('habitflow_pwa_last_prompt_date') === todayStr;
+    const dismissedDate = localStorage.getItem('habitflow_pwa_dismissed_date');
+    const isDismissedToday = dismissedDate === todayStr;
+    const isPermanentlyDismissed = localStorage.getItem('habitflow_pwa_dismissed') === 'true';
+
+    if (isDismissedToday || isPermanentlyDismissed) {
+      return;
+    }
 
     // 3. Detect iOS Safari
     const detectIOS = () => {
@@ -45,10 +54,6 @@ export function PWAInstallPrompt() {
     };
 
     const ios = detectIOS();
-
-    if (standalone || isSessionDismissed || isDailyPrompted) {
-      return;
-    }
 
     // 4. Listen for beforeinstallprompt event (Android/Chrome/Edge)
     const handleInstallPrompt = (e: Event) => {
@@ -65,13 +70,12 @@ export function PWAInstallPrompt() {
       setIsStandalone(true);
       setDeferredPrompt(null);
       localStorage.setItem('habitflow_pwa_installed', 'true');
-      toast.success('HabitFlow successfully installed! Check your home screen.');
     };
 
     window.addEventListener('appinstalled', handleAppInstalled);
 
     // 6. Show prompt for iOS Safari users because they don't fire beforeinstallprompt
-    if (ios && !standalone && !isSessionDismissed && !isDailyPrompted) {
+    if (ios && !standalone && !isDismissedToday && !isPermanentlyDismissed) {
       // Small timeout to not show immediately on page load
       const timer = setTimeout(() => {
         setIsVisible(true);
@@ -104,8 +108,7 @@ export function PWAInstallPrompt() {
   const handleDismiss = () => {
     setIsVisible(false);
     const todayStr = new Date().toISOString().split('T')[0];
-    sessionStorage.setItem('habitflow_pwa_session_dismissed', 'true');
-    localStorage.setItem('habitflow_pwa_last_prompt_date', todayStr);
+    localStorage.setItem('habitflow_pwa_dismissed_date', todayStr);
   };
 
   if (!isVisible && !showInstructions) return null;
