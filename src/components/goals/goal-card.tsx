@@ -322,14 +322,20 @@ export function GoalCard({
 
           {/* Next milestone preview */}
           {nextMilestone && !expanded && (
-            <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
+            <div 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMilestoneToggle(nextMilestone.id);
+              }}
+              className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg cursor-pointer hover:bg-muted/70 transition-colors"
+            >
               <Checkbox
                 checked={false}
                 onCheckedChange={() => handleMilestoneToggle(nextMilestone.id)}
                 onClick={(e) => e.stopPropagation()}
               />
               <span className="text-sm flex-1 truncate">{nextMilestone.title}</span>
-              <span className="text-xs text-muted-foreground">Next</span>
+              <span className="text-xs text-muted-foreground select-none">Next</span>
             </div>
           )}
 
@@ -384,6 +390,7 @@ export function GoalCard({
                       />
                       <label
                         htmlFor={milestone.id}
+                        onClick={(e) => e.stopPropagation()}
                         className={cn(
                           "flex-1 text-sm cursor-pointer",
                           milestone.completed && "line-through text-muted-foreground"
@@ -455,7 +462,7 @@ export function GoalCard({
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
             <div>
-              <GoalRoadmapView goal={goal} milestones={milestones} stats={stats} />
+              <GoalRoadmapView goal={goal} milestones={milestones} stats={stats} onToggleMilestone={onToggleMilestone} />
             </div>
             <div>
               <SMARTGoalAnalysis goal={goal} />

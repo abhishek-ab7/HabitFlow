@@ -24,9 +24,10 @@ interface GoalRoadmapViewProps {
   goal: Goal;
   milestones: Milestone[];
   stats: GoalStats;
+  onToggleMilestone?: (milestoneId: string) => void;
 }
 
-export function GoalRoadmapView({ goal, milestones, stats }: GoalRoadmapViewProps) {
+export function GoalRoadmapView({ goal, milestones, stats, onToggleMilestone }: GoalRoadmapViewProps) {
   const { habits, completions } = useHabitStore();
 
   // 1. Dynamic Health Score Calculation
@@ -239,21 +240,29 @@ export function GoalRoadmapView({ goal, milestones, stats }: GoalRoadmapViewProp
               return (
                 <div key={milestone.id} className="relative group">
                   {/* Timeline icon indicator */}
-                  <span className="absolute -left-[31px] top-0.5 bg-card flex items-center justify-center p-0.5 rounded-full z-10">
+                  <button
+                    type="button"
+                    onClick={() => onToggleMilestone?.(milestone.id)}
+                    className="absolute -left-[31px] top-0.5 bg-card flex items-center justify-center p-0.5 rounded-full z-10 hover:scale-110 active:scale-95 transition-transform duration-200 cursor-pointer"
+                    title={isCompleted ? "Mark as Incomplete" : "Mark as Complete"}
+                  >
                     {isCompleted ? (
                       <CheckCircle2 className="h-5 w-5 text-emerald-500 bg-card rounded-full" />
                     ) : (
                       <Circle className="h-5 w-5 text-muted-foreground hover:text-primary transition-colors bg-card rounded-full" />
                     )}
-                  </span>
+                  </button>
                   
                   {/* Milestone Details Card */}
-                  <div className={cn(
-                    "p-3 rounded-lg border transition-all duration-200",
-                    isCompleted 
-                      ? "bg-muted/10 border-emerald-500/20 text-muted-foreground" 
-                      : "bg-muted/30 border-border/40 hover:border-primary/40 text-foreground"
-                  )}>
+                  <div 
+                    onClick={() => onToggleMilestone?.(milestone.id)}
+                    className={cn(
+                      "p-3 rounded-lg border transition-all duration-200 cursor-pointer select-none",
+                      isCompleted 
+                        ? "bg-muted/10 border-emerald-500/20 text-muted-foreground hover:bg-muted/20" 
+                        : "bg-muted/30 border-border/40 hover:border-primary/40 hover:bg-muted/45 text-foreground"
+                    )}
+                  >
                     <div className="flex justify-between items-start gap-2">
                       <div>
                         <h6 className={cn(
