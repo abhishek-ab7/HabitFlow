@@ -142,83 +142,84 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent showCloseButton={false} className="sm:max-w-[600px] flex flex-col h-[85vh] md:h-auto md:max-h-[85vh] p-0 overflow-hidden bg-background/60 backdrop-blur-2xl border-white/10 dark:border-white/5 shadow-2xl ring-1 ring-white/20 dark:ring-white/10 !rounded-3xl gap-0">
+            <DialogContent showCloseButton={false} className="sm:max-w-[600px] w-full max-h-[85vh] flex flex-col p-0 overflow-hidden bg-white dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 shadow-[0_20px_50px_rgba(0,0,0,0.15)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.35)] !rounded-[32px] gap-0">
 
-                {/* Header with Gradient */}
-                <div className="relative p-8 pb-6 shrink-0 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent">
-                    <div className="absolute top-4 right-4">
-                        <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-white/10 hover:text-foreground">
-                            <X className="w-5 h-5 text-muted-foreground" />
+                {/* Header with Solid Background */}
+                <div className="relative p-6 shrink-0 border-b border-slate-100 dark:border-zinc-900 bg-slate-50/50 dark:bg-zinc-900/10">
+                    <div className="absolute top-5 right-5">
+                        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 rounded-full hover:bg-slate-200/50 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground">
+                            <X className="w-4.5 h-4.5" />
                         </Button>
                     </div>
 
-                    <DialogHeader className="space-y-2">
-                        <DialogTitle className="text-3xl font-bold tracking-tight text-foreground">
+                    <DialogHeader className="space-y-1">
+                        <DialogTitle className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                             {routine ? "Edit Routine" : "Design New Routine"}
                         </DialogTitle>
-                        <DialogDescription className="text-base text-muted-foreground font-medium">
+                        <DialogDescription className="text-sm text-muted-foreground font-medium">
                             {routine ? "Fine-tune your habit sequence." : "Chain habits together to build powerful momentum."}
                         </DialogDescription>
                     </DialogHeader>
                 </div>
 
-                {/* Main Content Area with Custom Scrollbar */}
-                <ScrollArea className="h-[60vh] w-full">
-                    <form id="routine-form" onSubmit={handleSubmit} className="px-8 py-6 pb-24 space-y-8">
-
+                {/* Form Wrapper */}
+                <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden min-h-0">
+                    {/* Scrollable Fields */}
+                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+                        
                         {/* Section 1: Essentials */}
-                        <div className="space-y-5">
-                            <div className="space-y-2">
-                                <Label htmlFor="title" className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Name</Label>
+                        <div className="space-y-4">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 pl-0.5">Name</Label>
                                 <Input
                                     id="title"
                                     placeholder="e.g. Morning Focus Protocol"
                                     value={formData.title}
                                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                                     required
-                                    className="h-14 text-lg bg-white/5 border-white/10 focus:border-indigo-500/50 focus:ring-indigo-500/20 rounded-xl transition-all"
+                                    className="h-11 text-base bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 focus:border-indigo-500/50 focus:ring-indigo-500/20 rounded-xl transition-all text-slate-900 dark:text-slate-100"
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="description" className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Purpose</Label>
+                            <div className="space-y-1.5">
+                                <Label htmlFor="description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 pl-0.5">Purpose</Label>
                                 <Textarea
                                     id="description"
                                     placeholder="What is the goal of this routine?"
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    className="resize-none h-24 bg-white/5 border-white/10 focus:border-indigo-500/50 focus:ring-indigo-500/20 rounded-xl transition-all"
+                                    className="resize-none h-20 text-sm bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 focus:border-indigo-500/50 focus:ring-indigo-500/20 rounded-xl transition-all text-slate-900 dark:text-slate-100"
                                 />
                             </div>
                         </div>
 
                         {/* Section 2: Trigger */}
-                        <div className="space-y-2">
-                            <Label className="text-sm font-semibold uppercase tracking-wider text-muted-foreground pl-1">Activation Trigger</Label>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 pl-0.5">Activation Trigger</Label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <Select
                                     value={formData.triggerType}
                                     onValueChange={(val: any) => setFormData({ ...formData, triggerType: val })}
                                 >
-                                    <SelectTrigger className="h-12 bg-white/5 border-white/10 rounded-xl">
+                                    <SelectTrigger className="h-10 bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 rounded-xl text-slate-900 dark:text-slate-100 text-sm">
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="manual">
-                                            <div className="flex items-center gap-2">
-                                                <Play className="w-4 h-4 text-orange-500" />
+                                            <div className="flex items-center gap-2 text-sm">
+                                                <Play className="w-3.5 h-3.5 text-orange-500" />
                                                 <span>Manual Start</span>
                                             </div>
                                         </SelectItem>
                                         <SelectItem value="time">
-                                            <div className="flex items-center gap-2">
-                                                <Clock className="w-4 h-4 text-blue-500" />
+                                            <div className="flex items-center gap-2 text-sm">
+                                                <Clock className="w-3.5 h-3.5 text-blue-500" />
                                                 <span>Time of Day</span>
                                             </div>
                                         </SelectItem>
                                         <SelectItem value="location">
-                                            <div className="flex items-center gap-2">
-                                                <MapPin className="w-4 h-4 text-purple-500" />
+                                            <div className="flex items-center gap-2 text-sm">
+                                                <MapPin className="w-3.5 h-3.5 text-purple-500" />
                                                 <span>Location</span>
                                             </div>
                                         </SelectItem>
@@ -226,13 +227,13 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                 </Select>
 
                                 {formData.triggerType === 'time' && (
-                                    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}>
+                                    <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="w-full">
                                         <Input
                                             type="time"
                                             value={formData.triggerValue}
                                             onChange={(e) => setFormData({ ...formData, triggerValue: e.target.value })}
                                             required
-                                            className="h-12 bg-white/5 border-white/10 rounded-xl"
+                                            className="h-10 bg-slate-50 dark:bg-zinc-900 border-slate-200 dark:border-zinc-800 rounded-xl text-sm"
                                         />
                                     </motion.div>
                                 )}
@@ -242,10 +243,10 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                 <motion.div
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: 'auto' }}
-                                    className="mt-2 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl space-y-3"
+                                    className="mt-1.5 p-3 bg-purple-500/5 dark:bg-purple-500/10 border border-purple-500/20 rounded-xl space-y-2"
                                 >
                                     <div className="flex items-center justify-between">
-                                        <Label className="text-purple-300">Target Coordinates</Label>
+                                        <Label className="text-xs text-purple-600 dark:text-purple-300">Target Coordinates</Label>
                                         <Button
                                             type="button"
                                             variant="ghost"
@@ -262,9 +263,9 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                                     toast.error("Could not get location");
                                                 }
                                             }}
-                                            className="h-8 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-300"
+                                            className="h-7 text-[10px] bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-300"
                                         >
-                                            <MapPin className="w-3 h-3 mr-1.5" />
+                                            <MapPin className="w-3 h-3 mr-1" />
                                             Use Current Location
                                         </Button>
                                     </div>
@@ -273,31 +274,31 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                         value={formData.triggerValue}
                                         onChange={(e) => setFormData({ ...formData, triggerValue: e.target.value })}
                                         required
-                                        className="h-10 bg-black/20 border-purple-500/30 text-purple-100 placeholder:text-purple-300/30"
+                                        className="h-9 text-xs bg-slate-50 dark:bg-zinc-900 border-purple-500/20 text-slate-900 dark:text-purple-100 placeholder:text-purple-300/30"
                                     />
                                 </motion.div>
                             )}
                         </div>
 
                         {/* Section 3: Habit Stack */}
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between px-1">
-                                <Label className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Habit Stack</Label>
-                                <span className="text-xs text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded-full">
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between px-0.5">
+                                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Habit Stack</Label>
+                                <span className="text-[10px] font-bold text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded-full">
                                     {selectedHabitIds.size} selected
                                 </span>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-h-[100px]">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 min-h-[80px]">
                                 {loadingHabits ? (
-                                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-muted-foreground">
-                                        <Loader2 className="w-8 h-8 animate-spin mb-3 opacity-50" />
-                                        <p className="text-sm font-medium">Loading habits...</p>
+                                    <div className="col-span-full py-6 flex flex-col items-center justify-center text-muted-foreground">
+                                        <Loader2 className="w-6 h-6 animate-spin mb-2 opacity-50" />
+                                        <p className="text-xs font-medium">Loading habits...</p>
                                     </div>
                                 ) : activeHabits.length === 0 ? (
-                                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-muted-foreground bg-muted/5 rounded-xl border border-dashed border-border/50">
-                                        <p className="text-sm font-medium">No active habits found</p>
-                                        <p className="text-xs mt-1 opacity-70">Create some habits first to build a routine</p>
+                                    <div className="col-span-full py-6 flex flex-col items-center justify-center text-muted-foreground bg-muted/5 rounded-xl border border-dashed border-border/50">
+                                        <p className="text-xs font-medium">No active habits found</p>
+                                        <p className="text-[10px] mt-0.5 opacity-70">Create some habits first to build a routine</p>
                                     </div>
                                 ) : (
                                     activeHabits.map((habit) => {
@@ -305,8 +306,8 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                         return (
                                             <motion.div
                                                 key={habit.id}
-                                                whileHover={{ scale: 1.02, backgroundColor: "rgba(99, 102, 241, 0.05)" }}
-                                                whileTap={{ scale: 0.98 }}
+                                                whileHover={{ scale: 1.01, backgroundColor: "rgba(99, 102, 241, 0.03)" }}
+                                                whileTap={{ scale: 0.99 }}
                                                 onClick={() => {
                                                     const newSet = new Set(Array.from(selectedHabitIds));
                                                     if (isSelected) newSet.delete(habit.id);
@@ -314,33 +315,33 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                                     setSelectedHabitIds(newSet);
                                                 }}
                                                 className={cn(
-                                                    "cursor-pointer relative flex items-center gap-3 p-3 rounded-xl border transition-all duration-200 group",
+                                                    "cursor-pointer relative flex items-center gap-2.5 p-2 rounded-xl border transition-all duration-200 group",
                                                     isSelected
-                                                        ? "bg-indigo-500/10 border-indigo-500/50 shadow-[0_0_15px_-5px_rgba(99,102,241,0.4)]"
-                                                        : "bg-slate-50/50 dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/20"
+                                                        ? "bg-indigo-500/10 border-indigo-500/50 shadow-[0_0_12px_-5px_rgba(99,102,241,0.3)]"
+                                                        : "bg-slate-50 dark:bg-zinc-900/50 border-slate-200 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700"
                                                 )}
                                             >
                                                 <div className={cn(
-                                                    "w-10 h-10 rounded-lg flex items-center justify-center text-xl shadow-inner transition-colors",
-                                                    isSelected ? "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400" : "bg-slate-200/50 dark:bg-black/20 group-hover:bg-slate-200/80 dark:group-hover:bg-black/30"
+                                                    "w-8 h-8 rounded-lg flex items-center justify-center text-base shadow-inner transition-colors",
+                                                    isSelected ? "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400" : "bg-slate-100 dark:bg-black/20 group-hover:bg-slate-200/85 dark:group-hover:bg-black/30"
                                                 )}>
                                                     {(!habit.icon || habit.icon === '✓') ? '📝' : habit.icon}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className={cn(
-                                                        "font-medium truncate transition-colors",
+                                                        "text-xs font-semibold truncate transition-colors",
                                                         isSelected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white"
                                                     )}>
                                                         {habit.name}
                                                     </p>
                                                 </div>
                                                 <div className={cn(
-                                                    "w-5 h-5 rounded-full border flex items-center justify-center transition-all",
+                                                    "w-4 h-4 rounded-full border flex items-center justify-center transition-all",
                                                     isSelected
                                                         ? "bg-indigo-500 border-indigo-500 scale-100"
-                                                        : "border-slate-300 dark:border-white/30 scale-90 opacity-60 group-hover:opacity-100"
+                                                        : "border-slate-300 dark:border-zinc-700 scale-90 opacity-60 group-hover:opacity-100"
                                                 )}>
-                                                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                                                    {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
                                                 </div>
                                             </motion.div>
                                         );
@@ -348,34 +349,32 @@ export function RoutineModal({ isOpen, onClose, routine }: RoutineModalProps) {
                                 )}
                             </div>
                         </div>
+                    </div>
 
-                    </form>
-                </ScrollArea>
-
-                {/* Footer */}
-                <div className="absolute bottom-0 left-0 right-0 p-8 pt-20 bg-gradient-to-t from-background via-background/95 to-transparent flex justify-end gap-3 z-20 pointer-events-none">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={onClose}
-                        className="pointer-events-auto h-12 px-6 rounded-xl hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        type="submit"
-                        form="routine-form"
-                        disabled={loading || !formData.title}
-                        className={cn(
-                            "pointer-events-auto h-12 px-8 rounded-xl font-semibold shadow-lg transition-all duration-300",
-                            "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:via-purple-500 hover:to-pink-500",
-                            "text-white border-0 shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-[0.98]",
-                            "disabled:opacity-50 disabled:pointer-events-none"
-                        )}
-                    >
-                        {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <SaveIcon routine={routine} />}
-                    </Button>
-                </div>
+                    {/* Footer - Solid & Positioned Correctly */}
+                    <div className="p-4 flex justify-end gap-2 border-t border-slate-100 dark:border-zinc-900 bg-slate-50/50 dark:bg-zinc-900/30 shrink-0">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={onClose}
+                            className="h-10 px-4 rounded-xl hover:bg-slate-200/50 dark:hover:bg-zinc-800 text-muted-foreground hover:text-foreground text-sm transition-colors"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            disabled={loading || !formData.title}
+                            className={cn(
+                                "h-10 px-6 rounded-xl font-bold shadow-md transition-all duration-300",
+                                "bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:via-purple-500 hover:to-pink-500",
+                                "text-white border-0 shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:scale-[1.01] active:scale-[0.99]",
+                                "disabled:opacity-50 disabled:pointer-events-none text-sm"
+                            )}
+                        >
+                            {loading ? <Loader2 className="mr-2 h-4.5 w-4.5 animate-spin" /> : <SaveIcon routine={routine} />}
+                        </Button>
+                    </div>
+                </form>
             </DialogContent>
         </Dialog>
     )
