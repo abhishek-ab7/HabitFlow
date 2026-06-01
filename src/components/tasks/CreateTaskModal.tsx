@@ -112,7 +112,7 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
 
         setLoading(true)
         try {
-            await addTask({
+            const parentTask = await addTask({
                 title,
                 description,
                 priority,
@@ -122,8 +122,21 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
                 isImportant,
                 estimatedTime: estimatedTime > 0 ? estimatedTime : undefined,
                 recurrenceRule: recurrenceRule || undefined,
-                metadata: { subtasks }
+                depth: 0,
+                parentTaskId: null
             })
+
+            // Save subtasks using hierarchical relationships
+            for (const subtask of subtasks) {
+                await addTask({
+                    title: subtask.title,
+                    priority,
+                    parentTaskId: parentTask.id,
+                    depth: 1,
+                    isUrgent: false,
+                    isImportant: false
+                })
+            }
 
             toast.success("Task created successfully")
             setOpen(false)

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion"
-import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2 } from "lucide-react"
+import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2, ChevronDown, ChevronRight, Edit } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { isAIEnabled } from "@/lib/ai-features-flag"
 import { format } from "date-fns"
@@ -18,6 +18,9 @@ import {
 import type { Task } from "@/lib/types"
 import { usePomodoroStore } from "@/lib/stores/pomodoro-store"
 import { useTaskStore } from "@/lib/stores/task-store"
+import { SubtaskList } from "./SubtaskList"
+import { AddSubtaskButton } from "./AddSubtaskButton"
+import { EditTaskModal } from "./EditTaskModal"
 
 interface TaskCardProps {
     task: Task
@@ -37,7 +40,20 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
     const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
     const [loadingPriority, setLoadingPriority] = useState(false);
     
-    const { removeTask, editTask, addTask } = useTaskStore();
+    const { removeTask, editTask, addTask, tasks, toggleTaskComplete } = useTaskStore();
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [expandedSubtasks, setExpandedSubtasks] = useState<Set<string>>(new Set());
+    const [activeEditTask, setActiveEditTask] = useState<Task | null>(null);
+
+    const toggleExpandSubtask = (subtaskId: string) => {
+        const next = new Set(expandedSubtasks);
+        if (next.has(subtaskId)) {
+            next.delete(subtaskId);
+        } else {
+            next.add(subtaskId);
+        }
+        setExpandedSubtasks(next);
+    };
     
     const { 
         activeTaskId, 
@@ -64,12 +80,9 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
         high: "border-red-500/30 bg-red-500/5 text-red-500 shadow-[0_0_15px_-5px_rgba(239,68,68,0.3)]",
     }
 
-    const subtasks = task.metadata && typeof task.metadata === 'object' && 'subtasks' in task.metadata && Array.isArray((task.metadata as any).subtasks)
-        ? (task.metadata as any).subtasks
-        : []
-
-    const completedSubtasks = subtasks.filter((s: any) => s.completed).length
-    const subtaskProgress = subtasks.length > 0 ? (completedSubtasks / subtasks.length) * 100 : 0
+    const subtasks = tasks.filter(t => t.parentTaskId === task.id && t.status !== 'archived');
+    const completedSubtasks = subtasks.filter(s => s.status === 'done').length;
+    const subtaskProgress = subtasks.length > 0 ? (completedSubtasks / subtasks.length) * 100 : 0;
 
     const getAIPriority = async () => {
         setLoadingPriority(true);
@@ -173,7 +186,9 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                                 estimatedTime: task.estimatedTime,
                                                 actualTime: task.actualTime,
                                                 metadata: task.metadata || undefined,
-                                                tags: task.tags
+                                                tags: task.tags,
+                                                parentTaskId: task.parentTaskId,
+                                                depth: task.depth
                                             });
                                             toast.success("Task restored");
                                         } catch (undoErr) {
@@ -207,20 +222,21 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                 )}
             >
                 <div className={cn("flex items-start", compact ? "gap-2.5" : "gap-4")}>
-                    {/* Custom Animated Checkbox */}
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            onComplete?.(task.id)
-                        }}
-                        className={cn(
-                            "relative flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300",
-                            compact ? "mt-0.5 h-4 w-4" : "mt-1 h-6 w-6",
-                            task.status === 'done'
-                                ? "bg-primary border-primary text-primary-foreground"
-                                : "border-muted-foreground/30 group-hover:border-primary"
-                        )}
-                    >
+                    {/* Custom Animated Checkbox + Expand Button Container */}
+                    <div className="flex flex-col items-center shrink-0">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onComplete?.(task.id)
+                            }}
+                            className={cn(
+                                "relative flex items-center justify-center rounded-full border-2 transition-all duration-300",
+                                compact ? "mt-0.5 h-4 w-4" : "mt-1 h-6 w-6",
+                                task.status === 'done'
+                                    ? "bg-primary border-primary text-primary-foreground"
+                                    : "border-muted-foreground/30 group-hover:border-primary"
+                            )}
+                        >
                         <AnimatePresence mode="wait">
                             {task.status === 'done' ? (
                                 <motion.div
@@ -243,8 +259,23 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                     <Circle className={cn("text-primary", compact ? "h-2.5 w-2.5" : "h-4 w-4")} />
                                 </motion.div>
                             )}
-                        </AnimatePresence>
-                    </button>
+                            </AnimatePresence>
+                        </button>
+                        
+                        {subtasks.length > 0 && !compact && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsExpanded(!isExpanded);
+                                }}
+                                className="mt-2.5 p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
+                                title={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
+                            >
+                                {isExpanded ? <ChevronDown className="h-4 w-4 text-emerald-500" /> : <ChevronRight className="h-4 w-4" />}
+                            </button>
+                        )}
+                    </div>
 
                     {/* Content */}
                     <div className={cn("flex-1 min-w-0", compact ? "space-y-1" : "space-y-3")}>
@@ -288,6 +319,21 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                         </Tooltip>
                                     </TooltipProvider>
                                 )}
+                                {/* Edit Task Button */}
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-6 w-6 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 opacity-40 md:opacity-0 md:group-hover:opacity-60 md:hover:!opacity-100 transition-all duration-200 cursor-pointer"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveEditTask(task);
+                                    }}
+                                    title="Edit task"
+                                >
+                                    <Edit className="h-3.5 w-3.5" />
+                                </Button>
+
                                 {/* Delete Task Button */}
                                 <Button
                                     type="button"
@@ -473,6 +519,46 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                     </div>
                 </div>
 
+                {/* Inline Subtasks List */}
+                {isExpanded && !compact && subtasks.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-border/40 relative z-10" onClick={(e) => e.stopPropagation()}>
+                        <SubtaskList
+                            tasks={tasks}
+                            parentId={task.id}
+                            allTasks={tasks}
+                            onToggle={toggleTaskComplete}
+                            onDelete={async (subId) => {
+                                if (confirm("Are you sure you want to delete this subtask?")) {
+                                    await removeTask(subId);
+                                    toast.success("Subtask deleted");
+                                }
+                            }}
+                            expandedTasks={expandedSubtasks}
+                            onToggleExpand={toggleExpandSubtask}
+                        />
+                        
+                        {/* Inline Add Subtask Button */}
+                        <AddSubtaskButton
+                            parentTask={task}
+                            onAdd={async (subtaskData) => {
+                                try {
+                                    await addTask({
+                                        title: subtaskData.title!,
+                                        priority: task.priority,
+                                        parentTaskId: task.id,
+                                        depth: (task.depth || 0) + 1,
+                                        isUrgent: false,
+                                        isImportant: false
+                                    });
+                                    toast.success("Subtask added");
+                                } catch (error) {
+                                    toast.error("Failed to add subtask");
+                                }
+                            }}
+                        />
+                    </div>
+                )}
+
                 {/* Hover Shine Effect */}
                 <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-white/10 via-white/5 to-transparent opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-700" />
 
@@ -481,6 +567,15 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                     <div className="absolute -z-10 -inset-1 blur-2xl opacity-10 bg-red-500 rounded-2xl" />
                 )}
             </motion.div>
+
+            {/* Edit Task Modal */}
+            {activeEditTask && (
+                <EditTaskModal
+                    task={activeEditTask}
+                    isOpen={!!activeEditTask}
+                    onOpenChange={(open) => !open && setActiveEditTask(null)}
+                />
+            )}
         </div>
     );
 }

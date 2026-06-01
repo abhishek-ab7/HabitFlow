@@ -77,6 +77,12 @@ export function PomodoroFloating() {
     return () => window.removeEventListener('pomodoro-complete', handleComplete);
   }, [activeTaskTitle]);
 
+  useEffect(() => {
+    const handleOpen = () => setIsExpanded(true);
+    window.addEventListener('open-pomodoro', handleOpen);
+    return () => window.removeEventListener('open-pomodoro', handleOpen);
+  }, []);
+
   // Widget is always visible in minimized state for general focus session use
 
   // Format time (e.g. 1500 seconds -> 25:00)

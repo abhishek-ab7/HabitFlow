@@ -89,11 +89,13 @@ describe('task-store', () => {
     expect(state.tasks[0].priority).toBe('high');
   });
 
-  it('removeTask removes task', async () => {
+  it('removeTask removes task and all its subtasks recursively', async () => {
     useTaskStore.setState({ 
       tasks: [
-        { id: 't1', userId: 'u1', title: 'T1' } as Task,
-        { id: 't2', userId: 'u1', title: 'T2' } as Task
+        { id: 't1', userId: 'u1', title: 'Parent Task', parentTaskId: null } as Task,
+        { id: 't1-sub1', userId: 'u1', title: 'Subtask 1', parentTaskId: 't1' } as Task,
+        { id: 't1-sub1-sub2', userId: 'u1', title: 'Sub-subtask', parentTaskId: 't1-sub1' } as Task,
+        { id: 't2', userId: 'u1', title: 'Unrelated Task', parentTaskId: null } as Task
       ]
     });
     

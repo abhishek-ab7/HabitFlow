@@ -83,11 +83,12 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const quadrants = useMemo(() => {
+    const rootTasks = tasks.filter(t => !t.parentTaskId);
     return {
-      doFirst: tasks.filter(t => t.isUrgent && t.isImportant && t.status !== 'done'), // Urgent & Important
-      schedule: tasks.filter(t => !t.isUrgent && t.isImportant && t.status !== 'done'), // Not Urgent & Important
-      delegate: tasks.filter(t => t.isUrgent && !t.isImportant && t.status !== 'done'), // Urgent & Not Important
-      dontDo: tasks.filter(t => !t.isUrgent && !t.isImportant && t.status !== 'done'), // Not Urgent & Not Important
+      doFirst: rootTasks.filter(t => t.isUrgent && t.isImportant && t.status !== 'done'), // Urgent & Important
+      schedule: rootTasks.filter(t => !t.isUrgent && t.isImportant && t.status !== 'done'), // Not Urgent & Important
+      delegate: rootTasks.filter(t => t.isUrgent && !t.isImportant && t.status !== 'done'), // Urgent & Not Important
+      dontDo: rootTasks.filter(t => !t.isUrgent && !t.isImportant && t.status !== 'done'), // Not Urgent & Not Important
     };
   }, [tasks]);
 

@@ -703,6 +703,8 @@ export async function createTask(data: TaskFormData & { userId: UserId }): Promi
     actualTime: data.actualTime || 0,
     isUrgent: data.isUrgent ?? false,
     isImportant: data.isImportant ?? false,
+    parentTaskId: data.parentTaskId || null,
+    depth: data.depth || 0,
   };
 
   await db.tasks.add(task);
@@ -714,7 +716,14 @@ export async function updateTask(id: TaskId, data: Partial<Task>): Promise<void>
 }
 
 export async function deleteTask(id: TaskId): Promise<void> {
-  await db.tasks.update(id, { status: 'archived', updated_at: new Date().toISOString() });
+  const now = new Date().toISOString();
+  await db.tasks.update(id, { status: 'archived', updated_at: now });
+  
+  // Recursively archive child tasks
+  const childTasks = await db.tasks.where('parentTaskId').equals(id).toArray();
+  for (const child of childTasks) {
+    await deleteTask(child.id);
+  }
 }
 
 // ==================

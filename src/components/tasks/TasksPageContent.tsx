@@ -55,14 +55,14 @@ export default function TasksPageContent() {
         }
     };
 
-    // Memoize active & completed tasks
+    // Memoize active & completed tasks (only root level tasks)
     const activeTasks = useMemo(() =>
-        tasks.filter(t => t.status !== 'done' && t.status !== 'archived'),
+        tasks.filter(t => t.status !== 'done' && t.status !== 'archived' && !t.parentTaskId),
         [tasks]
     );
 
     const completedTasks = useMemo(() =>
-        tasks.filter(t => t.status === 'done'),
+        tasks.filter(t => t.status === 'done' && !t.parentTaskId),
         [tasks]
     );
 

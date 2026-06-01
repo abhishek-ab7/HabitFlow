@@ -60,6 +60,10 @@ export const usePomodoroStore = create<PomodoroState>((set, get) => ({
     } else {
       set({ isRunning: true });
     }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('open-pomodoro'));
+    }
   },
 
   pauseTimer: () => {

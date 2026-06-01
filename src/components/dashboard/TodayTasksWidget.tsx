@@ -46,7 +46,7 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
     const today = new Date().toISOString().split('T')[0]
 
     const allFocusTasks = tasks.filter(t => {
-        if (t.status === 'done' || t.status === 'archived') return false;
+        if (t.status === 'done' || t.status === 'archived' || t.parentTaskId) return false;
         return !t.due_date || t.due_date <= (today + "T23:59:59");
     }).sort((a, b) => {
         if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);

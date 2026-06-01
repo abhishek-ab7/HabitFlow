@@ -127,14 +127,25 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
     removeTask: async (id: string) => {
         await deleteTask(id);
+        
+        // Find all descendant IDs recursively
+        const getDescendantIds = (taskId: string, allTasks: Task[]): string[] => {
+            const children = allTasks.filter(t => t.parentTaskId === taskId);
+            return [taskId, ...children.flatMap(c => getDescendantIds(c.id, allTasks))];
+        };
+
+        const idsToRemove = getDescendantIds(id, get().tasks);
+
         set(state => ({
-            tasks: state.tasks.filter(t => t.id !== id),
+            tasks: state.tasks.filter(t => !idsToRemove.includes(t.id)),
         }));
 
-        // Sync to cloud
+        // Sync to cloud for all removed tasks
         try {
             const syncEngine = getSyncEngine();
-            await syncEngine.deleteTask(id);
+            for (const removedId of idsToRemove) {
+                await syncEngine.deleteTask(removedId);
+            }
         } catch (error) {
             console.error('Failed to sync task deletion:', error);
         }

@@ -364,6 +364,8 @@ export interface TaskFormData {
   goal_id?: string;
   tags?: string[];
   metadata?: Record<string, any>;
+  parentTaskId?: string | null;
+  depth?: number;
 }
 
 // ============================================
