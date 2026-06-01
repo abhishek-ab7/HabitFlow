@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download, X, Share, Plus, HelpCircle, ArrowRight, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 export function PWAInstallPrompt() {
   const [isVisible, setIsVisible] = useState(false);
@@ -17,15 +18,22 @@ export function PWAInstallPrompt() {
     const checkStandalone = () => {
       const isStandaloneMode = 
         window.matchMedia('(display-mode: standalone)').matches || 
-        (navigator as any).standalone === true;
-      setIsStandalone(isStandaloneMode);
+        (navigator as any).standalone === true ||
+        localStorage.getItem('habitflow_pwa_installed') === 'true';
+      
+      if (isStandaloneMode) {
+        localStorage.setItem('habitflow_pwa_installed', 'true');
+        setIsStandalone(true);
+      }
       return isStandaloneMode;
     };
 
     const standalone = checkStandalone();
     
-    // 2. Check user's dismissal preference
-    const isDismissed = localStorage.getItem('habitflow_pwa_dismissed') === 'true';
+    // 2. Check user's dismissal preference (Session-level & Daily-level)
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isSessionDismissed = sessionStorage.getItem('habitflow_pwa_session_dismissed') === 'true';
+    const isDailyPrompted = localStorage.getItem('habitflow_pwa_last_prompt_date') === todayStr;
 
     // 3. Detect iOS Safari
     const detectIOS = () => {
@@ -38,7 +46,7 @@ export function PWAInstallPrompt() {
 
     const ios = detectIOS();
 
-    if (standalone || isDismissed) {
+    if (standalone || isSessionDismissed || isDailyPrompted) {
       return;
     }
 
@@ -56,12 +64,14 @@ export function PWAInstallPrompt() {
       setIsVisible(false);
       setIsStandalone(true);
       setDeferredPrompt(null);
+      localStorage.setItem('habitflow_pwa_installed', 'true');
+      toast.success('HabitFlow successfully installed! Check your home screen.');
     };
 
     window.addEventListener('appinstalled', handleAppInstalled);
 
     // 6. Show prompt for iOS Safari users because they don't fire beforeinstallprompt
-    if (ios && !standalone && !isDismissed) {
+    if (ios && !standalone && !isSessionDismissed && !isDailyPrompted) {
       // Small timeout to not show immediately on page load
       const timer = setTimeout(() => {
         setIsVisible(true);
@@ -82,6 +92,7 @@ export function PWAInstallPrompt() {
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
         setIsVisible(false);
+        localStorage.setItem('habitflow_pwa_installed', 'true');
       }
       setDeferredPrompt(null);
     } else {
@@ -92,7 +103,9 @@ export function PWAInstallPrompt() {
 
   const handleDismiss = () => {
     setIsVisible(false);
-    localStorage.setItem('habitflow_pwa_dismissed', 'true');
+    const todayStr = new Date().toISOString().split('T')[0];
+    sessionStorage.setItem('habitflow_pwa_session_dismissed', 'true');
+    localStorage.setItem('habitflow_pwa_last_prompt_date', todayStr);
   };
 
   if (!isVisible && !showInstructions) return null;
