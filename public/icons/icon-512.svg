@@ -1,6 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="128" fill="#6366f1"/>
-  <path d="M256 128C203.647 128 160 171.647 160 224V288C160 340.353 203.647 384 256 384C308.353 384 352 340.353 352 288V224C352 171.647 308.353 128 256 128Z" fill="white"/>
-  <path d="M256 192C235.383 192 218.667 208.716 218.667 229.333V282.667C218.667 303.284 235.383 320 256 320C276.617 320 293.333 303.284 293.333 282.667V229.333C293.333 208.716 276.617 192 256 192Z" fill="#6366f1"/>
-  <circle cx="256" cy="256" r="21.333" fill="white"/>
+  <rect width="512" height="512" rx="128" fill="#111127"/>
+  <g transform="translate(64, 64) scale(12)">
+    <path d="M 16 4 A 12 12 0 1 1 15.99 4" stroke="url(#logo-grad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 12 16.5 L 15 19.5 L 21 12.5" stroke="url(#logo-grad-2)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+  <defs>
+    <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#9333ea" />
+    </linearGradient>
+    <linearGradient id="logo-grad-2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9333ea" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+  </defs>
 </svg>
