@@ -17,7 +17,6 @@ import {
   FocusGoal,
   TodayTasksWidget,
   AICoachWidget,
-  PersonalizedQuote,
   BentoGrid,
   WeeklyReviewWidget,
   DashboardCenterLoader,
@@ -324,7 +323,6 @@ export default function DashboardContent() {
         onToggleMilestone={handleToggleMilestone}
       />
     ),
-    ...(isAIEnabled() ? { 'ai-quote': <PersonalizedQuote /> } : {}),
     ...(isAIEnabled() ? { 'ai-coach': <AICoachWidget /> } : {}),
     'weekly-review': <WeeklyReviewWidget />
   };
