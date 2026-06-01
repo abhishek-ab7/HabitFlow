@@ -13,6 +13,19 @@ export function PWAInstallPrompt() {
   const [showInstructions, setShowInstructions] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
+    let handleInstallPromptListener: ((e: Event) => void) | null = null;
+    let handleAppInstalledListener: (() => void) | null = null;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // Check if user already saw or dismissed the prompt today, or if it is permanently dismissed/installed
+    const isPromptedToday = localStorage.getItem('habitflow_pwa_prompted_date') === todayStr;
+    const isAlreadyInstalled = localStorage.getItem('habitflow_pwa_installed') === 'true';
+    const isDismissedToday = localStorage.getItem('habitflow_pwa_dismissed_date') === todayStr;
+    const isPermanentlyDismissed = localStorage.getItem('habitflow_pwa_dismissed') === 'true';
+
     // 1. Check if user already installed the app (cached or current standalone mode)
     const checkStandalone = () => {
       const isStandaloneMode = 
@@ -23,7 +36,6 @@ export function PWAInstallPrompt() {
     };
 
     const standalone = checkStandalone();
-    const isAlreadyInstalled = localStorage.getItem('habitflow_pwa_installed') === 'true';
 
     if (isAlreadyInstalled) {
       return;
@@ -33,18 +45,12 @@ export function PWAInstallPrompt() {
       localStorage.setItem('habitflow_pwa_installed', 'true');
       return;
     }
-    
-    // 2. Check user's dismissal preference (daily reset)
-    const todayStr = new Date().toISOString().split('T')[0];
-    const dismissedDate = localStorage.getItem('habitflow_pwa_dismissed_date');
-    const isDismissedToday = dismissedDate === todayStr;
-    const isPermanentlyDismissed = localStorage.getItem('habitflow_pwa_dismissed') === 'true';
 
-    if (isDismissedToday || isPermanentlyDismissed) {
+    if (isDismissedToday || isPermanentlyDismissed || isPromptedToday) {
       return;
     }
 
-    // 3. Detect iOS Safari
+    // 2. Detect iOS Safari
     const detectIOS = () => {
       const userAgent = window.navigator.userAgent.toLowerCase();
       const ios = /iphone|ipad|ipod/.test(userAgent);
@@ -55,37 +61,73 @@ export function PWAInstallPrompt() {
 
     const ios = detectIOS();
 
-    // 4. Listen for beforeinstallprompt event (Android/Chrome/Edge)
-    const handleInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setIsVisible(true);
-    };
+    const initPrompt = () => {
+      if (!isMounted) return;
 
-    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
-
-    // 5. Listen to appinstalled event to clean up UI when installed
-    const handleAppInstalled = () => {
-      setIsVisible(false);
-      setIsStandalone(true);
-      setDeferredPrompt(null);
-      localStorage.setItem('habitflow_pwa_installed', 'true');
-    };
-
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    // 6. Show prompt for iOS Safari users because they don't fire beforeinstallprompt
-    if (ios && !standalone && !isDismissedToday && !isPermanentlyDismissed) {
-      // Small timeout to not show immediately on page load
-      const timer = setTimeout(() => {
+      // 3. Listen for beforeinstallprompt event (Android/Chrome/Edge)
+      handleInstallPromptListener = (e: Event) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
         setIsVisible(true);
-      }, 5000);
-      return () => clearTimeout(timer);
+        // Mark as prompted today when widget is actually shown (i.e. event fired)
+        localStorage.setItem('habitflow_pwa_prompted_date', todayStr);
+      };
+
+      window.addEventListener('beforeinstallprompt', handleInstallPromptListener);
+
+      // 4. Listen to appinstalled event to clean up UI when installed
+      handleAppInstalledListener = () => {
+        setIsVisible(false);
+        setIsStandalone(true);
+        setDeferredPrompt(null);
+        localStorage.setItem('habitflow_pwa_installed', 'true');
+      };
+
+      window.addEventListener('appinstalled', handleAppInstalledListener);
+
+      // 5. Show prompt for iOS Safari users because they don't fire beforeinstallprompt
+      if (ios && !standalone) {
+        // Small timeout to not show immediately on page load
+        cleanupTimeout = setTimeout(() => {
+          if (isMounted) {
+            setIsVisible(true);
+            // Mark as prompted today when widget is actually shown
+            localStorage.setItem('habitflow_pwa_prompted_date', todayStr);
+          }
+        }, 5000);
+      }
+    };
+
+    // Check navigator.getInstalledRelatedApps() for Chromium browsers to check if already installed
+    if ('getInstalledRelatedApps' in navigator) {
+      (navigator as any).getInstalledRelatedApps().then((relatedApps: any[]) => {
+        if (isMounted) {
+          if (relatedApps && relatedApps.length > 0) {
+            localStorage.setItem('habitflow_pwa_installed', 'true');
+          } else {
+            // Continue standard registration if not installed on system
+            initPrompt();
+          }
+        }
+      }).catch((err: any) => {
+        console.error('Error checking installed apps:', err);
+        initPrompt();
+      });
+    } else {
+      initPrompt();
     }
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      isMounted = false;
+      if (cleanupTimeout) {
+        clearTimeout(cleanupTimeout);
+      }
+      if (handleInstallPromptListener) {
+        window.removeEventListener('beforeinstallprompt', handleInstallPromptListener);
+      }
+      if (handleAppInstalledListener) {
+        window.removeEventListener('appinstalled', handleAppInstalledListener);
+      }
     };
   }, []);
 
