@@ -129,7 +129,7 @@ export class HabitRoutinesSyncEngine implements ISynchronizer {
 
       const { error } = await (this.supabase
         .from('habit_routines') as any)
-        .upsert(payload, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'habit_id,routine_id' });
 
       if (error) throw new Error(`[HabitRoutinesSyncEngine Bulk Push Failure]: ${error.message}`);
 
@@ -217,7 +217,7 @@ export class RoutineCompletionsSyncEngine implements ISynchronizer {
 
       const { error } = await (this.supabase
         .from('routine_completions') as any)
-        .upsert(payload, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'routine_id,date' });
 
       if (error) throw new Error(`[RoutineCompletionsSyncEngine Bulk Push Failure]: ${error.message}`);
 

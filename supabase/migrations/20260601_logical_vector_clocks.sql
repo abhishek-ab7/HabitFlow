@@ -14,11 +14,10 @@ ALTER TABLE public.mood_logs ADD COLUMN IF NOT EXISTS generation_counter BIGINT 
 CREATE OR REPLACE FUNCTION public.increment_generation_clock_vector()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Force server evaluation of modifications: if incoming vector state tracker values lag behind the current system state, reject the transaction safely.
     IF (TG_OP = 'UPDATE') THEN
         IF NEW.generation_counter <= OLD.generation_counter THEN
-            RAISE EXCEPTION 'Mismatched Generation Clock Conflict. Incoming Vector: %, Current Anchor State: %', 
-                NEW.generation_counter, OLD.generation_counter;
+            -- Silently skip updates with older vector clocks, allowing client to succeed the push and pull the newer state later.
+            RETURN OLD;
         END IF;
     END IF;
     

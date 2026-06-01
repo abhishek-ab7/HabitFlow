@@ -130,7 +130,7 @@ export class CompletionsSyncEngine implements ISynchronizer {
       }));
 
       const { error } = await (this.supabase.from('completions') as any)
-        .upsert(payload, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'habit_id,date' });
 
       if (error) throw new Error(`[CompletionsSyncEngine Bulk Push Failure]: ${error.message}`);
 
