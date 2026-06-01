@@ -180,7 +180,7 @@ export function EditTaskModal({ task, isOpen, onOpenChange }: EditTaskModalProps
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[480px] max-h-[90vh] flex flex-col bg-card/95 backdrop-blur-xl border-border/50 rounded-3xl">
                 <DialogHeader className="shrink-0">
-                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent w-fit">
+                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent w-fit">
                         Task Details
                     </DialogTitle>
                     <DialogDescription>
@@ -339,9 +339,9 @@ export function EditTaskModal({ task, isOpen, onOpenChange }: EditTaskModalProps
                                         size="sm"
                                         onClick={handleGenerateSubtasks}
                                         disabled={isGenerating}
-                                        className="h-7 text-xs gap-1.5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border-emerald-500/20 hover:border-emerald-500/50 rounded-lg"
+                                        className="h-7 text-xs gap-1.5 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/20 hover:border-purple-500/50 rounded-lg"
                                     >
-                                        {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-emerald-500" />}
+                                        {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-purple-500" />}
                                         Auto-Generate
                                     </Button>
                                 )}
@@ -353,10 +353,10 @@ export function EditTaskModal({ task, isOpen, onOpenChange }: EditTaskModalProps
                                         <button
                                             type="button"
                                             onClick={() => toggleTaskComplete(subtask.id)}
-                                            className="text-muted-foreground hover:text-emerald-500 transition-colors"
+                                            className="text-muted-foreground hover:text-primary transition-colors"
                                         >
                                             {subtask.status === 'done' ? (
-                                                <CheckCircle2 className="h-4 w-4 text-emerald-500 stroke-[2.5]" />
+                                                <CheckCircle2 className="h-4 w-4 text-primary stroke-[2.5]" />
                                             ) : (
                                                 <Circle className="h-4 w-4" />
                                             )}
@@ -430,7 +430,7 @@ export function EditTaskModal({ task, isOpen, onOpenChange }: EditTaskModalProps
                                             size="sm"
                                             variant="ghost"
                                             onClick={handleAddSubtask}
-                                            className="h-8 w-8 p-0 hover:bg-emerald-500/10 hover:text-emerald-500 rounded-lg border border-border/20"
+                                            className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary rounded-lg border border-border/20"
                                         >
                                             <Plus className="h-4 w-4" />
                                         </Button>
@@ -456,7 +456,7 @@ export function EditTaskModal({ task, isOpen, onOpenChange }: EditTaskModalProps
                         <Button
                             type="submit"
                             disabled={loading || !title}
-                            className="bg-gradient-to-r from-primary to-emerald-600 hover:from-primary/95 hover:to-emerald-600/95 text-white shadow-md transition-all duration-300 transform active:scale-95 rounded-xl"
+                            className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/95 hover:to-purple-600/95 text-white shadow-md transition-all duration-300 transform active:scale-95 rounded-xl"
                         >
                             {loading ? "Saving..." : "Save Changes"}
                         </Button>
