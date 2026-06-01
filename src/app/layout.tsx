@@ -3,8 +3,8 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { AuthProvider } from '@/providers/auth-provider';
 import { SyncProvider } from '@/providers/sync-provider';
-import { Header, ShortcutsProvider, MobileNav } from '@/components/layout';
-import { ServiceWorkerRegistration } from '@/components/pwa';
+import { Header, ShortcutsProvider, MobileNav, AppStartupGate } from '@/components/layout';
+import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { LevelUpModal } from '@/components/gamification/LevelUpModal';
 import { GamificationRulesModal } from '@/components/gamification/GamificationRulesModal';
@@ -42,21 +42,23 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico', sizes: 'any' }
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icons/icon-192.png', type: 'image/png', sizes: '192x192' },
+      { url: '/icons/icon-512.png', type: 'image/png', sizes: '512x512' }
     ],
-    apple: '/icons/icon-192.svg',
+    apple: '/icons/apple-touch-icon.png',
   },
 };
 
 export const viewport: Viewport = {
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#f8fafc' },
-    { media: '(prefers-color-scheme: dark)', color: '#0f172a' },
+    { media: '(prefers-color-scheme: dark)', color: '#09050d' },
   ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -73,19 +75,22 @@ export default function RootLayout({
           <AuthProvider>
             <SyncProvider>
               <ServiceWorkerRegistration />
-              <div className="relative flex min-h-screen flex-col pb-16 md:pb-0">
-                <Header />
-                <main className="flex-1">
-                  {children}
-                </main>
-                <MobileNav />
-              </div>
-              <LevelUpModal />
-              <GamificationRulesModal />
-              <RoutineTriggerWatcher />
-              <ShortcutsProvider />
-              <Toaster richColors position="bottom-right" />
-              <PomodoroFloating />
+              <AppStartupGate>
+                <div className="relative flex min-h-screen flex-col pb-16 md:pb-0">
+                  <Header />
+                  <main className="flex-1">
+                    {children}
+                  </main>
+                  <MobileNav />
+                </div>
+                <LevelUpModal />
+                <GamificationRulesModal />
+                <RoutineTriggerWatcher />
+                <ShortcutsProvider />
+                <Toaster richColors position="bottom-right" />
+                <PomodoroFloating />
+                <PWAInstallPrompt />
+              </AppStartupGate>
             </SyncProvider>
           </AuthProvider>
         </ThemeProvider>
@@ -93,3 +98,4 @@ export default function RootLayout({
     </html>
   );
 }
+

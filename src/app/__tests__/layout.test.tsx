@@ -18,10 +18,12 @@ vi.mock('@/components/layout', () => ({
   Header: () => <div data-testid="header" />,
   MobileNav: () => <div data-testid="mobile-nav" />,
   ShortcutsProvider: () => <div data-testid="shortcuts-provider" />,
+  AppStartupGate: ({ children }: any) => <div data-testid="app-startup-gate">{children}</div>,
 }));
 
 vi.mock('@/components/pwa', () => ({
   ServiceWorkerRegistration: () => <div data-testid="sw-reg" />,
+  PWAInstallPrompt: () => <div data-testid="pwa-install-prompt" />,
 }));
 
 vi.mock('@/components/gamification/LevelUpModal', () => ({
@@ -53,10 +55,11 @@ test('metadata has the correct favicon configuration matching the HabitFlow logo
   expect(metadata.icons).toBeDefined();
   expect(metadata.icons).toEqual({
     icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico', sizes: 'any' }
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icons/icon-192.png', type: 'image/png', sizes: '192x192' },
+      { url: '/icons/icon-512.png', type: 'image/png', sizes: '512x512' }
     ],
-    apple: '/icons/icon-192.svg',
+    apple: '/icons/apple-touch-icon.png',
   });
 });
 
@@ -77,6 +80,9 @@ test('RootLayout renders children and providers correctly', () => {
   expect(screen.getByTestId('sync-provider')).toBeInTheDocument();
   expect(screen.getByTestId('header')).toBeInTheDocument();
   expect(screen.getByTestId('mobile-nav')).toBeInTheDocument();
+  expect(screen.getByTestId('app-startup-gate')).toBeInTheDocument();
+  expect(screen.getByTestId('pwa-install-prompt')).toBeInTheDocument();
   expect(screen.getByTestId('test-child')).toBeInTheDocument();
   expect(screen.getByTestId('test-child').textContent).toBe('Child Content');
 });
+

@@ -116,8 +116,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  // If authenticated and trying to access login, redirect to dashboard
-  if (session && pathname.startsWith('/login')) {
+  // If authenticated and trying to access login or root page, redirect to dashboard
+  if (session && (pathname === '/' || pathname.startsWith('/login'))) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = '/dashboard';
     return NextResponse.redirect(redirectUrl);
