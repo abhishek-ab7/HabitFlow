@@ -1,192 +1,144 @@
 import { db } from '@/lib/db';
-import { resolveConflict } from '../conflict-resolution';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { logger } from '@/lib/logger';
+import type { ISynchronizer } from '../types';
 
+export class TasksSyncEngine implements ISynchronizer {
+  public domainName = 'tasks';
+  private supabase = getSupabaseClient();
+
+  public async sync(userId: string): Promise<{ pushed: number; pulled: number; status: 'success' }> {
+    // 1. Bulk push dirty tasks
+    const dirtyLocalTasks = await db.tasks
+      .where('userId')
+      .equals(userId)
+      .filter((t: any) => t.isDirty === true || t.isDirty === 1)
+      .toArray();
+
+    let pushedCount = 0;
+    const BATCH_SIZE = 50;
+
+    for (let i = 0; i < dirtyLocalTasks.length; i += BATCH_SIZE) {
+      const batch = dirtyLocalTasks.slice(i, i + BATCH_SIZE);
+      const payload = batch.map((t) => ({
+        id: t.id,
+        user_id: userId,
+        title: t.title,
+        description: t.description || null,
+        status: t.status,
+        priority: t.priority,
+        due_date: t.due_date,
+        goal_id: t.goal_id || null,
+        parent_task_id: t.parentTaskId || null,
+        depth: t.depth || 0,
+        tags: t.tags || [],
+        recurrence_rule: t.recurrenceRule || '',
+        estimated_time: t.estimatedTime || 0,
+        actual_time: t.actualTime || 0,
+        is_urgent: t.isUrgent ?? false,
+        is_important: t.isImportant ?? false,
+        generation_counter: t.generationCounter || 1,
+        created_at: t.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
+
+      const { error } = await (this.supabase.from('tasks') as any)
+        .upsert(payload, { onConflict: 'id' });
+
+      if (error) throw new Error(`[TasksSyncEngine Bulk Push Failure]: ${error.message}`);
+
+      await db.transaction('rw', db.tasks, async () => {
+        const ids = batch.map((b) => b.id);
+        await Promise.all(ids.map(id => db.tasks.update(id, { isDirty: false })));
+      });
+      pushedCount += batch.length;
+    }
+
+    // 2. Pull remote updates
+    const latestLocalTask = await db.tasks.where('userId').equals(userId).sortBy('updated_at');
+    let lastPushedTimestamp = latestLocalTask.length > 0 
+      ? latestLocalTask[latestLocalTask.length - 1].updated_at 
+      : null;
+    if (!lastPushedTimestamp || lastPushedTimestamp === 'undefined') {
+      lastPushedTimestamp = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    const { data: remoteData, error: pullError } = await (this.supabase
+      .from('tasks') as any)
+      .select('*')
+      .eq('user_id', userId)
+      .gt('updated_at', lastPushedTimestamp);
+
+    if (pullError) throw new Error(`[TasksSyncEngine Pull Failure]: ${pullError.message}`);
+
+    let pulledCount = 0;
+    if (remoteData && remoteData.length > 0) {
+      await db.transaction('rw', db.tasks, async () => {
+        for (const remote of remoteData) {
+          const local = await db.tasks.get(remote.id);
+          
+          if (!local || (remote.generation_counter || 0) > (local.generationCounter || 0)) {
+            await db.tasks.put({
+              id: remote.id,
+              userId: remote.user_id,
+              title: remote.title,
+              description: remote.description || null,
+              status: remote.status,
+              priority: remote.priority || 'medium',
+              due_date: remote.due_date,
+              goal_id: remote.goal_id,
+              parentTaskId: remote.parent_task_id || null,
+              depth: remote.depth || 0,
+              tags: remote.tags || [],
+              recurrenceRule: remote.recurrence_rule || '',
+              estimatedTime: remote.estimated_time || 0,
+              actualTime: remote.actual_time || 0,
+              isUrgent: remote.is_urgent ?? false,
+              isImportant: remote.is_important ?? false,
+              generationCounter: remote.generation_counter || 1,
+              created_at: remote.created_at,
+              updated_at: remote.updated_at,
+              isDirty: false
+            });
+            pulledCount++;
+          }
+        }
+      });
+    }
+
+    return { pushed: pushedCount, pulled: pulledCount, status: 'success' };
+  }
+}
+
+// Keep legacy wrapper exports for existing components and tests
 export async function syncTasksWithRetry(engine: any) {
-  return engine.withRetry(() => syncTasks(engine), 'Tasks sync');
-}
-
-export async function syncTasks(engine: any) {
-  if (!engine.userId) return;
-
-  if (engine.taskSyncLock) {
-    logger.warn('[SyncEngine] Task sync already running, skipping');
-    return;
-  }
-
-  engine.taskSyncLock = true;
-  try {
-    return await syncTasksImpl(engine);
-  } finally {
-    engine.taskSyncLock = false;
-  }
-}
-
-export async function syncTasksImpl(engine: any) {
-  if (!engine.userId) return;
-
-  logger.info('[SyncEngine] 🔄 Syncing tasks from Supabase...');
-
-  // 1. Fetch remote goals to verify task.goal_id foreign key references
-  const { data: remoteGoals, error: goalsError } = await engine.supabase
-    .from('goals')
-    .select('id')
-    .eq('user_id', engine.userId);
-  if (goalsError) throw goalsError;
-  const remoteGoalIds = new Set((remoteGoals || []).map((g: any) => g.id));
-
-  // 2. Fetch remote tasks
-  const { data: remoteTasks, error } = await engine.supabase
-    .from('tasks')
-    .select('*')
-    .eq('user_id', engine.userId);
-
-  if (error) throw error;
-
-  const localTasks = await db.tasks.where('userId').equals(engine.userId).toArray();
-  const remoteById = new Map((remoteTasks || []).map((t: any) => [t.id, t]));
-  const localById = new Map(localTasks.map(t => [t.id, t]));
-
-  const sortedLocalTasks = [...localTasks].sort((a, b) => (a.depth || 0) - (b.depth || 0));
-  const remoteTaskIds = new Set((remoteTasks || []).map((t: any) => t.id));
-  const localTaskIds = new Set(localTasks.map(t => t.id));
-
-  const toInsertRemote: any[] = [];
-  for (const local of sortedLocalTasks) {
-    const remote = remoteById.get(local.id) as any;
-
-    const syncedGoalId = local.goal_id && remoteGoalIds.has(local.goal_id) ? local.goal_id : null;
-    const hasParent = local.parentTaskId && (localTaskIds.has(local.parentTaskId) || remoteTaskIds.has(local.parentTaskId));
-    const syncedParentId = hasParent ? local.parentTaskId : null;
-    const syncedDepth = hasParent ? local.depth || 0 : 0;
-
-    if (!remote) {
-      const isNewLocal = !engine.lastSyncAt || new Date(local.updated_at || local.created_at || 0) >= engine.lastSyncAt;
-      if (!isNewLocal) {
-        logger.info(`[SyncEngine] Task "${local.title}" was deleted on remote, deleting locally.`);
-        await db.tasks.delete(local.id);
-      } else {
-        toInsertRemote.push({
-          id: local.id,
-          user_id: engine.userId,
-          title: local.title,
-          description: local.description,
-          status: local.status,
-          priority: local.priority,
-          due_date: local.due_date,
-          goal_id: syncedGoalId,
-          parent_task_id: syncedParentId,
-          depth: syncedDepth,
-          tags: local.tags,
-          created_at: local.created_at,
-          updated_at: local.updated_at,
-        });
-      }
-    } else {
-      const resolution = resolveConflict(
-        { ...local, updatedAt: local.updated_at },
-        { ...remote, updated_at: remote.updated_at, created_at: remote.created_at },
-        { completedStatuses: ['done'] }
-      );
-
-      if (resolution.winner === 'local') {
-        await engine.supabase.from('tasks').upsert({
-          id: local.id,
-          user_id: engine.userId,
-          title: local.title,
-          description: local.description,
-          status: local.status,
-          priority: local.priority,
-          due_date: local.due_date,
-          goal_id: syncedGoalId,
-          parent_task_id: syncedParentId,
-          depth: syncedDepth,
-          tags: local.tags,
-          created_at: local.created_at,
-          updated_at: local.updated_at,
-          recurrence_rule: local.recurrenceRule || '',
-          estimated_time: local.estimatedTime || 0,
-          actual_time: local.actualTime || 0,
-          is_urgent: local.isUrgent ?? false,
-          is_important: local.isImportant ?? false,
-        } as any);
-        logger.info(`[SyncEngine] 🔄 Task conflict (${local.title}): ${resolution.reason}`);
-      } else if (resolution.winner === 'remote') {
-        await updateLocalTask(engine, remote);
-        logger.info(`[SyncEngine] 🔄 Task conflict (${local.title}): ${resolution.reason}`);
-      }
-    }
-  }
-
-  if (toInsertRemote.length > 0) {
-    await engine.batchUpsert('tasks', toInsertRemote);
-  }
-
-  const toUpsertLocal: any[] = [];
-  for (const remote of (remoteTasks || []) as any[]) {
-    if (!localById.has(remote.id)) {
-      toUpsertLocal.push(remote);
-    }
-  }
-
-  if (toUpsertLocal.length > 0) {
-    for (const remote of toUpsertLocal) {
-      await updateLocalTask(engine, remote);
-    }
-  }
+  const tasksSync = new TasksSyncEngine();
+  return tasksSync.sync(engine.userId);
 }
 
 export async function pushTaskToRemote(engine: any, task: any) {
-  if (!engine.userId) return;
-
-  // Verify goal_id exists on remote before pushing
-  let syncedGoalId = task.goal_id || null;
-  if (syncedGoalId) {
-    const { data: remoteGoals } = await engine.supabase
-      .from('goals')
-      .select('id')
-      .eq('user_id', engine.userId);
-    const remoteGoalIds = new Set((remoteGoals || []).map((g: any) => g.id));
-    if (!remoteGoalIds.has(syncedGoalId)) {
-      syncedGoalId = null;
-    }
-  }
-
-  // Verify parent_task_id exists on remote before pushing
-  let syncedParentId = task.parentTaskId || null;
-  let syncedDepth = task.depth || 0;
-  if (syncedParentId) {
-    const { data: remoteTasks } = await engine.supabase
-      .from('tasks')
-      .select('id')
-      .eq('user_id', engine.userId);
-    const remoteTaskIds = new Set((remoteTasks || []).map((t: any) => t.id));
-    if (!remoteTaskIds.has(syncedParentId)) {
-      syncedParentId = null;
-      syncedDepth = 0;
-    }
-  }
-
-  await engine.supabase.from('tasks').upsert({
+  const supabase = getSupabaseClient();
+  await (supabase.from('tasks') as any).upsert({
     id: task.id,
     user_id: engine.userId,
     title: task.title,
-    description: task.description,
+    description: task.description || null,
     status: task.status,
     priority: task.priority,
     due_date: task.due_date,
-    goal_id: syncedGoalId,
-    parent_task_id: syncedParentId,
-    depth: syncedDepth,
-    tags: task.tags,
-    created_at: task.created_at,
-    updated_at: task.updated_at,
+    goal_id: task.goal_id || null,
+    parent_task_id: task.parentTaskId || null,
+    depth: task.depth || 0,
+    tags: task.tags || [],
     recurrence_rule: task.recurrenceRule || '',
     estimated_time: task.estimatedTime || 0,
     actual_time: task.actualTime || 0,
     is_urgent: task.isUrgent ?? false,
     is_important: task.isImportant ?? false,
-  } as any);
+    generation_counter: task.generationCounter || 1,
+    created_at: task.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  });
 }
 
 export async function updateLocalTask(engine: any, remote: any) {
@@ -210,5 +162,7 @@ export async function updateLocalTask(engine: any, remote: any) {
     actualTime: remote.actual_time || 0,
     isUrgent: remote.is_urgent ?? false,
     isImportant: remote.is_important ?? false,
+    generationCounter: remote.generation_counter || 1,
+    isDirty: false
   });
 }

@@ -1,173 +1,100 @@
 import { db } from '@/lib/db';
-import { resolveConflict } from '../conflict-resolution';
+import { getSupabaseClient } from '@/lib/supabase/client';
 import { logger } from '@/lib/logger';
 import type { Milestone } from '@/lib/types';
+import type { ISynchronizer } from '../types';
 
-export async function syncMilestonesWithRetry(engine: any) {
-  return engine.withRetry(() => syncMilestones(engine), 'Milestones sync');
-}
+export class MilestonesSyncEngine implements ISynchronizer {
+  public domainName = 'milestones';
+  private supabase = getSupabaseClient();
 
-export async function syncMilestones(engine: any) {
-  if (!engine.userId) return;
+  public async sync(userId: string): Promise<{ pushed: number; pulled: number; status: 'success' }> {
+    // 1. Bulk push dirty milestones
+    const dirtyLocalMilestones = await db.milestones
+      .where('userId')
+      .equals(userId)
+      .filter((m: any) => m.isDirty === true || m.isDirty === 1)
+      .toArray();
 
-  if (engine.milestoneSyncLock) {
-    logger.warn('[SyncEngine] Milestone sync already running, skipping');
-    return;
-  }
+    let pushedCount = 0;
+    const BATCH_SIZE = 50;
 
-  engine.milestoneSyncLock = true;
-  try {
-    return await syncMilestonesImpl(engine);
-  } finally {
-    engine.milestoneSyncLock = false;
-  }
-}
+    for (let i = 0; i < dirtyLocalMilestones.length; i += BATCH_SIZE) {
+      const batch = dirtyLocalMilestones.slice(i, i + BATCH_SIZE);
+      const payload = batch.map((m) => ({
+        id: m.id,
+        user_id: userId,
+        goal_id: m.goalId,
+        title: m.title,
+        is_completed: m.completed,
+        completed_at: m.completedAt || null,
+        order_index: m.order,
+        generation_counter: m.generationCounter || 1,
+        created_at: m.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
 
-export async function syncMilestonesImpl(engine: any) {
-  if (!engine.userId) return;
+      const { error } = await (this.supabase.from('milestones') as any)
+        .upsert(payload, { onConflict: 'id' });
 
-  // 1. Fetch remote goals to verify foreign key references
-  const { data: remoteGoals, error: goalsError } = await engine.supabase
-    .from('goals')
-    .select('id')
-    .eq('user_id', engine.userId);
+      if (error) throw new Error(`[MilestonesSyncEngine Bulk Push Failure]: ${error.message}`);
 
-  if (goalsError) throw goalsError;
-  const remoteGoalIds = new Set((remoteGoals || []).map((g: any) => g.id));
-
-  // 2. Fetch remote milestones
-  const { data: remoteMilestones, error } = await engine.supabase
-    .from('milestones')
-    .select('*')
-    .eq('user_id', engine.userId);
-
-  if (error) throw error;
-
-  // 3. Query local milestones belonging only to current user
-  const localMilestones = await db.milestones.where('userId').equals(engine.userId).toArray();
-  const remoteMap = new Map((remoteMilestones || []).map((m: any) => [m.id, m]));
-  const localMap = new Map(localMilestones.map(m => [m.id, m]));
-
-  const toInsertRemote: any[] = [];
-  const toUpdateRemote: any[] = [];
-  const toUpsertLocal: Milestone[] = [];
-
-  for (const local of localMilestones) {
-    const remote = remoteMap.get(local.id) as any;
-
-    if (!remote) {
-      const isNewLocal = !engine.lastSyncAt || new Date(local.updatedAt || local.createdAt || 0) >= engine.lastSyncAt;
-      if (!isNewLocal) {
-        logger.info(`[SyncEngine] Milestone "${local.title}" was deleted on remote, deleting locally.`);
-        await db.milestones.delete(local.id);
-      } else if (remoteGoalIds.has(local.goalId)) {
-        toInsertRemote.push({
-          id: local.id,
-          user_id: engine.userId,
-          goal_id: local.goalId,
-          title: local.title,
-          is_completed: local.completed,
-          completed_at: local.completedAt || null,
-          order_index: local.order,
-          created_at: local.createdAt || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-      } else {
-        logger.warn(`[SyncEngine] Skipping milestone push: Goal ${local.goalId} not found on remote for milestone ${local.title}`);
-      }
-    } else if (local.completed !== remote.is_completed || local.title !== remote.title) {
-      const resolution = resolveConflict(
-        { ...local, updatedAt: local.updatedAt || local.createdAt },
-        {
-          ...remote,
-          completed: remote.is_completed,
-          updated_at: remote.updated_at,
-          created_at: remote.created_at
-        },
-        { preferCompleted: true }
-      );
-
-      if (resolution.winner === 'local') {
-        if (remoteGoalIds.has(local.goalId)) {
-          toUpdateRemote.push({
-            id: remote.id,
-            user_id: engine.userId,
-            goal_id: local.goalId,
-            title: local.title,
-            is_completed: local.completed,
-            completed_at: local.completedAt || null,
-            order_index: local.order,
-            updated_at: new Date().toISOString(),
-          });
-          logger.info(`[SyncEngine] 🔄 Milestone conflict (${local.title}): ${resolution.reason}`);
-        } else {
-          logger.warn(`[SyncEngine] Skipping milestone push (conflict): Goal ${local.goalId} not found on remote for milestone ${local.title}`);
-        }
-      } else if (resolution.winner === 'remote') {
-        toUpsertLocal.push({
-          id: remote.id,
-          userId: engine.userId || remote.user_id,
-          goalId: remote.goal_id,
-          title: remote.title,
-          completed: remote.is_completed || false,
-          completedAt: remote.completed_at || undefined,
-          order: remote.order_index || 0,
-          updatedAt: remote.updated_at,
-          createdAt: remote.created_at,
-        });
-        logger.info(`[SyncEngine] 🔄 Milestone conflict (${local.title}): ${resolution.reason}`);
-      }
+      await db.transaction('rw', db.milestones, async () => {
+        const ids = batch.map((b) => b.id);
+        await Promise.all(ids.map(id => db.milestones.update(id, { isDirty: false })));
+      });
+      pushedCount += batch.length;
     }
-  }
 
-  if (toInsertRemote.length > 0) {
-    await engine.batchUpsert('milestones', toInsertRemote);
-    logger.info(`[SyncEngine] ✅ Pushed ${toInsertRemote.length} new milestones to remote`);
-  }
+    // 2. Pull remote updates
+    const latestLocalMilestone = await db.milestones.where('userId').equals(userId).sortBy('updatedAt');
+    let lastPushedTimestamp = latestLocalMilestone.length > 0 
+      ? latestLocalMilestone[latestLocalMilestone.length - 1].updatedAt 
+      : null;
+    if (!lastPushedTimestamp || lastPushedTimestamp === 'undefined') {
+      lastPushedTimestamp = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    }
 
-  if (toUpdateRemote.length > 0) {
-    await engine.batchUpsert('milestones', toUpdateRemote);
-    logger.info(`[SyncEngine] ✅ Updated ${toUpdateRemote.length} milestones on remote (conflict resolution)`);
-  }
+    const { data: remoteData, error: pullError } = await (this.supabase
+      .from('milestones') as any)
+      .select('*')
+      .eq('user_id', userId)
+      .gt('updated_at', lastPushedTimestamp);
 
-  for (const remote of (remoteMilestones || []) as any[]) {
-    if (!localMap.has(remote.id)) {
-      toUpsertLocal.push({
-        id: remote.id,
-        userId: engine.userId || remote.user_id,
-        goalId: remote.goal_id,
-        title: remote.title,
-        completed: remote.is_completed || false,
-        completedAt: remote.completed_at || undefined,
-        order: remote.order_index || 0,
-        updatedAt: remote.updated_at,
-        createdAt: remote.created_at,
+    if (pullError) throw new Error(`[MilestonesSyncEngine Pull Failure]: ${pullError.message}`);
+
+    let pulledCount = 0;
+    if (remoteData && remoteData.length > 0) {
+      await db.transaction('rw', db.milestones, async () => {
+        for (const remote of remoteData) {
+          const local = await db.milestones.get(remote.id);
+          
+          if (!local || (remote.generation_counter || 0) > (local.generationCounter || 0)) {
+            await db.milestones.put({
+              id: remote.id,
+              userId: remote.user_id,
+              goalId: remote.goal_id,
+              title: remote.title,
+              completed: remote.is_completed || false,
+              completedAt: remote.completed_at || undefined,
+              order: remote.order_index || 0,
+              generationCounter: remote.generation_counter || 1,
+              createdAt: remote.created_at,
+              updatedAt: remote.updated_at,
+              isDirty: false
+            });
+            pulledCount++;
+          }
+        }
       });
     }
+
+    return { pushed: pushedCount, pulled: pulledCount, status: 'success' };
   }
+}
 
-  if (toUpsertLocal.length > 0) {
-    const dedupedMilestones = engine.deduplicateByKey(
-      toUpsertLocal,
-      (m: any) => m.id
-    );
-
-    await db.transaction('rw', db.milestones, async () => {
-      for (const milestone of dedupedMilestones) {
-        const existing = await db.milestones.get(milestone.id);
-
-        if (existing) {
-          const shouldUpdate = (milestone.updatedAt || milestone.createdAt || '') >
-            (existing.updatedAt || existing.createdAt || '');
-          if (shouldUpdate) {
-            await db.milestones.update(milestone.id, milestone);
-          }
-        } else {
-          await db.milestones.add(milestone);
-        }
-      }
-    });
-
-    logger.info(`[SyncEngine] ✅ Pulled ${dedupedMilestones.length} milestones (deduped from ${toUpsertLocal.length})`);
-  }
+// Keep legacy wrappers for backward compatibility
+export async function syncMilestonesWithRetry(engine: any) {
+  const milestonesSync = new MilestonesSyncEngine();
+  return milestonesSync.sync(engine.userId);
 }

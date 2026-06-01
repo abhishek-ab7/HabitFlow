@@ -7,37 +7,13 @@ import { useSyncStatusStore } from '../stores/sync-status-store';
 import { logger } from '@/lib/logger';
 
 // Engines imports
-import {
-  syncHabitsWithRetry,
-  syncCompletionsWithRetry,
-  pushHabitToRemote
-} from './engines/habits-sync';
-
-import {
-  syncRoutinesWithRetry,
-  syncHabitRoutinesWithRetry,
-  syncRoutineCompletions
-} from './engines/routines-sync';
-
-import {
-  syncGoalsWithRetry,
-  pushGoalToRemote
-} from './engines/goals-sync';
-
-import {
-  syncMilestonesWithRetry
-} from './engines/milestones-sync';
-
-import {
-  syncTasksWithRetry,
-  pushTaskToRemote
-} from './engines/tasks-sync';
-
-import {
-  syncUserSettingsWithRetry,
-  syncMoodLogsWithRetry,
-  pushUserSettingsToRemote
-} from './engines/settings-sync';
+import { SyncCoordinator } from './sync-coordinator';
+import { HabitsSyncEngine, CompletionsSyncEngine, syncHabitsWithRetry, syncCompletionsWithRetry, pushHabitToRemote } from './engines/habits-sync';
+import { GoalsSyncEngine, syncGoalsWithRetry, pushGoalToRemote } from './engines/goals-sync';
+import { TasksSyncEngine, syncTasksWithRetry, pushTaskToRemote } from './engines/tasks-sync';
+import { MilestonesSyncEngine, syncMilestonesWithRetry } from './engines/milestones-sync';
+import { RoutinesSyncEngine, HabitRoutinesSyncEngine, RoutineCompletionsSyncEngine, syncRoutinesWithRetry, syncHabitRoutinesWithRetry, syncRoutineCompletions } from './engines/routines-sync';
+import { UserSettingsSyncEngine, MoodLogsSyncEngine, syncUserSettingsWithRetry, syncMoodLogsWithRetry, pushUserSettingsToRemote } from './engines/settings-sync';
 
 const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   habits: syncHabitsWithRetry,
@@ -338,33 +314,25 @@ export class SyncEngine {
 
     try {
       await this.processPendingOperations();
-      this.notifyStatus({ type: 'syncing', message: 'Syncing habits...', progress: 20 });
-
-      const results = await Promise.allSettled([
-        syncHabitsWithRetry(this),
-        syncGoalsWithRetry(this),
-        syncTasksWithRetry(this),
-        syncRoutinesWithRetry(this),
-        syncUserSettingsWithRetry(this),
+      
+      const coordinator = new SyncCoordinator([
+        new HabitsSyncEngine(),
+        new CompletionsSyncEngine(),
+        new GoalsSyncEngine(),
+        new TasksSyncEngine(),
+        new MilestonesSyncEngine(),
+        new RoutinesSyncEngine(),
+        new HabitRoutinesSyncEngine(),
+        new RoutineCompletionsSyncEngine(),
+        new UserSettingsSyncEngine(),
+        new MoodLogsSyncEngine(),
       ]);
 
-      const failures = results.filter(r => r.status === 'rejected');
-      if (failures.length > 0) {
-        this.log('error', 'Some sync operations failed', failures);
-      }
-
-      this.notifyStatus({ type: 'syncing', message: 'Syncing completions...', progress: 50 });
-
-      await Promise.allSettled([
-        syncCompletionsWithRetry(this),
-        syncMilestonesWithRetry(this),
-        syncHabitRoutinesWithRetry(this),
-        syncRoutineCompletions(this),
-        syncMoodLogsWithRetry(this),
-      ]);
+      this.log('info', 'Executing isolated sync domains via SyncCoordinator...');
+      const report = await coordinator.syncAll(this.userId);
+      this.log('info', 'Sync coordinator report:', report);
 
       this.notifyStatus({ type: 'syncing', message: 'Cleaning up duplicates...', progress: 80 });
-
       await this.cleanupLocalDuplicatesWithLogging();
 
       if (!this.duplicateCleanupInterval && typeof window !== 'undefined') {

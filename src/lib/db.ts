@@ -163,6 +163,32 @@ db.version(8).stores({
   moodLogs: 'id, userId, date, [userId+date], updatedAt',
 });
 
+// Schema version 9 - Add generationCounter for conflict resolution
+db.version(9).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, routineId, isQuantitative',
+  completions: 'id, userId, habitId, date, [habitId+date], updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+  routines: 'id, userId, isActive, orderIndex, updatedAt',
+  habitRoutines: 'id, habitId, routineId, [habitId+routineId], updatedAt',
+  routineCompletions: 'id, userId, routineId, date, [routineId+date], updatedAt',
+  moodLogs: 'id, userId, date, [userId+date], updatedAt',
+}).upgrade(async tx => {
+  const tables = ['habits', 'completions', 'goals', 'milestones', 'userSettings', 'tasks', 'routines', 'habitRoutines', 'routineCompletions', 'moodLogs'];
+  for (const tableName of tables) {
+    const items = await tx.table(tableName).toArray();
+    for (const item of items) {
+      if (item.generationCounter === undefined) {
+        await tx.table(tableName).update(item.id, {
+          generationCounter: 1
+        });
+      }
+    }
+  }
+});
+
 // ==================
 // HELPERS FOR REFACTORING
 // ==================

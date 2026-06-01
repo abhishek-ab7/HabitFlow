@@ -55,6 +55,8 @@ export interface Habit {
   unit?: string;
   difficulty?: 'easy' | 'medium' | 'hard';
   metadata?: Record<string, any>;
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 export type CompletionStatus = 'completed' | 'missed' | 'frozen';
@@ -71,6 +73,8 @@ export interface HabitCompletion {
   createdAt?: string; // ISO timestamp
   updatedAt?: string; // ISO timestamp - for conflict resolution
   value?: number; // Added for quantitative habits
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 export type MoodType = 'happy' | 'calm' | 'neutral' | 'sad' | 'stressed';
@@ -82,6 +86,8 @@ export interface MoodLog {
   mood: MoodType;
   createdAt?: string;
   updatedAt?: string;
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 // Derived habit statistics
@@ -115,6 +121,8 @@ export interface Goal {
   completedAt?: string;
   archived: boolean;
   metadata?: Record<string, any>;
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 export interface Milestone {
@@ -128,6 +136,8 @@ export interface Milestone {
   order: number;
   createdAt?: string; // ISO timestamp
   updatedAt?: string; // ISO timestamp - for conflict resolution
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 // Derived goal statistics
@@ -158,6 +168,8 @@ export interface Routine {
   orderIndex: number;
   createdAt: string;
   updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 // Junction table for many-to-many habit-routine relationship
@@ -168,6 +180,8 @@ export interface HabitRoutine {
   orderIndex: number; // Order of habit within the routine
   createdAt: string;
   updatedAt?: string; // ISO timestamp - for conflict resolution
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 // Routine Completion (explicit tracking)
@@ -181,6 +195,8 @@ export interface RoutineCompletion {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 // ============================================
@@ -209,6 +225,8 @@ export interface Task {
   updated_at: string;
   parentTaskId?: string | null; // For sub-tasks
   depth?: number; // Nesting level (0=root, 1=subtask, 2=sub-subtask, max 3)
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 // ============================================
@@ -255,6 +273,8 @@ export interface UserSettings {
   unlockedThemes?: string[];
   motivation_text?: string;
   dashboardLayout?: (string | DashboardWidgetConfig)[];
+  generationCounter?: number;
+  isDirty?: boolean;
 }
 
 // ============================================
