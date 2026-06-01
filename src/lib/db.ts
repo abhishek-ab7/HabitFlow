@@ -189,6 +189,36 @@ db.version(9).stores({
   }
 });
 
+// Register hooks for syncing database tables automatically
+const syncTables = [
+  'habits', 'completions', 'goals', 'milestones', 
+  'userSettings', 'tasks', 'routines', 
+  'habitRoutines', 'routineCompletions', 'moodLogs'
+];
+
+syncTables.forEach(tableName => {
+  db.table(tableName).hook('creating', (_primKey, obj: any) => {
+    if (obj.isDirty === false) {
+      return;
+    }
+    obj.isDirty = true;
+    if (obj.generationCounter === undefined) {
+      obj.generationCounter = 1;
+    }
+  });
+
+  db.table(tableName).hook('updating', (mods: any, _primKey, obj: any) => {
+    if (mods.isDirty === false) {
+      return undefined;
+    }
+    const nextCounter = (obj.generationCounter || 1) + 1;
+    return {
+      isDirty: true,
+      generationCounter: nextCounter
+    };
+  });
+});
+
 // ==================
 // HELPERS FOR REFACTORING
 // ==================
