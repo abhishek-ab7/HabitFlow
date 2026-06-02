@@ -95,4 +95,63 @@ describe('SyncCoordinator Isolation & Pipeline Execution', () => {
     // Collective pipeline status is degraded rather than completely failed
     expect(report.globalStatus).toBe('degraded');
   });
+
+  it('should run both HabitsSyncEngine and TasksSyncEngine successfully and return a healthy globalStatus report', async () => {
+    const HabitsSyncEngine: ISynchronizer = {
+      domainName: 'habits',
+      sync: vi.fn().mockResolvedValue({ pushed: 3, pulled: 4, status: 'success' })
+    };
+    const TasksSyncEngine: ISynchronizer = {
+      domainName: 'tasks',
+      sync: vi.fn().mockResolvedValue({ pushed: 10, pulled: 1, status: 'success' })
+    };
+
+    const coordinator = new SyncCoordinator([HabitsSyncEngine, TasksSyncEngine]);
+    const report = await coordinator.syncAll('user-123');
+
+    expect(HabitsSyncEngine.sync).toHaveBeenCalledWith('user-123');
+    expect(TasksSyncEngine.sync).toHaveBeenCalledWith('user-123');
+    expect(report.globalStatus).toBe('healthy');
+    expect(report.details['habits']).toEqual({
+      status: 'success',
+      pushed: 3,
+      pulled: 4
+    });
+    expect(report.details['tasks']).toEqual({
+      status: 'success',
+      pushed: 10,
+      pulled: 1
+    });
+  });
+
+  it('should catch error in HabitsSyncEngine but allow TasksSyncEngine to succeed and return a degraded globalStatus report', async () => {
+    const HabitsSyncEngine: ISynchronizer = {
+      domainName: 'habits',
+      sync: vi.fn().mockRejectedValue(new Error('Network Error'))
+    };
+    const TasksSyncEngine: ISynchronizer = {
+      domainName: 'tasks',
+      sync: vi.fn().mockResolvedValue({ pushed: 2, pulled: 0, status: 'success' })
+    };
+
+    const coordinator = new SyncCoordinator([HabitsSyncEngine, TasksSyncEngine]);
+    const report = await coordinator.syncAll('user-123');
+
+    expect(HabitsSyncEngine.sync).toHaveBeenCalledWith('user-123');
+    expect(TasksSyncEngine.sync).toHaveBeenCalledWith('user-123');
+    
+    expect(report.globalStatus).toBe('degraded');
+    expect(report.details['habits']).toEqual({
+      status: 'failed',
+      error: 'Network Error',
+      pushed: 0,
+      pulled: 0
+    });
+    expect(report.details['tasks']).toEqual({
+      status: 'success',
+      pushed: 2,
+      pulled: 0
+    });
+  });
 });
+

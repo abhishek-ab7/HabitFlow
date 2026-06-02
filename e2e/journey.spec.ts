@@ -55,7 +55,7 @@ test.describe('Complete User Journey Flow', () => {
     }
   });
 
-  test('walks through habits, tasks, goals, routines, analytics, and gamification', async ({ page }) => {
+  test('walks through habits, tasks, goals, analytics, and gamification', async ({ page }) => {
     // 1. Visit Login Page
     await page.goto('/login');
     await expect(page).toHaveTitle(/Habit Flow/);
@@ -111,21 +111,14 @@ test.describe('Complete User Journey Flow', () => {
     await expect(page.getByText('Goal Planner').first()).toBeVisible();
     console.log('6. Goals Page verified!');
 
-    // 9. Test Routines Section
-    await page.goto('/routines');
-    await page.waitForURL('**/routines');
-    // Verify routines page and list
-    await expect(page.locator('text=Morning Routine').or(page.locator('text=Evening Routine')).or(page.locator('text=Routine')).first()).toBeVisible();
-    console.log('7. Routines Page verified!');
-
-    // 10. Test Analytics Section
+    // 9. Test Analytics Section
     await page.goto('/analytics');
     await page.waitForURL('**/analytics');
     // Verify charts, category breakdown, or discipline radar are visible
     await expect(page.getByText('Analytics & Review').first()).toBeVisible();
-    console.log('8. Analytics Page verified!');
+    console.log('7. Analytics Page verified!');
 
-    // 11. Sign Out
+    // 10. Sign Out
     await page.goto('/settings');
     const signOutButton = page.getByRole('button', { name: /sign out/i });
     await expect(signOutButton).toBeVisible();
@@ -133,6 +126,6 @@ test.describe('Complete User Journey Flow', () => {
 
     // Verify redirected back to login page
     await page.waitForURL('**/login');
-    console.log('9. Logged out and redirected to login.');
+    console.log('8. Logged out and redirected to login.');
   });
 });

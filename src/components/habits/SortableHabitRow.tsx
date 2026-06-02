@@ -440,6 +440,8 @@ export function SortableHabitRow({
                             onClick={(e) => handleCellClick(dateStr, isFutureDate, e.shiftKey)}
                             onContextMenu={(e) => handleCellRightClick(e, dateStr, isFutureDate)}
                             disabled={isFutureDate}
+                            data-date={dateStr}
+                            data-today={isTodayDate}
                             className={cn(
                                 "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden flex-shrink-0",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
