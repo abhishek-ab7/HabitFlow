@@ -24,6 +24,7 @@ import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGoalStore } from '@/lib/stores/goal-store';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export function YearInReview() {
   const { habits, completions } = useHabitStore();
@@ -308,10 +309,40 @@ export function YearInReview() {
               <RotateCcw className="h-3.5 w-3.5" /> Replay
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 const text = `I completed ${stats2026.totalCompletions} habits in 2026 with a ${stats2026.bestStreak} day streak in HabitFlow! 🚀 #HabitFlowWrapped`;
-                navigator.clipboard.writeText(text);
-                alert('Wrapped stats copied to clipboard!');
+                let copied = false;
+                
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  try {
+                    await navigator.clipboard.writeText(text);
+                    copied = true;
+                  } catch (e) {
+                    console.error('Clipboard API failed, trying fallback:', e);
+                  }
+                }
+                
+                if (!copied) {
+                  try {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.style.position = 'fixed';
+                    textArea.style.opacity = '0';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    copied = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                  } catch (err) {
+                    console.error('Fallback copy failed:', err);
+                  }
+                }
+
+                if (copied) {
+                  toast.success('Wrapped stats copied to clipboard!');
+                } else {
+                  toast.error('Failed to copy stats to clipboard.');
+                }
               }}
               className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-xs text-white font-bold flex items-center justify-center gap-1.5 transition-colors"
             >
