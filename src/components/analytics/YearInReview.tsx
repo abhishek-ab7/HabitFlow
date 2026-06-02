@@ -297,7 +297,7 @@ export function YearInReview() {
             </div>
           </div>
 
-          <div className="flex gap-2 w-full mt-2">
+          <div className="flex gap-2 w-full mt-2 pointer-events-auto">
             <button
               onClick={() => {
                 setCurrentSlide(0);
@@ -465,7 +465,7 @@ export function YearInReview() {
       </div>
 
       {/* Main Slide Content */}
-      <div className="absolute inset-0 pt-16 pb-12 flex flex-col justify-center">
+      <div className="absolute inset-0 pt-16 pb-12 flex flex-col justify-center z-20 pointer-events-none">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentSlide}
