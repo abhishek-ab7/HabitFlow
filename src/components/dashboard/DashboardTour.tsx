@@ -141,13 +141,6 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
         placement: 'bottom'
       },
       {
-        target: '.tour-nav-routines, .tour-mobile-nav-routines',
-        title: 'Routine Builder 🌅',
-        content: 'Build morning and evening stacks. Chain habits consecutively (habit stacking) to execute them smoothly.',
-        benefit: 'Helps automate routines so you baseline your consistency early in the day.',
-        placement: 'bottom'
-      },
-      {
         target: '.tour-nav-habits, .tour-mobile-nav-habits',
         title: 'Habits Consistency 🗓️',
         content: 'Set recurring habits, track Streaks, and write notes. If you are busy, freeze a habit (Right-click cell on Desktop or tap dropdown option on Mobile) to protect your streak. Freezing uses Streak Shields purchased in settings.',

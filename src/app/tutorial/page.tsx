@@ -7,7 +7,6 @@ import {
   CheckSquare, 
   ListTodo, 
   Target, 
-  Workflow, 
   BarChart3, 
   Trophy, 
   Sparkles, 
@@ -43,7 +42,6 @@ const HELP_CATEGORIES: HelpCategory[] = [
   { id: 'habits', title: 'Habits System', subtitle: 'Streaks & freeze protections', icon: CheckSquare, color: 'text-emerald-500 bg-emerald-500/10' },
   { id: 'tasks', title: 'Task Manager', subtitle: 'Priority lists & deadlines', icon: ListTodo, color: 'text-sky-500 bg-sky-500/10' },
   { id: 'goals', title: 'Goals & Milestones', subtitle: '90-day focus targets', icon: Target, color: 'text-rose-500 bg-rose-500/10' },
-  { id: 'routines', title: 'Routine Builder', subtitle: 'Morning & evening stacks', icon: Workflow, color: 'text-amber-500 bg-amber-500/10' },
   { id: 'analytics', title: 'Analytics', subtitle: 'Consistency charts & trends', icon: BarChart3, color: 'text-teal-500 bg-teal-500/10' },
   { id: 'gamification', title: 'Gamification', subtitle: 'XP, levels & rewards', icon: Trophy, color: 'text-purple-500 bg-purple-500/10' },
   { id: 'ai-features', title: 'AI Assistant', subtitle: 'Smart coach recommendations', icon: Sparkles, color: 'text-pink-500 bg-pink-500/10' },
@@ -211,7 +209,7 @@ export default function TutorialPage() {
                         <h2 className="text-xl font-bold tracking-tight">Dashboard Overview</h2>
                       </div>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        The dashboard is your daily hub, providing a quick summary of active routines, active goal tracking, and daily focus items.
+                        The dashboard is your daily hub, providing a quick summary of active goal tracking, and daily focus items.
                       </p>
                     </div>
 
@@ -378,42 +376,7 @@ export default function TutorialPage() {
                   </div>
                 )}
 
-                {/* 5. ROUTINE BUILDER */}
-                {activeTab === 'routines' && (
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-amber-500">
-                        <Workflow className="w-6 h-6" />
-                        <h2 className="text-xl font-bold tracking-tight">Routines Stack</h2>
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        Anchor habits to time-blocks (Morning/Evening) to build consecutive workflows.
-                      </p>
-                    </div>
 
-                    <div className="space-y-4">
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
-                        <span className="text-2xl mt-0.5">🌅</span>
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">Morning & Evening Stacks</h4>
-                           <p className="text-xs text-muted-foreground leading-relaxed">
-                             Build a wakeup stack (e.g. stretch, drink water, read) or sleep wind-down routines. Stacking helps automate sequential workflows.
-                           </p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4 p-4 border bg-muted/20 rounded-2xl items-start">
-                        <span className="text-2xl mt-0.5">📅</span>
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-bold text-foreground">Daily Consistency</h4>
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            Executing routine stacks baseline your focus loops early, ensuring you do not skip basic core habits.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {/* 6. ANALYTICS */}
                 {activeTab === 'analytics' && (

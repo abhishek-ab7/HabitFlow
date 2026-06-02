@@ -33,11 +33,9 @@ export function SyncStatusPanel() {
     const getEntityLabel = (entity: string) => {
         const labels: Record<string, string> = {
             habits: 'Habits',
-            routines: 'Routines',
             goals: 'Goals',
             tasks: 'Tasks',
             completions: 'Habit Completions',
-            routineCompletions: 'Routine Completions',
         };
         return labels[entity] || entity;
     };

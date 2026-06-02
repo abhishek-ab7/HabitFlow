@@ -335,29 +335,19 @@ export default function SettingsPageContent() {
       const supabase = getSupabaseClient() as any;
       const uid = user.id;
 
-      // 1. Fetch habits first to safely delete junction habit_routines rows
-      const { data: userHabits } = await supabase.from('habits').select('id').eq('user_id', uid);
-      const habitIds = (userHabits || []).map((h: any) => h.id);
-      
-      // 2. Clear remote Supabase data in parallel
+      // 1. Clear remote Supabase data in parallel
       await Promise.all([
         supabase.from('habit_completions').delete().eq('user_id', uid),
         supabase.from('completions').delete().eq('user_id', uid),
         supabase.from('milestones').delete().eq('user_id', uid),
         supabase.from('tasks').delete().eq('user_id', uid),
-        supabase.from('routine_completions').delete().eq('user_id', uid),
         supabase.from('mood_logs').delete().eq('user_id', uid),
       ]);
 
-      if (habitIds.length > 0) {
-        await supabase.from('habit_routines').delete().in('habit_id', habitIds);
-      }
-
       await supabase.from('habits').delete().eq('user_id', uid);
-      await supabase.from('routines').delete().eq('user_id', uid);
       await supabase.from('goals').delete().eq('user_id', uid);
 
-      // 3. Reset settings in Supabase to defaults rather than deleting the row
+      // 2. Reset settings in Supabase to defaults rather than deleting the row
       await supabase.from('user_settings').update({
         user_name: user.user_metadata?.full_name || 'Anonymous',
         avatar_id: 'avatar-1',
@@ -381,15 +371,12 @@ export default function SettingsPageContent() {
         updated_at: new Date().toISOString(),
       } as any).eq('user_id', uid);
 
-      // 4. Clear all local Dexie DB tables
+      // 3. Clear all local Dexie DB tables
       await db.habits.clear();
       await db.completions.clear();
       await db.goals.clear();
       await db.milestones.clear();
       await db.tasks.clear();
-      await db.routines.clear();
-      await db.habitRoutines.clear();
-      await db.routineCompletions.clear();
       await db.userSettings.clear();
       await db.moodLogs.clear();
 
@@ -465,7 +452,7 @@ export default function SettingsPageContent() {
     setIsForceSyncing(true);
     try {
       await getSyncEngine().syncAll();
-      toast.success('Synced all data (Tasks, Goals, Habits, Routines) from cloud. Refreshing...');
+      toast.success('Synced all data (Tasks, Goals, Habits) from cloud. Refreshing...');
       setTimeout(() => window.location.reload(), 1500);
     } catch (error) {
       console.error('Force pull failed:', error);

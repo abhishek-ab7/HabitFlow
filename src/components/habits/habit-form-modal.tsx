@@ -16,8 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { Habit, HabitFormData, Category, Routine } from '@/lib/types';
-import { useRoutineStore } from '@/lib/stores/routine-store';
+import type { Habit, HabitFormData, Category } from '@/lib/types';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { HabitTemplates, type TemplateHabit } from './HabitTemplates';
 import { HabitDifficultySelector } from './HabitDifficultySelector';
@@ -84,19 +83,15 @@ export function HabitFormModal({
   const [errors, setErrors] = useState<{ name?: string }>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showAllIcons, setShowAllIcons] = useState(false);
-  const [selectedRoutineIds, setSelectedRoutineIds] = useState<Set<string>>(new Set());
   const [stackAfterHabitId, setStackAfterHabitId] = useState<string>('');
-  const [loadingRoutines, setLoadingRoutines] = useState(false);
 
-  const { routines, loadRoutines } = useRoutineStore();
-  const { habits, linkToRoutine, unlinkFromRoutine, getHabitRoutines } = useHabitStore();
+  const { habits } = useHabitStore();
 
   const isEditing = !!habit;
 
-  // Load routines and current habit routines
+  // Load current habit stack trigger
   useEffect(() => {
     if (open) {
-      loadRoutines();
       setActiveTab(defaultTab || 'details');
 
       Promise.resolve().then(() => {
@@ -109,13 +104,6 @@ export function HabitFormModal({
           setTargetValue(habit.targetValue || 0);
           setUnit(habit.unit || '');
           setDifficulty(habit.difficulty || 'medium');
-
-          // Load routines this habit belongs to
-          setLoadingRoutines(true);
-          getHabitRoutines(habit.id).then(habitRoutines => {
-            setSelectedRoutineIds(new Set(habitRoutines.map(r => r.id)));
-            setLoadingRoutines(false);
-          });
           setStackAfterHabitId(habit.metadata?.stackTriggerHabitId || '');
         } else {
           setName('');
@@ -126,23 +114,12 @@ export function HabitFormModal({
           setTargetValue(0);
           setUnit('');
           setDifficulty('medium');
-          setSelectedRoutineIds(new Set());
           setStackAfterHabitId('');
         }
         setErrors({});
       });
     }
-  }, [open, habit, defaultTab, loadRoutines, getHabitRoutines]);
-
-  const handleRoutineToggle = (routineId: string) => {
-    const newSet = new Set(selectedRoutineIds);
-    if (newSet.has(routineId)) {
-      newSet.delete(routineId);
-    } else {
-      newSet.add(routineId);
-    }
-    setSelectedRoutineIds(newSet);
-  };
+  }, [open, habit, defaultTab]);
 
   const handleSelectTemplate = (template: TemplateHabit) => {
     setName(template.name);
@@ -181,26 +158,7 @@ export function HabitFormModal({
       }
     });
 
-    // If editing, update routine links
-    if (habit) {
-      // Get current routines
-      const currentRoutines = await getHabitRoutines(habit.id);
-      const currentRoutineIds = new Set(currentRoutines.map(r => r.id));
 
-      // Link new routines
-      for (const routineId of selectedRoutineIds) {
-        if (!currentRoutineIds.has(routineId)) {
-          await linkToRoutine(habit.id, routineId);
-        }
-      }
-
-      // Unlink removed routines
-      for (const routineId of currentRoutineIds) {
-        if (!selectedRoutineIds.has(routineId)) {
-          await unlinkFromRoutine(habit.id, routineId);
-        }
-      }
-    }
 
     onOpenChange(false);
   };
@@ -444,40 +402,7 @@ export function HabitFormModal({
                       className="overflow-hidden"
                     >
                       <div className="pt-4 space-y-3">
-                        <div>
-                          <label className="text-sm font-medium mb-2 flex items-center gap-2">
-                            <Link2 className="w-4 h-4" />
-                            Link to Routines (optional)
-                          </label>
-                          <div className="border rounded-md p-3 space-y-2 max-h-32 overflow-y-auto bg-muted/30 scrollbar-hide">
-                            {routines.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">
-                                No routines available. Create a routine to link habits.
-                              </p>
-                            ) : loadingRoutines ? (
-                              <p className="text-sm text-muted-foreground">Loading...</p>
-                            ) : (
-                              routines.map((routine) => (
-                                <div key={routine.id} className="flex items-center space-x-2">
-                                  <Checkbox
-                                    id={`routine-${routine.id}`}
-                                    checked={selectedRoutineIds.has(routine.id)}
-                                    onCheckedChange={() => handleRoutineToggle(routine.id)}
-                                  />
-                                  <label
-                                    htmlFor={`routine-${routine.id}`}
-                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
-                                  >
-                                    {routine.title}
-                                  </label>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            This habit can belong to multiple routines
-                          </p>
-                        </div>
+
 
                         {/* Habit Stacking */}
                         <div className="pt-2 border-t border-border/40">

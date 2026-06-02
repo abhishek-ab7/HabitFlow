@@ -8,7 +8,6 @@ import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { LevelUpModal } from '@/components/gamification/LevelUpModal';
 import { GamificationRulesModal } from '@/components/gamification/GamificationRulesModal';
-import { RoutineTriggerWatcher } from '@/components/routines/RoutineTriggerWatcher';
 import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
 import './globals.css';
 
@@ -85,7 +84,6 @@ export default function RootLayout({
                 </div>
                 <LevelUpModal />
                 <GamificationRulesModal />
-                <RoutineTriggerWatcher />
                 <ShortcutsProvider />
                 <Toaster richColors position="bottom-right" />
                 <PomodoroFloating />

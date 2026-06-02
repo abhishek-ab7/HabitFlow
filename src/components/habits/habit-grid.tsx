@@ -54,7 +54,7 @@ import {
 
 import { cn } from '@/lib/utils';
 import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
-import type { Habit, HabitCompletion, Category, Routine } from '@/lib/types';
+import type { Habit, HabitCompletion, Category } from '@/lib/types';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { SortableHabitRow } from './SortableHabitRow';
 
@@ -80,7 +80,6 @@ export const HabitGrid = memo(function HabitGrid({
   streaks,
 }: HabitGridProps) {
   const [rippleCell, setRippleCell] = useState<string | null>(null);
-  const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
   const [isMobile, setIsMobile] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
   const [selectedHabitForLog, setSelectedHabitForLog] = useState<Habit | null>(null);
@@ -110,7 +109,7 @@ export const HabitGrid = memo(function HabitGrid({
     setShowLogModal(false);
     toast.success('Progress log updated');
   };
-  const { getRoutinesForMultipleHabits, reorder, freezeHabit } = useHabitStore();
+  const { reorder, freezeHabit } = useHabitStore();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Handle window resizing to detect mobile
@@ -140,20 +139,7 @@ export const HabitGrid = memo(function HabitGrid({
     })
   );
 
-  // Load routines for all habits in a single batch query (avoids N+1 issue)
-  useEffect(() => {
-    const loadRoutines = async () => {
-      if (habits.length === 0) {
-        setHabitRoutines(new Map());
-        return;
-      }
 
-      const habitIds = habits.map(h => h.id);
-      const routinesMap = await getRoutinesForMultipleHabits(habitIds);
-      setHabitRoutines(routinesMap);
-    };
-    loadRoutines();
-  }, [habits, getRoutinesForMultipleHabits]);
 
   // Generate days for the month
   const days = useMemo(() => {
@@ -313,7 +299,6 @@ export const HabitGrid = memo(function HabitGrid({
                       days={displayedDays}
                       completions={completions}
                       streak={streak}
-                      habitRoutines={habitRoutines.get(habit.id)}
                       onToggle={onToggle}
                       onEdit={onEdit}
                       onDelete={onDelete}

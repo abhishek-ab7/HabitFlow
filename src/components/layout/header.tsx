@@ -19,7 +19,6 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  Workflow, // Routine icon
   Trophy,
   Keyboard
 } from 'lucide-react';
@@ -35,7 +34,6 @@ import { UserStatusHUD } from '@/components/gamification/UserStatusHUD';
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
-  { href: '/routines', label: 'Routines', icon: Workflow },
   { href: '/habits', label: 'Habits', icon: CheckSquare },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },

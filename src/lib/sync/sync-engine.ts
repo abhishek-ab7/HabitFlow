@@ -12,7 +12,6 @@ import { HabitsSyncEngine, CompletionsSyncEngine, syncHabitsWithRetry, syncCompl
 import { GoalsSyncEngine, syncGoalsWithRetry, pushGoalToRemote } from './engines/goals-sync';
 import { TasksSyncEngine, syncTasksWithRetry, pushTaskToRemote } from './engines/tasks-sync';
 import { MilestonesSyncEngine, syncMilestonesWithRetry } from './engines/milestones-sync';
-import { RoutinesSyncEngine, HabitRoutinesSyncEngine, RoutineCompletionsSyncEngine, syncRoutinesWithRetry, syncHabitRoutinesWithRetry, syncRoutineCompletions } from './engines/routines-sync';
 import { UserSettingsSyncEngine, MoodLogsSyncEngine, syncUserSettingsWithRetry, syncMoodLogsWithRetry, pushUserSettingsToRemote } from './engines/settings-sync';
 
 const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
@@ -21,10 +20,7 @@ const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   goals: syncGoalsWithRetry,
   tasks: syncTasksWithRetry,
   milestones: syncMilestonesWithRetry,
-  routines: syncRoutinesWithRetry,
   user_settings: syncUserSettingsWithRetry,
-  habit_routines: syncHabitRoutinesWithRetry,
-  routine_completions: syncRoutineCompletions,
   mood_logs: syncMoodLogsWithRetry,
 };
 
@@ -37,7 +33,7 @@ export type SyncStatus =
 export interface PendingOperation {
   id: string;
   type: 'create' | 'update' | 'delete';
-  table: 'habits' | 'completions' | 'goals' | 'milestones' | 'tasks' | 'routines' | 'user_settings' | 'habit_routines' | 'mood_logs';
+  table: 'habits' | 'completions' | 'goals' | 'milestones' | 'tasks' | 'user_settings' | 'mood_logs';
   data: any;
   timestamp: number;
   retryCount: number;
@@ -72,10 +68,8 @@ export class SyncEngine {
   public habitSyncLock = false;
   public completionSyncLock = false;
   public taskSyncLock = false;
-  public routineSyncLock = false;
   public goalSyncLock = false;
   public milestoneSyncLock = false;
-  public habitRoutineSyncLock = false;
 
   // Periodic duplicate cleanup
   private duplicateCleanupInterval: NodeJS.Timeout | null = null;
@@ -321,9 +315,6 @@ export class SyncEngine {
         new GoalsSyncEngine(),
         new TasksSyncEngine(),
         new MilestonesSyncEngine(),
-        new RoutinesSyncEngine(),
-        new HabitRoutinesSyncEngine(),
-        new RoutineCompletionsSyncEngine(),
         new UserSettingsSyncEngine(),
         new MoodLogsSyncEngine(),
       ]);
@@ -732,23 +723,8 @@ export class SyncEngine {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'routines', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('routines')
-      )
-      .on(
-        'postgres_changes',
         { event: '*', schema: 'public', table: 'user_settings', filter: `user_id=eq.${this.userId}` },
         () => this.debouncedSync('user_settings')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'habit_routines' },
-        () => this.debouncedSync('habit_routines')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'routine_completions', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('routine_completions')
       )
       .subscribe((status) => {
         this.log('info', `Realtime subscription status: ${status}`);

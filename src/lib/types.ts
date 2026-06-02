@@ -49,7 +49,6 @@ export interface Habit {
   updatedAt?: string; // ISO date string - last modification time
   order: number; // For drag-and-drop ordering
   icon?: string; // Optional emoji or icon name
-  routineId?: string | null; // For linking to routines
   isQuantitative?: boolean;
   targetValue?: number;
   unit?: string;
@@ -153,51 +152,7 @@ export interface GoalStats {
   projectedCompletion?: number; // Projected completion % by deadline
 }
 
-// ============================================
-// ROUTINE MODELS
-// ============================================
 
-export interface Routine {
-  id: string;
-  userId: string;
-  title: string;
-  description?: string;
-  triggerType: 'manual' | 'time' | 'location';
-  triggerValue?: string;
-  isActive: boolean;
-  orderIndex: number;
-  createdAt: string;
-  updatedAt: string;
-  generationCounter?: number;
-  isDirty?: boolean;
-}
-
-// Junction table for many-to-many habit-routine relationship
-export interface HabitRoutine {
-  id: string;
-  habitId: string;
-  routineId: string;
-  orderIndex: number; // Order of habit within the routine
-  createdAt: string;
-  updatedAt?: string; // ISO timestamp - for conflict resolution
-  generationCounter?: number;
-  isDirty?: boolean;
-}
-
-// Routine Completion (explicit tracking)
-export interface RoutineCompletion {
-  id: string;
-  userId: string;
-  routineId: string;
-  date: string; // YYYY-MM-DD format
-  completed: boolean;
-  completedAt?: string | null; // ISO timestamp when marked complete
-  notes?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  generationCounter?: number;
-  isDirty?: boolean;
-}
 
 // ============================================
 // TASK MODELS

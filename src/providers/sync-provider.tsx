@@ -6,7 +6,6 @@ import { useAuth } from './auth-provider';
 import { useGoalStore } from '@/lib/stores/goal-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useTaskStore } from '@/lib/stores/task-store';
-import { useRoutineStore } from '@/lib/stores/routine-store';
 import { useUserStore } from '@/lib/stores/user-store';
 
 interface SyncContextType {
@@ -125,7 +124,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           useGoalStore.getState().loadGoals(),
           useHabitStore.getState().loadHabits(),
           useTaskStore.getState().loadTasks(),
-          useRoutineStore.getState().loadRoutines(),
         ]);
 
         if (!active) return;

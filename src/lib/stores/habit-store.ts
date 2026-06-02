@@ -14,15 +14,11 @@ import {
   seedDemoData,
   cleanupDuplicateCompletions,
   cleanupDuplicateHabits,
-  getRoutinesForHabit,
-  getRoutinesForHabits,
-  linkHabitToRoutine,
-  unlinkHabitFromRoutine,
   updateCompletionNote,
   updateCompletionValue,
 } from '../db';
 import { getSupabaseClient } from '../supabase/client';
-import type { Habit, HabitCompletion, HabitFormData, Category, Routine } from '../types';
+import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
 import { calculateHabitStats } from '../calculations';
 import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import { getSyncEngine } from '../sync';
@@ -56,12 +52,7 @@ interface HabitState {
   setCategoryFilter: (categories: Category[]) => void;
   initializeWithDemoData: () => Promise<void>;
 
-  // Routine management
-  getHabitRoutines: (habitId: string) => Promise<Routine[]>;
-  getRoutinesForMultipleHabits: (habitIds: string[]) => Promise<Map<string, Routine[]>>;
   getHabitCompletions: (habitId: string) => HabitCompletion[];
-  linkToRoutine: (habitId: string, routineId: string) => Promise<void>;
-  unlinkFromRoutine: (habitId: string, routineId: string) => Promise<void>;
 
   // Computed
   getHabitStats: (habitId: string) => ReturnType<typeof calculateHabitStats> | null;
@@ -533,23 +524,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     return streaks;
   },
 
-  getHabitRoutines: async (habitId: string) => {
-    return getRoutinesForHabit(habitId);
-  },
-
-  getRoutinesForMultipleHabits: async (habitIds: string[]) => {
-    return getRoutinesForHabits(habitIds);
-  },
-
   getHabitCompletions: (habitId: string) => {
     return get().completions.filter(c => c.habitId === habitId);
-  },
-
-  linkToRoutine: async (habitId: string, routineId: string) => {
-    await linkHabitToRoutine(habitId, routineId);
-  },
-
-  unlinkFromRoutine: async (habitId: string, routineId: string) => {
-    await unlinkHabitFromRoutine(habitId, routineId);
   },
 }));

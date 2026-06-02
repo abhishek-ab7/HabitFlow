@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SuccessRipple } from '@/components/motion';
 import { cn } from '@/lib/utils';
-import type { Habit, HabitCompletion, Category, Routine } from '@/lib/types';
+import type { Habit, HabitCompletion, Category } from '@/lib/types';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useFeedback } from '@/hooks/use-feedback';
@@ -43,7 +43,7 @@ interface SortableHabitRowProps {
     }[];
     completions: HabitCompletion[];
     streak: number;
-    habitRoutines?: Routine[];
+
     onToggle: (habitId: string, date: string) => void;
     onEdit: (habit: Habit) => void;
     onDelete: (habitId: string) => void;
@@ -73,7 +73,7 @@ export function SortableHabitRow({
     days,
     completions,
     streak,
-    habitRoutines,
+
     onToggle,
     onEdit,
     onDelete,
@@ -350,17 +350,7 @@ export function SortableHabitRow({
                                 </AnimatePresence>
                             </div>
                         )}
-                        {habitRoutines?.map((routine) => (
-                            <Badge
-                                key={routine.id}
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0 h-4 gap-0.5 bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300"
-                                title={`Part of routine: ${routine.title}`}
-                            >
-                                <Link2 className="h-2 w-2" />
-                                {routine.title.length > 8 ? routine.title.substring(0, 8) + '...' : routine.title}
-                            </Badge>
-                        ))}
+
                     </div>
                 </div>
 

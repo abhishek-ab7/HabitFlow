@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, Routine, HabitRoutine, RoutineCompletion, MoodLog } from './types';
+import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, MoodLog } from './types';
 import type { MoodType } from './types';
 
 // Domain Type Aliases to resolve Primitive Obsession
@@ -8,7 +8,6 @@ export type HabitId = string;
 export type GoalId = string;
 export type MilestoneId = string;
 export type TaskId = string;
-export type RoutineId = string;
 export type ISODate = string;
 
 // Define the database schema
@@ -19,9 +18,6 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   milestones: EntityTable<Milestone, 'id'>;
   userSettings: EntityTable<UserSettings, 'id'>;
   tasks: EntityTable<Task, 'id'>;
-  routines: EntityTable<Routine, 'id'>;
-  habitRoutines: EntityTable<HabitRoutine, 'id'>;
-  routineCompletions: EntityTable<RoutineCompletion, 'id'>;
   moodLogs: EntityTable<MoodLog, 'id'>;
 };
 
@@ -189,11 +185,24 @@ db.version(9).stores({
   }
 });
 
+// Schema version 10 - Remove routines, habitRoutines, and routineCompletions tables
+db.version(10).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, isQuantitative',
+  completions: 'id, userId, habitId, date, [habitId+date], updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+  moodLogs: 'id, userId, date, [userId+date], updatedAt',
+  routines: null,
+  habitRoutines: null,
+  routineCompletions: null
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 
-  'userSettings', 'tasks', 'routines', 
-  'habitRoutines', 'routineCompletions', 'moodLogs'
+  'userSettings', 'tasks', 'moodLogs'
 ];
 
 syncTables.forEach(tableName => {
@@ -779,105 +788,6 @@ export async function deleteTask(id: TaskId): Promise<void> {
   for (const child of childTasks) {
     await deleteTask(child.id);
   }
-}
-
-// ==================
-// HABIT-ROUTINE JUNCTION FUNCTIONS
-// ==================
-
-export async function linkHabitToRoutine(habitId: HabitId, routineId: RoutineId, orderIndex: number = 0): Promise<HabitRoutine> {
-  const existing = await db.habitRoutines
-    .where('[habitId+routineId]')
-    .equals([habitId, routineId])
-    .first();
-
-  if (existing) {
-    return existing;
-  }
-
-  const now = new Date().toISOString();
-  const link: HabitRoutine = {
-    id: crypto.randomUUID(),
-    habitId,
-    routineId,
-    orderIndex,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await db.habitRoutines.add(link);
-  return link;
-}
-
-export async function unlinkHabitFromRoutine(habitId: HabitId, routineId: RoutineId): Promise<void> {
-  const link = await db.habitRoutines
-    .where('[habitId+routineId]')
-    .equals([habitId, routineId])
-    .first();
-
-  if (link) {
-    await db.habitRoutines.delete(link.id);
-  }
-}
-
-export async function getRoutinesForHabit(habitId: HabitId): Promise<Routine[]> {
-  const links = await db.habitRoutines.where('habitId').equals(habitId).toArray();
-  const routineIds = links.map(link => link.routineId);
-
-  const routines = await db.routines.where('id').anyOf(routineIds).toArray();
-  return routines;
-}
-
-export async function getRoutinesForHabits(habitIds: HabitId[]): Promise<Map<HabitId, Routine[]>> {
-  const links = await db.habitRoutines.where('habitId').anyOf(habitIds).toArray();
-  const routineIds = [...new Set(links.map(link => link.routineId))];
-  const routines = await db.routines.where('id').anyOf(routineIds).toArray();
-
-  const routineMap = new Map(routines.map(r => [r.id, r]));
-
-  const result = new Map<HabitId, Routine[]>();
-  for (const link of links) {
-    const routine = routineMap.get(link.routineId);
-    if (routine) {
-      const existing = result.get(link.habitId) || [];
-      result.set(link.habitId, [...existing, routine]);
-    }
-  }
-
-  return result;
-}
-
-export async function getHabitsForRoutine(routineId: RoutineId): Promise<Habit[]> {
-  const links = await db.habitRoutines
-    .where('routineId')
-    .equals(routineId)
-    .sortBy('orderIndex');
-
-  const habitIds = links.map(link => link.habitId);
-  const habits = await db.habits.where('id').anyOf(habitIds).toArray();
-
-  const habitMap = new Map(habits.map(h => [h.id, h]));
-  return links.map(link => habitMap.get(link.habitId)).filter(Boolean) as Habit[];
-}
-
-export async function updateHabitRoutineOrder(habitId: HabitId, routineId: RoutineId, newOrderIndex: number): Promise<void> {
-  const link = await db.habitRoutines
-    .where('[habitId+routineId]')
-    .equals([habitId, routineId])
-    .first();
-
-  if (link) {
-    await db.habitRoutines.update(link.id, {
-      orderIndex: newOrderIndex,
-      updatedAt: new Date().toISOString()
-    });
-  }
-}
-
-export async function unlinkAllHabitsFromRoutine(routineId: RoutineId): Promise<void> {
-  const links = await db.habitRoutines.where('routineId').equals(routineId).toArray();
-  const linkIds = links.map(link => link.id);
-  await db.habitRoutines.bulkDelete(linkIds);
 }
 
 // ==================
