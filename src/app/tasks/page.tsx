@@ -6,7 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function TasksPage() {
     return (
         <Suspense fallback={
-            <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto space-y-8">
+            <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-8">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <Skeleton className="h-10 w-48 rounded animate-pulse" />

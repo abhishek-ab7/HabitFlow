@@ -177,7 +177,7 @@ export default function GoalDetailsPage() {
     const progress = Math.round((completedTasks.length / (tasks.length || 1)) * 100)
 
     return (
-        <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-5xl mx-auto space-y-8">
+        <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-8">
             {/* Header */}
             <div className="space-y-4">
                 <Button variant="ghost" className="pl-0 gap-2 text-muted-foreground hover:text-foreground" onClick={() => router.back()}>

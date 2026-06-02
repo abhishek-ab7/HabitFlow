@@ -384,7 +384,7 @@ export default function AnalyticsPageContent() {
 
   if (isLoading) {
     return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6">
         <div className="animate-pulse space-y-6">
           <div className="h-10 bg-muted rounded w-48" />
           <div className="grid gap-6 md:grid-cols-2">
@@ -400,7 +400,7 @@ export default function AnalyticsPageContent() {
   const noData = habits.length === 0;
 
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6">
       {/* Header */}
       <FadeIn className="mb-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -260,7 +260,7 @@ export default function DashboardContent() {
 
   if (isLoading) {
     return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto flex flex-col items-center justify-center min-h-[500px]">
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto flex flex-col items-center justify-center min-h-[500px]">
         <DashboardCenterLoader />
       </div>
     );
@@ -272,7 +272,7 @@ export default function DashboardContent() {
 
   if (isEmpty) {
     return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto">
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
         <HeroSection userName={displayName} currentStreak={currentMaxStreak} />
 
         <div className="flex flex-col items-center justify-center py-16">
@@ -348,7 +348,7 @@ export default function DashboardContent() {
   };
 
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-6xl mx-auto space-y-6">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6">
       <HeroSection
         userName={displayName}
         currentStreak={currentMaxStreak}

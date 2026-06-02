@@ -167,7 +167,7 @@ export default function HabitsPageContent() {
 
   if (isLoading && habits.length === 0) {
     return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto">
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <Skeleton className="h-9 w-48 mb-2" />
@@ -181,7 +181,7 @@ export default function HabitsPageContent() {
   }
 
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
       <FadeIn>
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">

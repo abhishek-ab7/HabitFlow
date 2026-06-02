@@ -233,7 +233,7 @@ function GoalsPageContent() {
 
   if (isLoading) {
     return (
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto">
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
         <div className="space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -249,7 +249,7 @@ function GoalsPageContent() {
   }
 
   return (
-    <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto">
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
       {/* Header */}
       <FadeIn className="mb-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -492,7 +492,7 @@ function GoalsPageContent() {
 export default function GoalsPage() {
   return (
     <Suspense fallback={
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-[1400px] mx-auto">
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
         <div className="space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>

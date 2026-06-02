@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function HabitsPage() {
   return (
     <Suspense fallback={
-      <div className="container px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto">
+      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <Skeleton className="h-9 w-48 mb-2 animate-pulse" />

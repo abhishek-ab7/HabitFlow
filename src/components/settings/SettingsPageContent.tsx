@@ -482,7 +482,7 @@ export default function SettingsPageContent() {
 
   if (!settings) {
     return (
-      <div className="container px-4 py-8 max-w-7xl mx-auto flex items-center justify-center min-h-[50vh]">
+      <div className="w-full px-4 py-8 max-w-[1600px] mx-auto flex items-center justify-center min-h-[50vh]">
         <div className="animate-pulse space-y-4 text-center">
           <div className="w-16 h-16 rounded-full bg-muted mx-auto" />
           <div className="h-4 w-32 bg-muted rounded mx-auto" />
@@ -495,7 +495,7 @@ export default function SettingsPageContent() {
   const hasDuplicates = duplicateCounts && (duplicateCounts.habits > 0 || duplicateCounts.goals > 0 || duplicateCounts.completions > 0);
 
   return (
-    <div className="container relative min-h-screen px-4 py-8 md:px-6 lg:px-8 max-w-7xl mx-auto space-y-8">
+    <div className="w-full relative min-h-screen px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-8">
       {/* Visual Ambience */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />

@@ -117,7 +117,7 @@ export default function TutorialPage() {
       <div className="absolute top-0 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="absolute bottom-10 left-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl pointer-events-none -z-10" />
 
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-[1600px] mx-auto space-y-8">
         {/* Page Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-6">
           <div className="space-y-1">
