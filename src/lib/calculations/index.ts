@@ -66,30 +66,30 @@ export function calculateCurrentStreak(
 ): number {
   if (completions.length === 0) return 0;
 
-  // Sort completions by date descending, including frozen
-  const sorted = [...completions]
-    .filter(c => c.completed || c.status === 'frozen')
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const completionsMap = new Map<string, HabitCompletion>();
+  for (const c of completions) {
+    if (c.completed || c.status === 'frozen') {
+      completionsMap.set(c.date, c);
+    }
+  }
 
-  if (sorted.length === 0) return 0;
+  if (completionsMap.size === 0) return 0;
 
   // Check if today or yesterday is completed or frozen (streak is active)
   const todayStr = formatDate(today);
   const yesterdayStr = formatDate(subDays(today, 1));
   
-  const hasRecent = sorted.some(
-    c => c.date === todayStr || c.date === yesterdayStr
-  );
+  const hasRecent = completionsMap.has(todayStr) || completionsMap.has(yesterdayStr);
 
   if (!hasRecent) return 0;
 
   // Count consecutive days
   let streak = 0;
-  let currentDate = sorted[0].date === todayStr ? today : subDays(today, 1);
+  let currentDate = completionsMap.has(todayStr) ? today : subDays(today, 1);
 
   for (let i = 0; i < 365; i++) {
     const dateStr = formatDate(currentDate);
-    const comp = sorted.find(c => c.date === dateStr);
+    const comp = completionsMap.get(dateStr);
     
     if (comp) {
       if (comp.status !== 'frozen' && comp.completed) {
@@ -311,18 +311,38 @@ export function calculateDailyStats(
   endDate: Date
 ): DailyStats[] {
   const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+  // Index completed completions by date for O(1) count
+  const completionsByDate = new Map<string, number>();
+  for (const c of completions) {
+    if (c.completed) {
+      completionsByDate.set(c.date, (completionsByDate.get(c.date) || 0) + 1);
+    }
+  }
+
+  // Pre-parse habit creation dates once
+  const habitsWithCreatedDate = habits
+    .filter(h => !h.archived)
+    .map(h => ({
+      ...h,
+      parsedCreatedAt: parseISO(h.createdAt)
+    }));
   
   return days.map(day => {
     const dateStr = formatDate(day);
-    const dayCompletions = completions.filter(c => c.date === dateStr && c.completed);
-    const activeHabits = habits.filter(h => !h.archived && !isAfter(parseISO(h.createdAt), day));
+    const completedCount = completionsByDate.get(dateStr) || 0;
+    
+    // Filter active habits using the pre-parsed date
+    const activeHabitsCount = habitsWithCreatedDate.filter(
+      h => !isAfter(h.parsedCreatedAt, day)
+    ).length;
     
     return {
       date: dateStr,
-      completedHabits: dayCompletions.length,
-      totalHabits: activeHabits.length,
-      completionRate: activeHabits.length > 0
-        ? Math.round((dayCompletions.length / activeHabits.length) * 100)
+      completedHabits: completedCount,
+      totalHabits: activeHabitsCount,
+      completionRate: activeHabitsCount > 0
+        ? Math.round((completedCount / activeHabitsCount) * 100)
         : 0,
     };
   });
@@ -334,11 +354,16 @@ export function calculateCategoryBreakdown(
 ): CategoryBreakdown[] {
   const categories = ['health', 'work', 'learning', 'personal', 'finance', 'relationships'] as Category[];
   
+  // Pre-filter completed completions
+  const completedCompletions = completions.filter(c => c.completed);
+  
   const breakdown = categories.map(category => {
     const categoryHabits = habits.filter(h => h.category === category && !h.archived);
-    const categoryCompletions = completions.filter(
-      c => categoryHabits.some(h => h.id === c.habitId) && c.completed
-    );
+    const categoryHabitIds = new Set(categoryHabits.map(h => h.id));
+    
+    const completedCount = completedCompletions.filter(
+      c => categoryHabitIds.has(c.habitId)
+    ).length;
     
     const totalPossible = categoryHabits.length * 30; // Approximate month
     
@@ -347,7 +372,7 @@ export function calculateCategoryBreakdown(
       count: categoryHabits.length,
       percentage: habits.length > 0 ? Math.round((categoryHabits.length / habits.length) * 100) : 0,
       completionRate: totalPossible > 0
-        ? Math.round((categoryCompletions.length / totalPossible) * 100)
+        ? Math.round((completedCount / totalPossible) * 100)
         : 0,
     };
   });
@@ -365,10 +390,18 @@ export function generateHeatmapData(
   const dates = eachDayOfInterval({ start: startDate, end: today });
   
   const maxPossible = habits.filter(h => !h.archived).length;
+
+  // Index completed completions count by date
+  const completedCompletionsByDate = new Map<string, number>();
+  for (const c of completions) {
+    if (c.completed) {
+      completedCompletionsByDate.set(c.date, (completedCompletionsByDate.get(c.date) || 0) + 1);
+    }
+  }
   
   return dates.map(date => {
     const dateStr = formatDate(date);
-    const count = completions.filter(c => c.date === dateStr && c.completed).length;
+    const count = completedCompletionsByDate.get(dateStr) || 0;
     
     // Calculate intensity level (0-4)
     let level: 0 | 1 | 2 | 3 | 4 = 0;

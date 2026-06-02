@@ -13,31 +13,21 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('theme') as Theme | null;
-      return stored || 'system';
-    }
-    return 'system';
-  });
-
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('theme') as Theme | null;
-      const activeTheme = stored || 'system';
-      if (activeTheme === 'system') {
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      }
-      if (activeTheme === 'auto') {
-        const hour = new Date().getHours();
-        return (hour >= 18 || hour < 5) ? 'dark' : 'light';
-      }
-      return activeTheme as 'light' | 'dark';
-    }
-    return 'light';
-  });
+  const [theme, setTheme] = useState<Theme>('system');
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    const stored = localStorage.getItem('theme') as Theme | null;
+    if (stored) {
+      setTheme(stored);
+    }
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     const root = window.document.documentElement;
     
     // Remove all theme classes first
@@ -67,16 +57,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
 
     root.classList.add(...classesToAdd);
-    
-    Promise.resolve().then(() => {
-      setResolvedTheme(newResolved);
-    });
+    setResolvedTheme(newResolved);
 
     localStorage.setItem('theme', theme);
-  }, [theme]);
+  }, [theme, mounted]);
 
   // Listen for system theme changes and time changes for auto
   useEffect(() => {
+    if (!mounted) return;
+
     if (theme === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       const handleChange = (e: MediaQueryListEvent) => {
@@ -119,7 +108,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       
       return () => clearInterval(interval);
     }
-  }, [theme]);
+  }, [theme, mounted]);
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>

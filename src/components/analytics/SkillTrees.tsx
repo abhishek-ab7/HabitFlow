@@ -48,9 +48,10 @@ export function SkillTrees() {
       relationships: 0
     };
 
+    const habitsMap = new Map(habits.map(h => [h.id, h]));
     completions.forEach(c => {
       if (c.completed && c.status !== 'frozen') {
-        const habit = habits.find(h => h.id === c.habitId);
+        const habit = habitsMap.get(c.habitId);
         if (habit && completionsByCategory[habit.category] !== undefined) {
           completionsByCategory[habit.category]++;
         }

@@ -84,9 +84,10 @@ export function YearInReview() {
 
     // Top Category in 2026
     const categoryCounts: Record<string, number> = {};
+    const habitsMap = new Map(habits.map(h => [h.id, h]));
     completions2026.forEach(c => {
       if (c.completed) {
-        const habit = habits.find(h => h.id === c.habitId);
+        const habit = habitsMap.get(c.habitId);
         if (habit) {
           categoryCounts[habit.category] = (categoryCounts[habit.category] || 0) + 1;
         }

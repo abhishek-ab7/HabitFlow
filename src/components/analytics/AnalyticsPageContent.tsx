@@ -20,7 +20,7 @@ import {
   calculateCurrentStreak,
   calculateBestStreak,
 } from '@/lib/calculations';
-import type { TimeRange, DailyStats, WeekdayStats, Insight, Trend, MoodType } from '@/lib/types';
+import type { TimeRange, DailyStats, WeekdayStats, Insight, Trend, MoodType, HabitCompletion } from '@/lib/types';
 import { DAYS_OF_WEEK } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -96,6 +96,15 @@ export default function AnalyticsPageContent() {
     }))
   );
   const completedSessions = usePomodoroStore((s) => s.completedSessions);
+
+  // Pre-map completions by habitId and dateStr for O(1) grid lookups
+  const completionsMap = useMemo(() => {
+    const map = new Map<string, HabitCompletion>();
+    completions.forEach(c => {
+      map.set(`${c.habitId}_${c.date}`, c);
+    });
+    return map;
+  }, [completions]);
 
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
   const [activeView, setActiveView] = useState<'analytics' | 'weekly-review' | 'rpg-skills' | 'predictive' | 'wrapped'>('analytics');
@@ -353,10 +362,11 @@ export default function AnalyticsPageContent() {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     
     const notesList: { habitName: string; date: string; text: string }[] = [];
+    const habitsMap = new Map(habits.map(h => [h.id, h]));
     
     completions.forEach(c => {
       if (c.date >= startStr && c.date <= todayStr && c.note) {
-        const habit = habits.find(h => h.id === c.habitId);
+        const habit = habitsMap.get(c.habitId);
         if (habit) {
           notesList.push({
             habitName: habit.name,
@@ -720,7 +730,7 @@ export default function AnalyticsPageContent() {
                       
                       <div className="flex gap-2 overflow-x-auto max-w-full pb-1 scrollbar-hide">
                         {last7Days.map((day) => {
-                          const comp = completions.find(c => c.habitId === habit.id && c.date === day.dateStr);
+                          const comp = completionsMap.get(`${habit.id}_${day.dateStr}`);
                           const isCompleted = comp?.completed && comp?.status !== 'frozen';
                           const isFrozen = comp?.status === 'frozen';
                           
