@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Flame, 
@@ -34,6 +34,8 @@ export function YearInReview() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [progress, setProgress] = useState(0);
+
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const slideDuration = 8000; // 8 seconds per slide
 
@@ -121,6 +123,157 @@ export function YearInReview() {
       estimatedXP
     };
   }, [habits, completions, goals, tasks]);
+
+  const handleShare = async () => {
+    // Pause playback while rendering / sharing
+    const wasPlaying = isPlaying;
+    setIsPlaying(false);
+
+    const text = `I completed ${stats2026.totalCompletions} habits in 2026 with a ${stats2026.bestStreak} day streak on HabitFlow! 🚀 Check out your 2026 scorecard at habitflow.tech #HabitFlowWrapped`;
+
+    const element = cardRef.current;
+    if (!element) {
+      toast.error('Card element not found.');
+      if (wasPlaying) setIsPlaying(true);
+      return;
+    }
+
+    const shareToastId = toast.loading('Generating your scorecard share card...');
+
+    try {
+      // Dynamic import to optimize page bundle size
+      const html2canvas = (await import('html2canvas-pro')).default;
+
+      const canvas = await html2canvas(element, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 2, // 2x resolution for clean text and shapes
+        backgroundColor: null,
+        onclone: (clonedDoc) => {
+          // Hide controls and overlay elements not desired in the screenshot
+          const toHide = clonedDoc.querySelectorAll('.hide-in-share');
+          toHide.forEach((el) => {
+            (el as HTMLElement).style.display = 'none';
+          });
+
+          // Standardize dimensions on cloned element
+          const clonedCard = clonedDoc.querySelector('[data-slot="card"]');
+          if (clonedCard) {
+            (clonedCard as HTMLElement).style.height = '520px';
+            (clonedCard as HTMLElement).style.maxHeight = '520px';
+            (clonedCard as HTMLElement).style.borderRadius = '1.5rem';
+            (clonedCard as HTMLElement).style.overflow = 'hidden';
+          }
+        },
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          toast.dismiss(shareToastId);
+          toast.error('Failed to render card image.');
+          if (wasPlaying) setIsPlaying(true);
+          return;
+        }
+
+        const file = new File([blob], 'habitflow-2026-wrapped.png', { type: 'image/png' });
+
+        // Method 1: Web Share API (native share sheet)
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: 'My 2026 Habit Scorecard | HabitFlow',
+              text: text,
+            });
+            toast.dismiss(shareToastId);
+            toast.success('Stats shared successfully!');
+            if (wasPlaying) setIsPlaying(true);
+            return;
+          } catch (shareErr) {
+            if ((shareErr as Error).name === 'AbortError') {
+              toast.dismiss(shareToastId);
+              if (wasPlaying) setIsPlaying(true);
+              return;
+            }
+            console.error('Web Share failed, running fallbacks:', shareErr);
+          }
+        }
+
+        // Method 2: Copy image + text to clipboard
+        let clipboardSuccess = false;
+        if (navigator.clipboard && navigator.clipboard.write) {
+          try {
+            const textBlob = new Blob([text], { type: 'text/plain' });
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                'image/png': blob,
+                'text/plain': textBlob,
+              })
+            ]);
+            clipboardSuccess = true;
+            toast.dismiss(shareToastId);
+            toast.success('Scorecard image and text copied to clipboard!');
+          } catch (clipErr) {
+            console.error('Copying image to clipboard failed:', clipErr);
+          }
+        }
+
+        // Method 3: Download image + copy text to clipboard
+        if (!clipboardSuccess) {
+          let textCopied = false;
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+              await navigator.clipboard.writeText(text);
+              textCopied = true;
+            } catch (textErr) {
+              console.error('Clipboard text copy failed:', textErr);
+            }
+          }
+
+          if (!textCopied) {
+            try {
+              const textArea = document.createElement('textarea');
+              textArea.value = text;
+              textArea.style.position = 'fixed';
+              textArea.style.opacity = '0';
+              document.body.appendChild(textArea);
+              textArea.focus();
+              textArea.select();
+              textCopied = document.execCommand('copy');
+              document.body.removeChild(textArea);
+            } catch (err) {
+              console.error('Fallback copy text failed:', err);
+            }
+          }
+
+          try {
+            const link = document.createElement('a');
+            link.download = 'habitflow-2026-wrapped.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            toast.dismiss(shareToastId);
+            if (textCopied) {
+              toast.success('Stats copied to clipboard & image downloaded!');
+            } else {
+              toast.success('Scorecard image downloaded!');
+            }
+          } catch (downloadErr) {
+            console.error('Image download failed:', downloadErr);
+            toast.dismiss(shareToastId);
+            toast.error('Failed to share or download scorecard.');
+          }
+        }
+
+        if (wasPlaying) setIsPlaying(true);
+      }, 'image/png');
+
+    } catch (err) {
+      console.error('Failed to capture card:', err);
+      toast.dismiss(shareToastId);
+      toast.error('Failed to capture card image.');
+      if (wasPlaying) setIsPlaying(true);
+    }
+  };
 
   // Slides configuration
   const slides = [
@@ -297,7 +450,7 @@ export function YearInReview() {
             </div>
           </div>
 
-          <div className="flex gap-2 w-full mt-2 pointer-events-auto">
+          <div className="flex gap-2 w-full mt-2 pointer-events-auto hide-in-share">
             <button
               onClick={() => {
                 setCurrentSlide(0);
@@ -309,41 +462,7 @@ export function YearInReview() {
               <RotateCcw className="h-3.5 w-3.5" /> Replay
             </button>
             <button
-              onClick={async () => {
-                const text = `I completed ${stats2026.totalCompletions} habits in 2026 with a ${stats2026.bestStreak} day streak in HabitFlow! 🚀 #HabitFlowWrapped`;
-                let copied = false;
-                
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                  try {
-                    await navigator.clipboard.writeText(text);
-                    copied = true;
-                  } catch (e) {
-                    console.error('Clipboard API failed, trying fallback:', e);
-                  }
-                }
-                
-                if (!copied) {
-                  try {
-                    const textArea = document.createElement('textarea');
-                    textArea.value = text;
-                    textArea.style.position = 'fixed';
-                    textArea.style.opacity = '0';
-                    document.body.appendChild(textArea);
-                    textArea.focus();
-                    textArea.select();
-                    copied = document.execCommand('copy');
-                    document.body.removeChild(textArea);
-                  } catch (err) {
-                    console.error('Fallback copy failed:', err);
-                  }
-                }
-
-                if (copied) {
-                  toast.success('Wrapped stats copied to clipboard!');
-                } else {
-                  toast.error('Failed to copy stats to clipboard.');
-                }
-              }}
+              onClick={handleShare}
               className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-xs text-white font-bold flex items-center justify-center gap-1.5 transition-colors"
             >
               <Share2 className="h-3.5 w-3.5" /> Share Stats
@@ -398,7 +517,7 @@ export function YearInReview() {
   };
 
   return (
-    <Card className="border border-border/60 bg-card rounded-2xl shadow-xl overflow-hidden max-w-md mx-auto relative h-[520px]">
+    <Card ref={cardRef} className="border border-border/60 bg-card rounded-2xl shadow-xl overflow-hidden max-w-md mx-auto relative h-[520px]">
       {/* Slide Background Gradient */}
       <div className={cn(
         "absolute inset-0 bg-gradient-to-b transition-all duration-1000 ease-in-out opacity-90",
@@ -409,7 +528,7 @@ export function YearInReview() {
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
 
       {/* Progress Bars (Instagram style) */}
-      <div className="absolute top-4 left-4 right-4 flex gap-1.5 z-30">
+      <div className="absolute top-4 left-4 right-4 flex gap-1.5 z-30 hide-in-share">
         {slides.map((_, idx) => (
           <div key={idx} className="h-1 bg-white/20 flex-1 rounded-full overflow-hidden">
             <div
@@ -428,7 +547,7 @@ export function YearInReview() {
       </div>
 
       {/* Slide Navigation Overlay (Left / Right halves) */}
-      <div className="absolute inset-x-0 top-12 bottom-12 z-10 flex">
+      <div className="absolute inset-x-0 top-12 bottom-12 z-10 flex hide-in-share">
         <div 
           onClick={handlePrev}
           className="w-1/3 h-full cursor-w-resize"
@@ -458,7 +577,7 @@ export function YearInReview() {
         </div>
         <button
           onClick={() => setIsPlaying(!isPlaying)}
-          className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-white/80 hover:text-white transition-colors hover:bg-white/10"
+          className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-white/80 hover:text-white transition-colors hover:bg-white/10 hide-in-share"
         >
           {isPlaying ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
         </button>
@@ -481,7 +600,7 @@ export function YearInReview() {
       </div>
 
       {/* Bottom Navigation Indicators */}
-      <div className="absolute bottom-4 inset-x-6 z-20 flex justify-between items-center">
+      <div className="absolute bottom-4 inset-x-6 z-20 flex justify-between items-center hide-in-share">
         <button
           onClick={handlePrev}
           disabled={currentSlide === 0}
