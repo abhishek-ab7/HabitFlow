@@ -29,6 +29,7 @@ import { useHabitStore } from '@/lib/stores/habit-store';
 import { toast } from 'sonner';
 import { ShareCardModal } from './ShareCardModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 
 interface SortableHabitRowProps {
     habit: Habit;
@@ -91,6 +92,9 @@ export function SortableHabitRow({
     const [logDate, setLogDate] = useState('');
     const [logNote, setLogNote] = useState('');
     const [logValue, setLogValue] = useState(0);
+
+    const [showShieldPurchaseDialog, setShowShieldPurchaseDialog] = useState(false);
+    const [pendingFreezeDate, setPendingFreezeDate] = useState<string | null>(null);
 
     const handleOpenLogModal = () => {
         const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -259,9 +263,35 @@ export function SortableHabitRow({
         try {
             await onFreeze(habit.id, dateStr);
         } catch (err) {
-            toast.error((err as Error).message);
+            if ((err as Error).message === 'GEMS_PURCHASE_AVAILABLE') {
+                setPendingFreezeDate(dateStr);
+                setShowShieldPurchaseDialog(true);
+            } else {
+                toast.error((err as Error).message);
+            }
         } finally {
             setTimeout(() => setRippleCell(null), 500);
+        }
+    };
+
+    const handleConfirmShieldPurchase = async () => {
+        if (!pendingFreezeDate) return;
+        try {
+            const gamification = useGamificationStore.getState();
+            const bought = await gamification.buyShield();
+            if (bought) {
+                if (onFreeze) {
+                    await onFreeze(habit.id, pendingFreezeDate);
+                }
+                toast.success("Streak Shield purchased and applied!");
+            } else {
+                toast.error("Failed to purchase Streak Shield. Not enough Gems.");
+            }
+        } catch (err) {
+            toast.error((err as Error).message);
+        } finally {
+            setShowShieldPurchaseDialog(false);
+            setPendingFreezeDate(null);
         }
     };
 
@@ -748,6 +778,38 @@ export function SortableHabitRow({
                             className="flex-1 rounded-xl"
                         >
                             Save
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Streak Shield Retroactive Purchase Dialog */}
+            <Dialog open={showShieldPurchaseDialog} onOpenChange={setShowShieldPurchaseDialog}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Purchase Streak Shield?</DialogTitle>
+                        <DialogDescription>
+                            You have no free weekly freezes or Streak Shields left. Would you like to buy a Streak Shield for 20 Gems to freeze this day and protect your streak?
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="flex gap-2">
+                        <Button 
+                            type="button"
+                            variant="ghost" 
+                            onClick={() => {
+                                setShowShieldPurchaseDialog(false);
+                                setPendingFreezeDate(null);
+                            }}
+                            className="flex-1 rounded-xl"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            type="button"
+                            onClick={handleConfirmShieldPurchase}
+                            className="flex-1 rounded-xl bg-blue-500 hover:bg-blue-600 text-white"
+                        >
+                            Buy & Apply (20 Gems)
                         </Button>
                     </DialogFooter>
                 </DialogContent>

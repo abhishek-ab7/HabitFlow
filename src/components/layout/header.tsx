@@ -30,6 +30,7 @@ import { SyncStatusBadge } from '@/components/sync/SyncStatusBadge';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { UserStatusHUD } from '@/components/gamification/UserStatusHUD';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -48,6 +49,16 @@ export function Header() {
   const { isAuthenticated, user, signOut } = useAuth();
   const { syncStatus, isSyncing } = useSync();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const { settings } = useGamificationStore();
+  const visibleNavItems = navItems.filter(item => {
+    if (settings?.habitOnlyMode) {
+      return item.href === '/dashboard' || item.href === '/habits' || item.href === '/analytics' || item.href === '/settings';
+    }
+    if (item.href === '/tasks' && settings?.showTasks === false) return false;
+    if (item.href === '/goals' && settings?.showGoals === false) return false;
+    return true;
+  });
 
   // Hide the global app header on public landing page, login page, and auth callback pages
   if (pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')) {
@@ -164,7 +175,7 @@ export function Header() {
               transform: scale(1.15) rotate(4deg) translateY(-0.5px);
             }
           `}} />
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
 
@@ -311,7 +322,7 @@ export function Header() {
           className="md:hidden border-t border-border/40 bg-background/95 backdrop-blur-xl"
         >
           <div className="container px-4 py-4 space-y-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = pathname === item.href;
               const Icon = item.icon;
 

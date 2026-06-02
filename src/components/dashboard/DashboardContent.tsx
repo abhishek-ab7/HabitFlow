@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGoalStore } from '@/lib/stores/goal-store';
 import { useTaskStore } from '@/lib/stores/task-store';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { calculateMomentum } from '@/lib/calculations';
 import { isAIEnabled } from '@/lib/ai-features-flag';
 import {
@@ -94,6 +95,13 @@ export default function DashboardContent() {
     }))
   );
 
+  const { settings, loadGamification } = useGamificationStore(
+    useShallow((s) => ({
+      settings: s.settings,
+      loadGamification: s.loadGamification,
+    }))
+  );
+
   const {
     tasks,
   } = useTaskStore(
@@ -104,7 +112,8 @@ export default function DashboardContent() {
 
   const [isInitializing, setIsInitializing] = useState(true);
   const isLoading = isInitializing;
-  const isEmpty = habits.length === 0 && goals.length === 0 && !isLoading;
+  const isGoalsEnabled = !settings?.habitOnlyMode && settings?.showGoals !== false;
+  const isEmpty = habits.length === 0 && (!isGoalsEnabled || goals.length === 0) && !isLoading;
 
   // Wait for SyncProvider to finish loading core data (habits, goals, tasks, user),
   // then load supplementary dashboard-specific data (layout, milestones, completions).
@@ -133,6 +142,7 @@ export default function DashboardContent() {
           loadDashboardLayout(user.id),
           loadAllMilestones(),
           loadCompletions(start, end),
+          loadGamification(),
         ]);
 
         const onboarded = localStorage.getItem('habitflow_onboarded');
@@ -153,7 +163,7 @@ export default function DashboardContent() {
     return () => {
       active = false;
     };
-  }, [authLoading, user, isDataReady, loadAllMilestones, loadCompletions, loadDashboardLayout]);
+  }, [authLoading, user, isDataReady, loadAllMilestones, loadCompletions, loadDashboardLayout, loadGamification]);
 
   // Trigger dashboard guided tour
   useEffect(() => {
@@ -224,22 +234,24 @@ export default function DashboardContent() {
     const completedTasks = todayTasksList.filter(t => t.status === 'done').length;
     const taskRate = totalTasks > 0 ? (completedTasks / totalTasks) : 1;
 
+    const isTasksEnabled = !settings?.habitOnlyMode && settings?.showTasks !== false;
+
     let score = 100;
-    if (todayTotal > 0 && totalTasks > 0) {
+    if (todayTotal > 0 && totalTasks > 0 && isTasksEnabled) {
       score = Math.round(habitRate * 60 + taskRate * 40);
     } else if (todayTotal > 0) {
       score = Math.round(habitRate * 100);
-    } else if (totalTasks > 0) {
+    } else if (totalTasks > 0 && isTasksEnabled) {
       score = Math.round(taskRate * 100);
     }
     return {
       score,
       todayCompleted,
       todayTotal,
-      completedTasks,
-      totalTasks
+      completedTasks: isTasksEnabled ? completedTasks : 0,
+      totalTasks: isTasksEnabled ? totalTasks : 0
     };
-  }, [todayProgress, tasks]);
+  }, [todayProgress, tasks, settings?.habitOnlyMode, settings?.showTasks]);
 
 
   const handleToggleMilestone = async (milestoneId: string) => {
@@ -293,7 +305,9 @@ export default function DashboardContent() {
         </div>
 
         <div className="mt-8">
-          <TodayTasksWidget isHydrated={true} />
+          {!settings?.habitOnlyMode && settings?.showTasks !== false && (
+            <TodayTasksWidget isHydrated={true} />
+          )}
         </div>
       </div>
     );
@@ -311,18 +325,24 @@ export default function DashboardContent() {
         bestStreak={bestStreak}
         activeGoals={activeGoalsCount}
         upcomingDeadlines={upcomingDeadlines.length}
+        habitOnlyMode={!!settings?.habitOnlyMode}
+        streakShields={settings?.streakShield ?? 0}
       />
     ),
-    'today-tasks': <TodayTasksWidget isHydrated={true} />,
     'habit-overview': <HabitOverview habits={habits} completions={completions} onToggle={toggle} />,
-    'focus-goal': (
-      <FocusGoal
-        goals={focusGoals}
-        getMilestones={getGoalMilestones}
-        getStats={getGoalStats}
-        onToggleMilestone={handleToggleMilestone}
-      />
-    ),
+    ...(!settings?.habitOnlyMode && settings?.showTasks !== false ? {
+      'today-tasks': <TodayTasksWidget isHydrated={true} />
+    } : {}),
+    ...(!settings?.habitOnlyMode && settings?.showGoals !== false ? {
+      'focus-goal': (
+        <FocusGoal
+          goals={focusGoals}
+          getMilestones={getGoalMilestones}
+          getStats={getGoalStats}
+          onToggleMilestone={handleToggleMilestone}
+        />
+      )
+    } : {}),
     ...(isAIEnabled() ? { 'ai-coach': <AICoachWidget /> } : {}),
     'weekly-review': <WeeklyReviewWidget />
   };
@@ -350,24 +370,32 @@ export default function DashboardContent() {
           <h3 className="text-xl font-bold text-foreground">Today's Momentum</h3>
           <p className="text-sm text-muted-foreground max-w-xl">
             {todayScore.score === 100 
-              ? "Flawless progress! All scheduled habits and due tasks completed. You are on fire today! 🔥"
+              ? (!settings?.habitOnlyMode && settings?.showTasks !== false 
+                  ? "Flawless progress! All scheduled habits and due tasks completed. You are on fire today! 🔥"
+                  : "Flawless progress! All scheduled habits completed. You are on fire today! 🔥")
               : todayScore.score >= 80 
               ? "Exceptional velocity! Just a few items remaining to secure a perfect daily score. 🚀"
               : todayScore.score >= 50 
               ? "Over halfway mark! Keep up the momentum to build consistency and unlock today's full XP reward. 💪"
               : todayScore.score > 0 
-              ? "Good start! Keep moving down your checklist and complete your habits and tasks. 📈"
-              : "Let's kickstart the flow! Track your first habit or complete a task to begin today's momentum. 🌱"}
+              ? (!settings?.habitOnlyMode && settings?.showTasks !== false 
+                  ? "Good start! Keep moving down your checklist and complete your habits and tasks. 📈"
+                  : "Good start! Keep moving down your checklist and complete your habits. 📈")
+              : (!settings?.habitOnlyMode && settings?.showTasks !== false 
+                  ? "Let's kickstart the flow! Track your first habit or complete a task to begin today's momentum. 🌱"
+                  : "Let's kickstart the flow! Track your first habit to begin today's momentum. 🌱")}
           </p>
           <div className="flex flex-wrap justify-center sm:justify-start gap-4 text-xs font-semibold text-muted-foreground pt-1">
             <div className="flex items-center gap-1.5 bg-muted/50 px-3 py-1 rounded-full border border-border/20">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span>Habits: {todayScore.todayCompleted}/{todayScore.todayTotal}</span>
             </div>
-            <div className="flex items-center gap-1.5 bg-muted/50 px-3 py-1 rounded-full border border-border/20">
-              <span className="w-2 h-2 rounded-full bg-indigo-500" />
-              <span>Tasks: {todayScore.completedTasks}/{todayScore.totalTasks}</span>
-            </div>
+            {!settings?.habitOnlyMode && settings?.showTasks !== false && (
+              <div className="flex items-center gap-1.5 bg-muted/50 px-3 py-1 rounded-full border border-border/20">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                <span>Tasks: {todayScore.completedTasks}/{todayScore.totalTasks}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

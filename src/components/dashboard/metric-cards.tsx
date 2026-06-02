@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Flame, Target, TrendingUp, CheckCircle2, TrendingDown, Minus } from 'lucide-react';
+import { Flame, Target, TrendingUp, CheckCircle2, TrendingDown, Minus, ShieldCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ProgressRing, CountUp, StaggerContainer, StaggerItem } from '@/components/motion';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,8 @@ interface MetricCardsProps {
   bestStreak: number;
   activeGoals: number;
   upcomingDeadlines: number;
+  habitOnlyMode?: boolean;
+  streakShields?: number;
 }
 
 export function MetricCards({
@@ -28,6 +30,8 @@ export function MetricCards({
   bestStreak,
   activeGoals,
   upcomingDeadlines,
+  habitOnlyMode = false,
+  streakShields = 0,
 }: MetricCardsProps) {
   const todayPercentage = todayTotal > 0 ? Math.round((todayCompleted / todayTotal) * 100) : 0;
   const { color: monthlyColor } = getCompletionColor(monthlyPercentage);
@@ -157,38 +161,65 @@ export function MetricCards({
         </Card>
       </StaggerItem>
 
-      {/* Active Goals */}
+      {/* Active Goals or Streak Shields */}
       <StaggerItem className="h-full">
-        <Card className="relative overflow-hidden hover-lift h-full">
-          <div className="absolute inset-0 bg-gradient-to-br from-chart-4/5 to-transparent" />
-          <CardContent className="p-6 relative">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">
-                  Active Goals
-                </p>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold tabular-nums">
-                    <CountUp value={activeGoals} />
-                  </span>
+        {habitOnlyMode ? (
+          <Card className="relative overflow-hidden hover-lift h-full">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent" />
+            <CardContent className="p-6 relative">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-1">
+                    Streak Shields
+                  </p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold tabular-nums text-blue-500">
+                      <CountUp value={streakShields} />
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {streakShields > 0 ? `${streakShields} active shields` : 'No shields active'}
+                  </p>
                 </div>
-                <p className={cn("text-xs mt-1", upcomingDeadlines > 0 ? "text-warning" : "text-muted-foreground")}>
-                  {upcomingDeadlines > 0 ? `${upcomingDeadlines} due soon` : 'No upcoming deadlines'}
-                </p>
+                <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-500/20">
+                  <ShieldCheck className="h-6 w-6 text-blue-500" />
+                </div>
               </div>
-              <div className={cn(
-                "flex items-center justify-center w-12 h-12 rounded-xl",
-                upcomingDeadlines > 0 ? "bg-warning/20" : "bg-chart-4/20"
-              )}>
-                <Target className={cn(
-                  "h-6 w-6",
-                  upcomingDeadlines > 0 ? "text-warning" : "text-chart-4"
-                )} />
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="relative overflow-hidden hover-lift h-full">
+            <div className="absolute inset-0 bg-gradient-to-br from-chart-4/5 to-transparent" />
+            <CardContent className="p-6 relative">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-1">
+                    Active Goals
+                  </p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold tabular-nums">
+                      <CountUp value={activeGoals} />
+                    </span>
+                  </div>
+                  <p className={cn("text-xs mt-1", upcomingDeadlines > 0 ? "text-warning" : "text-muted-foreground")}>
+                    {upcomingDeadlines > 0 ? `${upcomingDeadlines} due soon` : 'No upcoming deadlines'}
+                  </p>
+                </div>
+                <div className={cn(
+                  "flex items-center justify-center w-12 h-12 rounded-xl",
+                  upcomingDeadlines > 0 ? "bg-warning/20" : "bg-chart-4/20"
+                )}>
+                  <Target className={cn(
+                    "h-6 w-6",
+                    upcomingDeadlines > 0 ? "text-warning" : "text-chart-4"
+                  )} />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </StaggerItem>
     </StaggerContainer>
   );
 }
+

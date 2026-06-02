@@ -228,6 +228,11 @@ export interface UserSettings {
   unlockedThemes?: string[];
   motivation_text?: string;
   dashboardLayout?: (string | DashboardWidgetConfig)[];
+  // Workspace module toggles
+  showTasks?: boolean;
+  showGoals?: boolean;
+  showMilestones?: boolean;
+  habitOnlyMode?: boolean;
   generationCounter?: number;
   isDirty?: boolean;
 }

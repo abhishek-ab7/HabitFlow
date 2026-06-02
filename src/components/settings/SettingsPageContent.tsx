@@ -23,7 +23,8 @@ import {
   VibrateOff,
   Mail,
   BookOpen,
-  HelpCircle
+  HelpCircle,
+  Layers
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -112,6 +113,10 @@ export default function SettingsPageContent() {
           gems: 0,
           streakShield: 0,
           avatarId: 'avatar-1',
+          showTasks: true,
+          showGoals: true,
+          showMilestones: true,
+          habitOnlyMode: false,
         };
         await db.userSettings.add(defaultSettings);
         s = defaultSettings;
@@ -193,6 +198,15 @@ export default function SettingsPageContent() {
       haptics: newValue
     }));
     toast.success(newValue ? 'Haptics enabled' : 'Haptics disabled');
+  };
+
+  const handleToggleSetting = async (key: keyof UserSettings) => {
+    if (!settings || !user?.id) return;
+    const newValue = settings[key] === undefined ? false : !settings[key];
+    const { updateUserSettings } = useGamificationStore.getState();
+    await updateUserSettings({ [key]: newValue });
+    setSettings({ ...settings, [key]: newValue });
+    toast.success("Workspace layout updated!");
   };
 
   const handleExportData = async () => {
@@ -396,6 +410,10 @@ export default function SettingsPageContent() {
         gems: 0,
         streakShield: 0,
         avatarId: 'avatar-1',
+        showTasks: true,
+        showGoals: true,
+        showMilestones: true,
+        habitOnlyMode: false,
         stats: {
           vitality: 1,
           intelligence: 1,
@@ -798,6 +816,64 @@ export default function SettingsPageContent() {
                   <span>View Help Guides</span>
                 </Link>
               </Button>
+            </div>
+          </BentoGridItem>
+
+          {/* WORKSPACE MODULES */}
+          <BentoGridItem
+            title="Workspace Modules"
+            icon={<Layers className="h-5 w-5 text-indigo-500" />}
+            span={1}
+            className="md:col-span-1"
+            disableHover
+          >
+            <div className="flex flex-col gap-3 mt-4">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border">
+                <div className="flex flex-col text-left">
+                  <span className="text-sm font-semibold text-foreground">Habit-Only Mode</span>
+                  <span className="text-[10px] text-muted-foreground max-w-[200px]">Focused, minimal habit tracker view</span>
+                </div>
+                <Button 
+                  variant={settings.habitOnlyMode ? "default" : "outline"} 
+                  size="sm" 
+                  onClick={() => handleToggleSetting('habitOnlyMode')}
+                  className={cn("h-8 px-3 text-xs font-bold", settings.habitOnlyMode && "bg-indigo-500 hover:bg-indigo-600 text-white")}
+                >
+                  {settings.habitOnlyMode ? "Active" : "Disabled"}
+                </Button>
+              </div>
+
+              <div className={cn("flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
+                <div className="flex flex-col text-left">
+                  <span className="text-sm font-semibold text-foreground">Tasks Module</span>
+                  <span className="text-[10px] text-muted-foreground">Checklists & daily tasks</span>
+                </div>
+                <Button 
+                  variant={settings.showTasks !== false ? "default" : "outline"} 
+                  size="sm" 
+                  disabled={!!settings.habitOnlyMode}
+                  onClick={() => handleToggleSetting('showTasks')}
+                  className={cn("h-8 px-3 text-xs font-bold", settings.showTasks !== false && "bg-indigo-500 hover:bg-indigo-600 text-white")}
+                >
+                  {settings.showTasks !== false ? "Enabled" : "Hidden"}
+                </Button>
+              </div>
+
+              <div className={cn("flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
+                <div className="flex flex-col text-left">
+                  <span className="text-sm font-semibold text-foreground">Goals & Milestones</span>
+                  <span className="text-[10px] text-muted-foreground">Long-term SMART goal-setting</span>
+                </div>
+                <Button 
+                  variant={settings.showGoals !== false ? "default" : "outline"} 
+                  size="sm" 
+                  disabled={!!settings.habitOnlyMode}
+                  onClick={() => handleToggleSetting('showGoals')}
+                  className={cn("h-8 px-3 text-xs font-bold", settings.showGoals !== false && "bg-indigo-500 hover:bg-indigo-600 text-white")}
+                >
+                  {settings.showGoals !== false ? "Enabled" : "Hidden"}
+                </Button>
+              </div>
             </div>
           </BentoGridItem>
 

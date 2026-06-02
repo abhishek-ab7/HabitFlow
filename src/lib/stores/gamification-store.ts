@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { getSettings, updateSettings } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
-import type { UserStats, Category, Habit } from '../types';
+import type { UserStats, Category, Habit, UserSettings } from '../types';
 import { useHabitStore } from './habit-store';
 import { calculateCurrentStreak, calculateBestStreak } from '../calculations';
 
@@ -74,6 +74,8 @@ interface GamificationState {
     buyShield: () => Promise<boolean>;
     useShield: () => Promise<boolean>;
     getBufferProgress: () => number; // Returns 0-100% for the current level bar
+    settings: UserSettings | null;
+    updateUserSettings: (updates: Partial<UserSettings>) => Promise<void>;
 }
 
 async function persistAndSyncGamification(
@@ -219,6 +221,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
     },
     unlockedThemes: [],
     motivationText: '',
+    settings: null,
 
     loadGamification: async () => {
         set({ isLoading: true });
@@ -259,6 +262,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
                         stats: calculatedStats,
                         unlockedThemes: settings.unlockedThemes || [],
                         motivationText: (settings as any).motivation_text ?? '',
+                        settings: settings,
                     });
                 }
             }
@@ -399,5 +403,28 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
         }
         const xpRequired = level * 100;
         return Math.min(100, (xp / xpRequired) * 100);
+    },
+
+    updateUserSettings: async (updates: Partial<UserSettings>) => {
+        const currentSettings = get().settings;
+        if (!currentSettings) return;
+
+        const newSettings = { ...currentSettings, ...updates };
+        set({ settings: newSettings });
+
+        // Update other relevant top-level gamification fields if they are modified
+        if (updates.gems !== undefined) set({ gems: updates.gems });
+        if (updates.xp !== undefined) {
+            const { level, xpInCurrentLevel } = calculateLevelFromXp(updates.xp);
+            set({ totalXp: updates.xp, xp: xpInCurrentLevel, level });
+        }
+        if (updates.streakShield !== undefined) set({ streakShield: updates.streakShield });
+        if (updates.stats !== undefined) set({ stats: updates.stats });
+
+        const supabase = getSupabaseClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            await persistAndSyncGamification(session.user.id, updates);
+        }
     }
 }));

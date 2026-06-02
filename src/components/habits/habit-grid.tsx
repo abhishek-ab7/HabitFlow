@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,6 +88,10 @@ export const HabitGrid = memo(function HabitGrid({
   const [logNote, setLogNote] = useState('');
   const [logValue, setLogValue] = useState(0);
 
+  const [showShieldPurchaseDialog, setShowShieldPurchaseDialog] = useState(false);
+  const [pendingFreezeHabitId, setPendingFreezeHabitId] = useState<string | null>(null);
+  const [pendingFreezeDate, setPendingFreezeDate] = useState<string | null>(null);
+
   const handleOpenLogModal = (habit: Habit) => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const habitsCompletionsMap = completionsMapByHabit.get(habit.id) || new Map();
@@ -110,6 +115,40 @@ export const HabitGrid = memo(function HabitGrid({
     toast.success('Progress log updated');
   };
   const { reorder, freezeHabit } = useHabitStore();
+
+  const handleMobileFreeze = async (habitId: string, dateStr: string) => {
+    try {
+      await freezeHabit(habitId, dateStr);
+    } catch (err) {
+      if ((err as Error).message === 'GEMS_PURCHASE_AVAILABLE') {
+        setPendingFreezeHabitId(habitId);
+        setPendingFreezeDate(dateStr);
+        setShowShieldPurchaseDialog(true);
+      } else {
+        toast.error((err as Error).message);
+      }
+    }
+  };
+
+  const handleConfirmShieldPurchase = async () => {
+    if (!pendingFreezeHabitId || !pendingFreezeDate) return;
+    try {
+      const gamification = useGamificationStore.getState();
+      const bought = await gamification.buyShield();
+      if (bought) {
+        await freezeHabit(pendingFreezeHabitId, pendingFreezeDate);
+        toast.success("Streak Shield purchased and applied!");
+      } else {
+        toast.error("Failed to purchase Streak Shield. Not enough Gems.");
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setShowShieldPurchaseDialog(false);
+      setPendingFreezeHabitId(null);
+      setPendingFreezeDate(null);
+    }
+  };
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Handle window resizing to detect mobile
@@ -377,7 +416,7 @@ export const HabitGrid = memo(function HabitGrid({
                       <Edit3 className="h-4 w-4 mr-2 text-amber-500" />
                       Log Notes / Progress
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => freezeHabit(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
+                    <DropdownMenuItem onClick={() => handleMobileFreeze(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
                       <Snowflake className="h-4 w-4 mr-2" />
                       Freeze Today
                     </DropdownMenuItem>
@@ -542,6 +581,39 @@ export const HabitGrid = memo(function HabitGrid({
               className="flex-1 rounded-xl"
             >
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Streak Shield Retroactive Purchase Dialog (Mobile / Backup) */}
+      <Dialog open={showShieldPurchaseDialog} onOpenChange={setShowShieldPurchaseDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Purchase Streak Shield?</DialogTitle>
+            <DialogDescription>
+              You have no free weekly freezes or Streak Shields left. Would you like to buy a Streak Shield for 20 Gems to freeze this day and protect your streak?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2">
+            <Button 
+              type="button"
+              variant="ghost" 
+              onClick={() => {
+                setShowShieldPurchaseDialog(false);
+                setPendingFreezeHabitId(null);
+                setPendingFreezeDate(null);
+              }}
+              className="flex-1 rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="button"
+              onClick={handleConfirmShieldPurchase}
+              className="flex-1 rounded-xl bg-blue-500 hover:bg-blue-600 text-white"
+            >
+              Buy & Apply (20 Gems)
             </Button>
           </DialogFooter>
         </DialogContent>

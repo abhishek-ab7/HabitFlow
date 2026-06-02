@@ -20,7 +20,7 @@ import {
 import { getSupabaseClient } from '../supabase/client';
 import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
 import { calculateHabitStats } from '../calculations';
-import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, parseISO } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, parseISO, differenceInCalendarDays } from 'date-fns';
 import { getSyncEngine } from '../sync';
 import { useGamificationStore, XP_PER_HABIT } from './gamification-store';
 
@@ -101,6 +101,11 @@ async function updateLocalAndSync(
 }
 
 async function handleWeeklyFreezeVerification(completions: HabitCompletion[], date: string) {
+  const diffDays = differenceInCalendarDays(new Date(), parseISO(date));
+  if (diffDays < 0 || diffDays > 7) {
+    throw new Error("You can only freeze missed days within the past 7 days.");
+  }
+
   const dateObj = parseISO(date);
   const startStr = format(startOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const endStr = format(endOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
@@ -110,7 +115,11 @@ async function handleWeeklyFreezeVerification(completions: HabitCompletion[], da
   );
 
   if (hasWeeklyFreeze) {
-    const success = await useGamificationStore.getState().useShield();
+    const gamification = useGamificationStore.getState();
+    if (gamification.streakShield <= 0 && gamification.gems >= 20) {
+      throw new Error("GEMS_PURCHASE_AVAILABLE");
+    }
+    const success = await gamification.useShield();
     if (!success) {
       throw new Error("No free weekly freezes or purchased streak shields left! Buy a shield in Settings.");
     }
