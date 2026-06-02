@@ -156,6 +156,12 @@ export function YearInReview() {
             (el as HTMLElement).style.display = 'none';
           });
 
+          // Show elements desired ONLY in screenshot (override Tailwind's 'hidden' utility class)
+          const toShow = clonedDoc.querySelectorAll('.show-in-share');
+          toShow.forEach((el) => {
+            (el as HTMLElement).style.setProperty('display', 'block', 'important');
+          });
+
           // Standardize dimensions on cloned element
           const clonedCard = clonedDoc.querySelector('[data-slot="card"]');
           if (clonedCard) {
@@ -581,6 +587,11 @@ export function YearInReview() {
         >
           {isPlaying ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
         </button>
+        {/* Brand Header for shared image */}
+        <div className="hidden show-in-share text-right">
+          <span className="text-[9px] font-mono font-bold tracking-widest text-emerald-400 block leading-none">HABITFLOW</span>
+          <span className="text-[8px] text-white/40 font-mono block mt-0.5 leading-none">habitflow.tech</span>
+        </div>
       </div>
 
       {/* Main Slide Content */}
@@ -618,6 +629,16 @@ export function YearInReview() {
         >
           <ChevronRight className="h-4 w-4" />
         </button>
+      </div>
+
+      {/* Brand Footer for shared image */}
+      <div className="absolute bottom-6 inset-x-0 hidden text-center show-in-share">
+        <p className="text-[10px] font-bold tracking-widest uppercase font-mono text-white/50">
+          Tracked on <span className="text-emerald-400">HabitFlow</span>
+        </p>
+        <p className="text-[8px] font-medium tracking-wide text-white/30 font-sans mt-0.5">
+          habitflow.tech
+        </p>
       </div>
     </Card>
   );
