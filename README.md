@@ -19,6 +19,11 @@
 ### HabitFlow High-Fidelity Landing Page & Interactive Dashboard
 ![HabitFlow Landing Page](./3.png)
 
+### 🎬 Interactive Demo Simulator
+Experience the live, fully animatable **Productivity & Companion Simulator** directly on the landing page! Click the **"View Interactive Demo"** button on the live site to watch your companion evolve, complete mock habits, check off tasks, and view dynamic graphs in real-time.
+
+[![Launch Interactive Demo Simulator](https://img.shields.io/badge/Launch-Interactive_Demo_Simulator-indigo?style=for-the-badge&logo=vercel)](https://habit-flow-ochre-two.vercel.app#simulator)
+
 ---
 
 ## 📖 Table of Contents
