@@ -38,13 +38,17 @@ export function MobileNav() {
 
       const target = e.target as HTMLElement;
 
-      // Ignore swipes starting inside forms, dialogs, sliders, or other drag handlers
+      // Ignore swipes starting inside interactive inputs, dialogs, scroll containers, or drag handlers
       const isInteractive = 
         target.closest('input, textarea, select, button, a') ||
         target.closest('[role="dialog"]') ||
         target.closest('[role="slider"]') ||
         target.closest('.no-swipe') ||
-        target.closest('[data-no-swipe="true"]');
+        target.closest('[data-no-swipe="true"]') ||
+        target.closest('.overflow-x-auto') ||
+        target.closest('.overflow-y-auto') ||
+        target.closest('[class*="overflow-x-"]') ||
+        target.closest('[class*="overflow-y-"]');
       
       if (isInteractive) return;
 
@@ -67,15 +71,39 @@ export function MobileNav() {
         const currentIndex = mobileNavItems.findIndex(item => item.href === pathname);
         if (currentIndex === -1) return;
 
+        let targetUrl = '';
+        let swipeDirection: 'swipe-left' | 'swipe-right' = 'swipe-left';
+
         if (deltaX < 0) {
           // Swipe Left -> finger moves left -> shows tab to the right
           if (currentIndex < mobileNavItems.length - 1) {
-            router.push(mobileNavItems[currentIndex + 1].href);
+            targetUrl = mobileNavItems[currentIndex + 1].href;
+            swipeDirection = 'swipe-left';
           }
         } else {
           // Swipe Right -> finger moves right -> shows tab to the left
           if (currentIndex > 0) {
-            router.push(mobileNavItems[currentIndex - 1].href);
+            targetUrl = mobileNavItems[currentIndex - 1].href;
+            swipeDirection = 'swipe-right';
+          }
+        }
+
+        if (targetUrl) {
+          if (typeof document !== 'undefined') {
+            document.documentElement.classList.add(swipeDirection);
+          }
+
+          if (typeof document !== 'undefined' && 'startViewTransition' in document) {
+            const transition = (document as any).startViewTransition(() => {
+              router.push(targetUrl);
+            });
+            transition.finished.finally(() => {
+              if (typeof document !== 'undefined') {
+                document.documentElement.classList.remove(swipeDirection);
+              }
+            });
+          } else {
+            router.push(targetUrl);
           }
         }
       }

@@ -505,3 +505,49 @@ html, body {
     display: none !important;
   }
 }
+
+/* ============================================
+   MOBILE PERFORMANCE & SMOOTH SCROLL ACCELERATION
+   ============================================ */
+.overflow-x-auto, .overflow-y-auto, [class*="overflow-x-"], [class*="overflow-y-"] {
+  -webkit-overflow-scrolling: touch !important; /* Enable iOS momentum/inertia physics scrolling */
+  overscroll-behavior: contain !important; /* Stop scroll chaining to parent elements, preventing rubber-banding reload triggers */
+}
+
+/* ============================================
+   NATIVE-APP STYLE PAGE TRANSITIONS (View Transitions API)
+   ============================================ */
+@keyframes slide-to-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes slide-from-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-to-right {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes slide-from-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+/* Custom easing matching fluid design timing */
+html.swipe-left::view-transition-old(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-to-left;
+}
+html.swipe-left::view-transition-new(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-from-right;
+}
+
+html.swipe-right::view-transition-old(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-to-right;
+}
+html.swipe-right::view-transition-new(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-from-left;
+}
