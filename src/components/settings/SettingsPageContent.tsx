@@ -28,6 +28,7 @@ import {
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -54,7 +55,7 @@ import type { Avatar } from '@/lib/avatars';
 export default function SettingsPageContent() {
   const { theme, setTheme } = useTheme();
   const { isAuthenticated, user } = useAuth();
-  const { isSyncing } = useSync();
+  const { isSyncing, isStoragePersistent } = useSync();
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [showClearDataDialog, setShowClearDataDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -650,6 +651,25 @@ export default function SettingsPageContent() {
                   </Button>
                 </div>
               )}
+
+              {/* Storage Protection active badge */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border/40 mt-1">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-semibold text-foreground truncate">Storage Protection</span>
+                  <span className="text-[10px] text-muted-foreground truncate">WebKit eviction prevention</span>
+                </div>
+                <Badge 
+                  variant="outline" 
+                  className={cn(
+                    "text-[10px] font-bold px-2 py-0.5", 
+                    isStoragePersistent 
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" 
+                      : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                  )}
+                >
+                  {isStoragePersistent ? "Active" : "Standard"}
+                </Badge>
+              </div>
             </div>
           </BentoGridItem>
 

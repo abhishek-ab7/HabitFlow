@@ -17,6 +17,7 @@ interface SyncContextType {
   lastSyncAt: string | null;
   /** True once SyncProvider has finished syncing + loading stores */
   isDataReady: boolean;
+  isStoragePersistent: boolean;
   triggerSync: () => Promise<void>;
 }
 
@@ -35,6 +36,30 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [pendingChanges, setPendingChanges] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [isDataReady, setIsDataReady] = useState(false);
+  const [isStoragePersistent, setIsStoragePersistent] = useState(false);
+
+  // Request WebKit storage persistence on client mount
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+      navigator.storage.persisted().then((persistent) => {
+        setIsStoragePersistent(persistent);
+        if (!persistent) {
+          navigator.storage.persist().then((granted) => {
+            setIsStoragePersistent(granted);
+            if (granted) {
+              console.log('[SyncProvider] Storage persistence granted successfully');
+            } else {
+              console.warn('[SyncProvider] Storage persistence could not be granted');
+            }
+          }).catch((err) => {
+            console.error('[SyncProvider] Error requesting storage persistence:', err);
+          });
+        }
+      }).catch((err) => {
+        console.error('[SyncProvider] Error checking storage persistence:', err);
+      });
+    }
+  }, []);
 
   // Update metadata periodically
   const updateMetadata = useCallback(() => {
@@ -167,6 +192,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       pendingChanges,
       lastSyncAt,
       isDataReady,
+      isStoragePersistent,
       triggerSync
     }}>
       {children}

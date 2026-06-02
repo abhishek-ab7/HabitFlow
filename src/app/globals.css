@@ -498,3 +498,10 @@ html, body {
     -webkit-backdrop-filter: none !important;
   }
 }
+
+/* Touch-only device styles for note edit buttons */
+@media (hover: none) {
+  .touch-hover-hide {
+    display: none !important;
+  }
+}

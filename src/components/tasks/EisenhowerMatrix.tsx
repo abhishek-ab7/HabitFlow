@@ -6,13 +6,14 @@ import {
   DragOverlay,
   closestCorners,
   KeyboardSensor,
-  PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragStartEvent,
   DragEndEvent,
   useDroppable
 } from '@dnd-kit/core';
+import { SmartPointerSensor } from '@/lib/dnd-sensors';
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -93,7 +94,8 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
   }, [tasks]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(SmartPointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 

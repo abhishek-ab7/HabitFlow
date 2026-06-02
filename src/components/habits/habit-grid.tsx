@@ -3,9 +3,13 @@
 import { useMemo, useState, useCallback, useEffect, memo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake } from 'lucide-react';
+import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,12 +38,13 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
   TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
 } from '@dnd-kit/core';
+import { SmartPointerSensor } from '@/lib/dnd-sensors';
+import { toast } from 'sonner';
 import {
   arrayMove,
   SortableContext,
@@ -77,6 +82,34 @@ export const HabitGrid = memo(function HabitGrid({
   const [rippleCell, setRippleCell] = useState<string | null>(null);
   const [habitRoutines, setHabitRoutines] = useState<Map<string, Routine[]>>(new Map());
   const [isMobile, setIsMobile] = useState(false);
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [selectedHabitForLog, setSelectedHabitForLog] = useState<Habit | null>(null);
+  const [logDate, setLogDate] = useState('');
+  const [logNote, setLogNote] = useState('');
+  const [logValue, setLogValue] = useState(0);
+
+  const handleOpenLogModal = (habit: Habit) => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const habitsCompletionsMap = completionsMapByHabit.get(habit.id) || new Map();
+    const comp = habitsCompletionsMap.get(todayStr);
+
+    setSelectedHabitForLog(habit);
+    setLogDate(todayStr);
+    setLogNote(comp?.note || '');
+    setLogValue(comp?.value || 0);
+    setShowLogModal(true);
+  };
+
+  const handleSaveLogModal = async () => {
+    if (!selectedHabitForLog) return;
+    const { updateNote, updateValue } = useHabitStore.getState();
+    await updateNote(selectedHabitForLog.id, logDate, logNote);
+    if (selectedHabitForLog.isQuantitative) {
+      await updateValue(selectedHabitForLog.id, logDate, logValue);
+    }
+    setShowLogModal(false);
+    toast.success('Progress log updated');
+  };
   const { getRoutinesForMultipleHabits, reorder, freezeHabit } = useHabitStore();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -91,7 +124,7 @@ export const HabitGrid = memo(function HabitGrid({
   }, []);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(SmartPointerSensor, {
       activationConstraint: {
         distance: 8,
       },
@@ -102,7 +135,7 @@ export const HabitGrid = memo(function HabitGrid({
     useSensor(TouchSensor, {
       activationConstraint: {
         delay: 250,
-        tolerance: 5,
+        tolerance: 8,
       },
     })
   );
@@ -355,6 +388,10 @@ export const HabitGrid = memo(function HabitGrid({
                       <Pencil className="h-4 w-4 mr-2" />
                       Edit
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleOpenLogModal(habit)}>
+                      <Edit3 className="h-4 w-4 mr-2 text-amber-500" />
+                      Log Notes / Progress
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => freezeHabit(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
                       <Snowflake className="h-4 w-4 mr-2" />
                       Freeze Today
@@ -435,6 +472,95 @@ export const HabitGrid = memo(function HabitGrid({
           );
         })}
       </div>
+
+      <Dialog open={showLogModal} onOpenChange={setShowLogModal}>
+        <DialogContent className="w-full max-w-sm rounded-2xl p-6 bg-background border shadow-xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-lg font-bold text-foreground">Log Progress</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Update notes or quantitative values for {selectedHabitForLog?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 my-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Date</Label>
+              <Input
+                type="date"
+                value={logDate}
+                onChange={(e) => setLogDate(e.target.value)}
+                className="h-10 rounded-xl"
+              />
+            </div>
+
+            {selectedHabitForLog?.isQuantitative && (
+              <div className="space-y-2">
+                <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                  Progress ({selectedHabitForLog.unit || 'units'})
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    type="button"
+                    size="icon" 
+                    variant="outline" 
+                    className="h-9 w-9 rounded-lg" 
+                    onClick={() => setLogValue(prev => Math.max(0, prev - 1))}
+                  >
+                    -
+                  </Button>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={logValue}
+                    onChange={(e) => setLogValue(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="h-9 text-center rounded-lg"
+                  />
+                  <Button 
+                    type="button"
+                    size="icon" 
+                    variant="outline" 
+                    className="h-9 w-9 rounded-lg" 
+                    onClick={() => setLogValue(prev => prev + 1)}
+                  >
+                    +
+                  </Button>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap ml-1">
+                    / {selectedHabitForLog.targetValue}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Journal Entry</Label>
+              <Textarea
+                value={logNote}
+                onChange={(e) => setLogNote(e.target.value)}
+                placeholder="Reflect on your progress..."
+                className="min-h-[80px] text-xs resize-none rounded-xl"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-2">
+            <Button 
+              type="button"
+              variant="ghost" 
+              onClick={() => setShowLogModal(false)}
+              className="flex-1 rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="button"
+              onClick={handleSaveLogModal}
+              className="flex-1 rounded-xl"
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });

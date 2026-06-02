@@ -18,6 +18,7 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { SuccessRipple } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitCompletion, Category, Routine } from '@/lib/types';
@@ -27,6 +28,7 @@ import { useFeedback } from '@/hooks/use-feedback';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { toast } from 'sonner';
 import { ShareCardModal } from './ShareCardModal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 
 interface SortableHabitRowProps {
     habit: Habit;
@@ -85,6 +87,29 @@ export function SortableHabitRow({
     const [tempValue, setTempValue] = useState(0);
     const [showShareModal, setShowShareModal] = useState(false);
     const [showRecovery, setShowRecovery] = useState(false);
+    const [showLogModal, setShowLogModal] = useState(false);
+    const [logDate, setLogDate] = useState('');
+    const [logNote, setLogNote] = useState('');
+    const [logValue, setLogValue] = useState(0);
+
+    const handleOpenLogModal = () => {
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+        const comp = getCompletion(todayStr);
+        setLogDate(todayStr);
+        setLogNote(comp?.note || '');
+        setLogValue(comp?.value || 0);
+        setShowLogModal(true);
+    };
+
+    const handleSaveLogModal = async () => {
+        const { updateNote, updateValue } = useHabitStore.getState();
+        await updateNote(habit.id, logDate, logNote);
+        if (habit.isQuantitative) {
+            await updateValue(habit.id, logDate, logValue);
+        }
+        setShowLogModal(false);
+        toast.success('Progress log updated');
+    };
 
     const yesterdayStr = useMemo(() => {
         const d = new Date();
@@ -355,6 +380,10 @@ export function SortableHabitRow({
                             <Pencil className="h-4 w-4 mr-2" />
                             Edit
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleOpenLogModal}>
+                            <Edit3 className="h-4 w-4 mr-2" />
+                            Log Notes / Progress
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setShowShareModal(true)}>
                             <Share2 className="h-4 w-4 mr-2" />
                             Share Streak
@@ -528,7 +557,7 @@ export function SortableHabitRow({
                                                 "absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center border shadow-sm transition-all z-20",
                                                 comp?.note 
                                                     ? "opacity-100 bg-amber-500 text-white border-amber-600" 
-                                                    : "opacity-0 group-hover/cell:opacity-100 bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                                                    : "opacity-0 group-hover/cell:opacity-100 bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground touch-hover-hide"
                                             )}
                                             title="Add note / edit count"
                                         >
@@ -644,6 +673,95 @@ export function SortableHabitRow({
                 habit={habit}
                 streak={streak}
             />
+
+            <Dialog open={showLogModal} onOpenChange={setShowLogModal}>
+                <DialogContent className="w-full max-w-sm rounded-2xl p-6 bg-background border shadow-xl">
+                    <DialogHeader className="space-y-1">
+                        <DialogTitle className="text-lg font-bold text-foreground">Log Progress</DialogTitle>
+                        <DialogDescription className="text-xs text-muted-foreground">
+                            Update notes or quantitative values for {habit.name}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-4 my-4">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Date</Label>
+                            <Input
+                                type="date"
+                                value={logDate}
+                                onChange={(e) => setLogDate(e.target.value)}
+                                className="h-10 rounded-xl"
+                            />
+                        </div>
+
+                        {habit.isQuantitative && (
+                            <div className="space-y-2">
+                                <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
+                                    Progress ({habit.unit || 'units'})
+                                </Label>
+                                <div className="flex items-center gap-2">
+                                    <Button 
+                                        type="button"
+                                        size="icon" 
+                                        variant="outline" 
+                                        className="h-9 w-9 rounded-lg" 
+                                        onClick={() => setLogValue(prev => Math.max(0, prev - 1))}
+                                    >
+                                        -
+                                    </Button>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        value={logValue}
+                                        onChange={(e) => setLogValue(Math.max(0, parseInt(e.target.value) || 0))}
+                                        className="h-9 text-center rounded-lg"
+                                    />
+                                    <Button 
+                                        type="button"
+                                        size="icon" 
+                                        variant="outline" 
+                                        className="h-9 w-9 rounded-lg" 
+                                        onClick={() => setLogValue(prev => prev + 1)}
+                                    >
+                                        +
+                                    </Button>
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap ml-1">
+                                        / {habit.targetValue}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                            <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Journal Entry</Label>
+                            <Textarea
+                                value={logNote}
+                                onChange={(e) => setLogNote(e.target.value)}
+                                placeholder="Reflect on your progress..."
+                                className="min-h-[80px] text-xs resize-none rounded-xl"
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter className="flex gap-2">
+                        <Button 
+                            type="button"
+                            variant="ghost" 
+                            onClick={() => setShowLogModal(false)}
+                            className="flex-1 rounded-xl"
+                        >
+                            Cancel
+                        </Button>
+                        <Button 
+                            type="button"
+                            onClick={handleSaveLogModal}
+                            className="flex-1 rounded-xl"
+                        >
+                            Save
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

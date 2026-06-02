@@ -6,11 +6,12 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent
 } from '@dnd-kit/core';
+import { SmartPointerSensor } from '@/lib/dnd-sensors';
 import {
   arrayMove,
   SortableContext,
@@ -39,9 +40,15 @@ export function BentoGrid({ widgets }: BentoGridProps) {
   );
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(SmartPointerSensor, {
       activationConstraint: {
         distance: 8,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 8,
       },
     }),
     useSensor(KeyboardSensor, {

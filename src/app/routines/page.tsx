@@ -179,7 +179,7 @@ export default function RoutinesPage() {
                 }
             >
                 {/* HORIZONTAL DAILY FLOW SEGMENTS */}
-                <div className="grid grid-cols-3 gap-3 md:gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
                     <div className={cn(
                         "p-4 rounded-2xl border transition-all flex flex-col md:flex-row justify-between items-start md:items-center gap-2",
                         currentPhase === 'morning' 
