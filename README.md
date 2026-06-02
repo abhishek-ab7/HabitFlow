@@ -1,19 +1,23 @@
-# 🚀 HabitFlow
+<div align="center">
+  <img src="./public/logo.png" alt="HabitFlow Logo" width="160" />
+  <h1>HabitFlow</h1>
+  <p>A premium, visually-rich, offline-first habit tracker and SMART goal planner with <b>real-time cloud sync</b> and <b>9 advanced AI-powered intelligence features</b>.</p>
 
-A premium, visually-rich, offline-first habit tracker and SMART goal planner with **real-time cloud sync** and **9 advanced AI-powered intelligence features**.
-
-[![Live App](https://img.shields.io/badge/Live_Demo-HabitFlow-indigo?style=for-the-badge&logo=vercel)](https://habit-flow-ochre-two.vercel.app)
-[![Next.js](https://img.shields.io/badge/Next.js-16--black?style=for-the-badge&logo=next.js)](https://nextjs.org)
-[![Supabase](https://img.shields.io/badge/Supabase-Database-green?style=for-the-badge&logo=supabase)](https://supabase.com)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)](https://typescriptlang.org)
-[![Playwright](https://img.shields.io/badge/Playwright-E2E-orange?style=for-the-badge&logo=playwright)](https://playwright.dev)
+  <p>
+    <a href="https://habit-flow-ochre-two.vercel.app"><img src="https://img.shields.io/badge/Live_Demo-HabitFlow-indigo?style=for-the-badge&logo=vercel" alt="Live App" /></a>
+    <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16--black?style=for-the-badge&logo=next.js" alt="Next.js" /></a>
+    <a href="https://supabase.com"><img src="https://img.shields.io/badge/Supabase-Database-green?style=for-the-badge&logo=supabase" alt="Supabase" /></a>
+    <a href="https://typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript" alt="TypeScript" /></a>
+    <a href="https://playwright.dev"><img src="https://img.shields.io/badge/Playwright-E2E-orange?style=for-the-badge&logo=playwright" alt="Playwright" /></a>
+  </p>
+</div>
 
 ---
 
 ## 🌟 Visual Showcase
 
-### Interactive Dashboard & Workspace Bento Grid
-![HabitFlow Premium Interface](./3.png)
+### HabitFlow High-Fidelity Landing Page & Interactive Dashboard
+![HabitFlow Landing Page](./3.png)
 
 ---
 
@@ -89,13 +93,13 @@ HabitFlow implements a modern, resilient offline-first design to guarantee zero-
 
 ```mermaid
 graph TD
-    User([User Action]) -->|1. Write| LocalDB[(IndexedDB / Dexie)]
-    LocalDB -->|2. Fast UI Update| UI[Client View]
+    User(["User Action"]) -->|1. Write| LocalDB[("IndexedDB / Dexie")]
+    LocalDB -->|2. Fast UI Update| UI["Client View"]
     
-    subgraph SyncEngine [SyncCoordinator]
-        LocalDB -->|3. Check isDirty flags| Sync[Sync Engine]
-        Sync -->|4. Push Batch (Logical Counters)| Supabase[(Supabase Cloud)]
-        Supabase -->|5. Broadcast Updates| Realtime[Supabase Realtime]
+    subgraph SyncEngine ["SyncCoordinator"]
+        LocalDB -->|3. Check isDirty flags| Sync["Sync Engine"]
+        Sync -->|4. Push Batch - Logical Counters| Supabase[("Supabase Cloud")]
+        Supabase -->|5. Broadcast Updates| Realtime["Supabase Realtime"]
         Realtime -->|6. Merge Pull| LocalDB
     end
 ```
@@ -141,23 +145,23 @@ CI=true npx playwright test
 
 ## ⚙️ Environment Configuration
 
-Create a `.env.local` file in the root directory:
+Create a `.env.local` file in the root directory and populate it with your own credentials (never commit this file to git):
 
 ```env
 # Supabase Backend Configuration
-NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-url.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
 # App URL Configuration
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 # Google AI Core Configuration
-GEMINI_API_KEY=AIzaSy...
+GEMINI_API_KEY=your_gemini_api_key
 
-# Optional Rate Limiting — Upstash Redis (falls back to in-memory)
-UPSTASH_REDIS_REST_URL=https://your-upstash-redis.upstash.io
-UPSTASH_REDIS_REST_TOKEN=your_token_here
+# Optional Rate Limiting — Upstash Redis
+UPSTASH_REDIS_REST_URL=your_upstash_redis_rest_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_rest_token
 ```
 
 ---
