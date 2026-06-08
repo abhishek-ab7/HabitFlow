@@ -509,9 +509,14 @@ html, body {
 /* ============================================
    MOBILE PERFORMANCE & SMOOTH SCROLL ACCELERATION
    ============================================ */
-.overflow-x-auto, .overflow-y-auto, [class*="overflow-x-"], [class*="overflow-y-"] {
+.overflow-x-auto, [class*="overflow-x-"] {
   -webkit-overflow-scrolling: touch !important; /* Enable iOS momentum/inertia physics scrolling */
-  overscroll-behavior: contain !important; /* Stop scroll chaining to parent elements, preventing rubber-banding reload triggers */
+  overscroll-behavior-x: contain !important; /* Stop horizontal scroll chaining, preventing swipe-to-navigate gestures */
+}
+
+.overflow-y-auto, [class*="overflow-y-"] {
+  -webkit-overflow-scrolling: touch !important; /* Enable iOS momentum/inertia physics scrolling */
+  overscroll-behavior-y: contain !important; /* Stop vertical scroll chaining, preventing rubber-banding reload triggers */
 }
 
 /* ============================================
