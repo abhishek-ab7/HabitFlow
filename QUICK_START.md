@@ -1,8 +1,8 @@
 # 🚀 HabitFlow AI Features - Quick Start Guide
 
-## 📦 What You Got
+## 📦 What You  Got
 
-**5 Premium AI Features** powered by Google Gemini 2.0 Flash:
+**5 Premium AI Features** powered by Google Gemini 3.0 Flash:
 
 1. **📰 AI Coach** - Daily personalized briefings
 2. **🎯 Smart Task Prioritization** - AI-powered urgency scoring
