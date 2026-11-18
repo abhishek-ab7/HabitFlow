@@ -1,7 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Plus, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import {
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  SlidersHorizontal,
+  MessageSquareText,
+} from 'lucide-react';
 import {
   useFinanceStore,
   getCurrentMonthKey,
@@ -12,6 +18,7 @@ import { TrackersTab } from './TrackersTab';
 import { AccountsTab } from './AccountsTab';
 import { AddTransactionModal } from './AddTransactionModal';
 import { MonthlyBudgetModal } from './MonthlyBudgetModal';
+import { SmsImportModal } from './SmsImportModal';
 import { Button } from '@/components/ui/button';
 
 type ActiveTab = 'overview' | 'trackers' | 'accounts';
@@ -42,9 +49,30 @@ export function FinancePageContent() {
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
   const [focusCategoryId, setFocusCategoryId] = useState<string | null>(null);
 
+  const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
+  const [sharedSmsText, setSharedSmsText] = useState<string | null>(null);
+
   useEffect(() => {
     loadFinanceData();
   }, [loadFinanceData]);
+
+  // Handle Web Share Target / Shortcuts / Tasker (?sms=... or ?text=...) once loaded
+  useEffect(() => {
+    if (isLoading || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const incoming = params.get('sms') || params.get('text');
+    if (incoming && incoming.trim()) {
+      setSharedSmsText(incoming);
+      setIsSmsModalOpen(true);
+      params.delete('sms');
+      params.delete('text');
+      params.delete('title');
+      params.delete('url');
+      const nextSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, [isLoading]);
 
   const handleOpenNewTx = () => {
     setEditingTx(null);
@@ -99,6 +127,20 @@ export function FinancePageContent() {
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setSharedSmsText(null);
+              setIsSmsModalOpen(true);
+            }}
+            className="min-h-[40px] sm:min-h-[44px] px-3 rounded-xl gap-1.5 whitespace-nowrap"
+            title="Fetch expenses from SMS or notifications"
+          >
+            <MessageSquareText className="w-4 h-4 text-primary" />
+            <span className="text-xs sm:text-sm">SMS</span>
+          </Button>
 
           <Button
             type="button"
@@ -182,7 +224,7 @@ export function FinancePageContent() {
         type="button"
         onClick={handleOpenNewTx}
         aria-label="Add expense or income"
-        className="fixed bottom-20 right-4 md:bottom-8 md:right-8 z-40 h-14 px-5 rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-95 active:scale-95 transition-transform flex items-center gap-2 text-sm font-semibold whitespace-nowrap"
+        className="fixed bottom-20 right-20 md:bottom-6 md:right-24 z-40 h-12 md:h-14 px-5 rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-95 active:scale-95 transition-transform flex items-center gap-2 text-sm font-semibold whitespace-nowrap"
       >
         <Plus className="w-5 h-5" />
         <span>Add</span>
@@ -194,6 +236,11 @@ export function FinancePageContent() {
         onOpenChange={setIsAddTxModalOpen}
         editingTransaction={editingTx}
         defaultCommitmentId={defaultCommitmentId}
+        onOpenSmsImport={() => {
+          setIsAddTxModalOpen(false);
+          setSharedSmsText(null);
+          setIsSmsModalOpen(true);
+        }}
       />
 
       {/* Monthly & Category Budget Setting Sheet */}
@@ -201,6 +248,13 @@ export function FinancePageContent() {
         open={isBudgetModalOpen}
         onOpenChange={setIsBudgetModalOpen}
         focusCategoryId={focusCategoryId}
+      />
+
+      {/* SMS & Notification Expense Importer */}
+      <SmsImportModal
+        open={isSmsModalOpen}
+        onOpenChange={setIsSmsModalOpen}
+        initialText={sharedSmsText}
       />
     </div>
   );

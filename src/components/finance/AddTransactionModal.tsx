@@ -14,8 +14,10 @@ import type {
   FinanceTransactionType,
   CommitmentContributionType,
 } from '@/lib/types';
-import { Delete, ChevronDown, ChevronUp, Trash2, X } from 'lucide-react';
+import { Delete, ChevronDown, ChevronUp, Trash2, X, MessageSquareText } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
+import { CategoryPickerSheet } from './CategoryPickerSheet';
+import { SmsImportModal } from './SmsImportModal';
 import { toast } from 'sonner';
 
 interface AddTransactionModalProps {
@@ -24,6 +26,7 @@ interface AddTransactionModalProps {
   editingTransaction?: FinanceTransaction | null;
   defaultCommitmentId?: string | null;
   defaultDebtId?: string | null;
+  onOpenSmsImport?: () => void;
 }
 
 const KEYPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const;
@@ -34,6 +37,7 @@ export function AddTransactionModal({
   editingTransaction,
   defaultCommitmentId,
   defaultDebtId,
+  onOpenSmsImport,
 }: AddTransactionModalProps) {
   const categories = useFinanceStore((s) => s.categories);
   const accounts = useFinanceStore((s) => s.accounts);
@@ -42,6 +46,8 @@ export function AddTransactionModal({
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
   const deleteTransaction = useFinanceStore((s) => s.deleteTransaction);
+
+  const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -57,10 +63,21 @@ export function AddTransactionModal({
     useState<CommitmentContributionType>('offset_expense');
   const [linkedDebtId, setLinkedDebtId] = useState<string>('none');
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
+  const [isLocalSmsOpen, setIsLocalSmsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (open && categories.length === 0) {
+      loadFinanceData();
+    }
+  }, [open, categories.length, loadFinanceData]);
+
+  useEffect(() => {
+    if (!open) {
+      setIsCategorySheetOpen(false);
+      return;
+    }
 
     if (editingTransaction) {
       setType(editingTransaction.type);
@@ -128,7 +145,7 @@ export function AddTransactionModal({
 
   // Support physical keyboard numbers when modal is open & user isn't typing in a text input
   useEffect(() => {
-    if (!open) return;
+    if (!open || isCategorySheetOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (
@@ -152,7 +169,7 @@ export function AddTransactionModal({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, handleKeypadPress]);
+  }, [open, isCategorySheetOpen, handleKeypadPress]);
 
   const selectedCategory = categories.find((c) => c.id === categoryId) || categories[0];
 
@@ -255,6 +272,26 @@ export function AddTransactionModal({
             ))}
           </div>
 
+          {!editingTransaction && (
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenSmsImport) {
+                  onOpenSmsImport();
+                } else {
+                  onOpenChange(false);
+                  setIsLocalSmsOpen(true);
+                }
+              }}
+              aria-label="Fetch from SMS or Notification"
+              title="Fetch from SMS or Notification"
+              className="min-h-[44px] px-2.5 flex items-center justify-center gap-1 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-primary transition-colors shrink-0"
+            >
+              <MessageSquareText className="w-4 h-4" />
+              <span className="hidden sm:inline">SMS</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onOpenChange(false)}
@@ -284,60 +321,92 @@ export function AddTransactionModal({
               </div>
             </div>
 
-            {/* Category Chips (for Expense & Income) */}
+            {/* Description + Clickable Category Picker Row (opens Select Category sheet) */}
             {type !== 'transfer' ? (
-              <div className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Category
-                </span>
-                <div className="flex gap-2 overflow-x-auto pb-1 no-swipe">
-                  {categories.map((cat) => {
-                    const isSelected = categoryId === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setCategoryId(cat.id)}
-                        className={`shrink-0 min-h-[44px] px-3 rounded-xl border text-xs font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
-                          isSelected
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : 'bg-card text-foreground border-border hover:bg-muted'
-                        }`}
+              <div className="grid grid-cols-12 gap-2.5 items-end">
+                <div className="col-span-7 space-y-1">
+                  <label
+                    htmlFor="tx-description"
+                    className="text-xs font-medium text-muted-foreground block"
+                  >
+                    Description
+                  </label>
+                  <Input
+                    id="tx-description"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Add a description"
+                    className="h-12 text-sm rounded-xl"
+                  />
+                </div>
+
+                <div className="col-span-5 space-y-1">
+                  <span className="text-xs font-medium text-muted-foreground block">
+                    Category
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsCategorySheetOpen(true)}
+                    className="w-full h-12 px-2.5 rounded-xl border border-input bg-card hover:bg-muted/60 flex items-center justify-between gap-1.5 text-left transition-colors"
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                        style={{
+                          borderWidth: '1.5px',
+                          borderStyle: 'solid',
+                          borderColor: `${selectedCategory?.color || '#64748b'}80`,
+                          backgroundColor: `${selectedCategory?.color || '#64748b'}15`,
+                          color: selectedCategory?.color || 'currentColor',
+                        }}
                       >
                         <CategoryIcon
-                          name={cat.icon}
-                          className="w-4 h-4 shrink-0"
-                          style={!isSelected ? { color: cat.color } : undefined}
+                          name={selectedCategory?.icon}
+                          className="w-3.5 h-3.5"
                         />
-                        <span>{cat.name}</span>
-                      </button>
-                    );
-                  })}
+                      </span>
+                      <span className="text-xs sm:text-sm font-medium text-foreground truncate">
+                        {selectedCategory?.name || 'Select'}
+                      </span>
+                    </span>
+                    <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">
-                  To Account
-                </span>
-                <div className="flex gap-2 overflow-x-auto pb-1 no-swipe">
-                  {accounts.map((acc) => {
-                    const isSelected = toAccountId === acc.id;
-                    return (
-                      <button
-                        key={acc.id}
-                        type="button"
-                        onClick={() => setToAccountId(acc.id)}
-                        className={`shrink-0 min-h-[44px] px-3 rounded-xl border text-xs font-medium transition-colors whitespace-nowrap ${
-                          isSelected
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : 'bg-card text-foreground border-border hover:bg-muted'
-                        }`}
-                      >
-                        {acc.name}
-                      </button>
-                    );
-                  })}
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    To Account
+                  </span>
+                  <div className="flex gap-2 overflow-x-auto pb-1 no-swipe">
+                    {accounts.map((acc) => {
+                      const isSelected = toAccountId === acc.id;
+                      return (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => setToAccountId(acc.id)}
+                          className={`shrink-0 min-h-[44px] px-3 rounded-xl border text-xs font-medium transition-colors whitespace-nowrap ${
+                            isSelected
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-card text-foreground border-border hover:bg-muted'
+                          }`}
+                        >
+                          {acc.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Transfer note (optional)"
+                    className="h-11 text-sm rounded-xl"
+                  />
                 </div>
               </div>
             )}
@@ -366,16 +435,6 @@ export function AddTransactionModal({
                   );
                 })}
               </div>
-            </div>
-
-            {/* Optional Note / Title */}
-            <div>
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Note or item name (optional)"
-                className="h-11 text-sm rounded-xl"
-              />
             </div>
 
             {/* Collapsible Commitment / Friend / Date Linking */}
@@ -540,6 +599,20 @@ export function AddTransactionModal({
           </div>
         </form>
       </DialogContent>
+
+      <CategoryPickerSheet
+        open={isCategorySheetOpen}
+        onOpenChange={setIsCategorySheetOpen}
+        selectedCategoryId={categoryId || selectedCategory?.id || ''}
+        onSelectCategory={(id) => setCategoryId(id)}
+      />
+
+      {!onOpenSmsImport && (
+        <SmsImportModal
+          open={isLocalSmsOpen}
+          onOpenChange={setIsLocalSmsOpen}
+        />
+      )}
     </Dialog>
   );
 }

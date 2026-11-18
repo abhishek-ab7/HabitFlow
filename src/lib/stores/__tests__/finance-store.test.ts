@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { toast } from 'sonner';
 import { db } from '@/lib/db';
 import { useFinanceStore, getCurrentMonthKey } from '../finance-store';
 
@@ -341,5 +342,104 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     expect(juneFood.spent).toBe(3800);
     expect(juneFood.budget).toBe(3000);
     expect(juneFood.isOverBudget).toBe(true);
+  });
+
+  test('7. Yearly spending trends aggregate annual expenses against annualized category budgets', async () => {
+    const store = useFinanceStore.getState();
+    const foodCat = store.categories.find((c) => c.slug === 'food-dining')!;
+    const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+
+    await store.saveMonthlyBudgetSettings('2026-06', 0, {
+      [foodCat.id]: 1000, // Annualized = 12,000
+    });
+
+    await useFinanceStore.getState().addTransaction({
+      title: '2025 Food Trip',
+      amount: 9500,
+      type: 'expense',
+      categoryId: foodCat.id,
+      accountId: upiAcc.id,
+      date: '2025-11-15',
+    });
+
+    await useFinanceStore.getState().addTransaction({
+      title: '2026 Food Catering',
+      amount: 14000,
+      type: 'expense',
+      categoryId: foodCat.id,
+      accountId: upiAcc.id,
+      date: '2026-03-20',
+    });
+
+    const yearlyTrends = useFinanceStore
+      .getState()
+      .getYearlySpendingTrends('2026-06', foodCat.id, 5);
+    expect(yearlyTrends).toHaveLength(5);
+    expect(yearlyTrends.map((y) => y.label)).toEqual([
+      '2022',
+      '2023',
+      '2024',
+      '2025',
+      '2026',
+    ]);
+
+    const y2025 = yearlyTrends[3];
+    expect(y2025.spent).toBe(9500);
+    expect(y2025.budget).toBe(12000);
+    expect(y2025.isOverBudget).toBe(false);
+    expect(y2025.variance).toBe(2500);
+
+    const y2026 = yearlyTrends[4];
+    expect(y2026.spent).toBe(14000);
+    expect(y2026.budget).toBe(12000);
+    expect(y2026.isOverBudget).toBe(true);
+    expect(y2026.variance).toBe(-2000);
+  });
+
+  test('8. Sends toast warning when category spending exceeds 90% and toast error at 100%+', async () => {
+    const warnSpy = vi.spyOn(toast, 'warning').mockImplementation(() => '');
+    const errSpy = vi.spyOn(toast, 'error').mockImplementation(() => '');
+
+    try {
+      const store = useFinanceStore.getState();
+      const foodCat = store.categories.find((c) => c.slug === 'food-dining')!;
+      const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+
+      await store.saveMonthlyBudgetSettings(currentMonth, 0, {
+        [foodCat.id]: 2000,
+      });
+
+      // Exactly 90% (1800 / 2000) -> should NOT trigger >90% alert
+      const tx1 = await useFinanceStore.getState().addTransaction({
+        title: 'Grocer Food',
+        amount: 1800,
+        type: 'expense',
+        categoryId: foodCat.id,
+        accountId: upiAcc.id,
+        date: `${currentMonth}-10`,
+      });
+      expect(warnSpy).not.toHaveBeenCalled();
+      expect(errSpy).not.toHaveBeenCalled();
+
+      // Update to 1900 (95% > 90%) -> triggers toast.warning
+      await useFinanceStore.getState().updateTransaction(tx1.id, { amount: 1900 });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain('95%');
+
+      // Add 200 -> 2100 (105% >= 100%) -> triggers toast.error
+      await useFinanceStore.getState().addTransaction({
+        title: 'Late Night Snack',
+        amount: 200,
+        type: 'expense',
+        categoryId: foodCat.id,
+        accountId: upiAcc.id,
+        date: `${currentMonth}-11`,
+      });
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      expect(errSpy.mock.calls[0][0]).toContain('105%');
+    } finally {
+      warnSpy.mockRestore();
+      errSpy.mockRestore();
+    }
   });
 });

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { CrossDomainActionMediator } from './mediator';
@@ -298,6 +299,11 @@ interface FinanceStore {
   getSixMonthSpendingTrends: (
     endMonthKey?: string,
     categoryId?: string
+  ) => SixMonthTrendPoint[];
+  getYearlySpendingTrends: (
+    endMonthKey?: string,
+    categoryId?: string,
+    yearCount?: number
   ) => SixMonthTrendPoint[];
 }
 
@@ -689,6 +695,47 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     await db.financeTransactions.add(tx);
     await get().loadFinanceData(userId);
 
+    // Notify when category monthly spending exceeds 90% of its defined budget
+    if (tx.type === 'expense') {
+      const cat = get().categories.find((c) => c.id === tx.categoryId);
+      if (cat && cat.monthlyBudgetLimit > 0) {
+        const spent = get()
+          .transactions.filter(
+            (item) =>
+              item.type === 'expense' &&
+              item.categoryId === cat.id &&
+              item.monthKey === tx.monthKey
+          )
+          .reduce((sum, item) => sum + item.amount, 0);
+        const pct = (spent / cat.monthlyBudgetLimit) * 100;
+        if (pct > 90) {
+          const roundedPct = Math.round(pct);
+          const toastId = `budget-alert-${cat.id}-${tx.monthKey}`;
+          if (pct >= 100) {
+            toast.error(
+              `Budget Exceeded: ${cat.name} reached ${roundedPct}% of monthly limit`,
+              {
+                id: toastId,
+                description: `${formatINR(spent)} spent of ${formatINR(cat.monthlyBudgetLimit)} budget.`,
+                duration: 6000,
+              }
+            );
+          } else {
+            toast.warning(
+              `Budget Alert: ${cat.name} crossed ${roundedPct}% of monthly budget`,
+              {
+                id: toastId,
+                description: `${formatINR(spent)} spent · ${formatINR(
+                  Math.max(0, cat.monthlyBudgetLimit - spent)
+                )} left of ${formatINR(cat.monthlyBudgetLimit)}.`,
+                duration: 6000,
+              }
+            );
+          }
+        }
+      }
+    }
+
     // Trigger Gamification & Habit Auto-Completion (+10 XP for logging expense)
     try {
       await CrossDomainActionMediator.onFinanceEvent({
@@ -731,6 +778,49 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
     await db.financeTransactions.update(id, updatedFields);
     await get().loadFinanceData(userId);
+
+    const updatedType = data.type || existing.type;
+    const updatedCategoryId = data.categoryId || existing.categoryId;
+    const updatedMonthKey = updatedDate.slice(0, 7);
+    if (updatedType === 'expense') {
+      const cat = get().categories.find((c) => c.id === updatedCategoryId);
+      if (cat && cat.monthlyBudgetLimit > 0) {
+        const spent = get()
+          .transactions.filter(
+            (item) =>
+              item.type === 'expense' &&
+              item.categoryId === cat.id &&
+              item.monthKey === updatedMonthKey
+          )
+          .reduce((sum, item) => sum + item.amount, 0);
+        const pct = (spent / cat.monthlyBudgetLimit) * 100;
+        if (pct > 90) {
+          const roundedPct = Math.round(pct);
+          const toastId = `budget-alert-${cat.id}-${updatedMonthKey}`;
+          if (pct >= 100) {
+            toast.error(
+              `Budget Exceeded: ${cat.name} reached ${roundedPct}% of monthly limit`,
+              {
+                id: toastId,
+                description: `${formatINR(spent)} spent of ${formatINR(cat.monthlyBudgetLimit)} budget.`,
+                duration: 6000,
+              }
+            );
+          } else {
+            toast.warning(
+              `Budget Alert: ${cat.name} crossed ${roundedPct}% of monthly budget`,
+              {
+                id: toastId,
+                description: `${formatINR(spent)} spent · ${formatINR(
+                  Math.max(0, cat.monthlyBudgetLimit - spent)
+                )} left of ${formatINR(cat.monthlyBudgetLimit)}.`,
+                duration: 6000,
+              }
+            );
+          }
+        }
+      }
+    }
   },
 
   deleteTransaction: async (id) => {
@@ -1699,6 +1789,71 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         monthKey: mKey,
         label,
         fullLabel,
+        spent,
+        budget,
+        variance,
+        isOverBudget,
+      };
+    });
+  },
+
+  getYearlySpendingTrends: (endMonthKey, categoryId = 'all', yearCount = 5) => {
+    const anchorMonth = endMonthKey || get().selectedMonth;
+    const endYear = parseInt(anchorMonth.split('-')[0], 10) || new Date().getFullYear();
+    const count = Math.max(1, yearCount);
+    const years: number[] = [];
+    for (let i = count - 1; i >= 0; i--) {
+      years.push(endYear - i);
+    }
+
+    const categories = get().categories;
+    const transactions = get().transactions;
+    const budgets = get().budgets;
+
+    const selectedCategory =
+      categoryId && categoryId !== 'all'
+        ? categories.find((c) => c.id === categoryId)
+        : undefined;
+
+    const sumCategoryBudgets = categories
+      .filter((c) => c.type === 'expense' || c.type === 'both')
+      .reduce((sum, c) => sum + (c.monthlyBudgetLimit || 0), 0);
+
+    return years.map((year) => {
+      const yearStr = String(year);
+      const spent = transactions
+        .filter((tx) => {
+          if (!tx.monthKey.startsWith(`${yearStr}-`) || tx.type !== 'expense') return false;
+          if (selectedCategory && tx.categoryId !== selectedCategory.id) return false;
+          return true;
+        })
+        .reduce((sum, tx) => sum + tx.amount, 0);
+
+      let budget = 0;
+      if (selectedCategory) {
+        budget = (selectedCategory.monthlyBudgetLimit || 0) * 12;
+      } else if (sumCategoryBudgets > 0) {
+        budget = sumCategoryBudgets * 12;
+      } else {
+        const yearBudgets = budgets.filter(
+          (b) => b.monthKey.startsWith(`${yearStr}-`) && b.totalBudget > 0
+        );
+        if (yearBudgets.length === 12) {
+          budget = yearBudgets.reduce((sum, b) => sum + b.totalBudget, 0);
+        } else if (yearBudgets.length > 0) {
+          const avgMonthly =
+            yearBudgets.reduce((sum, b) => sum + b.totalBudget, 0) / yearBudgets.length;
+          budget = Math.round(avgMonthly * 12);
+        }
+      }
+
+      const variance = budget - spent;
+      const isOverBudget = budget > 0 && spent > budget;
+
+      return {
+        monthKey: yearStr,
+        label: yearStr,
+        fullLabel: `Year ${yearStr}`,
         spent,
         budget,
         variance,

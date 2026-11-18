@@ -79,12 +79,28 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
   const getSixMonthSpendingTrends = useFinanceStore(
     (s) => s.getSixMonthSpendingTrends
   );
+  const getYearlySpendingTrends = useFinanceStore(
+    (s) => s.getYearlySpendingTrends
+  );
 
+  const [timeframe, setTimeframe] = useState<'monthly' | 'yearly'>('monthly');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
 
   const data = useMemo(
-    () => getSixMonthSpendingTrends(selectedMonth, selectedCategoryId),
-    [getSixMonthSpendingTrends, selectedMonth, selectedCategoryId, transactions, categories, budgets]
+    () =>
+      timeframe === 'monthly'
+        ? getSixMonthSpendingTrends(selectedMonth, selectedCategoryId)
+        : getYearlySpendingTrends(selectedMonth, selectedCategoryId, 5),
+    [
+      timeframe,
+      getSixMonthSpendingTrends,
+      getYearlySpendingTrends,
+      selectedMonth,
+      selectedCategoryId,
+      transactions,
+      categories,
+      budgets,
+    ]
   );
 
   const expenseCategories = useMemo(
@@ -98,80 +114,114 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
       : undefined;
 
   const hasAnyBudget = data.some((d) => d.budget > 0);
-  const sixMonthTotalSpent = data.reduce((sum, d) => sum + d.spent, 0);
-  const sixMonthAvg = Math.round(sixMonthTotalSpent / 6);
+  const totalPeriodSpent = data.reduce((sum, d) => sum + d.spent, 0);
+  const periodAvg = data.length > 0 ? Math.round(totalPeriodSpent / data.length) : 0;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-      {/* Header + Category Selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-            <BarChart3 className="w-4 h-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-foreground truncate">
-              6-Month Spending vs. Budget
-            </h2>
-            <p className="text-xs text-muted-foreground font-mono tabular-nums truncate">
-              Avg {formatINR(sixMonthAvg)}/mo · Total {formatINR(sixMonthTotalSpent)}
-            </p>
+      {/* Header + Timeframe Toggle & Category Selector */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <BarChart3 className="w-4 h-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-foreground truncate">
+                {timeframe === 'monthly'
+                  ? '6-Month Spending vs. Budget'
+                  : 'Yearly Spending vs. Budget'}
+              </h2>
+              <p className="text-xs text-muted-foreground font-mono tabular-nums truncate">
+                Avg {formatINR(periodAvg)}/{timeframe === 'monthly' ? 'mo' : 'yr'} · Total{' '}
+                {formatINR(totalPeriodSpent)}
+              </p>
+            </div>
+          </div>
+
+          <div
+            role="group"
+            aria-label="Spending trend timeframe"
+            className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted shrink-0"
+          >
+            {(['monthly', 'yearly'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={timeframe === mode}
+                onClick={() => setTimeframe(mode)}
+                className={`min-h-[36px] px-3 text-xs font-semibold rounded-lg capitalize transition-colors whitespace-nowrap ${
+                  timeframe === mode
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
           </div>
         </div>
 
-        <select
-          aria-label="Filter trend chart by category"
-          value={selectedCategoryId}
-          onChange={(e) => setSelectedCategoryId(e.target.value)}
-          className="h-11 sm:h-10 px-3 text-xs font-medium rounded-xl border border-input bg-background text-foreground shrink-0"
-        >
-          <option value="all">All Category Budgets</option>
-          {expenseCategories.map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-              {cat.monthlyBudgetLimit > 0
-                ? ` (${formatINR(cat.monthlyBudgetLimit)})`
-                : ''}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Inline Legend & Quick Budget Prompt */}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-4 text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className="w-2.5 h-2.5 rounded-sm"
-              style={{
-                backgroundColor: activeCategory?.color || '#3b82f6',
-              }}
-            />
-            <span>Actual Spent</span>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/35" />
-            <span>Category Budget</span>
-          </span>
-          {hasAnyBudget && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-rose-500" />
-              <span>Over Budget</span>
+              <span
+                className="w-2.5 h-2.5 rounded-sm"
+                style={{
+                  backgroundColor: activeCategory?.color || '#3b82f6',
+                }}
+              />
+              <span>Actual Spent</span>
             </span>
-          )}
-        </div>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-muted-foreground/35" />
+              <span>{timeframe === 'monthly' ? 'Category Budget' : 'Annual Budget'}</span>
+            </span>
+            {hasAnyBudget && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-rose-500" />
+                <span>Over Budget</span>
+              </span>
+            )}
+          </div>
 
-        {!hasAnyBudget && (
-          <button
-            type="button"
-            onClick={() =>
-              onOpenBudgetModal(selectedCategoryId !== 'all' ? selectedCategoryId : undefined)
-            }
-            className="min-h-[36px] px-2.5 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
-          >
-            Set category budget
-          </button>
-        )}
+          <div className="flex items-center gap-2 ml-auto">
+            {!hasAnyBudget && (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenBudgetModal(
+                    selectedCategoryId !== 'all' ? selectedCategoryId : undefined
+                  )
+                }
+                className="min-h-[36px] px-2.5 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors whitespace-nowrap"
+              >
+                Set category budget
+              </button>
+            )}
+
+            <select
+              aria-label="Filter trend chart by category"
+              value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              className="h-10 px-3 text-xs font-medium rounded-xl border border-input bg-background text-foreground shrink-0 max-w-[200px]"
+            >
+              <option value="all">All Category Budgets</option>
+              {expenseCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                  {cat.monthlyBudgetLimit > 0
+                    ? ` (${formatINR(
+                        timeframe === 'monthly'
+                          ? cat.monthlyBudgetLimit
+                          : cat.monthlyBudgetLimit * 12
+                      )})`
+                    : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Recharts BarChart */}

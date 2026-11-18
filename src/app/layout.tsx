@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { AuthProvider } from '@/providers/auth-provider';
@@ -70,6 +71,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen bg-background`}
       >
+        <Script id="extension-fetch-guard" strategy="beforeInteractive">
+          {`(function(){try{var d=Object.getOwnPropertyDescriptor(window,'fetch')||Object.getOwnPropertyDescriptor(Window.prototype,'fetch');if(d&&d.get&&!d.set&&d.configurable){var og=d.get,ov=null;Object.defineProperty(window,'fetch',{configurable:true,enumerable:d.enumerable!==false,get:function(){return ov!==null?ov:og.call(window);},set:function(v){ov=v;}});}window.addEventListener('error',function(e){if(e&&typeof e.filename==='string'&&e.filename.indexOf('chrome-extension://')===0&&typeof e.message==='string'&&e.message.indexOf('Cannot set property fetch')!==-1){e.preventDefault();}},true);}catch(_){}})();`}
+        </Script>
         <ThemeProvider>
           <AuthProvider>
             <SyncProvider>

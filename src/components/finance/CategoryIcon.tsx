@@ -16,6 +16,19 @@ import {
   Smartphone,
   Banknote,
   CreditCard,
+  Plane,
+  Bed,
+  Receipt,
+  Tv,
+  Gift,
+  Coffee,
+  Fuel,
+  PieChart,
+  MoreHorizontal,
+  Tag,
+  Home,
+  BookOpen,
+  Dumbbell,
 } from 'lucide-react';
 
 interface CategoryIconProps {
@@ -52,6 +65,32 @@ export function CategoryIcon({ name, className = 'w-4 h-4', style }: CategoryIco
       return <Banknote className={className} style={style} />;
     case 'CreditCard':
       return <CreditCard className={className} style={style} />;
+    case 'Plane':
+      return <Plane className={className} style={style} />;
+    case 'Bed':
+      return <Bed className={className} style={style} />;
+    case 'Receipt':
+      return <Receipt className={className} style={style} />;
+    case 'Tv':
+      return <Tv className={className} style={style} />;
+    case 'Gift':
+      return <Gift className={className} style={style} />;
+    case 'Coffee':
+      return <Coffee className={className} style={style} />;
+    case 'Fuel':
+      return <Fuel className={className} style={style} />;
+    case 'PieChart':
+      return <PieChart className={className} style={style} />;
+    case 'MoreHorizontal':
+      return <MoreHorizontal className={className} style={style} />;
+    case 'Tag':
+      return <Tag className={className} style={style} />;
+    case 'Home':
+      return <Home className={className} style={style} />;
+    case 'BookOpen':
+      return <BookOpen className={className} style={style} />;
+    case 'Dumbbell':
+      return <Dumbbell className={className} style={style} />;
     default:
       return <Wallet className={className} style={style} />;
   }

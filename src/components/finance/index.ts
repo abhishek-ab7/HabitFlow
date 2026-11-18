@@ -5,4 +5,6 @@ export { OverviewTab } from './OverviewTab';
 export { TrackersTab } from './TrackersTab';
 export { AccountsTab } from './AccountsTab';
 export { CategoryIcon } from './CategoryIcon';
+export { CategoryPickerSheet } from './CategoryPickerSheet';
 export { SpendingTrendChart } from './SpendingTrendChart';
+export { SmsImportModal } from './SmsImportModal';

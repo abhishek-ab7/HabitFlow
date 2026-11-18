@@ -46,7 +46,16 @@
       "purpose": "any"
     }
   ],
-  "categories": ["productivity", "lifestyle", "health"],
+  "categories": ["productivity", "lifestyle", "health", "finance"],
+  "share_target": {
+    "action": "/finance",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "sms",
+      "url": "url"
+    }
+  },
   "screenshots": [],
   "prefer_related_applications": false,
   "related_applications": [
