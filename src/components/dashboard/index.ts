@@ -10,6 +10,7 @@ export * from './SortableWidget';
 export * from './BentoGrid';
 export { default as DashboardContent } from './DashboardContent';
 export { WeeklyReviewWidget } from './WeeklyReviewWidget';
+export { FinanceOverviewWidget } from './FinanceOverviewWidget';
 export * from './DashboardSkeletons';
 export { DashboardCenterLoader } from './DashboardCenterLoader';
 

@@ -13,6 +13,7 @@ import { GoalsSyncEngine, syncGoalsWithRetry, pushGoalToRemote } from './engines
 import { TasksSyncEngine, syncTasksWithRetry, pushTaskToRemote } from './engines/tasks-sync';
 import { MilestonesSyncEngine, syncMilestonesWithRetry } from './engines/milestones-sync';
 import { UserSettingsSyncEngine, MoodLogsSyncEngine, syncUserSettingsWithRetry, syncMoodLogsWithRetry, pushUserSettingsToRemote } from './engines/settings-sync';
+import { FinanceSyncEngine, syncFinanceWithRetry } from './engines/finance-sync';
 
 const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   habits: syncHabitsWithRetry,
@@ -22,6 +23,10 @@ const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   milestones: syncMilestonesWithRetry,
   user_settings: syncUserSettingsWithRetry,
   mood_logs: syncMoodLogsWithRetry,
+  finance_transactions: syncFinanceWithRetry,
+  monthly_commitments: syncFinanceWithRetry,
+  debt_records: syncFinanceWithRetry,
+  emi_trackers: syncFinanceWithRetry,
 };
 
 export type SyncStatus =
@@ -317,6 +322,7 @@ export class SyncEngine {
         new MilestonesSyncEngine(),
         new UserSettingsSyncEngine(),
         new MoodLogsSyncEngine(),
+        new FinanceSyncEngine(),
       ]);
 
       this.log('info', 'Executing isolated sync domains via SyncCoordinator...');

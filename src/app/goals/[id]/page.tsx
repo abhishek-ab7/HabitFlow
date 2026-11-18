@@ -31,12 +31,6 @@ export default function GoalDetailsPage() {
     const [milestones, setMilestones] = useState<Milestone[]>([])
     const [loading, setLoading] = useState(true)
 
-    useEffect(() => {
-        if (id) {
-            fetchData()
-        }
-    }, [id])
-
     const fetchData = async () => {
         setLoading(true)
         try {
@@ -93,6 +87,12 @@ export default function GoalDetailsPage() {
             setLoading(false)
         }
     }
+
+    useEffect(() => {
+        if (id) {
+            fetchData()
+        }
+    }, [id])
 
     const handleTaskComplete = async (taskId: string) => {
         setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done' } : t))

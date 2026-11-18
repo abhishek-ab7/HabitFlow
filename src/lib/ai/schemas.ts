@@ -316,3 +316,35 @@ export const smartGoalAnalysisSchema = {
   required: ['specific', 'measurable', 'achievable', 'relevant', 'timebound', 'overallScore', 'recommendations']
 };
 
+// ========== FlowFinance Smart Expense Parse Schema ==========
+export const expenseParseSchema = {
+  type: 'object' as const,
+  properties: {
+    title: { type: 'string' as const },
+    amount: { type: 'number' as const },
+    type: { type: 'string' as const, enum: ['expense', 'income', 'transfer'] },
+    categorySlug: { type: 'string' as const },
+    categoryName: { type: 'string' as const },
+    subcategory: { type: 'string' as const },
+    paymentMethodType: {
+      type: 'string' as const,
+      enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'],
+    },
+    matchedCommitmentRecipient: { type: 'string' as const },
+    matchedCommitmentId: { type: 'string' as const },
+    commitmentContributionType: {
+      type: 'string' as const,
+      enum: ['direct_payment', 'offset_expense'],
+    },
+    matchedDebtPerson: { type: 'string' as const },
+    matchedDebtId: { type: 'string' as const },
+    notes: { type: 'string' as const },
+    tags: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+    },
+    confidence: { type: 'number' as const, minimum: 0, maximum: 100 },
+  },
+  required: ['title', 'amount', 'type', 'categorySlug', 'categoryName', 'tags', 'confidence'],
+};
+

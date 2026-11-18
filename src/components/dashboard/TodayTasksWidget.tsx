@@ -4,11 +4,13 @@ import { useEffect, useState } from "react"
 import { useShallow } from 'zustand/react/shallow'
 import { TaskCard } from "@/components/tasks/TaskCard"
 import { motion, AnimatePresence } from "framer-motion"
-import { CalendarCheck, ArrowRight, Loader2 } from "lucide-react"
+import { CalendarCheck, ArrowRight, Loader2, Wallet, HeartHandshake, Landmark, Users, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { useTaskStore } from "@/lib/stores/task-store"
-import type { Task } from "@/lib/types"
+import { useFinanceStore, formatINR } from "@/lib/stores/finance-store"
+import type { FinancialObligationItem } from "@/lib/types"
+import { toast } from "sonner"
 
 interface TodayTasksWidgetProps {
     isHydrated?: boolean;
@@ -23,6 +25,25 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
             isLoading: s.isLoading,
         }))
     )
+
+    const {
+        categories,
+        loadFinanceData,
+        getUpcomingFinancialObligations,
+        payMonthlyEmi,
+        settleCommitmentBalance,
+        recordDebtInstallment,
+    } = useFinanceStore(
+        useShallow((s) => ({
+            categories: s.categories,
+            loadFinanceData: s.loadFinanceData,
+            getUpcomingFinancialObligations: s.getUpcomingFinancialObligations,
+            payMonthlyEmi: s.payMonthlyEmi,
+            settleCommitmentBalance: s.settleCommitmentBalance,
+            recordDebtInstallment: s.recordDebtInstallment,
+        }))
+    )
+
     const router = useRouter()
     const [mounted, setMounted] = useState(isHydrated)
 
@@ -30,9 +51,12 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
         if (tasks.length === 0) {
             loadTasks()
         }
+        if (categories.length === 0) {
+            loadFinanceData()
+        }
         if (mounted) return;
         setMounted(true)
-    }, [loadTasks, tasks.length, mounted])
+    }, [loadTasks, tasks.length, categories.length, loadFinanceData, mounted])
 
     // Hydration safety: Don't render date-dependent logic until mounted
     if (!mounted) {
@@ -55,11 +79,31 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
         return a.title.localeCompare(b.title);
     });
 
-    const totalFocusCount = allFocusTasks.length;
+    const financialObligations = getUpcomingFinancialObligations(5);
+
+    const totalFocusCount = allFocusTasks.length + financialObligations.length;
     const todayTasks = allFocusTasks.slice(0, 6);
 
     const handleTaskComplete = async (id: string) => {
         await toggleTaskComplete(id)
+    }
+
+    const handleQuickSettleObligation = async (item: FinancialObligationItem) => {
+        if (item.type === 'emi') {
+            await payMonthlyEmi(item.sourceId);
+            toast.success(`Paid ${item.title} (${formatINR(item.amount)}) (+50 XP)`);
+        } else if (item.type === 'commitment') {
+            await settleCommitmentBalance(item.sourceId);
+            toast.success(`Settled ${item.title} (${formatINR(item.amount)}) (+50 XP)`);
+        } else if (item.type === 'debt') {
+            await recordDebtInstallment({
+                debtId: item.sourceId,
+                amount: item.amount,
+                paymentMethod: 'upi',
+                note: 'Quick installment payment from Dashboard',
+            });
+            toast.success(`Logged ${formatINR(item.amount)} partial installment`);
+        }
     }
 
     if (isLoading && tasks.length === 0) return (
@@ -77,11 +121,11 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
                             <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
                                 <CalendarCheck className="h-6 w-6 text-primary" />
                             </div>
-                            Today's Focus
+                            Today&apos;s Focus &amp; Financial Dues
                         </h2>
                         <p className="text-sm text-muted-foreground ml-12">
                             {totalFocusCount > 0
-                                ? `${totalFocusCount} ${totalFocusCount === 1 ? 'task' : 'tasks'} due.`
+                                ? `${allFocusTasks.length} ${allFocusTasks.length === 1 ? 'task' : 'tasks'} & ${financialObligations.length} financial obligation(s) due soon.`
                                 : "All caught up!"}
                         </p>
                     </div>
@@ -96,9 +140,96 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
                     </Button>
                 </div>
 
+                {/* Upcoming Financial Obligations (EMIs, Monthly Commitments, Friend Debt Installments due within 5 days) */}
+                {financialObligations.length > 0 && (
+                    <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                <Wallet className="w-3.5 h-3.5 text-emerald-500" />
+                                Due Financial Commitments &amp; EMIs (Next 5 Days)
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => router.push('/finance')}
+                                className="text-xs text-primary hover:underline"
+                            >
+                                Manage in FlowFinance →
+                            </button>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {financialObligations.map((ob) => {
+                                const Icon =
+                                    ob.type === 'commitment'
+                                        ? HeartHandshake
+                                        : ob.type === 'emi'
+                                        ? Landmark
+                                        : Users;
+                                return (
+                                    <div
+                                        key={ob.id}
+                                        className="rounded-2xl border border-border/80 bg-background/60 p-3.5 flex flex-col justify-between gap-2.5"
+                                    >
+                                        <div className="space-y-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-primary">
+                                                    <Icon className="w-3.5 h-3.5" />
+                                                    {ob.type === 'commitment'
+                                                        ? 'Commitment'
+                                                        : ob.type === 'emi'
+                                                        ? 'Loan EMI'
+                                                        : 'Friend Debt'}
+                                                </span>
+                                                <span
+                                                    className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                                                        ob.isOverdue
+                                                            ? 'bg-rose-500/15 text-rose-500'
+                                                            : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                                    }`}
+                                                >
+                                                    {ob.isOverdue
+                                                        ? `Due (${Math.abs(ob.daysUntilDue)}d ago)`
+                                                        : ob.daysUntilDue === 0
+                                                        ? 'Due Today'
+                                                        : `In ${ob.daysUntilDue}d`}
+                                                </span>
+                                            </div>
+                                            <p className="text-sm font-bold text-foreground line-clamp-1">
+                                                {ob.title}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground line-clamp-1">
+                                                {ob.subtitle}
+                                            </p>
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                                            <span className="text-sm font-bold font-mono tabular-nums text-foreground">
+                                                {formatINR(ob.amount)}
+                                            </span>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleQuickSettleObligation(ob)}
+                                                className="h-7 px-2.5 text-xs gap-1"
+                                            >
+                                                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                                                {ob.type === 'commitment'
+                                                    ? 'Settle'
+                                                    : ob.type === 'emi'
+                                                    ? 'Mark Paid'
+                                                    : 'Pay Partial'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <AnimatePresence mode="popLayout">
-                        {todayTasks.length === 0 ? (
+                        {todayTasks.length === 0 && financialObligations.length === 0 ? (
                             <motion.div
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}

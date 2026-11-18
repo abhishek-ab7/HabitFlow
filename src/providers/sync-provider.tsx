@@ -7,6 +7,7 @@ import { useGoalStore } from '@/lib/stores/goal-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { useUserStore } from '@/lib/stores/user-store';
+import { useFinanceStore } from '@/lib/stores/finance-store';
 
 interface SyncContextType {
   syncStatus: SyncStatus;
@@ -124,6 +125,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           useGoalStore.getState().loadGoals(),
           useHabitStore.getState().loadHabits(),
           useTaskStore.getState().loadTasks(),
+          useFinanceStore.getState().loadFinanceData(),
         ]);
 
         if (!active) return;

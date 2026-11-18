@@ -20,7 +20,8 @@ import {
   CloudOff,
   Loader2,
   Trophy,
-  Keyboard
+  Keyboard,
+  Wallet
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
@@ -37,6 +38,7 @@ const navItems = [
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
   { href: '/habits', label: 'Habits', icon: CheckSquare },
   { href: '/goals', label: 'Goals', icon: Target },
+  { href: '/finance', label: 'Finance', icon: Wallet },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -53,10 +55,11 @@ export function Header() {
   const { settings } = useGamificationStore();
   const visibleNavItems = navItems.filter(item => {
     if (settings?.habitOnlyMode) {
-      return item.href === '/dashboard' || item.href === '/habits' || item.href === '/analytics' || item.href === '/settings';
+      return item.href === '/dashboard' || item.href === '/habits' || item.href === '/finance' || item.href === '/analytics' || item.href === '/settings';
     }
     if (item.href === '/tasks' && settings?.showTasks === false) return false;
     if (item.href === '/goals' && settings?.showGoals === false) return false;
+    if (item.href === '/finance' && settings?.showFinance === false) return false;
     return true;
   });
 

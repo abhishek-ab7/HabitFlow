@@ -4,5 +4,6 @@ export { useUIStore } from './ui-store';
 export * from './task-store';
 export * from './mood-store';
 export * from './pomodoro-store';
+export * from './finance-store';
 export { CrossDomainActionMediator } from './mediator';
 

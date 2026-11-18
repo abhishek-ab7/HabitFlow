@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
 import { validateRedirectUrl } from '@/lib/security/url-validator'
+import { isSupabaseConfigured } from '@/lib/supabase/mock-client'
 
 export async function POST(request: NextRequest) {
     const requestUrl = new URL(request.url)
@@ -16,6 +17,15 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.redirect(validatedRedirectUrl, {
         status: 302,
     })
+
+    if (!isSupabaseConfigured()) {
+        response.cookies.set('habitflow_local_signed_out', 'true', {
+            path: '/',
+            maxAge: 86400,
+            sameSite: 'lax',
+        });
+        return response;
+    }
 
     // Create Supabase client to handle cookie clearing
     const supabase = createServerClient(

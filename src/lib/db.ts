@@ -1,6 +1,26 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Habit, HabitCompletion, Goal, Milestone, UserSettings, HabitFormData, GoalFormData, MilestoneFormData, Task, TaskFormData, MoodLog } from './types';
-import type { MoodType } from './types';
+import type {
+  Habit,
+  HabitCompletion,
+  Goal,
+  Milestone,
+  UserSettings,
+  HabitFormData,
+  GoalFormData,
+  MilestoneFormData,
+  Task,
+  TaskFormData,
+  MoodLog,
+  MoodType,
+  FinanceAccount,
+  FinanceCategory,
+  FinanceTransaction,
+  FinanceBudget,
+  MonthlyCommitment,
+  DebtRecord,
+  DebtInstallment,
+  EmiTracker,
+} from './types';
 
 // Domain Type Aliases to resolve Primitive Obsession
 export type UserId = string;
@@ -19,6 +39,14 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   userSettings: EntityTable<UserSettings, 'id'>;
   tasks: EntityTable<Task, 'id'>;
   moodLogs: EntityTable<MoodLog, 'id'>;
+  financeCategories: EntityTable<FinanceCategory, 'id'>;
+  financeAccounts: EntityTable<FinanceAccount, 'id'>;
+  financeTransactions: EntityTable<FinanceTransaction, 'id'>;
+  financeBudgets: EntityTable<FinanceBudget, 'id'>;
+  monthlyCommitments: EntityTable<MonthlyCommitment, 'id'>;
+  debtRecords: EntityTable<DebtRecord, 'id'>;
+  debtInstallments: EntityTable<DebtInstallment, 'id'>;
+  emiTrackers: EntityTable<EmiTracker, 'id'>;
 };
 
 // Schema version 5 - Added HabitRoutines junction table for many-to-many
@@ -199,10 +227,32 @@ db.version(10).stores({
   routineCompletions: null
 });
 
+// Schema version 11 - Add FlowFinance personal finance, monthly commitments, debt ledger, and EMI tracker tables
+db.version(11).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, isQuantitative',
+  completions: 'id, userId, habitId, date, [habitId+date], updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+  moodLogs: 'id, userId, date, [userId+date], updatedAt',
+  financeCategories: 'id, userId, slug, type, order, archived, updatedAt',
+  financeAccounts: 'id, userId, type, isDefault, archived, updatedAt',
+  financeTransactions: 'id, userId, date, monthKey, categoryId, accountId, type, linkedCommitmentId, linkedDebtId, linkedEmiId, [userId+monthKey], updatedAt',
+  financeBudgets: 'id, userId, monthKey, [userId+monthKey], updatedAt',
+  monthlyCommitments: 'id, userId, isActive, dueDayOfMonth, updatedAt',
+  debtRecords: 'id, userId, direction, status, updatedAt',
+  debtInstallments: 'id, userId, debtId, date, monthKey, transactionId, updatedAt',
+  emiTrackers: 'id, userId, status, billingDayOfMonth, updatedAt',
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 
-  'userSettings', 'tasks', 'moodLogs'
+  'userSettings', 'tasks', 'moodLogs',
+  'financeCategories', 'financeAccounts', 'financeTransactions',
+  'financeBudgets', 'monthlyCommitments', 'debtRecords',
+  'debtInstallments', 'emiTrackers'
 ];
 
 syncTables.forEach(tableName => {
@@ -658,6 +708,7 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: Use
       dashboardLayout: data.dashboardLayout || [
         { id: 'metrics', size: 'full', hidden: false, pinned: true },
         { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
+        { id: 'finance-overview', size: 'full', hidden: false, pinned: false },
         { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
         { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
         { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },

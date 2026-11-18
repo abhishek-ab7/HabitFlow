@@ -50,6 +50,7 @@ export class HabitFlowAI {
   private static initializeKeyPools(): Record<AIModule, string[]> {
     const modules: AIModule[] = ['dashboard', 'tasks', 'habits'];
     const pools: Record<AIModule, string[]> = {} as any;
+    const fallbackKey = process.env.GEMINI_API_KEY;
 
     for (const mod of modules) {
       const moduleUpper = mod.toUpperCase();
@@ -60,9 +61,13 @@ export class HabitFlowAI {
         const apiKey = process.env[envKey];
         if (apiKey) {
           keys.push(apiKey);
-        } else {
-          console.warn(`[AI Service] Missing ${envKey} - pool will have only ${keys.length} keys`);
         }
+      }
+
+      if (keys.length === 0 && fallbackKey) {
+        keys.push(fallbackKey);
+      } else if (keys.length === 0) {
+        console.warn(`[AI Service] No keys configured for ${mod} (set GEMINI_API_KEY or GEMINI_KEY_${moduleUpper}_1..3)`);
       }
 
       pools[mod] = keys;

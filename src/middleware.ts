@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { rateLimit, rateLimitResponse } from '@/lib/security/rate-limit';
+import { isSupabaseConfigured } from '@/lib/supabase/mock-client';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -64,89 +65,81 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Create Supabase client with proper cookie handling
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set({
-              name,
-              value,
-              ...options,
+  if (isSupabaseConfigured()) {
+    // Create Supabase client with proper cookie handling
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              request.cookies.set({
+                name,
+                value,
+                ...options,
+              });
             });
-          });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set({
-              name,
-              value,
-              ...options,
-              sameSite: 'lax',
-              secure: true,
-              path: '/',
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
             });
-          });
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set({
+                name,
+                value,
+                ...options,
+                sameSite: 'lax',
+                secure: true,
+                path: '/',
+              });
+            });
+          },
         },
-      },
+      }
+    );
+
+    // Get session - this will also refresh if needed
+    const { data: { session }, error } = await supabase.auth.getSession();
+
+    if (error) {
+      console.error('Middleware session error:', error.message);
     }
-  );
 
-  // Get session - this will also refresh if needed
-  const { data: { session }, error } = await supabase.auth.getSession();
+    // If not authenticated and trying to access protected route, redirect to login
+    if (!session && !isPublicRoute && pathname !== '/login') {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = '/login';
+      redirectUrl.searchParams.set('redirectedFrom', pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
 
-  if (error) {
-    console.error('Middleware session error:', error.message);
+    // If authenticated and trying to access login or root page, redirect to dashboard
+    if (session && (pathname === '/' || pathname.startsWith('/login'))) {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = '/dashboard';
+      return NextResponse.redirect(redirectUrl);
+    }
+  } else {
+    // Local demo fallback mode when Supabase env vars are not configured
+    const isSignedOut = request.cookies.get('habitflow_local_signed_out')?.value === 'true';
+
+    if (isSignedOut && !isPublicRoute && pathname !== '/login') {
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = '/login';
+      redirectUrl.searchParams.set('redirectedFrom', pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
   }
 
-  // If not authenticated and trying to access protected route, redirect to login
-  if (!session && !isPublicRoute && pathname !== '/login') {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = '/login';
-    redirectUrl.searchParams.set('redirectedFrom', pathname);
-    return NextResponse.redirect(redirectUrl);
-  }
-
-  // If authenticated and trying to access login or root page, redirect to dashboard
-  if (session && (pathname === '/' || pathname.startsWith('/login'))) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = '/dashboard';
-    return NextResponse.redirect(redirectUrl);
-  }
-
-  // Add Security Headers to final response
-  response.headers.set('X-Frame-Options', 'DENY');
+  // Add Security Headers to final response (iframe-compatible for AI Studio preview)
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  
-  // Content Security Policy (CSP)
-  const cspHeader = `
-    default-src 'self';
-    script-src 'self' 'unsafe-eval' 'unsafe-inline' https://vercel.live https://va.vercel-scripts.com;
-    style-src 'self' 'unsafe-inline';
-    img-src 'self' blob: data: https://*.supabase.co https://*.userusercontent.com;
-    font-src 'self' data:;
-    connect-src 'self' https://*.supabase.co https://*.supabase.in https://*.supabase.net wss://*.supabase.co wss://*.supabase.in wss://*.supabase.net https://generativelanguage.googleapis.com;
-    object-src 'none';
-    base-uri 'self';
-    form-action 'self';
-    frame-ancestors 'none';
-    block-all-mixed-content;
-    upgrade-insecure-requests;
-  `.replace(/\s{2,}/g, ' ').trim();
-
-  response.headers.set('Content-Security-Policy', cspHeader);
-  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 
   return response;
 }

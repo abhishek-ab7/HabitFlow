@@ -40,12 +40,6 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
 
     const supabase = createClient()
 
-    useEffect(() => {
-        if (open) {
-            fetchGoals()
-        }
-    }, [open])
-
     const fetchGoals = async () => {
         const { data } = await supabase
             .from("goals")
@@ -58,6 +52,12 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
             setGoals(data)
         }
     }
+
+    useEffect(() => {
+        if (open) {
+            fetchGoals()
+        }
+    }, [open])
 
     const handleGenerateSubtasks = async () => {
         if (!title) {

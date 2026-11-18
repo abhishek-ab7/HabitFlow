@@ -129,5 +129,47 @@ export class CrossDomainActionMediator {
       }
     }
   }
+
+  // Handle FlowFinance events: award XP, increment wealth stat, and auto-complete daily expense-tracking habits
+  public static async onFinanceEvent(event: {
+    type: 'EXPENSE_LOGGED' | 'NO_SPEND_DAY' | 'EMI_PAID' | 'COMMITMENT_SETTLED';
+    date: string;
+    amount?: number;
+  }) {
+    const gamificationStore = useGamificationStore.getState();
+    const habitStore = useHabitStore.getState();
+
+    const xpReward =
+      event.type === 'EMI_PAID' || event.type === 'COMMITMENT_SETTLED' ? 50 : 10;
+
+    await gamificationStore.addXp(xpReward, 'finance');
+
+    // Auto-complete matching daily expense/finance tracking habits for the date
+    const financeHabits = habitStore.habits.filter(
+      (h) =>
+        !h.archived &&
+        (h.category === 'finance' ||
+          /expense|budget|spend|finance|money|track/i.test(h.name))
+    );
+
+    for (const habit of financeHabits) {
+      const alreadyDone = habitStore.completions.some(
+        (c) => c.habitId === habit.id && c.date === event.date && c.completed
+      );
+      if (!alreadyDone) {
+        await CrossDomainActionMediator.dispatch({
+          type: 'HABIT_COMPLETED',
+          payload: {
+            habitId: habit.id,
+            date: event.date,
+            difficulty: habit.difficulty || 'easy',
+            category: 'finance',
+          },
+        });
+      }
+    }
+
+    useAchievementStore.getState().calculateAchievements();
+  }
 }
 

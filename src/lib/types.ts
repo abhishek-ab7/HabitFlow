@@ -232,6 +232,7 @@ export interface UserSettings {
   showTasks?: boolean;
   showGoals?: boolean;
   showMilestones?: boolean;
+  showFinance?: boolean;
   habitOnlyMode?: boolean;
   generationCounter?: number;
   isDirty?: boolean;
@@ -425,3 +426,276 @@ export const DAYS_OF_WEEK_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sa
 
 // Streak milestones for special styling
 export const STREAK_MILESTONES = [3, 7, 14, 21, 30, 60, 90, 100, 365] as const;
+
+// ============================================
+// FLOWFINANCE - PERSONAL FINANCE & LEDGER MODELS
+// ============================================
+
+export type FinanceAccountType = 'cash' | 'bank' | 'upi' | 'credit_card' | 'wallet';
+
+export interface FinanceAccount {
+  id: string;
+  userId: string;
+  name: string;
+  type: FinanceAccountType;
+  balance: number;
+  currency: string;
+  color: string;
+  icon: string;
+  isDefault: boolean;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export type FinanceTransactionType = 'expense' | 'income' | 'transfer';
+
+export interface FinanceCategory {
+  id: string;
+  userId: string;
+  name: string;
+  slug: string;
+  type: 'expense' | 'income' | 'both';
+  icon: string;
+  color: string;
+  monthlyBudgetLimit: number;
+  subcategories: string[];
+  order: number;
+  isSystem: boolean;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export type CommitmentContributionType = 'direct_payment' | 'offset_expense';
+
+export interface FinanceTransaction {
+  id: string;
+  userId: string;
+  title: string;
+  amount: number;
+  type: FinanceTransactionType;
+  categoryId: string;
+  subcategory?: string;
+  accountId: string;
+  toAccountId?: string;
+  date: string; // YYYY-MM-DD
+  monthKey: string; // YYYY-MM
+  notes?: string;
+  tags: string[];
+  isRecurring: boolean;
+  recurrenceRule?: string;
+  // Cross-Linking to Monthly Commitments, Friend Debts, or EMIs
+  linkedCommitmentId?: string | null;
+  commitmentContributionType?: CommitmentContributionType | null;
+  linkedDebtId?: string | null;
+  linkedDebtInstallmentId?: string | null;
+  linkedEmiId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface FinanceBudget {
+  id: string;
+  userId: string;
+  monthKey: string; // YYYY-MM
+  totalBudget: number;
+  expectedIncome: number;
+  currency: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export type CommitmentCategory = 'family_support' | 'allowance' | 'shared_household' | 'rent' | 'other';
+
+export interface MonthlyCommitment {
+  id: string;
+  userId: string;
+  title: string;
+  recipientName: string;
+  relationship: string;
+  monthlyTargetAmount: number;
+  dueDayOfMonth: number; // 1-31
+  category: CommitmentCategory;
+  defaultCategoryId?: string;
+  autoRolloverOverpayment: boolean;
+  icon: string;
+  color: string;
+  isActive: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface CommitmentLedgerSummary {
+  commitment: MonthlyCommitment;
+  monthKey: string;
+  baseTargetAmount: number;
+  rolloverFromPreviousMonth: number; // Positive if previous month was overpaid and autoRolloverOverpayment is true
+  effectiveTargetAmount: number; // max(0, baseTargetAmount - rolloverFromPreviousMonth)
+  directPaidAmount: number;
+  offsetExpensesAmount: number;
+  totalFulfilledAmount: number;
+  remainingBalance: number;
+  overpaidAmount: number;
+  progressPercentage: number;
+  status: 'unpaid' | 'in_progress' | 'settled' | 'overpaid';
+  transactions: FinanceTransaction[];
+  directTransactions: FinanceTransaction[];
+  offsetTransactions: FinanceTransaction[];
+}
+
+export type DebtDirection = 'borrowed' | 'lent';
+export type DebtRepaymentSchedule = 'monthly_partial' | 'lump_sum' | 'flexible';
+export type DebtStatus = 'active' | 'settled' | 'archived';
+
+export interface DebtRecord {
+  id: string;
+  userId: string;
+  personName: string;
+  contactInfo?: string;
+  direction: DebtDirection; // 'borrowed' = I owe them; 'lent' = They owe me
+  title: string;
+  principalAmount: number;
+  totalRepaidAmount: number;
+  remainingAmount: number;
+  startDate: string;
+  targetSettlementDate?: string;
+  repaymentSchedule: DebtRepaymentSchedule;
+  plannedMonthlyInstallment?: number;
+  dueDayOfMonth?: number;
+  status: DebtStatus;
+  notes?: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export type DebtPaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'offset_expense';
+
+export interface DebtInstallment {
+  id: string;
+  userId: string;
+  debtId: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  monthKey: string; // YYYY-MM
+  paymentMethod: DebtPaymentMethod;
+  transactionId?: string | null;
+  note?: string;
+  balanceAfterPayment: number;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export type EmiStatus = 'active' | 'completed' | 'foreclosed';
+
+export interface EmiTracker {
+  id: string;
+  userId: string;
+  loanName: string;
+  lenderName: string;
+  principalAmount: number;
+  interestRateAnnual: number;
+  emiAmount: number;
+  tenureMonths: number;
+  paidMonths: number;
+  startDate: string; // YYYY-MM-DD
+  billingDayOfMonth: number; // 1-31
+  categoryId: string;
+  accountId?: string;
+  autoCreateTaskReminder: boolean;
+  lastPaidMonthKey?: string;
+  status: EmiStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface CategorySpendItem {
+  category: FinanceCategory;
+  spent: number;
+  budgetLimit: number;
+  percentageOfBudget: number;
+  percentageOfTotalSpend: number;
+  transactionCount: number;
+  status: 'safe' | 'warning' | 'exceeded';
+}
+
+export interface MonthlyFinanceSummary {
+  monthKey: string;
+  totalIncome: number;
+  totalSpent: number;
+  monthlyBudget: number;
+  expectedIncome: number;
+  remainingUnpaidEmis: number;
+  remainingUnpaidCommitments: number;
+  plannedDebtInstallmentsDue: number;
+  safeToSpendMonthly: number;
+  safeToSpendDaily: number;
+  remainingDaysInMonth: number;
+  netSavings: number;
+  savingsRate: number;
+  categoryBreakdown: CategorySpendItem[];
+}
+
+export interface FinancialObligationItem {
+  id: string;
+  sourceId: string;
+  type: 'emi' | 'commitment' | 'debt';
+  title: string;
+  subtitle: string;
+  amount: number;
+  dueDate: string; // YYYY-MM-DD
+  daysUntilDue: number;
+  isOverdue: boolean;
+  status: 'pending' | 'paid';
+}
+
+export interface FinanceTransactionFormData {
+  title: string;
+  amount: number;
+  type: FinanceTransactionType;
+  categoryId: string;
+  subcategory?: string;
+  accountId: string;
+  toAccountId?: string;
+  date: string;
+  notes?: string;
+  tags?: string[];
+  isRecurring?: boolean;
+  recurrenceRule?: string;
+  linkedCommitmentId?: string | null;
+  commitmentContributionType?: CommitmentContributionType | null;
+  linkedDebtId?: string | null;
+  linkedEmiId?: string | null;
+}
+
+export interface FinanceFilterState {
+  searchQuery: string;
+  type: 'all' | FinanceTransactionType;
+  categoryId: string | 'all';
+  accountId: string | 'all';
+  commitmentId: string | 'all';
+  debtId: string | 'all';
+  dateFrom?: string;
+  dateTo?: string;
+}
+

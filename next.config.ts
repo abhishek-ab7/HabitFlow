@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { codecovNextJSWebpackPlugin } from "@codecov/nextjs-webpack-plugin";
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   // ⚡ PERFORMANCE OPTIMIZATIONS
   experimental: {
     // Optimize package imports to reduce bundle size

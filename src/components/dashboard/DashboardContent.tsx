@@ -20,6 +20,7 @@ import {
   AICoachWidget,
   BentoGrid,
   WeeklyReviewWidget,
+  FinanceOverviewWidget,
   DashboardCenterLoader,
 } from '@/components/dashboard';
 import OnboardingWizard from '@/components/dashboard/OnboardingWizard';
@@ -330,6 +331,7 @@ export default function DashboardContent() {
       />
     ),
     'habit-overview': <HabitOverview habits={habits} completions={completions} onToggle={toggle} />,
+    'finance-overview': <FinanceOverviewWidget />,
     ...(!settings?.habitOnlyMode && settings?.showTasks !== false ? {
       'today-tasks': <TodayTasksWidget isHydrated={true} />
     } : {}),

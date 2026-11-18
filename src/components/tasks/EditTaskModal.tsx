@@ -44,6 +44,18 @@ export function EditTaskModal({ task, isOpen, onOpenChange }: EditTaskModalProps
     const [goals, setGoals] = useState<Goal[]>([])
     const supabase = createClient()
 
+    const fetchGoals = async () => {
+        const { data } = await supabase
+            .from("goals")
+            .select("*")
+            .eq("is_archived", false)
+            .order("title")
+
+        if (data) {
+            setGoals(data)
+        }
+    }
+
     // Sync form states with task when modal opens
     useEffect(() => {
         if (isOpen) {
@@ -60,18 +72,6 @@ export function EditTaskModal({ task, isOpen, onOpenChange }: EditTaskModalProps
             fetchGoals()
         }
     }, [isOpen, task])
-
-    const fetchGoals = async () => {
-        const { data } = await supabase
-            .from("goals")
-            .select("*")
-            .eq("is_archived", false)
-            .order("title")
-
-        if (data) {
-            setGoals(data)
-        }
-    }
 
     // Filter subtasks from database associated with this task
     const subtasks = tasks.filter(t => t.parentTaskId === task.id && t.status !== 'archived')

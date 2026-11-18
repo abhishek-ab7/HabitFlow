@@ -10,6 +10,8 @@ import type {
   HabitStackingInput,
   QuotePersonalizationInput,
   HabitDescriptionInput,
+  ExpenseParseInput,
+  ExpenseParseOutput,
 } from '../types';
 
 export function buildCoachPrompt(input: CoachBriefingInput): string {
@@ -408,5 +410,207 @@ Instructions:
 7. Provide 3 concrete, specific recommendations to improve this goal definition and make it more SMART.
 
 Return a JSON object matching the smartGoalAnalysisSchema.`;
+}
+
+// ========== FlowFinance Smart Expense Parser & Deterministic Fallback ==========
+export function buildExpenseParsePrompt(input: ExpenseParseInput): string {
+  const categoriesList =
+    input.categories
+      ?.map((c) => `- ${c.name} (slug: "${c.slug}", subcategories: ${c.subcategories.join(', ')})`)
+      .join('\n') || 'Standard categories';
+
+  const commitmentsList =
+    input.commitments
+      ?.map((c) => `- ID: "${c.id}", Recipient: "${c.recipientName}", Title: "${c.title}"`)
+      .join('\n') || 'None';
+
+  const debtsList =
+    input.debts
+      ?.map((d) => `- ID: "${d.id}", Person: "${d.personName}", Direction: ${d.direction}`)
+      .join('\n') || 'None';
+
+  return `You are an expert Personal Finance & Ledger AI for FlowFinance. Parse the following natural-language expense/income statement into a structured transaction object.
+
+User Input: "${input.rawText}"
+
+Available Categories:
+${categoriesList}
+
+Active Monthly Commitments (e.g. Mother's monthly allowance):
+${commitmentsList}
+
+Active Friend Lend/Borrow Records:
+${debtsList}
+
+Instructions:
+1. Extract the exact numeric amount (in INR).
+2. Create a clean, descriptive title.
+3. Match the best categorySlug, categoryName, and subcategory.
+4. Detect if this expense was bought/paid on behalf of a Monthly Commitment recipient (e.g., "for Mother", "for Mom", "deduct from mother"). If so, set matchedCommitmentId, matchedCommitmentRecipient, and commitmentContributionType ('offset_expense' for items/bills bought for them, or 'direct_payment' if transferring allowance directly).
+5. Detect if this is a partial repayment or loan payment to/from a friend in Active Friend Lend/Borrow Records (e.g., "paid Rahul 500", "towards 2000 borrowed"). If so, set matchedDebtId and matchedDebtPerson.
+6. Detect paymentMethodType ('upi', 'bank', 'cash', 'credit_card', 'wallet').
+7. Return JSON matching expenseParseSchema.`;
+}
+
+export function parseExpenseDeterministically(input: ExpenseParseInput): ExpenseParseOutput {
+  const text = (input.rawText || '').trim();
+  const lower = text.toLowerCase();
+
+  // 1. Extract amount (supports ₹1,850, 450, Rs. 500, etc.)
+  const amountMatches = text.match(/(?:₹|rs\.?|inr\s*)?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/gi);
+  let amount = 0;
+  if (amountMatches && amountMatches.length > 0) {
+    // Pick the first number that is not a huge total reference after "towards" or "out of"
+    const cleanedFirst = amountMatches[0].replace(/[₹,a-zA-Z.\s]/g, '');
+    amount = parseInt(cleanedFirst, 10) || 0;
+  }
+
+  // 2. Detect payment method
+  let paymentMethodType: ExpenseParseOutput['paymentMethodType'] = 'upi';
+  if (/\bcash\b/.test(lower)) paymentMethodType = 'cash';
+  else if (/\b(credit card|card|cc|icici|amex)\b/.test(lower)) paymentMethodType = 'credit_card';
+  else if (/\b(neft|imps|rtgs|bank transfer|salary account)\b/.test(lower))
+    paymentMethodType = 'bank';
+  else if (/\b(paytm wallet|wallet)\b/.test(lower)) paymentMethodType = 'wallet';
+
+  // 3. Detect Transaction Type
+  let type: ExpenseParseOutput['type'] = 'expense';
+  if (/\b(salary|received|credited|income|freelance|refund)\b/.test(lower)) {
+    type = 'income';
+  }
+
+  // 4. Match Category & Subcategory
+  let categorySlug = 'shopping-personal-care';
+  let categoryName = 'Shopping & Personal Care';
+  let subcategory: string | undefined = undefined;
+
+  if (/\b(whey|protein|creatine|vitamin|supplement|pharmacy|medicine|doctor|hospital|medical)\b/.test(lower)) {
+    categorySlug = 'medical-supplements';
+    categoryName = 'Medical & Supplements';
+    subcategory = /\b(whey|protein)\b/.test(lower)
+      ? 'Whey / Protein'
+      : /\b(vitamin|creatine)\b/.test(lower)
+      ? 'Vitamins & Creatine'
+      : 'Pharmacy';
+  } else if (/\b(electricity|water|wifi|wi-fi|broadband|recharge|bill|gas|utility)\b/.test(lower)) {
+    categorySlug = 'utilities-bills';
+    categoryName = 'Utilities & Bills';
+    subcategory = /\belectricity\b/.test(lower)
+      ? 'Electricity Bill'
+      : /\b(wifi|wi-fi|broadband)\b/.test(lower)
+      ? 'Wi-Fi / Broadband'
+      : 'Mobile Recharge';
+  } else if (/\b(lipstick|cosmetic|makeup|skincare|shirt|dress|clothing|shoes|nykaa|myntra|amazon)\b/.test(lower)) {
+    categorySlug = 'shopping-personal-care';
+    categoryName = 'Shopping & Personal Care';
+    subcategory = /\b(lipstick|cosmetic|makeup|nykaa)\b/.test(lower)
+      ? 'Cosmetics / Lipstick'
+      : 'Clothing';
+  } else if (/\b(grocery|groceries|vegetable|milk|dairy|fruit|supermarket|blinkit|zepto|instamart)\b/.test(lower)) {
+    categorySlug = 'groceries-household';
+    categoryName = 'Groceries & Household';
+    subcategory = 'Vegetables & Dairy';
+  } else if (/\b(food|dinner|lunch|breakfast|coffee|cafe|restaurant|swiggy|zomato|pizza|burger)\b/.test(lower)) {
+    categorySlug = 'food-dining';
+    categoryName = 'Food & Dining';
+    subcategory = 'Restaurants';
+  } else if (/\b(uber|ola|auto|cab|petrol|fuel|metro|train|bus|flight)\b/.test(lower)) {
+    categorySlug = 'transport-fuel';
+    categoryName = 'Transport & Fuel';
+    subcategory = 'Uber / Ola / Auto';
+  } else if (/\b(emi|loan|borrowed|repay|repaid|installment|debt)\b/.test(lower)) {
+    categorySlug = 'emis-debt-repayment';
+    categoryName = 'EMIs & Debt Repayment';
+    subcategory = /\b(emi|loan)\b/.test(lower) ? 'Loan EMI' : 'Friend Debt Repayment';
+  } else if (/\b(allowance|mother|mom|parents|family|gift)\b/.test(lower)) {
+    categorySlug = 'family-commitments';
+    categoryName = 'Family & Commitments';
+    subcategory = 'Parental Allowance';
+  } else if (/\b(netflix|spotify|gym|movie|ott|subscription)\b/.test(lower)) {
+    categorySlug = 'entertainment-subscriptions';
+    categoryName = 'Entertainment & Subscriptions';
+    subcategory = 'OTT & Streaming';
+  } else if (/\b(sip|mutual fund|gold|investment|salary)\b/.test(lower)) {
+    categorySlug = 'investments-savings';
+    categoryName = 'Investments & Savings';
+    subcategory = type === 'income' ? 'Salary / Income' : 'SIP / Mutual Funds';
+  }
+
+  // 5. Detect Monthly Commitment link (e.g., Mother / Mom)
+  let matchedCommitmentId: string | null = null;
+  let matchedCommitmentRecipient: string | null = null;
+  let commitmentContributionType: ExpenseParseOutput['commitmentContributionType'] = null;
+
+  const commitments = input.commitments || [];
+  for (const comm of commitments) {
+    const recLower = comm.recipientName.toLowerCase();
+    if (
+      lower.includes(recLower) ||
+      (recLower === 'mother' && /\b(mother|mom|mummy|maa|ammi)\b/.test(lower))
+    ) {
+      matchedCommitmentId = comm.id;
+      matchedCommitmentRecipient = comm.recipientName;
+      const isDirectAllowance =
+        /\b(allowance|transfer|settle|direct|monthly support)\b/.test(lower) &&
+        !lower.includes('deduct') &&
+        !lower.includes('offset') &&
+        categorySlug === 'family-commitments';
+      commitmentContributionType = isDirectAllowance ? 'direct_payment' : 'offset_expense';
+      break;
+    }
+  }
+
+  // 6. Detect Friend Debt link (e.g., Rahul, Priya)
+  let matchedDebtId: string | null = null;
+  let matchedDebtPerson: string | null = null;
+  const debts = input.debts || [];
+  for (const debt of debts) {
+    const firstName = debt.personName.split(' ')[0].toLowerCase();
+    if (firstName && lower.includes(firstName)) {
+      matchedDebtId = debt.id;
+      matchedDebtPerson = debt.personName;
+      if (categorySlug === 'shopping-personal-care' && /\b(paid|repay|installment|borrowed|lent|owe)\b/.test(lower)) {
+        categorySlug = 'emis-debt-repayment';
+        categoryName = 'EMIs & Debt Repayment';
+        subcategory = 'Friend Debt Repayment';
+      }
+      break;
+    }
+  }
+
+  // 7. Clean title
+  let cleanTitle = text
+    .replace(/^(paid|spent|bought|ordered|logged|sent|gave)\s+/i, '')
+    .replace(/\b(via|by|using)\s+(upi|gpay|phonepe|cash|card|credit card|bank)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cleanTitle.length > 0) {
+    cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+  } else {
+    cleanTitle = `${categoryName} Expense`;
+  }
+
+  const tags: string[] = [categorySlug.split('-')[0]];
+  if (matchedCommitmentRecipient) tags.push(matchedCommitmentRecipient.toLowerCase(), 'offset');
+  if (matchedDebtPerson) tags.push(matchedDebtPerson.split(' ')[0].toLowerCase(), 'debt');
+
+  return {
+    title: cleanTitle,
+    amount,
+    type,
+    categorySlug,
+    categoryName,
+    subcategory,
+    paymentMethodType,
+    matchedCommitmentRecipient,
+    matchedCommitmentId,
+    commitmentContributionType,
+    matchedDebtPerson,
+    matchedDebtId,
+    notes: text,
+    tags,
+    confidence: amount > 0 ? 94 : 60,
+  };
 }
 

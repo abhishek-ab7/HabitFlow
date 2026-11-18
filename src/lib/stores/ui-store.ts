@@ -45,6 +45,7 @@ export const normalizeLayout = (layout?: any[]): DashboardWidgetConfig[] => {
   const defaultLayout: DashboardWidgetConfig[] = [
     { id: 'metrics', size: 'full', hidden: false, pinned: true },
     { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
+    { id: 'finance-overview', size: 'full', hidden: false, pinned: false },
     { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
     { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
     { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },

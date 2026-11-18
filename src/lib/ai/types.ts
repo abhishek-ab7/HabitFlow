@@ -16,7 +16,8 @@ export type AIFeature =
   | 'analyze-correlations'
   | 'optimize-deadline'
   | 'analyze-goal'
-  | 'generate-subtasks';
+  | 'generate-subtasks'
+  | 'parse-expense';
 
 export interface AIRequest<T = any> {
   feature: AIFeature;
@@ -318,4 +319,31 @@ export interface HabitDescriptionOutput {
   estimatedTimeMinutes: number;
   scientificBacking?: string;
   commonPitfalls?: string[];
+}
+
+// ========== FlowFinance Smart Expense Parser ==========
+export interface ExpenseParseInput {
+  rawText: string;
+  categories?: Array<{ id: string; name: string; slug: string; subcategories: string[] }>;
+  commitments?: Array<{ id: string; title: string; recipientName: string }>;
+  debts?: Array<{ id: string; personName: string; direction: 'borrowed' | 'lent'; remainingAmount: number }>;
+  accounts?: Array<{ id: string; name: string; type: string }>;
+}
+
+export interface ExpenseParseOutput {
+  title: string;
+  amount: number;
+  type: 'expense' | 'income' | 'transfer';
+  categorySlug: string;
+  categoryName: string;
+  subcategory?: string;
+  paymentMethodType?: 'upi' | 'bank' | 'cash' | 'credit_card' | 'wallet';
+  matchedCommitmentRecipient?: string | null;
+  matchedCommitmentId?: string | null;
+  commitmentContributionType?: 'direct_payment' | 'offset_expense' | null;
+  matchedDebtPerson?: string | null;
+  matchedDebtId?: string | null;
+  notes?: string;
+  tags: string[];
+  confidence: number;
 }

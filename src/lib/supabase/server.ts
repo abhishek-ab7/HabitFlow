@@ -1,8 +1,13 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { Database } from './types';
+import { createMockSupabaseClient, isSupabaseConfigured } from './mock-client';
 
 export async function createServerSupabaseClient() {
+  if (!isSupabaseConfigured()) {
+    return createMockSupabaseClient() as unknown as ReturnType<typeof createServerClient<Database>>;
+  }
+
   const cookieStore = await cookies();
 
   return createServerClient<Database>(

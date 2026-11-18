@@ -29,6 +29,8 @@ export function useKeyboardShortcuts() {
         router.push('/habits');
       } else if (key === 'g') {
         router.push('/goals');
+      } else if (key === 'f') {
+        router.push('/finance');
       } else if (key === 'a') {
         router.push('/analytics');
       } 

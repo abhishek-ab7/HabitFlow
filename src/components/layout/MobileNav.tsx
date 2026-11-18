@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, CheckSquare, ListTodo, Target, User } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, ListTodo, Target, User, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
@@ -11,6 +11,7 @@ const mobileNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/habits', label: 'Habits', icon: CheckSquare },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
+  { href: '/finance', label: 'Finance', icon: Wallet },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/settings', label: 'Profile', icon: User },
 ];
