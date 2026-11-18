@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { getSyncEngine } from '@/lib/sync';
 import { CrossDomainActionMediator } from './mediator';
 import type {
   FinanceAccount,
@@ -60,116 +59,116 @@ export const DEFAULT_FINANCE_CATEGORIES: Array<
     type: 'expense',
     icon: 'Utensils',
     color: '#f97316',
-    monthlyBudgetLimit: 6000,
-    subcategories: ['Restaurants', 'Cafe & Coffee', 'Swiggy / Zomato', 'Snacks'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Restaurants', 'Cafe & Coffee', 'Online Delivery', 'Snacks'],
     order: 0,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Groceries & Household',
+    name: 'Groceries',
     slug: 'groceries-household',
     type: 'expense',
     icon: 'ShoppingBasket',
     color: '#10b981',
-    monthlyBudgetLimit: 7000,
-    subcategories: ['Vegetables & Dairy', 'Supermarket', 'Cleaning & Essentials'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Vegetables & Dairy', 'Supermarket', 'Household Essentials'],
     order: 1,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Medical & Supplements',
+    name: 'Health & Supplements',
     slug: 'medical-supplements',
     type: 'expense',
     icon: 'HeartPulse',
     color: '#06b6d4',
-    monthlyBudgetLimit: 4500,
-    subcategories: ['Whey / Protein', 'Vitamins & Creatine', 'Pharmacy', 'Doctor Visits'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Whey / Protein', 'Vitamins', 'Pharmacy', 'Doctor Visits'],
     order: 2,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Utilities & Bills',
+    name: 'Bills & Utilities',
     slug: 'utilities-bills',
     type: 'expense',
     icon: 'Zap',
     color: '#eab308',
-    monthlyBudgetLimit: 4500,
+    monthlyBudgetLimit: 0,
     subcategories: ['Electricity Bill', 'Wi-Fi / Broadband', 'Mobile Recharge', 'Water & Gas'],
     order: 3,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Family & Commitments',
+    name: 'Family & Gifts',
     slug: 'family-commitments',
     type: 'expense',
     icon: 'HeartHandshake',
     color: '#ec4899',
-    monthlyBudgetLimit: 5000,
-    subcategories: ['Parental Allowance', 'Family Purchases', 'Gifts & Festivals'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Family Support', 'Family Purchases', 'Gifts'],
     order: 4,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Shopping & Personal Care',
+    name: 'Shopping',
     slug: 'shopping-personal-care',
     type: 'expense',
     icon: 'ShoppingBag',
     color: '#a855f7',
-    monthlyBudgetLimit: 5000,
-    subcategories: ['Clothing', 'Cosmetics / Lipstick', 'Skincare & Grooming', 'Electronics'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Clothing', 'Personal Care', 'Electronics'],
     order: 5,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Transport & Fuel',
+    name: 'Transport',
     slug: 'transport-fuel',
     type: 'expense',
     icon: 'Car',
     color: '#3b82f6',
-    monthlyBudgetLimit: 3500,
-    subcategories: ['Petrol / EV Charge', 'Uber / Ola / Auto', 'Metro / Train', 'Vehicle Servicing'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Fuel', 'Cab / Auto', 'Metro / Train', 'Maintenance'],
     order: 6,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'EMIs & Debt Repayment',
+    name: 'EMIs & Repayments',
     slug: 'emis-debt-repayment',
     type: 'expense',
     icon: 'Landmark',
     color: '#ef4444',
-    monthlyBudgetLimit: 10000,
-    subcategories: ['Loan EMI', 'Credit Card Bill', 'Friend Debt Repayment'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Loan EMI', 'Credit Card Bill', 'Friend Repayment'],
     order: 7,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Entertainment & Subscriptions',
+    name: 'Entertainment',
     slug: 'entertainment-subscriptions',
     type: 'expense',
     icon: 'Film',
     color: '#8b5cf6',
-    monthlyBudgetLimit: 2500,
-    subcategories: ['OTT & Streaming', 'Gym Membership', 'Movies & Outings', 'Apps & Cloud'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['Subscriptions', 'Gym Membership', 'Movies & Outings'],
     order: 8,
     isSystem: true,
     archived: false,
   },
   {
-    name: 'Investments & Savings',
+    name: 'Savings & Income',
     slug: 'investments-savings',
     type: 'both',
     icon: 'TrendingUp',
     color: '#14b8a6',
-    monthlyBudgetLimit: 10000,
-    subcategories: ['SIP / Mutual Funds', 'Emergency Fund', 'Digital Gold', 'Salary / Income'],
+    monthlyBudgetLimit: 0,
+    subcategories: ['SIP / Mutual Funds', 'Savings', 'Salary / Income'],
     order: 9,
     isSystem: true,
     archived: false,
@@ -203,6 +202,7 @@ interface FinanceStore {
   // Core Lifecycle
   loadFinanceData: (customUserId?: string) => Promise<void>;
   seedInitialFinanceData: (userId: string) => Promise<void>;
+  resetAllFinanceData: (keepCategories?: boolean) => Promise<void>;
   setSelectedMonth: (monthKey: string) => void;
   setFilters: (filters: Partial<FinanceFilterState>) => void;
   resetFilters: () => void;
@@ -273,6 +273,11 @@ interface FinanceStore {
     totalBudget: number,
     expectedIncome?: number
   ) => Promise<void>;
+  saveMonthlyBudgetSettings: (
+    monthKey: string,
+    totalBudget: number,
+    categoryLimits: Record<string, number>
+  ) => Promise<void>;
   exportTransactionsCsv: (monthKey?: string) => string;
 
   // Selectors
@@ -290,6 +295,20 @@ interface FinanceStore {
   getDebtInstallments: (debtId: string) => DebtInstallment[];
   getUpcomingFinancialObligations: (withinDays?: number) => FinancialObligationItem[];
   getFilteredTransactions: (monthKey?: string) => FinanceTransaction[];
+  getSixMonthSpendingTrends: (
+    endMonthKey?: string,
+    categoryId?: string
+  ) => SixMonthTrendPoint[];
+}
+
+export interface SixMonthTrendPoint {
+  monthKey: string;
+  label: string;
+  fullLabel: string;
+  spent: number;
+  budget: number;
+  variance: number;
+  isOverBudget: boolean;
 }
 
 async function resolveCurrentUserId(
@@ -332,329 +351,197 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   resetFilters: () => set({ filters: INITIAL_FILTERS }),
 
   seedInitialFinanceData: async (userId: string) => {
-    const existingCount = await db.financeCategories.where('userId').equals(userId).count();
-    if (existingCount > 0) return;
+    const existingCatCount = await db.financeCategories.where('userId').equals(userId).count();
+    const existingAccCount = await db.financeAccounts.where('userId').equals(userId).count();
+    if (existingCatCount > 0 && existingAccCount > 0) return;
 
     const now = new Date().toISOString();
-    const todayStr = now.split('T')[0];
-    const currentMonthKey = getCurrentMonthKey();
 
-    // 1. Seed 10 Granular Categories in INR
-    const categories: FinanceCategory[] = DEFAULT_FINANCE_CATEGORIES.map((c) => ({
-      ...c,
-      id: crypto.randomUUID(),
-      userId,
-      createdAt: now,
-      updatedAt: now,
-    }));
-    await db.financeCategories.bulkAdd(categories);
-
-    const findCatId = (slug: string) =>
-      categories.find((c) => c.slug === slug)?.id || categories[0].id;
-
-    // 2. Seed Multi-Account / Payment Methods in INR
-    const upiAccount: FinanceAccount = {
-      id: crypto.randomUUID(),
-      userId,
-      name: 'GPay / HDFC UPI',
-      type: 'upi',
-      balance: 44200,
-      currency: 'INR',
-      color: '#10b981',
-      icon: 'Smartphone',
-      isDefault: true,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const bankAccount: FinanceAccount = {
-      id: crypto.randomUUID(),
-      userId,
-      name: 'HDFC Salary Account',
-      type: 'bank',
-      balance: 82500,
-      currency: 'INR',
-      color: '#3b82f6',
-      icon: 'Landmark',
-      isDefault: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const cashAccount: FinanceAccount = {
-      id: crypto.randomUUID(),
-      userId,
-      name: 'Cash in Wallet',
-      type: 'cash',
-      balance: 3400,
-      currency: 'INR',
-      color: '#f59e0b',
-      icon: 'Banknote',
-      isDefault: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const cardAccount: FinanceAccount = {
-      id: crypto.randomUUID(),
-      userId,
-      name: 'ICICI Amazon Pay Card',
-      type: 'credit_card',
-      balance: -4800,
-      currency: 'INR',
-      color: '#8b5cf6',
-      icon: 'CreditCard',
-      isDefault: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const accounts = [upiAccount, bankAccount, cashAccount, cardAccount];
-    await db.financeAccounts.bulkAdd(accounts);
-
-    // 3. Seed Current Month Budget
-    const budget: FinanceBudget = {
-      id: crypto.randomUUID(),
-      userId,
-      monthKey: currentMonthKey,
-      totalBudget: 45000,
-      expectedIncome: 75000,
-      currency: 'INR',
-      notes: 'Monthly envelope budget with Mother commitment and EMI reserves',
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.financeBudgets.add(budget);
-
-    // 4. Seed Monthly Commitment ("Mother's ₹3,000 Monthly Allowance")
-    const motherCommitment: MonthlyCommitment = {
-      id: crypto.randomUUID(),
-      userId,
-      title: "Mother's Monthly Support",
-      recipientName: 'Mother',
-      relationship: 'Mother',
-      monthlyTargetAmount: 3000,
-      dueDayOfMonth: 10,
-      category: 'family_support',
-      defaultCategoryId: findCatId('family-commitments'),
-      autoRolloverOverpayment: true,
-      icon: 'HeartHandshake',
-      color: '#ec4899',
-      isActive: true,
-      notes: '₹3,000/month fixed support. Deduct online orders & utility bills paid on her behalf.',
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.monthlyCommitments.add(motherCommitment);
-
-    // 5. Seed Lend & Borrow Records ("Friends ₹2,000 Partial Repayment Tracker")
-    const rahulDebtId = crypto.randomUUID();
-    const rahulDebt: DebtRecord = {
-      id: rahulDebtId,
-      userId,
-      personName: 'Rahul Sharma',
-      contactInfo: 'rahul@okaxis',
-      direction: 'borrowed',
-      title: 'Borrowed for Goa Trip & Gear',
-      principalAmount: 2000,
-      totalRepaidAmount: 500,
-      remainingAmount: 1500,
-      startDate: `${currentMonthKey}-01`,
-      repaymentSchedule: 'monthly_partial',
-      plannedMonthlyInstallment: 500,
-      dueDayOfMonth: 15,
-      status: 'active',
-      notes: 'Paying back ₹400–₹500 every month via UPI',
-      color: '#f59e0b',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const priyaDebt: DebtRecord = {
-      id: crypto.randomUUID(),
-      userId,
-      personName: 'Priya Verma',
-      contactInfo: 'priya@ybl',
-      direction: 'lent',
-      title: 'Concert Tickets & Dinner Split',
-      principalAmount: 1500,
-      totalRepaidAmount: 500,
-      remainingAmount: 1000,
-      startDate: `${currentMonthKey}-02`,
-      repaymentSchedule: 'monthly_partial',
-      plannedMonthlyInstallment: 500,
-      dueDayOfMonth: 20,
-      status: 'active',
-      notes: 'Priya is sending ₹500/month',
-      color: '#10b981',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await db.debtRecords.bulkAdd([rahulDebt, priyaDebt]);
-
-    // 6. Seed EMI Tracker
-    const macbookEmi: EmiTracker = {
-      id: crypto.randomUUID(),
-      userId,
-      loanName: 'MacBook Pro M3 No-Cost EMI',
-      lenderName: 'HDFC Bank Credit Card',
-      principalAmount: 78000,
-      interestRateAnnual: 0,
-      emiAmount: 6500,
-      tenureMonths: 12,
-      paidMonths: 5,
-      startDate: '2026-06-05',
-      billingDayOfMonth: 5,
-      categoryId: findCatId('emis-debt-repayment'),
-      accountId: bankAccount.id,
-      autoCreateTaskReminder: true,
-      status: 'active',
-      notes: 'Auto-debits on the 5th of every month',
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.emiTrackers.add(macbookEmi);
-
-    // 7. Seed Sample Transactions (including Mother's ₹450 Lipstick & ₹850 Electricity Bill offsets, Whey Protein, and Rahul's ₹500 partial repayment)
-    const rahulInstallmentId = crypto.randomUUID();
-    const rahulRepayTxId = crypto.randomUUID();
-
-    const sampleTransactions: FinanceTransaction[] = [
-      {
+    // 1. Seed 10 Clean Categories (all budget limits start at ₹0 until customized)
+    if (existingCatCount === 0) {
+      const categories: FinanceCategory[] = DEFAULT_FINANCE_CATEGORIES.map((c) => ({
+        ...c,
         id: crypto.randomUUID(),
         userId,
-        title: 'Monthly Salary Credit',
-        amount: 75000,
-        type: 'income',
-        categoryId: findCatId('investments-savings'),
-        subcategory: 'Salary / Income',
-        accountId: bankAccount.id,
-        date: `${currentMonthKey}-01`,
-        monthKey: currentMonthKey,
-        notes: 'Monthly salary credited',
-        tags: ['salary', 'income'],
-        isRecurring: true,
         createdAt: now,
         updatedAt: now,
-      },
-      {
-        id: crypto.randomUUID(),
-        userId,
-        title: 'Lakme Matte Lipstick for Mother',
-        amount: 450,
-        type: 'expense',
-        categoryId: findCatId('shopping-personal-care'),
-        subcategory: 'Cosmetics / Lipstick',
-        accountId: upiAccount.id,
-        date: todayStr,
-        monthKey: currentMonthKey,
-        notes: "Ordered on Nykaa per Mother's request — deducted from ₹3,000 monthly allowance",
-        tags: ['mother', 'cosmetics', 'offset'],
-        isRecurring: false,
-        linkedCommitmentId: motherCommitment.id,
-        commitmentContributionType: 'offset_expense',
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: crypto.randomUUID(),
-        userId,
-        title: 'Home Electricity Bill (Paid for Mother)',
-        amount: 850,
-        type: 'expense',
-        categoryId: findCatId('utilities-bills'),
-        subcategory: 'Electricity Bill',
-        accountId: upiAccount.id,
-        date: todayStr,
-        monthKey: currentMonthKey,
-        notes: "Paid home electricity bill on Mother's behalf — deducted from ₹3,000 monthly allowance",
-        tags: ['mother', 'electricity', 'offset'],
-        isRecurring: false,
-        linkedCommitmentId: motherCommitment.id,
-        commitmentContributionType: 'offset_expense',
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: crypto.randomUUID(),
-        userId,
-        title: 'Optimum Nutrition Gold Standard Whey Protein (2lb)',
-        amount: 2850,
-        type: 'expense',
-        categoryId: findCatId('medical-supplements'),
-        subcategory: 'Whey / Protein',
-        accountId: cardAccount.id,
-        date: todayStr,
-        monthKey: currentMonthKey,
-        notes: 'Monthly gym protein supplement stack',
-        tags: ['whey', 'fitness', 'protein'],
-        isRecurring: true,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: crypto.randomUUID(),
-        userId,
-        title: 'Fresh Vegetables, Milk & Groceries',
-        amount: 1120,
-        type: 'expense',
-        categoryId: findCatId('groceries-household'),
-        subcategory: 'Vegetables & Dairy',
-        accountId: upiAccount.id,
-        date: todayStr,
-        monthKey: currentMonthKey,
-        notes: 'Weekly household grocery run',
-        tags: ['groceries', 'dairy'],
-        isRecurring: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: rahulRepayTxId,
-        userId,
-        title: 'Partial Debt Repayment to Rahul Sharma',
-        amount: 500,
-        type: 'expense',
-        categoryId: findCatId('emis-debt-repayment'),
-        subcategory: 'Friend Debt Repayment',
-        accountId: upiAccount.id,
-        date: todayStr,
-        monthKey: currentMonthKey,
-        notes: 'First partial monthly installment towards ₹2,000 borrowed',
-        tags: ['debt', 'rahul', 'installment'],
-        isRecurring: false,
-        linkedDebtId: rahulDebtId,
-        linkedDebtInstallmentId: rahulInstallmentId,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ];
+      }));
+      await db.financeCategories.bulkAdd(categories);
+    }
 
-    await db.financeTransactions.bulkAdd(sampleTransactions);
+    // 2. Seed Clean ₹0 Starter Accounts (Fresh Start — no dummy balances or transactions)
+    if (existingAccCount === 0) {
+      const starterAccounts: FinanceAccount[] = [
+        {
+          id: crypto.randomUUID(),
+          userId,
+          name: 'UPI',
+          type: 'upi',
+          balance: 0,
+          currency: 'INR',
+          color: '#10b981',
+          icon: 'Smartphone',
+          isDefault: true,
+          archived: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: crypto.randomUUID(),
+          userId,
+          name: 'Bank Account',
+          type: 'bank',
+          balance: 0,
+          currency: 'INR',
+          color: '#3b82f6',
+          icon: 'Landmark',
+          isDefault: false,
+          archived: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: crypto.randomUUID(),
+          userId,
+          name: 'Cash',
+          type: 'cash',
+          balance: 0,
+          currency: 'INR',
+          color: '#f59e0b',
+          icon: 'Banknote',
+          isDefault: false,
+          archived: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: crypto.randomUUID(),
+          userId,
+          name: 'Credit Card',
+          type: 'credit_card',
+          balance: 0,
+          currency: 'INR',
+          color: '#8b5cf6',
+          icon: 'CreditCard',
+          isDefault: false,
+          archived: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      await db.financeAccounts.bulkAdd(starterAccounts);
+    }
+  },
 
-    const rahulInstallment: DebtInstallment = {
-      id: rahulInstallmentId,
-      userId,
-      debtId: rahulDebtId,
-      amount: 500,
-      date: todayStr,
-      monthKey: currentMonthKey,
-      paymentMethod: 'upi',
-      transactionId: rahulRepayTxId,
-      note: '1st partial installment via GPay',
-      balanceAfterPayment: 1500,
-      createdAt: now,
-      updatedAt: now,
+  resetAllFinanceData: async (keepCategories = true) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const now = new Date().toISOString();
+
+    await Promise.all([
+      db.financeTransactions.where('userId').equals(userId).delete(),
+      db.financeBudgets.where('userId').equals(userId).delete(),
+      db.monthlyCommitments.where('userId').equals(userId).delete(),
+      db.debtRecords.where('userId').equals(userId).delete(),
+      db.debtInstallments.where('userId').equals(userId).delete(),
+      db.emiTrackers.where('userId').equals(userId).delete(),
+    ]);
+
+    // Reset all account balances to ₹0 and normalize sample names if present
+    const userAccounts = await db.financeAccounts.where('userId').equals(userId).toArray();
+    const sampleNameMap: Record<string, string> = {
+      'GPay / HDFC UPI': 'UPI',
+      'HDFC Salary Account': 'Bank Account',
+      'Cash in Wallet': 'Cash',
+      'ICICI Amazon Pay Card': 'Credit Card',
     };
-    await db.debtInstallments.add(rahulInstallment);
+    for (const acc of userAccounts) {
+      await db.financeAccounts.update(acc.id, {
+        balance: 0,
+        name: sampleNameMap[acc.name] || acc.name,
+        updatedAt: now,
+      });
+    }
+
+    if (!keepCategories) {
+      await db.financeCategories.where('userId').equals(userId).delete();
+    } else {
+      const cats = await db.financeCategories.where('userId').equals(userId).toArray();
+      for (const cat of cats) {
+        await db.financeCategories.update(cat.id, {
+          monthlyBudgetLimit: 0,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await get().loadFinanceData(userId);
   },
 
   loadFinanceData: async (customUserId?: string) => {
     set({ isLoading: true, error: null });
     try {
       const userId = await resolveCurrentUserId(customUserId, get().currentUserId);
+
+      // One-time cleanup: purge legacy pre-seeded sample records while preserving categories
+      if (typeof window !== 'undefined') {
+        const migrationKey = `flowfinance_fresh_start_v2_${userId}`;
+        if (!window.localStorage.getItem(migrationKey)) {
+          const existingCats = await db.financeCategories.where('userId').equals(userId).count();
+          if (existingCats > 0) {
+            const sampleAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
+            const hasLegacySampleData =
+              sampleAccs.some((a) =>
+                ['GPay / HDFC UPI', 'HDFC Salary Account', 'ICICI Amazon Pay Card'].includes(a.name)
+              ) ||
+              (await db.financeTransactions
+                .where('userId')
+                .equals(userId)
+                .filter((t) =>
+                  [
+                    'Lakme Matte Lipstick for Mother',
+                    'Home Electricity Bill (Paid for Mother)',
+                    'Optimum Nutrition Gold Standard Whey Protein (2lb)',
+                    'Monthly Salary Credit',
+                  ].includes(t.title)
+                )
+                .count()) > 0;
+
+            if (hasLegacySampleData) {
+              const now = new Date().toISOString();
+              await Promise.all([
+                db.financeTransactions.where('userId').equals(userId).delete(),
+                db.financeBudgets.where('userId').equals(userId).delete(),
+                db.monthlyCommitments.where('userId').equals(userId).delete(),
+                db.debtRecords.where('userId').equals(userId).delete(),
+                db.debtInstallments.where('userId').equals(userId).delete(),
+                db.emiTrackers.where('userId').equals(userId).delete(),
+              ]);
+              const sampleNameMap: Record<string, string> = {
+                'GPay / HDFC UPI': 'UPI',
+                'HDFC Salary Account': 'Bank Account',
+                'Cash in Wallet': 'Cash',
+                'ICICI Amazon Pay Card': 'Credit Card',
+              };
+              for (const acc of sampleAccs) {
+                await db.financeAccounts.update(acc.id, {
+                  balance: 0,
+                  name: sampleNameMap[acc.name] || acc.name,
+                  updatedAt: now,
+                });
+              }
+              const cats = await db.financeCategories.where('userId').equals(userId).toArray();
+              for (const cat of cats) {
+                await db.financeCategories.update(cat.id, {
+                  monthlyBudgetLimit: 0,
+                  updatedAt: now,
+                });
+              }
+            }
+          }
+          window.localStorage.setItem(migrationKey, '1');
+        }
+      }
+
       await get().seedInitialFinanceData(userId);
 
       const [
@@ -1277,7 +1164,44 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         userId,
         monthKey,
         totalBudget: Number(totalBudget),
-        expectedIncome: expectedIncome !== undefined ? Number(expectedIncome) : 75000,
+        expectedIncome: expectedIncome !== undefined ? Number(expectedIncome) : 0,
+        currency: 'INR',
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.financeBudgets.add(budget);
+    }
+
+    await get().loadFinanceData(userId);
+  },
+
+  saveMonthlyBudgetSettings: async (monthKey, totalBudget, categoryLimits) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const now = new Date().toISOString();
+
+    for (const [categoryId, limit] of Object.entries(categoryLimits)) {
+      const normalized = Math.max(0, Number(limit) || 0);
+      await db.financeCategories.update(categoryId, {
+        monthlyBudgetLimit: normalized,
+        updatedAt: now,
+      });
+    }
+
+    const existing = get().budgets.find((b) => b.monthKey === monthKey && b.userId === userId);
+    const normalizedTotal = Math.max(0, Number(totalBudget) || 0);
+
+    if (existing) {
+      await db.financeBudgets.update(existing.id, {
+        totalBudget: normalizedTotal,
+        updatedAt: now,
+      });
+    } else if (normalizedTotal > 0) {
+      const budget: FinanceBudget = {
+        id: crypto.randomUUID(),
+        userId,
+        monthKey,
+        totalBudget: normalizedTotal,
+        expectedIncome: 0,
         currency: 'INR',
         createdAt: now,
         updatedAt: now,
@@ -1429,11 +1353,12 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
     const budgetObj = get().budgets.find((b) => b.monthKey === targetMonth);
     const sumCategoryBudgets = get()
-      .categories.filter((c) => c.type === 'expense')
+      .categories.filter((c) => c.type === 'expense' || c.type === 'both')
       .reduce((sum, c) => sum + c.monthlyBudgetLimit, 0);
 
-    const monthlyBudget = budgetObj?.totalBudget || sumCategoryBudgets || 45000;
-    const expectedIncome = budgetObj?.expectedIncome || totalIncome || 75000;
+    const monthlyBudget =
+      budgetObj && budgetObj.totalBudget > 0 ? budgetObj.totalBudget : sumCategoryBudgets;
+    const expectedIncome = budgetObj?.expectedIncome || totalIncome;
 
     // 1. Remaining Unpaid Monthly Commitments (Only the unfulfilled remainder so offset purchases are never double-counted!)
     const commitmentLedgers = get().getAllCommitmentLedgers(targetMonth);
@@ -1507,15 +1432,16 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       .map((category) => {
         const catTxs = expenseTransactions.filter((t) => t.categoryId === category.id);
         const spent = catTxs.reduce((sum, t) => sum + t.amount, 0);
-        const budgetLimit = category.monthlyBudgetLimit || 1;
-        const percentageOfBudget = Math.round((spent / budgetLimit) * 100);
+        const budgetLimit = category.monthlyBudgetLimit;
+        const percentageOfBudget =
+          budgetLimit > 0 ? Math.round((spent / budgetLimit) * 100) : 0;
         const percentageOfTotalSpend =
           totalSpent > 0 ? Math.round((spent / totalSpent) * 100) : 0;
 
         let status: CategorySpendItem['status'] = 'safe';
-        if (percentageOfBudget >= 100) {
+        if (budgetLimit > 0 && percentageOfBudget >= 100) {
           status = 'exceeded';
-        } else if (percentageOfBudget >= 80) {
+        } else if (budgetLimit > 0 && percentageOfBudget >= 80) {
           status = 'warning';
         }
 
@@ -1714,6 +1640,70 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       }
 
       return true;
+    });
+  },
+
+  getSixMonthSpendingTrends: (endMonthKey, categoryId = 'all') => {
+    const anchorMonth = endMonthKey || get().selectedMonth;
+    const months: string[] = [];
+    let cursor = anchorMonth;
+    for (let i = 0; i < 6; i++) {
+      months.unshift(cursor);
+      cursor = getPreviousMonthKey(cursor);
+    }
+
+    const categories = get().categories;
+    const transactions = get().transactions;
+    const budgets = get().budgets;
+
+    const selectedCategory =
+      categoryId && categoryId !== 'all'
+        ? categories.find((c) => c.id === categoryId)
+        : undefined;
+
+    const sumCategoryBudgets = categories
+      .filter((c) => c.type === 'expense' || c.type === 'both')
+      .reduce((sum, c) => sum + (c.monthlyBudgetLimit || 0), 0);
+
+    return months.map((mKey) => {
+      const [yStr, mStr] = mKey.split('-');
+      const dateObj = new Date(parseInt(yStr, 10), parseInt(mStr, 10) - 1, 1);
+      const label = dateObj.toLocaleDateString('en-IN', { month: 'short' });
+      const fullLabel = dateObj.toLocaleDateString('en-IN', {
+        month: 'long',
+        year: 'numeric',
+      });
+
+      const spent = transactions
+        .filter((tx) => {
+          if (tx.monthKey !== mKey || tx.type !== 'expense') return false;
+          if (selectedCategory && tx.categoryId !== selectedCategory.id) return false;
+          return true;
+        })
+        .reduce((sum, tx) => sum + tx.amount, 0);
+
+      let budget = 0;
+      if (selectedCategory) {
+        budget = selectedCategory.monthlyBudgetLimit || 0;
+      } else if (sumCategoryBudgets > 0) {
+        budget = sumCategoryBudgets;
+      } else {
+        const monthBudget = budgets.find((b) => b.monthKey === mKey);
+        budget = monthBudget?.totalBudget || 0;
+      }
+
+      const variance = budget - spent;
+      const isOverBudget = budget > 0 && spent > budget;
+
+      return {
+        monthKey: mKey,
+        label,
+        fullLabel,
+        spent,
+        budget,
+        variance,
+        isOverBudget,
+      };
     });
   },
 }));

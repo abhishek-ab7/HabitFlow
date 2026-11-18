@@ -1,41 +1,37 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import { useFinanceStore } from '@/lib/stores/finance-store';
 import type {
   FinanceTransaction,
   FinanceTransactionType,
   CommitmentContributionType,
 } from '@/lib/types';
-import type { ExpenseParseOutput } from '@/lib/ai/types';
-import { HeartHandshake, Users, Landmark } from 'lucide-react';
+import { Delete, ChevronDown, ChevronUp, Trash2, X } from 'lucide-react';
+import { CategoryIcon } from './CategoryIcon';
 import { toast } from 'sonner';
 
 interface AddTransactionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingTransaction?: FinanceTransaction | null;
-  prefill?: Partial<ExpenseParseOutput> | null;
   defaultCommitmentId?: string | null;
   defaultDebtId?: string | null;
 }
+
+const KEYPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const;
 
 export function AddTransactionModal({
   open,
   onOpenChange,
   editingTransaction,
-  prefill,
   defaultCommitmentId,
   defaultDebtId,
 }: AddTransactionModalProps) {
@@ -45,21 +41,22 @@ export function AddTransactionModal({
   const debtRecords = useFinanceStore((s) => s.debtRecords);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
+  const deleteTransaction = useFinanceStore((s) => s.deleteTransaction);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
   const [type, setType] = useState<FinanceTransactionType>('expense');
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amountStr, setAmountStr] = useState('0');
   const [categoryId, setCategoryId] = useState('');
-  const [subcategory, setSubcategory] = useState('');
   const [accountId, setAccountId] = useState('');
+  const [toAccountId, setToAccountId] = useState('');
+  const [title, setTitle] = useState('');
   const [date, setDate] = useState(todayStr);
-  const [notes, setNotes] = useState('');
   const [linkedCommitmentId, setLinkedCommitmentId] = useState<string>('none');
   const [commitmentContributionType, setCommitmentContributionType] =
     useState<CommitmentContributionType>('offset_expense');
   const [linkedDebtId, setLinkedDebtId] = useState<string>('none');
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -67,50 +64,41 @@ export function AddTransactionModal({
 
     if (editingTransaction) {
       setType(editingTransaction.type);
-      setTitle(editingTransaction.title);
-      setAmount(String(editingTransaction.amount));
+      setAmountStr(String(editingTransaction.amount));
       setCategoryId(editingTransaction.categoryId);
-      setSubcategory(editingTransaction.subcategory || '');
       setAccountId(editingTransaction.accountId);
+      setToAccountId(editingTransaction.toAccountId || '');
+      setTitle(editingTransaction.title);
       setDate(editingTransaction.date);
-      setNotes(editingTransaction.notes || '');
       setLinkedCommitmentId(editingTransaction.linkedCommitmentId || 'none');
       setCommitmentContributionType(
         editingTransaction.commitmentContributionType || 'offset_expense'
       );
       setLinkedDebtId(editingTransaction.linkedDebtId || 'none');
+      setShowMoreOptions(
+        Boolean(editingTransaction.linkedCommitmentId || editingTransaction.linkedDebtId)
+      );
       return;
     }
 
-    const defaultCat =
-      (prefill?.categorySlug &&
-        categories.find((c) => c.slug === prefill.categorySlug)) ||
-      categories[0];
-    const defaultAcc =
-      (prefill?.paymentMethodType &&
-        accounts.find((a) => a.type === prefill.paymentMethodType)) ||
-      accounts.find((a) => a.isDefault) ||
-      accounts[0];
+    const defaultCat = categories[0];
+    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
+    const secondAcc = accounts.find((a) => a.id !== defaultAcc?.id) || accounts[0];
 
-    setType(prefill?.type || 'expense');
-    setTitle(prefill?.title || '');
-    setAmount(prefill?.amount && prefill.amount > 0 ? String(prefill.amount) : '');
+    setType('expense');
+    setAmountStr('0');
     setCategoryId(defaultCat?.id || '');
-    setSubcategory(prefill?.subcategory || defaultCat?.subcategories?.[0] || '');
     setAccountId(defaultAcc?.id || '');
+    setToAccountId(secondAcc?.id || '');
+    setTitle('');
     setDate(todayStr);
-    setNotes(prefill?.notes || '');
-    setLinkedCommitmentId(
-      defaultCommitmentId || prefill?.matchedCommitmentId || 'none'
-    );
-    setCommitmentContributionType(
-      prefill?.commitmentContributionType || 'offset_expense'
-    );
-    setLinkedDebtId(defaultDebtId || prefill?.matchedDebtId || 'none');
+    setLinkedCommitmentId(defaultCommitmentId || 'none');
+    setCommitmentContributionType('offset_expense');
+    setLinkedDebtId(defaultDebtId || 'none');
+    setShowMoreOptions(Boolean(defaultCommitmentId || defaultDebtId));
   }, [
     open,
     editingTransaction,
-    prefill,
     defaultCommitmentId,
     defaultDebtId,
     categories,
@@ -118,28 +106,87 @@ export function AddTransactionModal({
     todayStr,
   ]);
 
-  const selectedCategory = categories.find((c) => c.id === categoryId);
+  const handleKeypadPress = useCallback((key: string) => {
+    setAmountStr((prev) => {
+      if (key === 'backspace') {
+        if (prev.length <= 1) return '0';
+        return prev.slice(0, -1);
+      }
+      if (key === '.') {
+        if (prev.includes('.')) return prev;
+        return `${prev}.`;
+      }
+      // Limit to 2 decimal places
+      const dotIdx = prev.indexOf('.');
+      if (dotIdx !== -1 && prev.length - dotIdx > 2) return prev;
+      // Limit total length
+      if (prev.length >= 9) return prev;
+      if (prev === '0') return key;
+      return `${prev}${key}`;
+    });
+  }, []);
+
+  // Support physical keyboard numbers when modal is open & user isn't typing in a text input
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
+      ) {
+        return;
+      }
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        handleKeypadPress(e.key);
+      } else if (e.key === '.') {
+        e.preventDefault();
+        handleKeypadPress('.');
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleKeypadPress('backspace');
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, handleKeypadPress]);
+
+  const selectedCategory = categories.find((c) => c.id === categoryId) || categories[0];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const numericAmount = parseFloat(amount);
-    if (!title.trim() || isNaN(numericAmount) || numericAmount <= 0) {
-      toast.error('Please enter a valid title and positive amount');
+    const numericAmount = parseFloat(amountStr);
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      toast.error('Tap the keypad to enter an amount');
       return;
     }
+
+    const fallbackCat = categories[0]?.id || 'uncategorized';
+    const fallbackAcc = accounts[0]?.id || 'default';
+    const resolvedCategoryId = categoryId || fallbackCat;
+    const resolvedAccountId = accountId || fallbackAcc;
+
+    const autoTitle =
+      title.trim() ||
+      (type === 'transfer'
+        ? 'Account Transfer'
+        : type === 'income'
+        ? 'Income'
+        : selectedCategory?.name || 'Expense');
 
     setIsSaving(true);
     try {
       const payload = {
-        title: title.trim(),
+        title: autoTitle,
         amount: numericAmount,
         type,
-        categoryId: categoryId || categories[0]?.id,
-        subcategory: subcategory || undefined,
-        accountId: accountId || accounts[0]?.id,
+        categoryId: resolvedCategoryId,
+        accountId: resolvedAccountId,
+        toAccountId: type === 'transfer' ? toAccountId || undefined : undefined,
         date,
-        notes: notes.trim() || undefined,
-        tags: [],
         linkedCommitmentId:
           linkedCommitmentId !== 'none' ? linkedCommitmentId : null,
         commitmentContributionType:
@@ -149,41 +196,55 @@ export function AddTransactionModal({
 
       if (editingTransaction) {
         await updateTransaction(editingTransaction.id, payload);
-        toast.success('Transaction updated');
+        toast.success('Updated entry');
       } else {
         await addTransaction(payload);
-        toast.success(`Logged ${formatINR(numericAmount)} transaction`);
+        if (linkedCommitmentId !== 'none') {
+          toast.success('Saved and linked to commitment');
+        } else {
+          toast.success(type === 'income' ? 'Income logged' : 'Expense saved');
+        }
       }
       onOpenChange(false);
-    } catch {
-      toast.error('Failed to save transaction');
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleDelete = async () => {
+    if (!editingTransaction) return;
+    await deleteTransaction(editingTransaction.id);
+    toast.success('Transaction deleted');
+    onOpenChange(false);
+  };
+
+  const activeCommitments = commitments.filter((c) => c.isActive);
+  const activeDebts = debtRecords.filter((d) => d.status === 'active');
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {editingTransaction ? 'Edit Transaction' : 'Log Expense / Income'}
-          </DialogTitle>
-          <DialogDescription>
-            Categorize your transaction and optionally deduct it from a Monthly
-            Commitment (like Mother&apos;s allowance) or link it to a Friend Debt.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        showCloseButton={false}
+        className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-[430px] w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col border-border bg-background"
+      >
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+          <div className="w-10 h-1.5 rounded-full bg-muted-foreground/30" />
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-2">
-          {/* Type Switcher */}
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-lg bg-muted">
-            {(['expense', 'income'] as const).map((t) => (
+        {/* Accessible Hidden/Visual Header with Type Switcher */}
+        <div className="px-4 pt-2 pb-3 border-b border-border/60 flex items-center justify-between gap-2 shrink-0">
+          <DialogTitle className="sr-only">
+            {editingTransaction ? 'Edit Transaction' : 'Quick Add Transaction'}
+          </DialogTitle>
+
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted flex-1">
+            {(['expense', 'income', 'transfer'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setType(t)}
-                className={`py-1.5 text-xs font-semibold rounded-md capitalize transition-all ${
+                className={`min-h-[40px] px-2 text-xs sm:text-sm font-semibold rounded-lg capitalize transition-all whitespace-nowrap ${
                   type === t
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
@@ -194,208 +255,289 @@ export function AddTransactionModal({
             ))}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2 space-y-1.5">
-              <Label htmlFor="tx-title">Title / Item Description</Label>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Scrollable Sheet Body */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
+          <div className="px-4 py-3 space-y-4">
+            {/* Hero Amount Display */}
+            <div className="text-center py-2">
+              <div className="inline-flex items-baseline justify-center gap-1">
+                <span className="text-2xl font-semibold text-muted-foreground">₹</span>
+                <span
+                  className={`text-4xl sm:text-5xl font-bold font-mono tabular-nums tracking-tight ${
+                    type === 'income'
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-foreground'
+                  }`}
+                >
+                  {amountStr}
+                </span>
+              </div>
+            </div>
+
+            {/* Category Chips (for Expense & Income) */}
+            {type !== 'transfer' ? (
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Category
+                </span>
+                <div className="flex gap-2 overflow-x-auto pb-1 no-swipe">
+                  {categories.map((cat) => {
+                    const isSelected = categoryId === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setCategoryId(cat.id)}
+                        className={`shrink-0 min-h-[44px] px-3 rounded-xl border text-xs font-medium flex items-center gap-2 transition-colors whitespace-nowrap ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-card text-foreground border-border hover:bg-muted'
+                        }`}
+                      >
+                        <CategoryIcon
+                          name={cat.icon}
+                          className="w-4 h-4 shrink-0"
+                          style={!isSelected ? { color: cat.color } : undefined}
+                        />
+                        <span>{cat.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  To Account
+                </span>
+                <div className="flex gap-2 overflow-x-auto pb-1 no-swipe">
+                  {accounts.map((acc) => {
+                    const isSelected = toAccountId === acc.id;
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => setToAccountId(acc.id)}
+                        className={`shrink-0 min-h-[44px] px-3 rounded-xl border text-xs font-medium transition-colors whitespace-nowrap ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-card text-foreground border-border hover:bg-muted'
+                        }`}
+                      >
+                        {acc.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Payment Account Selector */}
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground">
+                {type === 'transfer' ? 'From Account' : 'Paid via'}
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {accounts.map((acc) => {
+                  const isSelected = accountId === acc.id;
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => setAccountId(acc.id)}
+                      className={`min-h-[44px] px-2.5 rounded-xl border text-xs font-medium truncate transition-colors ${
+                        isSelected
+                          ? 'bg-foreground text-background border-foreground'
+                          : 'bg-card text-foreground border-border hover:bg-muted'
+                      }`}
+                    >
+                      {acc.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Optional Note / Title */}
+            <div>
               <Input
-                id="tx-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Lakme Lipstick for Mother, Whey Protein..."
-                required
+                placeholder="Note or item name (optional)"
+                className="h-11 text-sm rounded-xl"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-amount">Amount (₹)</Label>
-              <Input
-                id="tx-amount"
-                type="number"
-                min="1"
-                step="any"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="450"
-                className="font-mono tabular-nums"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-category">Category</Label>
-              <select
-                id="tx-category"
-                value={categoryId}
-                onChange={(e) => {
-                  const newCatId = e.target.value;
-                  setCategoryId(newCatId);
-                  const cat = categories.find((c) => c.id === newCatId);
-                  setSubcategory(cat?.subcategories?.[0] || '');
-                }}
-                className="w-full h-10 px-3 text-sm rounded-md border border-input bg-background"
+            {/* Collapsible Commitment / Friend / Date Linking */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowMoreOptions((v) => !v)}
+                className="w-full min-h-[44px] px-3 rounded-xl border border-border/70 bg-muted/30 flex items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-subcategory">Subcategory</Label>
-              <select
-                id="tx-subcategory"
-                value={subcategory}
-                onChange={(e) => setSubcategory(e.target.value)}
-                className="w-full h-10 px-3 text-sm rounded-md border border-input bg-background"
-              >
-                <option value="">General</option>
-                {selectedCategory?.subcategories.map((sub) => (
-                  <option key={sub} value={sub}>
-                    {sub}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-account">Paid Via Account</Label>
-              <select
-                id="tx-account"
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                className="w-full h-10 px-3 text-sm rounded-md border border-input bg-background"
-              >
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} ({formatINR(acc.balance)})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-date">Date</Label>
-              <Input
-                id="tx-date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-
-          {/* Monthly Commitment Offset Selector ("Mother's ₹3,000 Tracker") */}
-          {type === 'expense' && commitments.length > 0 && (
-            <div className="rounded-lg border border-pink-500/30 bg-pink-500/5 p-3.5 space-y-2.5">
-              <div className="flex items-center gap-2 text-xs font-semibold text-pink-600 dark:text-pink-400">
-                <HeartHandshake className="w-4 h-4" />
-                <span>Deduct from Monthly Commitment? (In-Kind / Bill Offset)</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <select
-                    value={linkedCommitmentId}
-                    onChange={(e) => setLinkedCommitmentId(e.target.value)}
-                    className="w-full h-9 px-2.5 text-xs rounded-md border border-input bg-background"
-                  >
-                    <option value="none">No — Regular personal expense</option>
-                    {commitments
-                      .filter((c) => c.isActive)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.recipientName} — {c.title} ({formatINR(c.monthlyTargetAmount)}/mo)
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                {linkedCommitmentId !== 'none' && (
-                  <div>
-                    <select
-                      value={commitmentContributionType}
-                      onChange={(e) =>
-                        setCommitmentContributionType(
-                          e.target.value as CommitmentContributionType
-                        )
-                      }
-                      className="w-full h-9 px-2.5 text-xs rounded-md border border-input bg-background"
-                    >
-                      <option value="offset_expense">
-                        Offset Purchase / Bill Paid for Them
-                      </option>
-                      <option value="direct_payment">
-                        Direct Cash / UPI Allowance Transfer
-                      </option>
-                    </select>
-                  </div>
+                <span>
+                  {linkedCommitmentId !== 'none' || linkedDebtId !== 'none'
+                    ? 'Linked to commitment or friend · Edit'
+                    : 'Link to Commitment, Friend, or Date'}
+                </span>
+                {showMoreOptions ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
                 )}
-              </div>
-              {linkedCommitmentId !== 'none' && (
-                <p className="text-[11px] text-muted-foreground">
-                  This expense stays in <strong>{selectedCategory?.name}</strong> for your
-                  spending analytics AND automatically deducts{' '}
-                  <strong>{amount ? formatINR(Number(amount)) : '₹0'}</strong> from this
-                  month&apos;s commitment obligation.
-                </p>
+              </button>
+
+              {showMoreOptions && (
+                <div className="mt-2 p-3 rounded-xl border border-border bg-muted/20 space-y-3">
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="tx-date"
+                      className="text-xs font-medium text-muted-foreground block"
+                    >
+                      Date
+                    </label>
+                    <Input
+                      id="tx-date"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="h-11 text-sm"
+                    />
+                  </div>
+
+                  {type === 'expense' && activeCommitments.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="tx-commitment"
+                        className="text-xs font-medium text-muted-foreground block"
+                      >
+                        Deduct from Monthly Commitment
+                      </label>
+                      <select
+                        id="tx-commitment"
+                        value={linkedCommitmentId}
+                        onChange={(e) => setLinkedCommitmentId(e.target.value)}
+                        className="w-full h-11 px-3 text-sm rounded-xl border border-input bg-background"
+                      >
+                        <option value="none">None</option>
+                        {activeCommitments.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.title} ({c.recipientName})
+                          </option>
+                        ))}
+                      </select>
+
+                      {linkedCommitmentId !== 'none' && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCommitmentContributionType('offset_expense')
+                            }
+                            className={`min-h-[40px] px-2 text-xs font-medium rounded-lg border ${
+                              commitmentContributionType === 'offset_expense'
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'bg-background text-muted-foreground border-border'
+                            }`}
+                          >
+                            Offset Purchase
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCommitmentContributionType('direct_payment')
+                            }
+                            className={`min-h-[40px] px-2 text-xs font-medium rounded-lg border ${
+                              commitmentContributionType === 'direct_payment'
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'bg-background text-muted-foreground border-border'
+                            }`}
+                          >
+                            Direct Transfer
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeDebts.length > 0 && (
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="tx-debt"
+                        className="text-xs font-medium text-muted-foreground block"
+                      >
+                        Link to Friend Debt
+                      </label>
+                      <select
+                        id="tx-debt"
+                        value={linkedDebtId}
+                        onChange={(e) => setLinkedDebtId(e.target.value)}
+                        className="w-full h-11 px-3 text-sm rounded-xl border border-input bg-background"
+                      >
+                        <option value="none">None</option>
+                        {activeDebts.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.personName} ({d.direction === 'borrowed' ? 'I owe' : 'Owes me'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
-          )}
 
-          {/* Friend Debt Partial Installment Link */}
-          {!editingTransaction && debtRecords.filter((d) => d.status === 'active').length > 0 && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-2">
-              <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                <Users className="w-4 h-4" />
-                <span>Count as Partial Friend Debt Repayment?</span>
-              </div>
-              <select
-                value={linkedDebtId}
-                onChange={(e) => setLinkedDebtId(e.target.value)}
-                className="w-full h-9 px-2.5 text-xs rounded-md border border-input bg-background"
-              >
-                <option value="none">No — Not linked to a friend debt</option>
-                {debtRecords
-                  .filter((d) => d.status === 'active')
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.personName} ({d.direction === 'borrowed' ? 'I Owe' : 'Owes Me'}{' '}
-                      {formatINR(d.remainingAmount)} remaining)
-                    </option>
-                  ))}
-              </select>
+            {/* Tactile 3x4 Numeric Keypad */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {KEYPAD_KEYS.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleKeypadPress(key)}
+                  aria-label={key === 'backspace' ? 'Backspace' : `Digit ${key}`}
+                  className="h-12 rounded-xl bg-muted/60 hover:bg-muted active:scale-95 transition-transform flex items-center justify-center text-lg font-semibold font-mono tabular-nums text-foreground select-none"
+                >
+                  {key === 'backspace' ? <Delete className="w-5 h-5" /> : key}
+                </button>
+              ))}
             </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="tx-notes">Notes (Optional)</Label>
-            <Input
-              id="tx-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Merchant, order details, or context..."
-            />
           </div>
 
-          <DialogFooter className="pt-2">
+          {/* Sticky Action Footer */}
+          <div className="px-4 py-3 border-t border-border bg-background flex items-center gap-2 shrink-0">
+            {editingTransaction && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDelete}
+                aria-label="Delete transaction"
+                className="h-12 w-12 shrink-0 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+              >
+                <Trash2 className="w-5 h-5" />
+              </Button>
+            )}
             <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
+              type="submit"
+              disabled={isSaving}
+              className="w-full h-12 rounded-xl text-sm font-semibold"
             >
-              Cancel
+              {isSaving
+                ? 'Saving...'
+                : editingTransaction
+                ? 'Update Entry'
+                : 'Save Entry'}
             </Button>
-            <Button type="submit" disabled={isSaving}>
-              {editingTransaction ? 'Save Changes' : 'Save Transaction'}
-            </Button>
-          </DialogFooter>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

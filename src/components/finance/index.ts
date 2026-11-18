@@ -1,7 +1,8 @@
 export { FinancePageContent } from './FinancePageContent';
-export { SmartExpenseBar } from './SmartExpenseBar';
 export { AddTransactionModal } from './AddTransactionModal';
-export { CommitmentsTab } from './CommitmentsTab';
-export { LendBorrowTab } from './LendBorrowTab';
-export { EmiTrackerTab } from './EmiTrackerTab';
-export { TransactionsAnalyticsTab } from './TransactionsAnalyticsTab';
+export { MonthlyBudgetModal } from './MonthlyBudgetModal';
+export { OverviewTab } from './OverviewTab';
+export { TrackersTab } from './TrackersTab';
+export { AccountsTab } from './AccountsTab';
+export { CategoryIcon } from './CategoryIcon';
+export { SpendingTrendChart } from './SpendingTrendChart';
