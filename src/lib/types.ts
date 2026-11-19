@@ -37,12 +37,32 @@ export type Trend = 'up' | 'down' | 'stable';
 // HABIT MODELS
 // ============================================
 
+export type HabitFrequencyType =
+  | 'daily'
+  | 'weekly_flexible'
+  | 'specific_days'
+  | 'interval';
+
+export type HabitAutoTrackRule =
+  | 'log_expense_today'
+  | 'under_daily_safe_spend'
+  | 'no_spend_day'
+  | 'sip_completed_month';
+
+export type AutoTrackHabitRule = HabitAutoTrackRule | 'none';
+
 export interface Habit {
   id: string;
   userId: string; // Added for data isolation
   name: string;
   category: Category;
   targetDaysPerWeek: number; // 1-7
+  frequencyType?: HabitFrequencyType;
+  scheduledDays?: number[]; // 0 = Sun .. 6 = Sat (used when frequencyType === 'specific_days')
+  intervalDays?: number; // e.g., 2 = every 2 days (used when frequencyType === 'interval')
+  allowBonusCompletions?: boolean;
+  weekStartsOn?: 0 | 1;
+  autoTrackRule?: AutoTrackHabitRule;
   createdAt: string; // ISO date string or timestamp
   archived: boolean;
   archivedAt?: string; // ISO date string - when habit was archived/deleted
@@ -58,7 +78,7 @@ export interface Habit {
   isDirty?: boolean;
 }
 
-export type CompletionStatus = 'completed' | 'missed' | 'frozen';
+export type CompletionStatus = 'completed' | 'rest' | 'missed' | 'frozen';
 
 export interface HabitCompletion {
   id: string;
@@ -66,9 +86,10 @@ export interface HabitCompletion {
   habitId: string;
   date: string; // YYYY-MM-DD format
   completed: boolean; // Keep for backward compatibility
-  status?: CompletionStatus; // Added for advanced states
+  status?: CompletionStatus; // Added for advanced states ('completed' | 'rest' | 'missed' | 'frozen')
   note?: string;
   skipped?: boolean; // Intentionally skipped (e.g., rest day)
+  restReason?: string;
   createdAt?: string; // ISO timestamp
   updatedAt?: string; // ISO timestamp - for conflict resolution
   value?: number; // Added for quantitative habits
@@ -94,15 +115,35 @@ export interface HabitStats {
   habitId: string;
   currentStreak: number;
   bestStreak: number;
+  weeklyStreak?: number;
   completionRate: number; // 0-100
   totalCompletions: number;
   totalDays: number;
   momentum: Trend; // Based on recent performance
+  completedThisWeek?: number;
+  targetThisWeek?: number;
+  restDaysUsedThisWeek?: number;
+  restDaysAllowedThisWeek?: number;
 }
 
 // ============================================
 // GOAL MODELS
 // ============================================
+
+export type FinancialGoalLinkType =
+  | 'savings_target'
+  | 'debt_payoff'
+  | 'net_worth'
+  | 'sip_corpus';
+
+export interface FinancialGoalLink {
+  type: FinancialGoalLinkType;
+  targetAmount: number;
+  startingAmount?: number;
+  linkedAccountIds?: string[];
+  linkedDebtIds?: string[];
+  linkedSipIds?: string[];
+}
 
 export interface Goal {
   id: string;
@@ -119,6 +160,7 @@ export interface Goal {
   updatedAt?: string; // ISO timestamp - for conflict resolution
   completedAt?: string;
   archived: boolean;
+  financialLink?: FinancialGoalLink;
   metadata?: Record<string, any>;
   generationCounter?: number;
   isDirty?: boolean;
@@ -142,7 +184,7 @@ export interface Milestone {
 // Derived goal statistics
 export interface GoalStats {
   goalId: string;
-  progress: number; // 0-100, based on milestone completion
+  progress: number; // 0-100, based on milestone completion or live financial balance
   milestonesCompleted: number;
   milestonesTotal: number;
   daysRemaining: number;
@@ -150,6 +192,8 @@ export interface GoalStats {
   totalDays: number;
   isOnTrack: boolean;
   projectedCompletion?: number; // Projected completion % by deadline
+  currentFinancialAmount?: number;
+  targetFinancialAmount?: number;
 }
 
 
@@ -307,6 +351,11 @@ export interface HabitFormData {
   name: string;
   category: Category;
   targetDaysPerWeek: number;
+  frequencyType?: HabitFrequencyType;
+  scheduledDays?: number[];
+  intervalDays?: number;
+  allowBonusCompletions?: boolean;
+  autoTrackRule?: AutoTrackHabitRule;
   icon?: string;
   isQuantitative?: boolean;
   targetValue?: number;
@@ -325,6 +374,7 @@ export interface GoalFormData {
   deadline: string;
   milestones: string[]; // Just titles for initial creation
   isFocus?: boolean;
+  financialLink?: FinancialGoalLink;
 }
 
 export interface MilestoneFormData {
@@ -428,10 +478,16 @@ export const DAYS_OF_WEEK_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sa
 export const STREAK_MILESTONES = [3, 7, 14, 21, 30, 60, 90, 100, 365] as const;
 
 // ============================================
-// FLOWFINANCE - PERSONAL FINANCE & LEDGER MODELS
+// FLOWFINANCE V2 - PERSONAL FINANCE & LEDGER MODELS
 // ============================================
 
-export type FinanceAccountType = 'cash' | 'bank' | 'upi' | 'credit_card' | 'wallet';
+export type FinanceAccountType =
+  | 'cash'
+  | 'bank'
+  | 'upi'
+  | 'credit_card'
+  | 'wallet'
+  | 'investment';
 
 export interface FinanceAccount {
   id: string;
@@ -439,18 +495,23 @@ export interface FinanceAccount {
   name: string;
   type: FinanceAccountType;
   balance: number;
+  creditLimit?: number; // For credit_card accounts
+  statementDay?: number; // 1-31
+  dueDay?: number; // 1-31
+  includeInNetWorth?: boolean;
   currency: string;
   color: string;
   icon: string;
   isDefault: boolean;
   archived: boolean;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
   isDirty?: boolean;
 }
 
-export type FinanceTransactionType = 'expense' | 'income' | 'transfer';
+export type FinanceTransactionType = 'expense' | 'income' | 'transfer' | 'investment';
 
 export interface FinanceCategory {
   id: string;
@@ -461,10 +522,12 @@ export interface FinanceCategory {
   icon: string;
   color: string;
   monthlyBudgetLimit: number;
+  rolloverEnabled?: boolean;
   subcategories: string[];
   order: number;
   isSystem: boolean;
   archived: boolean;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
@@ -477,6 +540,8 @@ export interface FinanceTransaction {
   id: string;
   userId: string;
   title: string;
+  merchantName?: string;
+  rawMerchant?: string;
   amount: number;
   type: FinanceTransactionType;
   categoryId: string;
@@ -489,12 +554,16 @@ export interface FinanceTransaction {
   tags: string[];
   isRecurring: boolean;
   recurrenceRule?: string;
-  // Cross-Linking to Monthly Commitments, Friend Debts, or EMIs
+  needsReview?: boolean;
+  splitGroupId?: string | null;
+  // Cross-Linking to Monthly Commitments, Friend Debts, EMIs, or SIPs
   linkedCommitmentId?: string | null;
   commitmentContributionType?: CommitmentContributionType | null;
   linkedDebtId?: string | null;
   linkedDebtInstallmentId?: string | null;
   linkedEmiId?: string | null;
+  linkedSipId?: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
@@ -507,8 +576,10 @@ export interface FinanceBudget {
   monthKey: string; // YYYY-MM
   totalBudget: number;
   expectedIncome: number;
+  plannedSipAmount?: number;
   currency: string;
   notes?: string;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
@@ -532,6 +603,7 @@ export interface MonthlyCommitment {
   color: string;
   isActive: boolean;
   notes?: string;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
@@ -578,6 +650,7 @@ export interface DebtRecord {
   status: DebtStatus;
   notes?: string;
   color: string;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
@@ -597,6 +670,7 @@ export interface DebtInstallment {
   transactionId?: string | null;
   note?: string;
   balanceAfterPayment: number;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
@@ -623,6 +697,72 @@ export interface EmiTracker {
   lastPaidMonthKey?: string;
   status: EmiStatus;
   notes?: string;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export type SipAssetClass = 'equity_mf' | 'debt_mf' | 'stocks' | 'gold' | 'fd_rd' | 'crypto' | 'other';
+
+export interface FinanceSipPlan {
+  id: string;
+  userId: string;
+  name: string;
+  platform?: string; // e.g., Groww, Zerodha Coin, Kuvera
+  assetClass: SipAssetClass;
+  monthlyAmount: number;
+  sipDayOfMonth: number; // 1-31
+  startDate: string;
+  totalInvested: number;
+  currentValue: number;
+  expectedReturnAnnual?: number;
+  accountId?: string;
+  categoryId?: string;
+  lastInvestedMonthKey?: string;
+  isActive: boolean;
+  color: string;
+  notes?: string;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface FinanceCategorizationRule {
+  id: string;
+  userId: string;
+  matchPattern: string;
+  cleanMerchantName: string;
+  categoryId: string;
+  subcategory?: string;
+  defaultTags?: string[];
+  isActive: boolean;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface FinanceRecurringBill {
+  id: string;
+  userId: string;
+  name: string;
+  amount: number;
+  previousAmount?: number;
+  cadence: 'monthly' | 'quarterly' | 'yearly';
+  dueDayOfMonth: number;
+  categoryId: string;
+  accountId?: string;
+  autoLog: boolean;
+  lastPaidMonthKey?: string;
+  isActive: boolean;
+  color: string;
+  icon: string;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   generationCounter?: number;
@@ -633,33 +773,61 @@ export interface CategorySpendItem {
   category: FinanceCategory;
   spent: number;
   budgetLimit: number;
+  baseBudgetLimit?: number;
+  rolloverAmount?: number;
   percentageOfBudget: number;
   percentageOfTotalSpend: number;
   transactionCount: number;
   status: 'safe' | 'warning' | 'exceeded';
+  paceDiffPercentage?: number; // Positive means spending faster than day-of-month pace
+}
+
+export interface DailyPacePoint {
+  day: number; // 1..31
+  dateStr: string;
+  cumulativeSpent: number | null; // null for future days in current month
+  idealCumulativeBudget: number;
+  lastMonthCumulativeSpent: number;
+}
+
+export interface NetWorthSummary {
+  liquidAssets: number;
+  investmentAssets: number;
+  friendReceivables: number;
+  totalAssets: number;
+  creditCardLiabilities: number;
+  emiRemainingPrincipal: number;
+  friendPayables: number;
+  totalLiabilities: number;
+  netWorth: number;
 }
 
 export interface MonthlyFinanceSummary {
   monthKey: string;
   totalIncome: number;
   totalSpent: number;
+  totalInvested: number;
   monthlyBudget: number;
   expectedIncome: number;
   remainingUnpaidEmis: number;
   remainingUnpaidCommitments: number;
   plannedDebtInstallmentsDue: number;
+  remainingUnpaidBills: number;
+  remainingPlannedSips: number;
   safeToSpendMonthly: number;
   safeToSpendDaily: number;
   remainingDaysInMonth: number;
+  dayOfMonthProgressPct: number;
   netSavings: number;
   savingsRate: number;
+  needsReviewCount: number;
   categoryBreakdown: CategorySpendItem[];
 }
 
 export interface FinancialObligationItem {
   id: string;
   sourceId: string;
-  type: 'emi' | 'commitment' | 'debt';
+  type: 'emi' | 'commitment' | 'debt' | 'bill' | 'sip' | 'credit_card';
   title: string;
   subtitle: string;
   amount: number;
@@ -671,6 +839,8 @@ export interface FinancialObligationItem {
 
 export interface FinanceTransactionFormData {
   title: string;
+  merchantName?: string;
+  rawMerchant?: string;
   amount: number;
   type: FinanceTransactionType;
   categoryId: string;
@@ -682,10 +852,13 @@ export interface FinanceTransactionFormData {
   tags?: string[];
   isRecurring?: boolean;
   recurrenceRule?: string;
+  needsReview?: boolean;
+  splitGroupId?: string | null;
   linkedCommitmentId?: string | null;
   commitmentContributionType?: CommitmentContributionType | null;
   linkedDebtId?: string | null;
   linkedEmiId?: string | null;
+  linkedSipId?: string | null;
 }
 
 export interface FinanceFilterState {
@@ -695,7 +868,10 @@ export interface FinanceFilterState {
   accountId: string | 'all';
   commitmentId: string | 'all';
   debtId: string | 'all';
+  tag: string | 'all';
+  needsReview: 'all' | 'only_review';
   dateFrom?: string;
   dateTo?: string;
 }
+
 

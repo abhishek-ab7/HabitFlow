@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical, Snowflake, Edit3, MessageSquarePlus, Share2 } from 'lucide-react';
+import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical, Snowflake, Edit3, MessageSquarePlus, Share2, Moon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StreakRecoveryPrompt } from './StreakRecoveryPrompt';
@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label';
 import { SuccessRipple } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitCompletion, Category } from '@/lib/types';
+import { getHabitWeekProgress, isHabitAutoRestOnDate } from '@/lib/calculations';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useFeedback } from '@/hooks/use-feedback';
@@ -153,7 +154,27 @@ export function SortableHabitRow({
     }, [yesterdayStr, dayBeforeYesterdayStr, completionMap]);
 
     const { triggerPop, triggerChime } = useFeedback();
-    const { updateNote, updateValue } = useHabitStore();
+    const { updateNote, updateValue, markRestDay } = useHabitStore();
+
+    const weekProgress = useMemo(
+        () => getHabitWeekProgress(habit, completions, new Date()),
+        [habit, completions]
+    );
+
+    const handleToggleRestDay = async (dateStr: string, reason?: string) => {
+        try {
+            await markRestDay(habit.id, dateStr, reason);
+            triggerPop();
+            const existing = getCompletion(dateStr);
+            if (existing?.status === 'rest' || existing?.skipped) {
+                toast.info('Rest day cleared');
+            } else {
+                toast.success(`Marked as Rest Day (${Math.max(0, weekProgress.restRemainingCount - 1)} rest left this week)`);
+            }
+        } catch (err) {
+            toast.error((err as Error).message);
+        }
+    };
 
     const {
         attributes,
@@ -331,11 +352,25 @@ export function SortableHabitRow({
                         >
                             {habit.category}
                         </Badge>
+                        {weekProgress.targetCount < 7 && (
+                            <Badge
+                                variant="secondary"
+                                className={cn(
+                                    "text-[10px] px-1.5 py-0 h-4 font-mono tabular-nums",
+                                    weekProgress.quotaMet
+                                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                                        : "bg-teal-500/10 text-teal-600 dark:text-teal-400"
+                                )}
+                                title={`${weekProgress.restRemainingCount} flexible rest day(s) remaining this week`}
+                            >
+                                {weekProgress.completedCount}/{weekProgress.targetCount} wk {weekProgress.quotaMet ? '✓' : ''}
+                            </Badge>
+                        )}
                         {streak > 0 && (
                             <Badge
                                 variant="secondary"
                                 className={cn(
-                                    "text-[10px] px-1.5 py-0 h-4 gap-0.5",
+                                    "text-[10px] px-1.5 py-0 h-4 gap-0.5 font-mono tabular-nums",
                                     getStreakStyle(streak)
                                 )}
                             >
@@ -404,6 +439,14 @@ export function SortableHabitRow({
                             <Edit3 className="h-4 w-4 mr-2" />
                             Log Notes / Progress
                         </DropdownMenuItem>
+                        {weekProgress.restAllowedCount > 0 && (
+                            <DropdownMenuItem onClick={() => handleToggleRestDay(format(new Date(), 'yyyy-MM-dd'))}>
+                                <Moon className="h-4 w-4 mr-2 text-teal-500" />
+                                {weekProgress.isRestedToday
+                                    ? 'Clear Rest Day Today'
+                                    : `Mark Rest Today (${weekProgress.restRemainingCount} left)`}
+                            </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onClick={() => setShowShareModal(true)}>
                             <Share2 className="h-4 w-4 mr-2" />
                             Share Streak
@@ -427,10 +470,12 @@ export function SortableHabitRow({
             <div className="flex gap-0.5">
                 {days.map(({ day, dateStr, isFuture: isFutureDate, isToday: isTodayDate }) => {
                     const comp = getCompletion(dateStr);
-                    const isCompleted = comp?.completed && comp?.status !== 'frozen';
+                    const isCompleted = !!(comp?.completed && comp?.status !== 'frozen' && comp?.status !== 'rest' && !comp?.skipped);
                     const isFrozen = comp?.status === 'frozen';
+                    const isRest = !!(comp && (comp.status === 'rest' || comp.skipped));
+                    const isAutoRest = !isCompleted && !isFrozen && !isRest && isHabitAutoRestOnDate(habit, completions, dateStr);
                     const cellKey = `${habit.id}-${dateStr}`;
-                    const showRipple = rippleCell === cellKey && (isCompleted || isFrozen);
+                    const showRipple = rippleCell === cellKey && (isCompleted || isFrozen || isRest);
 
                     const difficulty = habit.difficulty || 'medium';
                     const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
@@ -438,28 +483,48 @@ export function SortableHabitRow({
                     const innerButton = (
                         <motion.button
                             onClick={(e) => handleCellClick(dateStr, isFutureDate, e.shiftKey)}
-                            onContextMenu={(e) => handleCellRightClick(e, dateStr, isFutureDate)}
+                            onContextMenu={(e) => {
+                                if (e.altKey || (weekProgress.restAllowedCount > 0 && !isCompleted && !isFrozen)) {
+                                    e.preventDefault();
+                                    if (!isFutureDate) {
+                                        handleToggleRestDay(dateStr);
+                                    }
+                                    return;
+                                }
+                                handleCellRightClick(e, dateStr, isFutureDate);
+                            }}
                             disabled={isFutureDate}
                             data-date={dateStr}
                             data-today={isTodayDate}
+                            data-status={isCompleted ? 'completed' : isRest ? 'rest' : isFrozen ? 'frozen' : isAutoRest ? 'auto-rest' : 'pending'}
                             className={cn(
                                 "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden flex-shrink-0",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                 isCompleted
                                     ? "bg-success/20 text-success hover:bg-success/30"
-                                    : isFrozen
-                                        ? "bg-sky-500/20 text-sky-500 hover:bg-sky-500/30"
-                                        : isFutureDate
-                                            ? "bg-muted/20 cursor-not-allowed opacity-40"
-                                            : isTodayDate
-                                                ? "bg-primary/10 border-2 border-dashed border-primary/30 hover:bg-primary/20"
-                                                : "bg-muted/40 hover:bg-muted/60",
+                                    : isRest
+                                        ? "bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/30 hover:bg-teal-500/25"
+                                        : isFrozen
+                                            ? "bg-sky-500/20 text-sky-500 hover:bg-sky-500/30"
+                                            : isAutoRest
+                                                ? "bg-muted/20 text-muted-foreground/50 border border-dashed border-border/50"
+                                                : isFutureDate
+                                                    ? "bg-muted/20 cursor-not-allowed opacity-40"
+                                                    : isTodayDate
+                                                        ? "bg-primary/10 border-2 border-dashed border-primary/30 hover:bg-primary/20"
+                                                        : "bg-muted/40 hover:bg-muted/60",
                             )}
                             animate={{ scale: burstActive === dateStr ? 1.25 : 1 }}
                             transition={{ type: "spring", stiffness: 500, damping: 15 }}
                             whileHover={!isFutureDate ? { scale: 1.05 } : {}}
                             whileTap={!isFutureDate ? { scale: 0.95 } : {}}
-                            title={isFutureDate ? undefined : "Left click: toggle/increment. Shift+click: decrement. Right click: freeze."}
+                            title={
+                                isFutureDate
+                                    ? undefined
+                                    : weekProgress.restAllowedCount > 0
+                                    ? "Click: Done • Right-click: Rest Day • Pencil: Note / Shield"
+                                    : "Left click: toggle. Right click: Streak Shield."
+                            }
                         >
                             {burstActive === dateStr && (
                                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-visible z-50">
@@ -496,6 +561,16 @@ export function SortableHabitRow({
                                     >
                                         <Check className="h-4 w-4" />
                                     </motion.div>
+                                ) : isRest ? (
+                                    <motion.div
+                                        key="rest"
+                                        initial={{ scale: 0, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        exit={{ scale: 0, opacity: 0 }}
+                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                                    >
+                                        <Moon className="h-3.5 w-3.5" />
+                                    </motion.div>
                                 ) : isFrozen ? (
                                     <motion.div
                                         key="frozen"
@@ -505,6 +580,14 @@ export function SortableHabitRow({
                                         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
                                     >
                                         <Snowflake className="h-4 w-4" />
+                                    </motion.div>
+                                ) : isAutoRest ? (
+                                    <motion.div
+                                        key="auto-rest"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 0.6 }}
+                                    >
+                                        <Moon className="h-3 w-3" />
                                     </motion.div>
                                 ) : habit.isQuantitative && comp?.value && comp.value > 0 ? (
                                     <motion.div
@@ -524,7 +607,7 @@ export function SortableHabitRow({
                                 <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500" />
                             )}
 
-                            <SuccessRipple trigger={showRipple} color={isFrozen ? "bg-sky-400/40" : "bg-success/30"} />
+                            <SuccessRipple trigger={showRipple} color={isFrozen ? "bg-sky-400/40" : isRest ? "bg-teal-400/30" : "bg-success/30"} />
                         </motion.button>
                     );
 
@@ -647,6 +730,39 @@ export function SortableHabitRow({
                                                 placeholder="Write a reflection or note..."
                                                 className="min-h-[80px] text-xs resize-none"
                                             />
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-1.5 pt-1">
+                                            {weekProgress.restAllowedCount > 0 && (
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-7 text-xs gap-1 border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-500/10"
+                                                    onClick={async () => {
+                                                        await handleToggleRestDay(dateStr);
+                                                        setOpenPopoverDate(null);
+                                                    }}
+                                                >
+                                                    <Moon className="h-3 w-3" />
+                                                    {isRest ? 'Clear Rest' : `Rest Day (${weekProgress.restRemainingCount} left)`}
+                                                </Button>
+                                            )}
+                                            {onFreeze && (
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-7 text-xs gap-1 border-sky-500/30 text-sky-600 dark:text-sky-400 hover:bg-sky-500/10"
+                                                    onClick={async (e) => {
+                                                        await handleCellRightClick(e, dateStr, isFutureDate);
+                                                        setOpenPopoverDate(null);
+                                                    }}
+                                                >
+                                                    <Snowflake className="h-3 w-3" />
+                                                    {isFrozen ? 'Unfreeze' : 'Shield'}
+                                                </Button>
+                                            )}
                                         </div>
 
                                         <div className="flex justify-end gap-2 pt-2 border-t">

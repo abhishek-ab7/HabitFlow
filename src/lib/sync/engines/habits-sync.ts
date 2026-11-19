@@ -1,7 +1,6 @@
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { logger } from '@/lib/logger';
-import type { Habit, HabitCompletion } from '@/lib/types';
+import type { Habit } from '@/lib/types';
 import type { ISynchronizer } from '../types';
 
 export class HabitsSyncEngine implements ISynchronizer {
@@ -28,6 +27,11 @@ export class HabitsSyncEngine implements ISynchronizer {
         icon: h.icon || '✓',
         category: h.category,
         target_days: h.targetDaysPerWeek,
+        frequency_type: h.frequencyType || (h.targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily'),
+        scheduled_days: h.scheduledDays || null,
+        interval_days: h.intervalDays || null,
+        allow_bonus_completions: h.allowBonusCompletions ?? true,
+        auto_track_rule: h.autoTrackRule || null,
         is_archived: h.archived,
         order_index: h.order,
         is_quantitative: h.isQuantitative || false,
@@ -40,7 +44,29 @@ export class HabitsSyncEngine implements ISynchronizer {
       const { error } = await (this.supabase.from('habits') as any)
         .upsert(payload, { onConflict: 'id' });
 
-      if (error) throw new Error(`[HabitsSyncEngine Bulk Push Failure]: ${error.message}`);
+      if (error) {
+        // Fallback if remote schema hasn't added V2 columns yet
+        const legacyPayload = batch.map((h) => ({
+          id: h.id,
+          user_id: userId,
+          name: h.name,
+          icon: h.icon || '✓',
+          category: h.category,
+          target_days: h.targetDaysPerWeek,
+          is_archived: h.archived,
+          order_index: h.order,
+          is_quantitative: h.isQuantitative || false,
+          target_value: h.targetValue || 0,
+          unit: h.unit || '',
+          generation_counter: h.generationCounter || 1,
+          updated_at: new Date().toISOString()
+        }));
+        const { error: fallbackError } = await (this.supabase.from('habits') as any)
+          .upsert(legacyPayload, { onConflict: 'id' });
+        if (fallbackError) {
+          throw new Error(`[HabitsSyncEngine Bulk Push Failure]: ${fallbackError.message}`);
+        }
+      }
 
       await db.transaction('rw', db.habits, async () => {
         const ids = batch.map((b) => b.id);
@@ -73,13 +99,23 @@ export class HabitsSyncEngine implements ISynchronizer {
           const local = await db.habits.get(remote.id);
           
           if (!local || (remote.generation_counter || 0) > (local.generationCounter || 0)) {
+            const targetDays = remote.target_days ?? 7;
             await db.habits.put({
               id: remote.id,
               userId: remote.user_id,
               name: remote.name,
               icon: remote.icon,
               category: remote.category,
-              targetDaysPerWeek: remote.target_days,
+              targetDaysPerWeek: targetDays,
+              frequencyType:
+                remote.frequency_type ||
+                local?.frequencyType ||
+                (targetDays < 7 ? 'weekly_flexible' : 'daily'),
+              scheduledDays: remote.scheduled_days ?? local?.scheduledDays,
+              intervalDays: remote.interval_days ?? local?.intervalDays,
+              allowBonusCompletions:
+                remote.allow_bonus_completions ?? local?.allowBonusCompletions ?? true,
+              autoTrackRule: remote.auto_track_rule ?? local?.autoTrackRule,
               archived: remote.is_archived,
               order: remote.order_index,
               isQuantitative: remote.is_quantitative,
@@ -123,6 +159,8 @@ export class CompletionsSyncEngine implements ISynchronizer {
         habit_id: c.habitId,
         date: c.date,
         completed: c.completed,
+        status: c.status || (c.skipped ? 'rest' : c.completed ? 'completed' : null),
+        skipped: c.skipped ?? (c.status === 'rest'),
         notes: c.note || null,
         value: c.value || 0,
         generation_counter: c.generationCounter || 1,
@@ -132,7 +170,24 @@ export class CompletionsSyncEngine implements ISynchronizer {
       const { error } = await (this.supabase.from('completions') as any)
         .upsert(payload, { onConflict: 'habit_id,date' });
 
-      if (error) throw new Error(`[CompletionsSyncEngine Bulk Push Failure]: ${error.message}`);
+      if (error) {
+        const legacyPayload = batch.map((c) => ({
+          id: c.id,
+          user_id: userId,
+          habit_id: c.habitId,
+          date: c.date,
+          completed: c.completed,
+          notes: c.note || null,
+          value: c.value || 0,
+          generation_counter: c.generationCounter || 1,
+          updated_at: new Date().toISOString()
+        }));
+        const { error: fallbackErr } = await (this.supabase.from('completions') as any)
+          .upsert(legacyPayload, { onConflict: 'habit_id,date' });
+        if (fallbackErr) {
+          throw new Error(`[CompletionsSyncEngine Bulk Push Failure]: ${fallbackErr.message}`);
+        }
+      }
 
       await db.transaction('rw', db.completions, async () => {
         const ids = batch.map((b) => b.id);
@@ -165,12 +220,15 @@ export class CompletionsSyncEngine implements ISynchronizer {
           const local = await db.completions.get(remote.id);
           
           if (!local || (remote.generation_counter || 0) > (local.generationCounter || 0)) {
+            const isRest = remote.status === 'rest' || remote.skipped === true;
             await db.completions.put({
               id: remote.id,
               userId: remote.user_id,
               habitId: remote.habit_id,
               date: remote.date,
               completed: remote.completed,
+              status: remote.status || (isRest ? 'rest' : remote.completed ? 'completed' : undefined),
+              skipped: isRest,
               note: remote.notes || undefined,
               value: remote.value || 0,
               generationCounter: remote.generation_counter || 1,

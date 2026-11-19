@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { Habit, HabitFormData, Category } from '@/lib/types';
+import type { Habit, HabitFormData, Category, HabitFrequencyType, AutoTrackHabitRule } from '@/lib/types';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { HabitTemplates, type TemplateHabit } from './HabitTemplates';
 import { HabitDifficultySelector } from './HabitDifficultySelector';
@@ -47,6 +47,16 @@ const CATEGORY_COLORS: Record<Category, string> = {
   relationships: 'bg-orange-500/20 text-orange-600 border-orange-500/30 hover:bg-orange-500/30',
 };
 
+const WEEKDAY_PILLS: { day: number; short: string; label: string }[] = [
+  { day: 1, short: 'M', label: 'Mon' },
+  { day: 2, short: 'T', label: 'Tue' },
+  { day: 3, short: 'W', label: 'Wed' },
+  { day: 4, short: 'T', label: 'Thu' },
+  { day: 5, short: 'F', label: 'Fri' },
+  { day: 6, short: 'S', label: 'Sat' },
+  { day: 0, short: 'S', label: 'Sun' },
+];
+
 const COMMON_EMOJIS = [
   // Health & Fitness
   '🧘', '💪', '🏃', '💤', '🥗', '💧', '🍎', '🚴', '🚶', '💊',
@@ -74,7 +84,11 @@ export function HabitFormModal({
   const [activeTab, setActiveTab] = useState<'details' | 'templates'>('details');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<Category>('personal');
+  const [frequencyType, setFrequencyType] = useState<HabitFrequencyType>('daily');
   const [targetDays, setTargetDays] = useState(7);
+  const [scheduledDays, setScheduledDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [intervalDays, setIntervalDays] = useState<number>(2);
+  const [autoTrackRule, setAutoTrackRule] = useState<AutoTrackHabitRule>('none');
   const [icon, setIcon] = useState('');
   const [isQuantitative, setIsQuantitative] = useState(false);
   const [targetValue, setTargetValue] = useState(0);
@@ -98,7 +112,13 @@ export function HabitFormModal({
         if (habit) {
           setName(habit.name);
           setCategory(habit.category);
+          const inferredFreq: HabitFrequencyType =
+            habit.frequencyType || (habit.targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily');
+          setFrequencyType(inferredFreq);
           setTargetDays(habit.targetDaysPerWeek);
+          setScheduledDays(habit.scheduledDays || [1, 2, 3, 4, 5]);
+          setIntervalDays(habit.intervalDays || 2);
+          setAutoTrackRule(habit.autoTrackRule || 'none');
           setIcon(habit.icon || '');
           setIsQuantitative(habit.isQuantitative || false);
           setTargetValue(habit.targetValue || 0);
@@ -108,7 +128,11 @@ export function HabitFormModal({
         } else {
           setName('');
           setCategory('personal');
+          setFrequencyType('daily');
           setTargetDays(7);
+          setScheduledDays([1, 2, 3, 4, 5]);
+          setIntervalDays(2);
+          setAutoTrackRule('none');
           setIcon('');
           setIsQuantitative(false);
           setTargetValue(0);
@@ -125,6 +149,7 @@ export function HabitFormModal({
     setName(template.name);
     setCategory(template.category);
     setTargetDays(template.targetDaysPerWeek);
+    setFrequencyType(template.targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily');
     setIcon(template.icon);
     setIsQuantitative(template.isQuantitative);
     setTargetValue(template.targetValue);
@@ -142,11 +167,23 @@ export function HabitFormModal({
       return;
     }
 
-    // First, submit the habit
+    const effectiveTargetDays =
+      frequencyType === 'daily'
+        ? 7
+        : frequencyType === 'specific_days'
+        ? Math.max(1, scheduledDays.length)
+        : frequencyType === 'interval'
+        ? Math.max(1, Math.round(7 / Math.max(2, intervalDays)))
+        : targetDays;
+
     onSubmit({
       name: name.trim(),
       category,
-      targetDaysPerWeek: targetDays,
+      frequencyType,
+      targetDaysPerWeek: effectiveTargetDays,
+      scheduledDays: frequencyType === 'specific_days' ? scheduledDays : undefined,
+      intervalDays: frequencyType === 'interval' ? intervalDays : undefined,
+      autoTrackRule,
       icon: icon || undefined,
       isQuantitative,
       targetValue: isQuantitative ? targetValue : undefined,
@@ -157,8 +194,6 @@ export function HabitFormModal({
         stackTriggerHabitId: stackAfterHabitId || undefined,
       }
     });
-
-
 
     onOpenChange(false);
   };
@@ -292,33 +327,129 @@ export function HabitFormModal({
                 </div>
               </div>
 
-              {/* Target days */}
-              <div>
-                <label className="text-sm font-medium mb-2 block">
-                  Target Days Per Week
+              {/* Schedule Mode & Target Days (Habit Engine V2) */}
+              <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3.5">
+                <label className="text-sm font-medium block">
+                  Schedule & Rest Days
                 </label>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {[
+                    { id: 'daily', label: 'Daily (7×)' },
+                    { id: 'weekly_flexible', label: 'X Days / Wk' },
+                    { id: 'specific_days', label: 'Specific Days' },
+                    { id: 'interval', label: 'Every N Days' },
+                  ].map((mode) => (
                     <button
-                      key={day}
+                      key={mode.id}
                       type="button"
-                      onClick={() => setTargetDays(day)}
+                      onClick={() => {
+                        const nextMode = mode.id as HabitFrequencyType;
+                        setFrequencyType(nextMode);
+                        if (nextMode === 'daily') setTargetDays(7);
+                        if (nextMode === 'weekly_flexible' && targetDays === 7) setTargetDays(5);
+                      }}
                       className={cn(
-                        "flex-1 py-2 rounded-lg text-sm font-medium transition-colors",
-                        targetDays === day
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted hover:bg-muted/80"
+                        'py-2 px-2 rounded-lg text-xs font-semibold transition-all border',
+                        frequencyType === mode.id
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-background text-muted-foreground border-border/60 hover:text-foreground'
                       )}
                     >
-                      {day}
+                      {mode.label}
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {targetDays === 7
-                    ? 'Daily habit'
-                    : `${targetDays} days per week`}
-                </p>
+
+                {/* Keep 1..7 selector accessible for both daily & weekly_flexible */}
+                {(frequencyType === 'daily' || frequencyType === 'weekly_flexible') && (
+                  <div>
+                    <div className="flex gap-1 mt-2">
+                      {[1, 2, 3, 4, 5, 6, 7].map((day) => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            setTargetDays(day);
+                            setFrequencyType(day === 7 ? 'daily' : 'weekly_flexible');
+                          }}
+                          className={cn(
+                            'flex-1 py-2 rounded-lg text-sm font-mono font-semibold transition-colors',
+                            targetDays === day
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted hover:bg-muted/80'
+                          )}
+                        >
+                          {day}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {targetDays === 7
+                        ? 'Daily habit (7 days/week). Missing a day requires a Streak Shield.'
+                        : `${targetDays} days/week • Includes ${7 - targetDays} flexible Rest Day${7 - targetDays > 1 ? 's' : ''}/week. Mark any day as Rest without breaking your streak.`}
+                    </p>
+                  </div>
+                )}
+
+                {frequencyType === 'specific_days' && (
+                  <div className="pt-1">
+                    <div className="flex gap-1.5">
+                      {WEEKDAY_PILLS.map((w) => {
+                        const active = scheduledDays.includes(w.day);
+                        return (
+                          <button
+                            key={w.day}
+                            type="button"
+                            onClick={() => {
+                              setScheduledDays((prev) =>
+                                prev.includes(w.day)
+                                  ? prev.length > 1
+                                    ? prev.filter((d) => d !== w.day)
+                                    : prev
+                                  : [...prev, w.day]
+                              );
+                            }}
+                            className={cn(
+                              'flex-1 py-2 rounded-lg text-xs font-bold transition-colors border',
+                              active
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'bg-muted/60 text-muted-foreground border-transparent hover:bg-muted'
+                            )}
+                            title={w.label}
+                          >
+                            {w.short}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Scheduled {scheduledDays.length} day{scheduledDays.length > 1 ? 's' : ''}/week. Unscheduled days automatically count as Auto-Rest.
+                    </p>
+                  </div>
+                )}
+
+                {frequencyType === 'interval' && (
+                  <div className="pt-1 flex items-center justify-between gap-3">
+                    <span className="text-xs text-muted-foreground">Repeat every</span>
+                    <div className="flex items-center gap-1.5">
+                      {[2, 3, 4, 5, 7].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setIntervalDays(n)}
+                          className={cn(
+                            'px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold border transition-colors',
+                            intervalDays === n
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-muted text-muted-foreground border-transparent'
+                          )}
+                        >
+                          {n}d
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Difficulty selector */}
@@ -402,7 +533,23 @@ export function HabitFormModal({
                       className="overflow-hidden"
                     >
                       <div className="pt-4 space-y-3">
-
+                        {/* Cross-Domain Finance Auto-Tracking */}
+                        <div>
+                          <label className="text-sm font-medium mb-1.5 block">
+                            Auto-Complete from FlowFinance (optional)
+                          </label>
+                          <select
+                            value={autoTrackRule}
+                            onChange={(e) => setAutoTrackRule(e.target.value as AutoTrackHabitRule)}
+                            className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          >
+                            <option value="none">Manual check-in only</option>
+                            <option value="log_expense_today">Auto-tick when I log an expense today</option>
+                            <option value="under_daily_safe_spend">Auto-tick when under Daily Safe-to-Spend</option>
+                            <option value="no_spend_day">Auto-tick on No-Spend Days</option>
+                            <option value="sip_completed_month">Auto-tick when monthly SIP is invested</option>
+                          </select>
+                        </div>
 
                         {/* Habit Stacking */}
                         <div className="pt-2 border-t border-border/40">

@@ -130,9 +130,14 @@ export class CrossDomainActionMediator {
     }
   }
 
-  // Handle FlowFinance events: award XP, increment wealth stat, and auto-complete daily expense-tracking habits
+  // Handle FlowFinance V2 events: award XP, increment wealth stat, and auto-complete matching money habits
   public static async onFinanceEvent(event: {
-    type: 'EXPENSE_LOGGED' | 'NO_SPEND_DAY' | 'EMI_PAID' | 'COMMITMENT_SETTLED';
+    type:
+      | 'EXPENSE_LOGGED'
+      | 'NO_SPEND_DAY'
+      | 'EMI_PAID'
+      | 'COMMITMENT_SETTLED'
+      | 'SIP_COMPLETED';
     date: string;
     amount?: number;
   }) {
@@ -140,19 +145,46 @@ export class CrossDomainActionMediator {
     const habitStore = useHabitStore.getState();
 
     const xpReward =
-      event.type === 'EMI_PAID' || event.type === 'COMMITMENT_SETTLED' ? 50 : 10;
+      event.type === 'EMI_PAID' ||
+      event.type === 'COMMITMENT_SETTLED' ||
+      event.type === 'SIP_COMPLETED'
+        ? 50
+        : 10;
 
     await gamificationStore.addXp(xpReward, 'finance');
 
     // Auto-complete matching daily expense/finance tracking habits for the date
-    const financeHabits = habitStore.habits.filter(
-      (h) =>
-        !h.archived &&
-        (h.category === 'finance' ||
-          /expense|budget|spend|finance|money|track/i.test(h.name))
-    );
+    const activeHabits = habitStore.habits.filter((h) => !h.archived);
 
-    for (const habit of financeHabits) {
+    for (const habit of activeHabits) {
+      const rule = habit.autoTrackRule;
+      let shouldComplete = false;
+
+      if (rule === 'log_expense_today' && event.type === 'EXPENSE_LOGGED') {
+        shouldComplete = true;
+      } else if (rule === 'sip_completed_month' && event.type === 'SIP_COMPLETED') {
+        shouldComplete = true;
+      } else if (rule === 'no_spend_day' && event.type === 'NO_SPEND_DAY') {
+        shouldComplete = true;
+      } else if (rule === 'under_daily_safe_spend' && event.type === 'EXPENSE_LOGGED') {
+        shouldComplete = true;
+      } else if (
+        !rule &&
+        event.type === 'EXPENSE_LOGGED' &&
+        (habit.category === 'finance' ||
+          /expense|budget|spend|finance|money|track/i.test(habit.name))
+      ) {
+        shouldComplete = true;
+      } else if (
+        !rule &&
+        event.type === 'SIP_COMPLETED' &&
+        /sip|invest|wealth|mutual fund/i.test(habit.name)
+      ) {
+        shouldComplete = true;
+      }
+
+      if (!shouldComplete) continue;
+
       const alreadyDone = habitStore.completions.some(
         (c) => c.habitId === habit.id && c.date === event.date && c.completed
       );
@@ -172,4 +204,5 @@ export class CrossDomainActionMediator {
     useAchievementStore.getState().calculateAchievements();
   }
 }
+
 

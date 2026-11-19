@@ -20,6 +20,9 @@ import type {
   DebtRecord,
   DebtInstallment,
   EmiTracker,
+  FinanceSipPlan,
+  FinanceCategorizationRule,
+  FinanceRecurringBill,
 } from './types';
 
 // Domain Type Aliases to resolve Primitive Obsession
@@ -47,6 +50,9 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   debtRecords: EntityTable<DebtRecord, 'id'>;
   debtInstallments: EntityTable<DebtInstallment, 'id'>;
   emiTrackers: EntityTable<EmiTracker, 'id'>;
+  financeSipPlans: EntityTable<FinanceSipPlan, 'id'>;
+  financeCategorizationRules: EntityTable<FinanceCategorizationRule, 'id'>;
+  financeRecurringBills: EntityTable<FinanceRecurringBill, 'id'>;
 };
 
 // Schema version 5 - Added HabitRoutines junction table for many-to-many
@@ -246,13 +252,53 @@ db.version(11).stores({
   emiTrackers: 'id, userId, status, billingDayOfMonth, updatedAt',
 });
 
+// Schema version 12 - HabitFlow V2: Flexible Habits & Rest Days, SIP Plans, Categorization Rules, Recurring Bills
+db.version(12).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, isQuantitative, frequencyType',
+  completions: 'id, userId, habitId, date, [habitId+date], status, updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+  moodLogs: 'id, userId, date, [userId+date], updatedAt',
+  financeCategories: 'id, userId, slug, type, order, archived, updatedAt',
+  financeAccounts: 'id, userId, type, isDefault, archived, updatedAt',
+  financeTransactions: 'id, userId, date, monthKey, categoryId, accountId, type, linkedCommitmentId, linkedDebtId, linkedEmiId, linkedSipId, needsReview, [userId+monthKey], updatedAt',
+  financeBudgets: 'id, userId, monthKey, [userId+monthKey], updatedAt',
+  monthlyCommitments: 'id, userId, isActive, dueDayOfMonth, updatedAt',
+  debtRecords: 'id, userId, direction, status, updatedAt',
+  debtInstallments: 'id, userId, debtId, date, monthKey, transactionId, updatedAt',
+  emiTrackers: 'id, userId, status, billingDayOfMonth, updatedAt',
+  financeSipPlans: 'id, userId, isActive, sipDayOfMonth, updatedAt',
+  financeCategorizationRules: 'id, userId, isActive, categoryId, updatedAt',
+  financeRecurringBills: 'id, userId, isActive, dueDayOfMonth, updatedAt',
+}).upgrade(async tx => {
+  const habits = await tx.table('habits').toArray();
+  for (const h of habits) {
+    if (!h.frequencyType) {
+      const freq = (h.targetDaysPerWeek ?? 7) < 7 ? 'weekly_flexible' : 'daily';
+      await tx.table('habits').update(h.id, {
+        frequencyType: freq,
+        allowBonusCompletions: true,
+      });
+    }
+  }
+  const completions = await tx.table('completions').toArray();
+  for (const c of completions) {
+    if (c.skipped && !c.status) {
+      await tx.table('completions').update(c.id, { status: 'rest' });
+    }
+  }
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 
   'userSettings', 'tasks', 'moodLogs',
   'financeCategories', 'financeAccounts', 'financeTransactions',
   'financeBudgets', 'monthlyCommitments', 'debtRecords',
-  'debtInstallments', 'emiTrackers'
+  'debtInstallments', 'emiTrackers',
+  'financeSipPlans', 'financeCategorizationRules', 'financeRecurringBills'
 ];
 
 syncTables.forEach(tableName => {
@@ -337,6 +383,10 @@ export async function getArchivedHabits(userId: UserId): Promise<Habit[]> {
 
 export async function createHabit(data: HabitFormData & { userId: UserId }): Promise<Habit> {
   const now = new Date().toISOString();
+  const inferredFrequency =
+    data.frequencyType ||
+    (data.targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily');
+
   const habit: Habit = {
     id: crypto.randomUUID(),
     userId: data.userId,
@@ -344,6 +394,11 @@ export async function createHabit(data: HabitFormData & { userId: UserId }): Pro
     icon: data.icon || '✓',
     category: data.category,
     targetDaysPerWeek: data.targetDaysPerWeek,
+    frequencyType: inferredFrequency,
+    scheduledDays: data.scheduledDays,
+    intervalDays: data.intervalDays,
+    allowBonusCompletions: data.allowBonusCompletions ?? true,
+    autoTrackRule: data.autoTrackRule,
     archived: false,
     order: await db.habits.where('userId').equals(data.userId).count(),
     createdAt: now,
@@ -352,6 +407,7 @@ export async function createHabit(data: HabitFormData & { userId: UserId }): Pro
     targetValue: data.targetValue ?? 0,
     unit: data.unit ?? '',
     difficulty: data.difficulty || 'medium',
+    metadata: data.metadata,
   };
 
   await db.habits.add(habit);
@@ -384,15 +440,84 @@ export async function reorderHabits(orderedIds: HabitId[]): Promise<void> {
 // ==================
 
 export async function toggleCompletion(habitId: HabitId, date: ISODate, userId: UserId): Promise<HabitCompletion> {
-  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: true });
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, {
+    completed: true,
+    status: 'completed',
+    skipped: false,
+  });
   const now = new Date().toISOString();
 
   if (existing) {
-    completion.completed = !completion.completed;
+    // If it was marked as a rest day or frozen, a 1-tap primary click marks it completed
+    if (completion.status === 'rest' || completion.skipped || completion.status === 'frozen') {
+      completion.completed = true;
+      completion.status = 'completed';
+      completion.skipped = false;
+      completion.restReason = undefined;
+    } else {
+      completion.completed = !completion.completed;
+      completion.status = completion.completed ? 'completed' : undefined;
+      completion.skipped = false;
+    }
     completion.updatedAt = now;
     await db.completions.update(completion.id, completion);
   } else {
+    completion.status = 'completed';
+    completion.skipped = false;
     await db.completions.add(completion);
+  }
+  return completion;
+}
+
+export async function markRestCompletion(
+  habitId: HabitId,
+  date: ISODate,
+  userId: UserId,
+  reason?: string
+): Promise<HabitCompletion> {
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, {
+    completed: false,
+    status: 'rest',
+    skipped: true,
+    restReason: reason || 'Recovery',
+  });
+  const now = new Date().toISOString();
+
+  completion.completed = false;
+  completion.status = 'rest';
+  completion.skipped = true;
+  completion.restReason = reason || 'Recovery';
+  if (reason && !completion.note) {
+    completion.note = `Rest Day: ${reason}`;
+  }
+  completion.updatedAt = now;
+
+  if (existing) {
+    await db.completions.update(completion.id, completion);
+  } else {
+    await db.completions.add(completion);
+  }
+  return completion;
+}
+
+export async function clearRestCompletion(
+  habitId: HabitId,
+  date: ISODate,
+  userId: UserId
+): Promise<HabitCompletion> {
+  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, {
+    completed: false,
+  });
+  const now = new Date().toISOString();
+
+  completion.completed = false;
+  completion.status = undefined;
+  completion.skipped = false;
+  completion.restReason = undefined;
+  completion.updatedAt = now;
+
+  if (existing) {
+    await db.completions.update(completion.id, completion);
   }
   return completion;
 }
@@ -403,6 +528,7 @@ export async function freezeCompletion(habitId: HabitId, date: ISODate, userId: 
 
   completion.completed = true;
   completion.status = 'frozen';
+  completion.skipped = false;
   completion.updatedAt = now;
 
   if (existing) {
@@ -419,6 +545,7 @@ export async function unfreezeCompletion(habitId: HabitId, date: ISODate, userId
 
   completion.completed = false;
   completion.status = undefined;
+  completion.skipped = false;
   completion.updatedAt = now;
 
   if (existing) {

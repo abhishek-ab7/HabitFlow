@@ -9,6 +9,8 @@ import {
   toggleCompletion,
   freezeCompletion,
   unfreezeCompletion,
+  markRestCompletion,
+  clearRestCompletion,
   getAllCompletionsInRange,
   reorderHabits,
   seedDemoData,
@@ -19,7 +21,7 @@ import {
 } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
-import { calculateHabitStats } from '../calculations';
+import { calculateHabitStats, getHabitWeekProgress, type HabitWeekProgress } from '../calculations';
 import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, parseISO, differenceInCalendarDays } from 'date-fns';
 import { getSyncEngine } from '../sync';
 import { useGamificationStore, XP_PER_HABIT } from './gamification-store';
@@ -43,6 +45,8 @@ interface HabitState {
   removeHabit: (id: string) => Promise<void>;
   toggle: (habitId: string, date: string) => Promise<void>;
   freezeHabit: (habitId: string, date: string) => Promise<void>;
+  markRestDay: (habitId: string, date: string, reason?: string) => Promise<void>;
+  clearRestDay: (habitId: string, date: string) => Promise<void>;
   updateNote: (habitId: string, date: string, note: string) => Promise<void>;
   updateValue: (habitId: string, date: string, value: number) => Promise<void>;
   ensureComplete: (habitId: string, date: string) => Promise<void>;
@@ -56,8 +60,15 @@ interface HabitState {
 
   // Computed
   getHabitStats: (habitId: string) => ReturnType<typeof calculateHabitStats> | null;
+  getHabitWeekStatus: (habitId: string, referenceDate?: Date) => HabitWeekProgress | null;
   getCompletionForDate: (habitId: string, date: string) => HabitCompletion | undefined;
-  getTodayProgress: () => { completed: number; total: number; percentage: number };
+  getTodayProgress: () => {
+    completed: number;
+    total: number;
+    percentage: number;
+    restingCount?: number;
+    quotaMetCount?: number;
+  };
   getMonthlyProgress: () => { completed: number; total: number; percentage: number };
   getCurrentStreaks: () => Map<string, number>;
 }
@@ -365,6 +376,49 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateLocalAndSync(set, result);
   },
 
+  markRestDay: async (habitId: string, date: string, reason?: string) => {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id || 'local-user';
+
+    const habit = get().habits.find(h => h.id === habitId);
+    if (!habit) throw new Error("Habit not found");
+
+    const existing = get().completions.find(c => c.habitId === habitId && c.date === date);
+    const isCurrentlyRest = existing?.status === 'rest' || existing?.skipped === true;
+
+    if (isCurrentlyRest) {
+      const cleared = await clearRestCompletion(habitId, date, userId);
+      await updateLocalAndSync(set, cleared);
+      return;
+    }
+
+    const weekStatus = getHabitWeekProgress(habit, get().completions, parseISO(date));
+    if (weekStatus.restAllowedCount <= 0 && !weekStatus.isAutoRestDay) {
+      throw new Error("This is a 7-days/week daily habit with 0 free rest days. Edit the habit schedule or use a Streak Shield.");
+    }
+    if (weekStatus.restRemainingCount <= 0 && !weekStatus.isAutoRestDay && !weekStatus.quotaMet) {
+      throw new Error(`You've used all ${weekStatus.restAllowedCount} rest day(s) for this week. Use a Streak Shield to protect your streak.`);
+    }
+
+    // If it was completed today, deduct the XP before switching to rest
+    if (existing?.completed && existing?.status !== 'frozen') {
+      awardXpForCompletionDiff(habit, date, false, true);
+    }
+
+    const result = await markRestCompletion(habitId, date, userId, reason);
+    await updateLocalAndSync(set, result);
+  },
+
+  clearRestDay: async (habitId: string, date: string) => {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id || 'local-user';
+
+    const result = await clearRestCompletion(habitId, date, userId);
+    await updateLocalAndSync(set, result);
+  },
+
   updateNote: async (habitId: string, date: string, note: string) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
@@ -472,24 +526,61 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     return calculateHabitStats(habit, completions);
   },
 
+  getHabitWeekStatus: (habitId: string, referenceDate: Date = new Date()) => {
+    const { habits, completions } = get();
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit) return null;
+    return getHabitWeekProgress(habit, completions, referenceDate);
+  },
+
   getCompletionForDate: (habitId: string, date: string) => {
     return get().completions.find(c => c.habitId === habitId && c.date === date);
   },
 
   getTodayProgress: () => {
     const { habits, completions } = get();
-    const today = format(new Date(), 'yyyy-MM-dd');
+    const now = new Date();
+    const today = format(now, 'yyyy-MM-dd');
     const activeHabits = habits.filter(h => !h.archived);
-    const todayCompletions = completions.filter(
-      c => c.date === today && c.completed && activeHabits.some(h => h.id === c.habitId)
-    );
 
-    const uniqueHabitIds = new Set(todayCompletions.map(c => c.habitId));
-    const completed = uniqueHabitIds.size;
-    const total = activeHabits.length;
-    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    let completed = 0;
+    let totalDueToday = 0;
+    let restingCount = 0;
+    let quotaMetCount = 0;
 
-    return { completed, total, percentage };
+    for (const habit of activeHabits) {
+      const todayComp = completions.find(c => c.habitId === habit.id && c.date === today);
+      const isDoneToday = !!(todayComp && todayComp.completed && todayComp.status !== 'rest' && !todayComp.skipped);
+      const isRestToday = !!(todayComp && (todayComp.status === 'rest' || todayComp.skipped));
+      const weekProg = getHabitWeekProgress(habit, completions, now);
+
+      if (isDoneToday) {
+        completed++;
+        totalDueToday++;
+      } else if (isRestToday || weekProg.isAutoRestDay) {
+        restingCount++;
+      } else if (weekProg.quotaMet && (habit.targetDaysPerWeek ?? 7) < 7) {
+        quotaMetCount++;
+      } else {
+        totalDueToday++;
+      }
+    }
+
+    // If all habits today are resting / quota met and 0 due, show 100% if at least one active habit is resting/quota-met
+    const percentage =
+      totalDueToday > 0
+        ? Math.round((completed / totalDueToday) * 100)
+        : activeHabits.length > 0 && (restingCount > 0 || quotaMetCount > 0)
+        ? 100
+        : 0;
+
+    return {
+      completed,
+      total: totalDueToday,
+      percentage,
+      restingCount,
+      quotaMetCount,
+    };
   },
 
   getMonthlyProgress: () => {
@@ -499,17 +590,20 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     const activeHabits = habits.filter(h => !h.archived);
     const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const total = activeHabits.length * days;
+    const total = activeHabits.reduce((sum, h) => {
+      const targetPerWeek = h.targetDaysPerWeek || 7;
+      return sum + Math.max(1, Math.round((days / 7) * targetPerWeek));
+    }, 0);
 
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd');
 
     const monthCompletions = completions.filter(
-      c => c.date >= startStr && c.date <= endStr && c.completed
+      c => c.date >= startStr && c.date <= endStr && c.completed && c.status !== 'rest' && !c.skipped
     );
 
     const completed = monthCompletions.length;
-    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const percentage = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
 
     return { completed, total, percentage };
   },

@@ -15,6 +15,11 @@ import type {
   DebtInstallment,
   DebtPaymentMethod,
   EmiTracker,
+  FinanceSipPlan,
+  FinanceCategorizationRule,
+  FinanceRecurringBill,
+  NetWorthSummary,
+  DailyPacePoint,
   MonthlyFinanceSummary,
   CategorySpendItem,
   FinancialObligationItem,
@@ -183,6 +188,8 @@ const INITIAL_FILTERS: FinanceFilterState = {
   accountId: 'all',
   commitmentId: 'all',
   debtId: 'all',
+  tag: 'all',
+  needsReview: 'all',
 };
 
 interface FinanceStore {
@@ -195,6 +202,9 @@ interface FinanceStore {
   debtRecords: DebtRecord[];
   debtInstallments: DebtInstallment[];
   emiTrackers: EmiTracker[];
+  sipPlans: FinanceSipPlan[];
+  categorizationRules: FinanceCategorizationRule[];
+  recurringBills: FinanceRecurringBill[];
   selectedMonth: string; // YYYY-MM
   filters: FinanceFilterState;
   isLoading: boolean;
@@ -212,6 +222,22 @@ interface FinanceStore {
   addTransaction: (data: FinanceTransactionFormData) => Promise<FinanceTransaction>;
   updateTransaction: (id: string, data: Partial<FinanceTransactionFormData>) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
+  approveReviewedTransaction: (id: string) => Promise<void>;
+  bulkUpdateTransactions: (
+    ids: string[],
+    updates: Partial<Pick<FinanceTransaction, 'categoryId' | 'needsReview' | 'tags'>>
+  ) => Promise<void>;
+  bulkDeleteTransactions: (ids: string[]) => Promise<void>;
+  splitTransactionWithFriend: (params: {
+    txData: FinanceTransactionFormData;
+    friendName: string;
+    friendShareAmount: number;
+    existingDebtId?: string;
+  }) => Promise<{ transaction: FinanceTransaction; debt: DebtRecord }>;
+  importTransactionsCsv: (
+    csvText: string,
+    defaultAccountId?: string
+  ) => Promise<{ importedCount: number; skippedCount: number }>;
   attachTransactionToCommitment: (
     transactionId: string,
     commitmentId: string | null,
@@ -260,29 +286,76 @@ interface FinanceStore {
   ) => Promise<FinanceTransaction | null>;
   deleteEmiTracker: (id: string) => Promise<void>;
 
+  // SIP Plans (Investments)
+  addSipPlan: (
+    data: Omit<FinanceSipPlan, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => Promise<FinanceSipPlan>;
+  updateSipPlan: (id: string, data: Partial<FinanceSipPlan>) => Promise<void>;
+  deleteSipPlan: (id: string) => Promise<void>;
+  payMonthlySip: (
+    sipId: string,
+    accountId?: string,
+    date?: string
+  ) => Promise<FinanceTransaction | null>;
+
+  // Recurring Bills / Subscriptions
+  addRecurringBill: (
+    data: Omit<FinanceRecurringBill, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => Promise<FinanceRecurringBill>;
+  updateRecurringBill: (id: string, data: Partial<FinanceRecurringBill>) => Promise<void>;
+  deleteRecurringBill: (id: string) => Promise<void>;
+  payRecurringBill: (
+    billId: string,
+    accountId?: string,
+    date?: string
+  ) => Promise<FinanceTransaction | null>;
+
+  // Smart Categorization Rules
+  addCategorizationRule: (
+    data: Omit<FinanceCategorizationRule, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => Promise<FinanceCategorizationRule>;
+  deleteCategorizationRule: (id: string) => Promise<void>;
+  applyCategorizationRules: (rawTextOrMerchant: string) => {
+    rule?: FinanceCategorizationRule;
+    categoryId?: string;
+    cleanMerchantName?: string;
+    tags?: string[];
+  };
+
   // Accounts, Categories & Budgets
   addAccount: (
     data: Omit<FinanceAccount, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceAccount>;
   updateAccount: (id: string, data: Partial<FinanceAccount>) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
   addCategory: (
     data: Omit<FinanceCategory, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceCategory>;
+  updateCategory: (id: string, data: Partial<FinanceCategory>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
   updateCategoryBudget: (categoryId: string, monthlyBudgetLimit: number) => Promise<void>;
   setMonthlyBudget: (
     monthKey: string,
     totalBudget: number,
-    expectedIncome?: number
+    expectedIncome?: number,
+    plannedSipAmount?: number
   ) => Promise<void>;
   saveMonthlyBudgetSettings: (
     monthKey: string,
     totalBudget: number,
-    categoryLimits: Record<string, number>
+    categoryLimits: Record<string, number>,
+    options?: {
+      expectedIncome?: number;
+      plannedSipAmount?: number;
+      categoryRollovers?: Record<string, boolean>;
+    }
   ) => Promise<void>;
   exportTransactionsCsv: (monthKey?: string) => string;
 
   // Selectors
   getMonthlySummary: (monthKey?: string) => MonthlyFinanceSummary;
+  getNetWorthSummary: () => NetWorthSummary;
+  getDailySpendingPace: (monthKey?: string) => DailyPacePoint[];
   getCommitmentLedger: (commitmentId: string, monthKey?: string) => CommitmentLedgerSummary | null;
   getAllCommitmentLedgers: (monthKey?: string) => CommitmentLedgerSummary[];
   getDebtSummary: () => {
@@ -344,6 +417,9 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   debtRecords: [],
   debtInstallments: [],
   emiTrackers: [],
+  sipPlans: [],
+  categorizationRules: [],
+  recurringBills: [],
   selectedMonth: getCurrentMonthKey(),
   filters: INITIAL_FILTERS,
   isLoading: true,
@@ -450,6 +526,13 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       db.debtRecords.where('userId').equals(userId).delete(),
       db.debtInstallments.where('userId').equals(userId).delete(),
       db.emiTrackers.where('userId').equals(userId).delete(),
+      db.financeSipPlans ? db.financeSipPlans.where('userId').equals(userId).delete() : Promise.resolve(),
+      db.financeCategorizationRules
+        ? db.financeCategorizationRules.where('userId').equals(userId).delete()
+        : Promise.resolve(),
+      db.financeRecurringBills
+        ? db.financeRecurringBills.where('userId').equals(userId).delete()
+        : Promise.resolve(),
     ]);
 
     // Reset all account balances to ₹0 and normalize sample names if present
@@ -559,27 +642,73 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         debtRecords,
         debtInstallments,
         emiTrackers,
+        sipPlans,
+        categorizationRules,
+        recurringBills,
       ] = await Promise.all([
         db.financeCategories
           .where('userId')
           .equals(userId)
-          .filter((c) => !c.archived)
+          .filter((c) => !c.archived && !c.deletedAt)
           .sortBy('order'),
         db.financeAccounts
           .where('userId')
           .equals(userId)
-          .filter((a) => !a.archived)
+          .filter((a) => !a.archived && !a.deletedAt)
           .toArray(),
         db.financeTransactions
           .where('userId')
           .equals(userId)
+          .filter((t) => !t.deletedAt)
           .reverse()
           .sortBy('date'),
-        db.financeBudgets.where('userId').equals(userId).toArray(),
-        db.monthlyCommitments.where('userId').equals(userId).toArray(),
-        db.debtRecords.where('userId').equals(userId).toArray(),
-        db.debtInstallments.where('userId').equals(userId).reverse().sortBy('date'),
-        db.emiTrackers.where('userId').equals(userId).toArray(),
+        db.financeBudgets
+          .where('userId')
+          .equals(userId)
+          .filter((b) => !b.deletedAt)
+          .toArray(),
+        db.monthlyCommitments
+          .where('userId')
+          .equals(userId)
+          .filter((c) => !c.deletedAt)
+          .toArray(),
+        db.debtRecords
+          .where('userId')
+          .equals(userId)
+          .filter((d) => !d.deletedAt)
+          .toArray(),
+        db.debtInstallments
+          .where('userId')
+          .equals(userId)
+          .filter((i) => !i.deletedAt)
+          .reverse()
+          .sortBy('date'),
+        db.emiTrackers
+          .where('userId')
+          .equals(userId)
+          .filter((e) => !e.deletedAt)
+          .toArray(),
+        db.financeSipPlans
+          ? db.financeSipPlans
+              .where('userId')
+              .equals(userId)
+              .filter((s) => !s.deletedAt)
+              .toArray()
+          : Promise.resolve([]),
+        db.financeCategorizationRules
+          ? db.financeCategorizationRules
+              .where('userId')
+              .equals(userId)
+              .filter((r) => !r.deletedAt)
+              .toArray()
+          : Promise.resolve([]),
+        db.financeRecurringBills
+          ? db.financeRecurringBills
+              .where('userId')
+              .equals(userId)
+              .filter((b) => !b.deletedAt)
+              .toArray()
+          : Promise.resolve([]),
       ]);
 
       set({
@@ -592,6 +721,9 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         debtRecords,
         debtInstallments,
         emiTrackers,
+        sipPlans,
+        categorizationRules,
+        recurringBills,
         isLoading: false,
       });
     } catch (error) {
@@ -630,6 +762,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       linkedDebtId: data.linkedDebtId || null,
       linkedDebtInstallmentId: null,
       linkedEmiId: data.linkedEmiId || null,
+      linkedSipId: data.linkedSipId || null,
+      merchantName: data.merchantName?.trim(),
+      rawMerchant: data.rawMerchant?.trim(),
+      needsReview: data.needsReview ?? false,
+      splitGroupId: data.splitGroupId || null,
       createdAt: now,
       updatedAt: now,
     };
@@ -839,6 +976,16 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       });
     }
 
+    if (existing.type === 'transfer' && existing.toAccountId) {
+      const toAcc = get().accounts.find((a) => a.id === existing.toAccountId);
+      if (toAcc) {
+        await db.financeAccounts.update(toAcc.id, {
+          balance: toAcc.balance - existing.amount,
+          updatedAt: now,
+        });
+      }
+    }
+
     // Reverse linked debt installment if present
     if (existing.linkedDebtId && existing.linkedDebtInstallmentId) {
       const debt = get().debtRecords.find((d) => d.id === existing.linkedDebtId);
@@ -852,11 +999,271 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           updatedAt: now,
         });
       }
-      await db.debtInstallments.delete(existing.linkedDebtInstallmentId);
+      await db.debtInstallments.update(existing.linkedDebtInstallmentId, {
+        deletedAt: now,
+        updatedAt: now,
+      });
     }
 
-    await db.financeTransactions.delete(id);
+    await db.financeTransactions.update(id, { deletedAt: now, updatedAt: now });
     await get().loadFinanceData(userId);
+  },
+
+  approveReviewedTransaction: async (id) => {
+    const existing = get().transactions.find((t) => t.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    await db.financeTransactions.update(id, {
+      needsReview: false,
+      updatedAt: now,
+    });
+    await get().loadFinanceData(existing.userId);
+  },
+
+  bulkUpdateTransactions: async (ids, updates) => {
+    if (ids.length === 0) return;
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const now = new Date().toISOString();
+
+    await db.transaction('rw', db.financeTransactions, async () => {
+      for (const id of ids) {
+        await db.financeTransactions.update(id, {
+          ...updates,
+          updatedAt: now,
+        });
+      }
+    });
+
+    await get().loadFinanceData(userId);
+  },
+
+  bulkDeleteTransactions: async (ids) => {
+    for (const id of ids) {
+      await get().deleteTransaction(id);
+    }
+  },
+
+  splitTransactionWithFriend: async ({
+    txData,
+    friendName,
+    friendShareAmount,
+    existingDebtId,
+  }) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const now = new Date().toISOString();
+    const totalOutflow = Number(txData.amount);
+    const friendPortion = Math.max(0, Math.min(totalOutflow, Number(friendShareAmount)));
+    const myShare = Math.max(0, totalOutflow - friendPortion);
+    const splitGroupId = crypto.randomUUID();
+
+    // 1. Log user's share as an expense (deducting full outflow from account so wallet balance reflects reality)
+    const tx = await get().addTransaction({
+      ...txData,
+      amount: myShare,
+      splitGroupId,
+      notes: `${txData.notes ? txData.notes + ' · ' : ''}Split with ${friendName} (Your share: ${formatINR(
+        myShare
+      )}, ${friendName} owes: ${formatINR(friendPortion)})`,
+      tags: Array.from(new Set([...(txData.tags || []), 'split', friendName.toLowerCase()])),
+    });
+
+    // Deduct the friend's share from the paying account as well since the user paid the full bill upfront
+    if (friendPortion > 0) {
+      const account = get().accounts.find((a) => a.id === txData.accountId);
+      if (account) {
+        await db.financeAccounts.update(account.id, {
+          balance: account.balance - friendPortion,
+          updatedAt: now,
+        });
+      }
+    }
+
+    // 2. Create or top up a Lent DebtRecord for the friend
+    let debtRecord: DebtRecord | undefined;
+    if (existingDebtId) {
+      debtRecord = get().debtRecords.find((d) => d.id === existingDebtId);
+    } else {
+      debtRecord = get().debtRecords.find(
+        (d) =>
+          d.direction === 'lent' &&
+          d.status === 'active' &&
+          d.personName.toLowerCase() === friendName.trim().toLowerCase()
+      );
+    }
+
+    if (debtRecord && friendPortion > 0) {
+      await get().topUpDebt(
+        debtRecord.id,
+        friendPortion,
+        `Split: ${txData.title} (${txData.date})`
+      );
+      debtRecord = get().debtRecords.find((d) => d.id === debtRecord!.id);
+    } else if (friendPortion > 0) {
+      debtRecord = await get().addDebtRecord({
+        personName: friendName.trim(),
+        direction: 'lent',
+        title: `Split: ${txData.title}`,
+        principalAmount: friendPortion,
+        startDate: txData.date,
+        repaymentSchedule: 'flexible',
+        color: '#10b981',
+        notes: `Created from split expense "${txData.title}" on ${txData.date}`,
+      });
+    } else {
+      debtRecord = await get().addDebtRecord({
+        personName: friendName.trim(),
+        direction: 'lent',
+        title: `Split: ${txData.title}`,
+        principalAmount: 0,
+        startDate: txData.date,
+        repaymentSchedule: 'flexible',
+        color: '#10b981',
+      });
+    }
+
+    await get().loadFinanceData(userId);
+    return { transaction: tx, debt: debtRecord! };
+  },
+
+  importTransactionsCsv: async (csvText, defaultAccountId) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const lines = csvText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length < 2) return { importedCount: 0, skippedCount: 0 };
+
+    const parseCsvLine = (line: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (ch === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
+    const dateIdx = headers.findIndex((h) => h.includes('date'));
+    const titleIdx = headers.findIndex(
+      (h) =>
+        h.includes('title') ||
+        h.includes('description') ||
+        h.includes('narration') ||
+        h.includes('merchant') ||
+        h.includes('particular')
+    );
+    const amountIdx = headers.findIndex((h) => h.includes('amount') || h.includes('value'));
+    const typeIdx = headers.findIndex((h) => h.includes('type') || h.includes('cr/dr'));
+    const catIdx = headers.findIndex((h) => h.includes('category'));
+
+    const fallbackAccount =
+      (defaultAccountId && get().accounts.find((a) => a.id === defaultAccountId)) ||
+      get().accounts.find((a) => a.isDefault) ||
+      get().accounts[0];
+    const fallbackCategory = get().categories[0];
+
+    if (!fallbackAccount || !fallbackCategory) {
+      return { importedCount: 0, skippedCount: lines.length - 1 };
+    }
+
+    let importedCount = 0;
+    let skippedCount = 0;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCsvLine(lines[i]);
+      if (cols.length < 2) {
+        skippedCount++;
+        continue;
+      }
+
+      const rawTitle = (titleIdx >= 0 ? cols[titleIdx] : cols[1]) || 'Imported Entry';
+      const rawAmountStr = (amountIdx >= 0 ? cols[amountIdx] : cols[2] || '').replace(
+        /[^0-9.-]/g,
+        ''
+      );
+      const parsedAmount = Math.abs(parseFloat(rawAmountStr));
+      if (!parsedAmount || isNaN(parsedAmount)) {
+        skippedCount++;
+        continue;
+      }
+
+      let dateStr = todayStr;
+      if (dateIdx >= 0 && cols[dateIdx]) {
+        const candidate = cols[dateIdx].trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(candidate)) {
+          dateStr = candidate.slice(0, 10);
+        } else {
+          const d = new Date(candidate);
+          if (!isNaN(d.getTime())) {
+            dateStr = d.toISOString().split('T')[0];
+          }
+        }
+      }
+
+      // Deduplicate against existing transactions on same date + amount + title
+      const duplicate = get().transactions.some(
+        (t) =>
+          t.date === dateStr &&
+          Math.abs(t.amount - parsedAmount) < 0.01 &&
+          t.title.toLowerCase() === rawTitle.toLowerCase()
+      );
+      if (duplicate) {
+        skippedCount++;
+        continue;
+      }
+
+      const rawType = (typeIdx >= 0 ? cols[typeIdx] : '').toLowerCase();
+      const txType: FinanceTransaction['type'] =
+        rawType.includes('inc') || rawType.includes('cr')
+          ? 'income'
+          : rawType.includes('inv') || rawType.includes('sip')
+          ? 'investment'
+          : 'expense';
+
+      // Check categorization rules first
+      const ruleMatch = get().applyCategorizationRules(rawTitle);
+      let categoryId = ruleMatch.categoryId;
+
+      if (!categoryId && catIdx >= 0 && cols[catIdx]) {
+        const matchedCat = get().categories.find(
+          (c) => c.name.toLowerCase() === cols[catIdx].toLowerCase()
+        );
+        if (matchedCat) categoryId = matchedCat.id;
+      }
+
+      await get().addTransaction({
+        title: ruleMatch.cleanMerchantName || rawTitle,
+        rawMerchant: rawTitle,
+        merchantName: ruleMatch.cleanMerchantName,
+        amount: parsedAmount,
+        type: txType,
+        categoryId: categoryId || fallbackCategory.id,
+        accountId: fallbackAccount.id,
+        date: dateStr,
+        needsReview: !ruleMatch.rule,
+        tags: ruleMatch.tags || ['csv-import'],
+      });
+      importedCount++;
+    }
+
+    await get().loadFinanceData(userId);
+    return { importedCount, skippedCount };
   },
 
   attachTransactionToCommitment: async (
@@ -903,7 +1310,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   deleteCommitment: async (id) => {
     const existing = get().commitments.find((c) => c.id === id);
     if (!existing) return;
-    await db.monthlyCommitments.delete(id);
+    const now = new Date().toISOString();
+    await db.monthlyCommitments.update(id, { isActive: false, deletedAt: now, updatedAt: now });
     await get().loadFinanceData(existing.userId);
   },
 
@@ -1092,7 +1500,9 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       principalAmount: newPrincipal,
       remainingAmount: newRemaining,
       status: 'active',
-      notes: note ? `${debt.notes ? debt.notes + ' | ' : ''}Top-up +${formatINR(additionalAmount)}: ${note}` : debt.notes,
+      notes: note
+        ? `${debt.notes ? debt.notes + ' | ' : ''}Top-up +${formatINR(additionalAmount)}: ${note}`
+        : debt.notes,
       updatedAt: now,
     });
 
@@ -1102,8 +1512,12 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   deleteDebtRecord: async (id) => {
     const debt = get().debtRecords.find((d) => d.id === id);
     if (!debt) return;
-    await db.debtInstallments.where('debtId').equals(id).delete();
-    await db.debtRecords.delete(id);
+    const now = new Date().toISOString();
+    const installments = await db.debtInstallments.where('debtId').equals(id).toArray();
+    for (const inst of installments) {
+      await db.debtInstallments.update(inst.id, { deletedAt: now, updatedAt: now });
+    }
+    await db.debtRecords.update(id, { status: 'archived', deletedAt: now, updatedAt: now });
     await get().loadFinanceData(debt.userId);
   },
 
@@ -1185,9 +1599,245 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   deleteEmiTracker: async (id) => {
     const emi = get().emiTrackers.find((e) => e.id === id);
     if (!emi) return;
-    await db.emiTrackers.delete(id);
+    const now = new Date().toISOString();
+    await db.emiTrackers.update(id, { deletedAt: now, updatedAt: now });
     await get().loadFinanceData(emi.userId);
   },
+
+  // ============================================
+  // SIP PLANS (INVESTMENTS)
+  // ============================================
+
+  addSipPlan: async (data) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const now = new Date().toISOString();
+    const sip: FinanceSipPlan = {
+      ...data,
+      id: crypto.randomUUID(),
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.financeSipPlans.add(sip);
+    await get().loadFinanceData(userId);
+    return sip;
+  },
+
+  updateSipPlan: async (id, data) => {
+    const existing = get().sipPlans.find((s) => s.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    await db.financeSipPlans.update(id, { ...data, updatedAt: now });
+    await get().loadFinanceData(existing.userId);
+  },
+
+  deleteSipPlan: async (id) => {
+    const existing = get().sipPlans.find((s) => s.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    await db.financeSipPlans.update(id, { isActive: false, deletedAt: now, updatedAt: now });
+    await get().loadFinanceData(existing.userId);
+  },
+
+  payMonthlySip: async (sipId, accountId, date) => {
+    const sip = get().sipPlans.find((s) => s.id === sipId);
+    if (!sip || !sip.isActive) return null;
+
+    const now = new Date().toISOString();
+    const txDate = date || now.split('T')[0];
+    const monthKey = txDate.slice(0, 7);
+
+    const newTotalInvested = sip.totalInvested + sip.monthlyAmount;
+    const newCurrentValue = Math.max(newTotalInvested, sip.currentValue + sip.monthlyAmount);
+
+    await db.financeSipPlans.update(sipId, {
+      totalInvested: newTotalInvested,
+      currentValue: newCurrentValue,
+      lastInvestedMonthKey: monthKey,
+      updatedAt: now,
+    });
+
+    const defaultAccount =
+      (accountId && get().accounts.find((a) => a.id === accountId)) ||
+      (sip.accountId && get().accounts.find((a) => a.id === sip.accountId)) ||
+      get().accounts.find((a) => a.isDefault) ||
+      get().accounts[0];
+
+    const investCat =
+      (sip.categoryId && get().categories.find((c) => c.id === sip.categoryId)) ||
+      get().categories.find((c) => c.slug === 'investments-savings') ||
+      get().categories[0];
+
+    let createdTx: FinanceTransaction | null = null;
+    if (defaultAccount && investCat) {
+      createdTx = await get().addTransaction({
+        title: `SIP Investment — ${sip.name}`,
+        amount: sip.monthlyAmount,
+        type: 'investment',
+        categoryId: investCat.id,
+        subcategory: 'SIP / Mutual Funds',
+        accountId: defaultAccount.id,
+        date: txDate,
+        notes: `${sip.platform ? sip.platform + ' · ' : ''}Total Invested: ${formatINR(
+          newTotalInvested
+        )}`,
+        tags: ['sip', 'investment', sip.assetClass],
+        linkedSipId: sip.id,
+      });
+    } else {
+      await get().loadFinanceData(sip.userId);
+    }
+
+    try {
+      await CrossDomainActionMediator.onFinanceEvent({
+        type: 'SIP_COMPLETED',
+        date: txDate,
+        amount: sip.monthlyAmount,
+      });
+    } catch {
+      // Non-blocking
+    }
+
+    return createdTx;
+  },
+
+  // ============================================
+  // RECURRING BILLS & SUBSCRIPTIONS
+  // ============================================
+
+  addRecurringBill: async (data) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const now = new Date().toISOString();
+    const bill: FinanceRecurringBill = {
+      ...data,
+      id: crypto.randomUUID(),
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.financeRecurringBills.add(bill);
+    await get().loadFinanceData(userId);
+    return bill;
+  },
+
+  updateRecurringBill: async (id, data) => {
+    const existing = get().recurringBills.find((b) => b.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    const nextPayload: Partial<FinanceRecurringBill> = {
+      ...data,
+      updatedAt: now,
+    };
+    if (data.amount !== undefined && data.amount !== existing.amount) {
+      nextPayload.previousAmount = existing.amount;
+    }
+    await db.financeRecurringBills.update(id, nextPayload);
+    await get().loadFinanceData(existing.userId);
+  },
+
+  deleteRecurringBill: async (id) => {
+    const existing = get().recurringBills.find((b) => b.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    await db.financeRecurringBills.update(id, { isActive: false, deletedAt: now, updatedAt: now });
+    await get().loadFinanceData(existing.userId);
+  },
+
+  payRecurringBill: async (billId, accountId, date) => {
+    const bill = get().recurringBills.find((b) => b.id === billId);
+    if (!bill) return null;
+
+    const now = new Date().toISOString();
+    const txDate = date || now.split('T')[0];
+    const monthKey = txDate.slice(0, 7);
+
+    await db.financeRecurringBills.update(billId, {
+      lastPaidMonthKey: monthKey,
+      updatedAt: now,
+    });
+
+    const selectedAcc =
+      (accountId && get().accounts.find((a) => a.id === accountId)) ||
+      (bill.accountId && get().accounts.find((a) => a.id === bill.accountId)) ||
+      get().accounts.find((a) => a.isDefault) ||
+      get().accounts[0];
+
+    const selectedCat =
+      get().categories.find((c) => c.id === bill.categoryId) ||
+      get().categories.find((c) => c.slug === 'utilities-bills') ||
+      get().categories[0];
+
+    if (!selectedAcc || !selectedCat) {
+      await get().loadFinanceData(bill.userId);
+      return null;
+    }
+
+    return get().addTransaction({
+      title: bill.name,
+      amount: bill.amount,
+      type: 'expense',
+      categoryId: selectedCat.id,
+      subcategory: 'Recurring Bill',
+      accountId: selectedAcc.id,
+      date: txDate,
+      tags: ['bill', bill.cadence],
+      isRecurring: true,
+    });
+  },
+
+  // ============================================
+  // SMART CATEGORIZATION RULES
+  // ============================================
+
+  addCategorizationRule: async (data) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const now = new Date().toISOString();
+    const rule: FinanceCategorizationRule = {
+      ...data,
+      id: crypto.randomUUID(),
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.financeCategorizationRules.add(rule);
+    await get().loadFinanceData(userId);
+    return rule;
+  },
+
+  deleteCategorizationRule: async (id) => {
+    const existing = get().categorizationRules.find((r) => r.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    await db.financeCategorizationRules.update(id, {
+      isActive: false,
+      deletedAt: now,
+      updatedAt: now,
+    });
+    await get().loadFinanceData(existing.userId);
+  },
+
+  applyCategorizationRules: (rawTextOrMerchant) => {
+    const normalized = (rawTextOrMerchant || '').toLowerCase();
+    if (!normalized) return {};
+
+    const activeRules = get().categorizationRules.filter((r) => r.isActive && !r.deletedAt);
+    for (const rule of activeRules) {
+      const pattern = rule.matchPattern.toLowerCase().trim();
+      if (pattern && normalized.includes(pattern)) {
+        return {
+          rule,
+          categoryId: rule.categoryId,
+          cleanMerchantName: rule.cleanMerchantName,
+          tags: rule.defaultTags,
+        };
+      }
+    }
+    return {};
+  },
+
+  // ============================================
+  // ACCOUNTS, CATEGORIES & BUDGETS
+  // ============================================
 
   addAccount: async (data) => {
     const userId = await resolveCurrentUserId(undefined, get().currentUserId);
@@ -1211,6 +1861,18 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     await get().loadFinanceData(existing.userId);
   },
 
+  deleteAccount: async (id) => {
+    const existing = get().accounts.find((a) => a.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    await db.financeAccounts.update(id, {
+      archived: true,
+      deletedAt: now,
+      updatedAt: now,
+    });
+    await get().loadFinanceData(existing.userId);
+  },
+
   addCategory: async (data) => {
     const userId = await resolveCurrentUserId(undefined, get().currentUserId);
     const now = new Date().toISOString();
@@ -1226,6 +1888,28 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     return category;
   },
 
+  updateCategory: async (id, data) => {
+    const existing = get().categories.find((c) => c.id === id);
+    if (!existing) return;
+    await db.financeCategories.update(id, {
+      ...data,
+      updatedAt: new Date().toISOString(),
+    });
+    await get().loadFinanceData(existing.userId);
+  },
+
+  deleteCategory: async (id) => {
+    const existing = get().categories.find((c) => c.id === id);
+    if (!existing) return;
+    const now = new Date().toISOString();
+    await db.financeCategories.update(id, {
+      archived: true,
+      deletedAt: now,
+      updatedAt: now,
+    });
+    await get().loadFinanceData(existing.userId);
+  },
+
   updateCategoryBudget: async (categoryId, monthlyBudgetLimit) => {
     const existing = get().categories.find((c) => c.id === categoryId);
     if (!existing) return;
@@ -1236,7 +1920,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     await get().loadFinanceData(existing.userId);
   },
 
-  setMonthlyBudget: async (monthKey, totalBudget, expectedIncome) => {
+  setMonthlyBudget: async (monthKey, totalBudget, expectedIncome, plannedSipAmount) => {
     const userId = await resolveCurrentUserId(undefined, get().currentUserId);
     const now = new Date().toISOString();
     const existing = get().budgets.find((b) => b.monthKey === monthKey && b.userId === userId);
@@ -1246,6 +1930,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         totalBudget: Number(totalBudget),
         expectedIncome:
           expectedIncome !== undefined ? Number(expectedIncome) : existing.expectedIncome,
+        plannedSipAmount:
+          plannedSipAmount !== undefined ? Number(plannedSipAmount) : existing.plannedSipAmount,
         updatedAt: now,
       });
     } else {
@@ -1255,6 +1941,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         monthKey,
         totalBudget: Number(totalBudget),
         expectedIncome: expectedIncome !== undefined ? Number(expectedIncome) : 0,
+        plannedSipAmount: plannedSipAmount !== undefined ? Number(plannedSipAmount) : 0,
         currency: 'INR',
         createdAt: now,
         updatedAt: now,
@@ -1265,33 +1952,46 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     await get().loadFinanceData(userId);
   },
 
-  saveMonthlyBudgetSettings: async (monthKey, totalBudget, categoryLimits) => {
+  saveMonthlyBudgetSettings: async (monthKey, totalBudget, categoryLimits, options) => {
     const userId = await resolveCurrentUserId(undefined, get().currentUserId);
     const now = new Date().toISOString();
 
     for (const [categoryId, limit] of Object.entries(categoryLimits)) {
       const normalized = Math.max(0, Number(limit) || 0);
+      const rolloverFlag = options?.categoryRollovers?.[categoryId];
       await db.financeCategories.update(categoryId, {
         monthlyBudgetLimit: normalized,
+        ...(rolloverFlag !== undefined ? { rolloverEnabled: rolloverFlag } : {}),
         updatedAt: now,
       });
     }
 
     const existing = get().budgets.find((b) => b.monthKey === monthKey && b.userId === userId);
     const normalizedTotal = Math.max(0, Number(totalBudget) || 0);
+    const normalizedIncome =
+      options?.expectedIncome !== undefined
+        ? Math.max(0, Number(options.expectedIncome) || 0)
+        : existing?.expectedIncome || 0;
+    const normalizedSip =
+      options?.plannedSipAmount !== undefined
+        ? Math.max(0, Number(options.plannedSipAmount) || 0)
+        : existing?.plannedSipAmount || 0;
 
     if (existing) {
       await db.financeBudgets.update(existing.id, {
         totalBudget: normalizedTotal,
+        expectedIncome: normalizedIncome,
+        plannedSipAmount: normalizedSip,
         updatedAt: now,
       });
-    } else if (normalizedTotal > 0) {
+    } else if (normalizedTotal > 0 || normalizedIncome > 0 || normalizedSip > 0) {
       const budget: FinanceBudget = {
         id: crypto.randomUUID(),
         userId,
         monthKey,
         totalBudget: normalizedTotal,
-        expectedIncome: 0,
+        expectedIncome: normalizedIncome,
+        plannedSipAmount: normalizedSip,
         currency: 'INR',
         createdAt: now,
         updatedAt: now,
@@ -1312,6 +2012,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const headers = [
       'Date',
       'Title',
+      'Merchant',
       'Type',
       'Amount (INR)',
       'Category',
@@ -1320,6 +2021,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       'Commitment Link',
       'Contribution Type',
       'Friend Debt Link',
+      'Tags',
       'Notes',
     ];
 
@@ -1332,6 +2034,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const rows = list.map((t) => [
       escapeCsv(t.date),
       escapeCsv(t.title),
+      escapeCsv(t.merchantName || t.rawMerchant || ''),
       escapeCsv(t.type),
       t.amount,
       escapeCsv(categoriesMap.get(t.categoryId) || 'Uncategorized'),
@@ -1340,6 +2043,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       escapeCsv(t.linkedCommitmentId ? commitmentsMap.get(t.linkedCommitmentId) : ''),
       escapeCsv(t.commitmentContributionType || ''),
       escapeCsv(t.linkedDebtId ? debtsMap.get(t.linkedDebtId) : ''),
+      escapeCsv((t.tags || []).join('; ')),
       escapeCsv(t.notes || ''),
     ]);
 
@@ -1349,6 +2053,119 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   // ============================================
   // COMPUTED SELECTORS
   // ============================================
+
+  getNetWorthSummary: () => {
+    const accounts = get().accounts.filter((a) => !a.archived && !a.deletedAt && a.includeInNetWorth !== false);
+    const liquidAssets = accounts
+      .filter((a) => a.type === 'bank' || a.type === 'upi' || a.type === 'cash' || a.type === 'wallet')
+      .reduce((sum, a) => sum + Math.max(0, a.balance), 0);
+
+    const investmentAccountAssets = accounts
+      .filter((a) => a.type === 'investment')
+      .reduce((sum, a) => sum + Math.max(0, a.balance), 0);
+
+    const sipCorpus = get()
+      .sipPlans.filter((s) => s.isActive && !s.deletedAt)
+      .reduce((sum, s) => sum + Math.max(s.currentValue || 0, s.totalInvested || 0), 0);
+
+    const investmentAssets = investmentAccountAssets + sipCorpus;
+
+    const debtSummary = get().getDebtSummary();
+    const friendReceivables = debtSummary.totalLentRemaining;
+    const friendPayables = debtSummary.totalBorrowedRemaining;
+
+    // Credit card balance can be stored as negative (from expense deductions) or positive outstanding due
+    const creditCardLiabilities = accounts
+      .filter((a) => a.type === 'credit_card')
+      .reduce((sum, a) => sum + Math.abs(a.balance), 0);
+
+    const emiRemainingPrincipal = get()
+      .emiTrackers.filter((e) => e.status === 'active' && !e.deletedAt)
+      .reduce((sum, e) => {
+        const remainingMonths = Math.max(0, e.tenureMonths - e.paidMonths);
+        const approxPrincipalLeft =
+          e.tenureMonths > 0
+            ? Math.round((remainingMonths / e.tenureMonths) * e.principalAmount)
+            : 0;
+        return sum + approxPrincipalLeft;
+      }, 0);
+
+    const totalAssets = liquidAssets + investmentAssets + friendReceivables;
+    const totalLiabilities = creditCardLiabilities + emiRemainingPrincipal + friendPayables;
+    const netWorth = totalAssets - totalLiabilities;
+
+    return {
+      liquidAssets,
+      investmentAssets,
+      friendReceivables,
+      totalAssets,
+      creditCardLiabilities,
+      emiRemainingPrincipal,
+      friendPayables,
+      totalLiabilities,
+      netWorth,
+    };
+  },
+
+  getDailySpendingPace: (monthKey) => {
+    const targetMonth = monthKey || get().selectedMonth;
+    const prevMonth = getPreviousMonthKey(targetMonth);
+    const [yStr, mStr] = targetMonth.split('-');
+    const year = parseInt(yStr, 10);
+    const month = parseInt(mStr, 10);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const now = new Date();
+    const isCurrentMonth = now.getFullYear() === year && now.getMonth() + 1 === month;
+    const isFutureMonth =
+      year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth() + 1);
+    const todayDayOfMonth = now.getDate();
+
+    const summary = get().getMonthlySummary(targetMonth);
+    const monthlyBudget = summary.monthlyBudget;
+
+    const currentMonthTxs = get().transactions.filter(
+      (t) => t.monthKey === targetMonth && t.type === 'expense' && !t.deletedAt
+    );
+    const prevMonthTxs = get().transactions.filter(
+      (t) => t.monthKey === prevMonth && t.type === 'expense' && !t.deletedAt
+    );
+
+    const points: DailyPacePoint[] = [];
+    let runningCurrent = 0;
+    let runningPrev = 0;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const paddedDay = String(day).padStart(2, '0');
+      const dateStr = `${targetMonth}-${paddedDay}`;
+      const prevDateStr = `${prevMonth}-${paddedDay}`;
+
+      const daySpend = currentMonthTxs
+        .filter((t) => t.date === dateStr)
+        .reduce((sum, t) => sum + t.amount, 0);
+      runningCurrent += daySpend;
+
+      const prevDaySpend = prevMonthTxs
+        .filter((t) => t.date === prevDateStr)
+        .reduce((sum, t) => sum + t.amount, 0);
+      runningPrev += prevDaySpend;
+
+      const idealCumulativeBudget =
+        monthlyBudget > 0 ? Math.round((monthlyBudget / daysInMonth) * day) : 0;
+
+      const isFutureDay = isFutureMonth || (isCurrentMonth && day > todayDayOfMonth);
+
+      points.push({
+        day,
+        dateStr,
+        cumulativeSpent: isFutureDay ? null : runningCurrent,
+        idealCumulativeBudget,
+        lastMonthCumulativeSpent: runningPrev,
+      });
+    }
+
+    return points;
+  },
 
   getCommitmentLedger: (commitmentId, monthKey) => {
     const targetMonth = monthKey || get().selectedMonth;
@@ -1425,14 +2242,20 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   getAllCommitmentLedgers: (monthKey) => {
     const targetMonth = monthKey || get().selectedMonth;
     return get()
-      .commitments.filter((c) => c.isActive)
+      .commitments.filter((c) => c.isActive && !c.deletedAt)
       .map((c) => get().getCommitmentLedger(c.id, targetMonth))
       .filter((l): l is CommitmentLedgerSummary => l !== null);
   },
 
   getMonthlySummary: (monthKey) => {
     const targetMonth = monthKey || get().selectedMonth;
-    const monthTransactions = get().transactions.filter((t) => t.monthKey === targetMonth);
+    const prevMonth = getPreviousMonthKey(targetMonth);
+    const monthTransactions = get().transactions.filter(
+      (t) => t.monthKey === targetMonth && !t.deletedAt
+    );
+    const prevMonthExpenses = get().transactions.filter(
+      (t) => t.monthKey === prevMonth && t.type === 'expense' && !t.deletedAt
+    );
 
     const totalIncome = monthTransactions
       .filter((t) => t.type === 'income')
@@ -1440,6 +2263,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
     const expenseTransactions = monthTransactions.filter((t) => t.type === 'expense');
     const totalSpent = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
+
+    const investmentTransactions = monthTransactions.filter((t) => t.type === 'investment');
+    const totalInvested = investmentTransactions.reduce((sum, t) => sum + t.amount, 0);
+
+    const needsReviewCount = monthTransactions.filter((t) => !!t.needsReview).length;
 
     const budgetObj = get().budgets.find((b) => b.monthKey === targetMonth);
     const sumCategoryBudgets = get()
@@ -1450,7 +2278,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       budgetObj && budgetObj.totalBudget > 0 ? budgetObj.totalBudget : sumCategoryBudgets;
     const expectedIncome = budgetObj?.expectedIncome || totalIncome;
 
-    // 1. Remaining Unpaid Monthly Commitments (Only the unfulfilled remainder so offset purchases are never double-counted!)
+    // 1. Remaining Unpaid Monthly Commitments
     const commitmentLedgers = get().getAllCommitmentLedgers(targetMonth);
     const remainingUnpaidCommitments = commitmentLedgers.reduce(
       (sum, l) => sum + l.remainingBalance,
@@ -1459,17 +2287,18 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
     // 2. Remaining Unpaid EMIs this month
     const unpaidEmis = get().emiTrackers.filter((emi) => {
-      if (emi.status !== 'active' || emi.paidMonths >= emi.tenureMonths) return false;
+      if (emi.status !== 'active' || emi.paidMonths >= emi.tenureMonths || emi.deletedAt) return false;
       const paidTxExists = expenseTransactions.some((t) => t.linkedEmiId === emi.id);
       return emi.lastPaidMonthKey !== targetMonth && !paidTxExists;
     });
     const remainingUnpaidEmis = unpaidEmis.reduce((sum, e) => sum + e.emiAmount, 0);
 
-    // 3. Planned Debt Installments still due this month (Borrowed debts with monthly_partial schedule)
+    // 3. Planned Debt Installments still due this month
     const activeBorrowedDebts = get().debtRecords.filter(
       (d) =>
         d.direction === 'borrowed' &&
         d.status === 'active' &&
+        !d.deletedAt &&
         d.remainingAmount > 0 &&
         d.repaymentSchedule === 'monthly_partial'
     );
@@ -1481,22 +2310,32 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         debt.plannedMonthlyInstallment || debt.remainingAmount
       );
       const paidThisMonth = get()
-        .debtInstallments.filter((i) => i.debtId === debt.id && i.monthKey === targetMonth)
+        .debtInstallments.filter(
+          (i) => i.debtId === debt.id && i.monthKey === targetMonth && !i.deletedAt
+        )
         .reduce((sum, i) => sum + i.amount, 0);
       const stillDue = Math.max(0, planned - paidThisMonth);
       plannedDebtInstallmentsDue += stillDue;
     }
 
-    // Safe-to-Spend Formula:
-    // SafeToSpend = MonthlyBudget - (TotalSpentThisMonth + RemainingUnpaidEMIsThisMonth + RemainingUnpaidMonthlyCommitmentsThisMonth + PlannedDebtInstallmentsThisMonth)
-    const safeToSpendMonthly =
-      monthlyBudget -
-      (totalSpent +
-        remainingUnpaidEmis +
-        remainingUnpaidCommitments +
-        plannedDebtInstallmentsDue);
+    // 4. Remaining Unpaid Recurring Bills this month
+    const unpaidBills = get().recurringBills.filter(
+      (b) => b.isActive && !b.deletedAt && b.lastPaidMonthKey !== targetMonth
+    );
+    const remainingUnpaidBills = unpaidBills.reduce((sum, b) => sum + b.amount, 0);
 
-    // Calculate Remaining Days in Month
+    // 5. Remaining Planned SIPs this month
+    const activeSips = get().sipPlans.filter(
+      (s) => s.isActive && !s.deletedAt && s.lastInvestedMonthKey !== targetMonth
+    );
+    const remainingActiveSipsSum = activeSips.reduce((sum, s) => sum + s.monthlyAmount, 0);
+    const plannedSipTarget = budgetObj?.plannedSipAmount || 0;
+    const remainingPlannedSips = Math.max(
+      remainingActiveSipsSum,
+      Math.max(0, plannedSipTarget - totalInvested)
+    );
+
+    // Calculate Remaining Days & Day-of-Month Pacing
     const now = new Date();
     const [yStr, mStr] = targetMonth.split('-');
     const year = parseInt(yStr, 10);
@@ -1507,22 +2346,50 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const remainingDaysInMonth = isCurrentMonth
       ? Math.max(1, daysInMonth - now.getDate() + 1)
       : daysInMonth;
+    const dayOfMonthProgressPct = isCurrentMonth
+      ? Math.round((now.getDate() / daysInMonth) * 100)
+      : 100;
+
+    // Safe-to-Spend Formula:
+    // Uses MonthlyBudget (if set) OR ExpectedIncome as ceiling, minus spent and unpaid fixed obligations
+    const basePool = monthlyBudget > 0 ? monthlyBudget : expectedIncome;
+    const safeToSpendMonthly =
+      basePool -
+      (totalSpent +
+        remainingUnpaidEmis +
+        remainingUnpaidCommitments +
+        plannedDebtInstallmentsDue +
+        remainingUnpaidBills +
+        (monthlyBudget === 0 && expectedIncome > 0 ? totalInvested + remainingPlannedSips : 0));
 
     const safeToSpendDaily = Math.max(0, Math.round(safeToSpendMonthly / remainingDaysInMonth));
 
     const netSavings = (totalIncome || expectedIncome) - totalSpent;
     const savingsRate =
       (totalIncome || expectedIncome) > 0
-        ? Math.round((netSavings / (totalIncome || expectedIncome)) * 100)
+        ? Math.round(((netSavings + totalInvested) / (totalIncome || expectedIncome)) * 100)
         : 0;
 
-    // Category Breakdown
+    // Category Breakdown with Rollover & Pace Tick Delta
     const categoryBreakdown: CategorySpendItem[] = get()
-      .categories.filter((c) => c.type === 'expense' || c.type === 'both')
+      .categories.filter((c) => (c.type === 'expense' || c.type === 'both') && !c.deletedAt)
       .map((category) => {
         const catTxs = expenseTransactions.filter((t) => t.categoryId === category.id);
         const spent = catTxs.reduce((sum, t) => sum + t.amount, 0);
-        const budgetLimit = category.monthlyBudgetLimit;
+        const baseBudgetLimit = category.monthlyBudgetLimit;
+
+        let rolloverAmount = 0;
+        if (category.rolloverEnabled && baseBudgetLimit > 0) {
+          const prevCatSpent = prevMonthExpenses
+            .filter((t) => t.categoryId === category.id)
+            .reduce((sum, t) => sum + t.amount, 0);
+          // Only roll over if there was any activity in previous month
+          if (prevMonthExpenses.length > 0 && prevCatSpent < baseBudgetLimit) {
+            rolloverAmount = baseBudgetLimit - prevCatSpent;
+          }
+        }
+
+        const budgetLimit = baseBudgetLimit + rolloverAmount;
         const percentageOfBudget =
           budgetLimit > 0 ? Math.round((spent / budgetLimit) * 100) : 0;
         const percentageOfTotalSpend =
@@ -1535,14 +2402,20 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           status = 'warning';
         }
 
+        const paceDiffPercentage =
+          budgetLimit > 0 ? percentageOfBudget - dayOfMonthProgressPct : 0;
+
         return {
           category,
           spent,
-          budgetLimit: category.monthlyBudgetLimit,
+          budgetLimit,
+          baseBudgetLimit,
+          rolloverAmount,
           percentageOfBudget,
           percentageOfTotalSpend,
           transactionCount: catTxs.length,
           status,
+          paceDiffPercentage,
         };
       })
       .sort((a, b) => b.spent - a.spent);
@@ -1551,26 +2424,31 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       monthKey: targetMonth,
       totalIncome,
       totalSpent,
+      totalInvested,
       monthlyBudget,
       expectedIncome,
       remainingUnpaidEmis,
       remainingUnpaidCommitments,
       plannedDebtInstallmentsDue,
+      remainingUnpaidBills,
+      remainingPlannedSips,
       safeToSpendMonthly,
       safeToSpendDaily,
       remainingDaysInMonth,
+      dayOfMonthProgressPct,
       netSavings,
       savingsRate,
+      needsReviewCount,
       categoryBreakdown,
     };
   },
 
   getDebtSummary: () => {
     const activeBorrowed = get().debtRecords.filter(
-      (d) => d.direction === 'borrowed' && d.status === 'active'
+      (d) => d.direction === 'borrowed' && d.status === 'active' && !d.deletedAt
     );
     const activeLent = get().debtRecords.filter(
-      (d) => d.direction === 'lent' && d.status === 'active'
+      (d) => d.direction === 'lent' && d.status === 'active' && !d.deletedAt
     );
 
     const totalBorrowedRemaining = activeBorrowed.reduce(
@@ -1597,7 +2475,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
   getDebtInstallments: (debtId) => {
     return get()
-      .debtInstallments.filter((i) => i.debtId === debtId)
+      .debtInstallments.filter((i) => i.debtId === debtId && !i.deletedAt)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   },
 
@@ -1614,11 +2492,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
     // 1. Active Unpaid EMIs
     for (const emi of get().emiTrackers) {
-      if (emi.status !== 'active' || emi.paidMonths >= emi.tenureMonths) continue;
+      if (emi.status !== 'active' || emi.paidMonths >= emi.tenureMonths || emi.deletedAt) continue;
       const isPaidThisMonth =
         emi.lastPaidMonthKey === currentMonthKey ||
         get().transactions.some(
-          (t) => t.linkedEmiId === emi.id && t.monthKey === currentMonthKey
+          (t) => t.linkedEmiId === emi.id && t.monthKey === currentMonthKey && !t.deletedAt
         );
       if (isPaidThisMonth) continue;
 
@@ -1629,7 +2507,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           sourceId: emi.id,
           type: 'emi',
           title: `${emi.loanName} EMI`,
-          subtitle: `${emi.lenderName} • Month ${emi.paidMonths + 1}/${emi.tenureMonths}`,
+          subtitle: `${emi.lenderName} · Month ${emi.paidMonths + 1}/${emi.tenureMonths}`,
           amount: emi.emiAmount,
           dueDate: makeDueDateStr(emi.billingDayOfMonth),
           daysUntilDue,
@@ -1649,7 +2527,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           sourceId: ledger.commitment.id,
           type: 'commitment',
           title: `${ledger.commitment.title} (${ledger.commitment.recipientName})`,
-          subtitle: `${formatINR(ledger.totalFulfilledAmount)} fulfilled via offsets/transfers • ${formatINR(
+          subtitle: `${formatINR(ledger.totalFulfilledAmount)} fulfilled · ${formatINR(
             ledger.remainingBalance
           )} left`,
           amount: ledger.remainingBalance,
@@ -1666,6 +2544,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       if (
         debt.direction !== 'borrowed' ||
         debt.status !== 'active' ||
+        debt.deletedAt ||
         debt.remainingAmount <= 0
       )
         continue;
@@ -1674,7 +2553,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       const daysUntilDue = dueDay - currentDay;
       const paidThisMonth = get()
         .debtInstallments.filter(
-          (i) => i.debtId === debt.id && i.monthKey === currentMonthKey
+          (i) => i.debtId === debt.id && i.monthKey === currentMonthKey && !i.deletedAt
         )
         .reduce((sum, i) => sum + i.amount, 0);
       const planned = Math.min(
@@ -1688,9 +2567,76 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           id: `debt-${debt.id}`,
           sourceId: debt.id,
           type: 'debt',
-          title: `Pay ${debt.personName} (Partial Installment)`,
-          subtitle: `${debt.title} • ${formatINR(debt.remainingAmount)} total remaining`,
+          title: `Pay ${debt.personName} (Installment)`,
+          subtitle: `${debt.title} · ${formatINR(debt.remainingAmount)} remaining`,
           amount: stillDue,
+          dueDate: makeDueDateStr(dueDay),
+          daysUntilDue,
+          isOverdue: daysUntilDue < 0,
+          status: 'pending',
+        });
+      }
+    }
+
+    // 4. Active Recurring Bills due
+    for (const bill of get().recurringBills) {
+      if (!bill.isActive || bill.deletedAt || bill.lastPaidMonthKey === currentMonthKey) continue;
+      const daysUntilDue = bill.dueDayOfMonth - currentDay;
+      if (daysUntilDue <= withinDays) {
+        obligations.push({
+          id: `bill-${bill.id}`,
+          sourceId: bill.id,
+          type: 'bill',
+          title: bill.name,
+          subtitle: `Recurring ${bill.cadence} bill`,
+          amount: bill.amount,
+          dueDate: makeDueDateStr(bill.dueDayOfMonth),
+          daysUntilDue,
+          isOverdue: daysUntilDue < 0,
+          status: 'pending',
+        });
+      }
+    }
+
+    // 5. Active SIPs due
+    for (const sip of get().sipPlans) {
+      if (!sip.isActive || sip.deletedAt || sip.lastInvestedMonthKey === currentMonthKey) continue;
+      const daysUntilDue = sip.sipDayOfMonth - currentDay;
+      if (daysUntilDue <= withinDays) {
+        obligations.push({
+          id: `sip-${sip.id}`,
+          sourceId: sip.id,
+          type: 'sip',
+          title: `SIP: ${sip.name}`,
+          subtitle: `${sip.platform || 'Investment'} · Monthly SIP`,
+          amount: sip.monthlyAmount,
+          dueDate: makeDueDateStr(sip.sipDayOfMonth),
+          daysUntilDue,
+          isOverdue: daysUntilDue < 0,
+          status: 'pending',
+        });
+      }
+    }
+
+    // 6. Credit Cards with outstanding balance and dueDay
+    for (const acc of get().accounts) {
+      if (
+        acc.type !== 'credit_card' ||
+        acc.archived ||
+        acc.deletedAt ||
+        Math.abs(acc.balance) <= 0
+      )
+        continue;
+      const dueDay = acc.dueDay || 5;
+      const daysUntilDue = dueDay - currentDay;
+      if (daysUntilDue <= withinDays) {
+        obligations.push({
+          id: `cc-${acc.id}`,
+          sourceId: acc.id,
+          type: 'credit_card',
+          title: `${acc.name} Bill Due`,
+          subtitle: `Credit card statement balance`,
+          amount: Math.abs(acc.balance),
           dueDate: makeDueDateStr(dueDay),
           daysUntilDue,
           isOverdue: daysUntilDue < 0,
@@ -1707,6 +2653,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const { filters, transactions } = get();
 
     return transactions.filter((tx) => {
+      if (tx.deletedAt) return false;
       if (targetMonth !== 'all' && tx.monthKey !== targetMonth) return false;
       if (filters.type !== 'all' && tx.type !== filters.type) return false;
       if (filters.categoryId !== 'all' && tx.categoryId !== filters.categoryId) return false;
@@ -1717,16 +2664,19 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       )
         return false;
       if (filters.debtId !== 'all' && tx.linkedDebtId !== filters.debtId) return false;
+      if (filters.tag && filters.tag !== 'all' && !tx.tags.includes(filters.tag)) return false;
+      if (filters.needsReview === 'only_review' && !tx.needsReview) return false;
       if (filters.dateFrom && tx.date < filters.dateFrom) return false;
       if (filters.dateTo && tx.date > filters.dateTo) return false;
 
       if (filters.searchQuery.trim()) {
         const q = filters.searchQuery.toLowerCase();
         const matchTitle = tx.title.toLowerCase().includes(q);
+        const matchMerchant = tx.merchantName?.toLowerCase().includes(q) || false;
         const matchSub = tx.subcategory?.toLowerCase().includes(q) || false;
         const matchNotes = tx.notes?.toLowerCase().includes(q) || false;
         const matchTags = tx.tags.some((tag) => tag.toLowerCase().includes(q));
-        if (!matchTitle && !matchSub && !matchNotes && !matchTags) return false;
+        if (!matchTitle && !matchMerchant && !matchSub && !matchNotes && !matchTags) return false;
       }
 
       return true;
@@ -1766,7 +2716,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
       const spent = transactions
         .filter((tx) => {
-          if (tx.monthKey !== mKey || tx.type !== 'expense') return false;
+          if (tx.deletedAt || tx.monthKey !== mKey || tx.type !== 'expense') return false;
           if (selectedCategory && tx.categoryId !== selectedCategory.id) return false;
           return true;
         })
@@ -1823,7 +2773,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       const yearStr = String(year);
       const spent = transactions
         .filter((tx) => {
-          if (!tx.monthKey.startsWith(`${yearStr}-`) || tx.type !== 'expense') return false;
+          if (tx.deletedAt || !tx.monthKey.startsWith(`${yearStr}-`) || tx.type !== 'expense')
+            return false;
           if (selectedCategory && tx.categoryId !== selectedCategory.id) return false;
           return true;
         })
@@ -1862,3 +2813,4 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     });
   },
 }));
+

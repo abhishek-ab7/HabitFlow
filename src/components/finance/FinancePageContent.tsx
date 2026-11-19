@@ -14,6 +14,7 @@ import {
 } from '@/lib/stores/finance-store';
 import type { FinanceTransaction } from '@/lib/types';
 import { OverviewTab } from './OverviewTab';
+import { ActivityTab } from './ActivityTab';
 import { TrackersTab } from './TrackersTab';
 import { AccountsTab } from './AccountsTab';
 import { AddTransactionModal } from './AddTransactionModal';
@@ -21,7 +22,7 @@ import { MonthlyBudgetModal } from './MonthlyBudgetModal';
 import { SmsImportModal } from './SmsImportModal';
 import { Button } from '@/components/ui/button';
 
-type ActiveTab = 'overview' | 'trackers' | 'accounts';
+type ActiveTab = 'overview' | 'activity' | 'trackers' | 'accounts';
 
 function shiftMonthKey(monthKey: string, deltaMonths: number): string {
   const [yStr, mStr] = monthKey.split('-');
@@ -40,6 +41,7 @@ export function FinancePageContent() {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const setSelectedMonth = useFinanceStore((s) => s.setSelectedMonth);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
+  const getMonthlySummary = useFinanceStore((s) => s.getMonthlySummary);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [isAddTxModalOpen, setIsAddTxModalOpen] = useState(false);
@@ -73,6 +75,8 @@ export function FinancePageContent() {
       window.history.replaceState({}, '', nextUrl);
     }
   }, [isLoading]);
+
+  const summary = getMonthlySummary(selectedMonth);
 
   const handleOpenNewTx = () => {
     setEditingTx(null);
@@ -115,7 +119,7 @@ export function FinancePageContent() {
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="px-2 text-xs sm:text-sm font-semibold text-foreground min-w-[84px] text-center whitespace-nowrap">
+            <span className="px-2 text-xs sm:text-sm font-semibold text-foreground min-w-[84px] text-center whitespace-nowrap font-mono tabular-nums">
               {formatMonthDisplay(selectedMonth)}
             </span>
             <button
@@ -163,17 +167,22 @@ export function FinancePageContent() {
         </div>
       </div>
 
-      {/* 3 Simple Tabs */}
+      {/* 4-Tab Finance V2 Architecture */}
       <div
         role="tablist"
         aria-label="Finance sections"
-        className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted max-w-md"
+        className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted max-w-xl"
       >
         {(
           [
-            { id: 'overview', label: 'Overview' },
-            { id: 'trackers', label: 'Trackers' },
-            { id: 'accounts', label: 'Accounts' },
+            { id: 'overview', label: 'Overview', badge: 0 },
+            {
+              id: 'activity',
+              label: 'Activity',
+              badge: summary.needsReviewCount || 0,
+            },
+            { id: 'trackers', label: 'Bills & Debt', badge: 0 },
+            { id: 'accounts', label: 'Accounts', badge: 0 },
           ] as const
         ).map((tab) => {
           const isActive = activeTab === tab.id;
@@ -184,13 +193,18 @@ export function FinancePageContent() {
               role="tab"
               aria-selected={isActive}
               onClick={() => setActiveTab(tab.id)}
-              className={`min-h-[44px] px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all whitespace-nowrap ${
+              className={`min-h-[42px] px-2 sm:px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-1.5 ${
                 isActive
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.badge > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-mono">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           );
         })}
@@ -209,7 +223,18 @@ export function FinancePageContent() {
               onEditTransaction={handleOpenEditTx}
               onOpenBudgetModal={handleOpenBudgetModal}
               onOpenTrackersTab={() => setActiveTab('trackers')}
+              onOpenActivityTab={() => setActiveTab('activity')}
               onOpenAddTransaction={handleOpenNewTx}
+            />
+          )}
+          {activeTab === 'activity' && (
+            <ActivityTab
+              onEditTransaction={handleOpenEditTx}
+              onOpenAddTransaction={handleOpenNewTx}
+              onOpenSmsImport={() => {
+                setSharedSmsText(null);
+                setIsSmsModalOpen(true);
+              }}
             />
           )}
           {activeTab === 'trackers' && (

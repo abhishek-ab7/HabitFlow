@@ -1,0 +1,834 @@
+
+Conversation with Gemini
+review this app and room for improvement and mainly review finance tab , tell me features i should add move in that. search on the internet and export the featureful and premium expense and budget tracker to improve this app and its ui and also the about the dashboard design for both habit and expense for all the features
+
+HabitFlow already has a strong engineering foundation—an offline-first Next.js 16 + Dexie + Supabase architecture, clean Zustand stores, a genuinely practical Indian SMS/UPI parser with Web Share Target support, and unique real-world trackers (Monthly Commitments with overpayment rollover, Friend Lend/Borrow ledgers, and EMI tracking). However, the Finance module currently hides much of its own computed intelligence, has a critical sync blind spot, and feels visually bolted onto a habit app rather than unified with it.   
+abhishek-ab7/habitflow
+
+1. App-Wide Codebase & UX Audit
+Critical Engineering & Architecture Gaps
+One-way finance sync (pulled: 0): FinanceSyncEngine (src/lib/sync/engines/finance-sync.ts) pushes dirty local Dexie rows to Supabase, but returns pulled: 0 and never pulls remote finance data or propagates deletions across devices. Switching phones or clearing browser storage will silently lose cloud-synced finance state until two-way pull + tombstone deletes are added.
+
+Dead store calculations & schema-to-UI drift: useFinanceStore.getMonthlySummary() already computes totalIncome, expectedIncome, safeToSpendMonthly, safeToSpendDaily, remainingDaysInMonth, netSavings, and savingsRate—yet OverviewTab.tsx only displays Spent, Budget, and Due Soon. Similarly, FinanceTransaction defines tags, isRecurring, recurrenceRule, subcategory, and linkedEmiId, and FinanceFilterState defines categoryId, accountId, dateFrom, and dateTo, but none of those fields are exposed in AddTransactionModal.tsx or OverviewTab.tsx. addCategory exists in the store with no UI to create custom categories, and expectedIncome exists in FinanceBudget but is missing from MonthlyBudgetModal.tsx.
+
+Liability math bug in AccountsTab.tsx: totalBalance sums every account balance indiscriminately (accounts.reduce((sum, a) => sum + a.balance, 0)). Credit card balances are liabilities, not liquid cash, and mixing them inflates or distorts total balance.
+
+Monolithic component: TrackersTab.tsx is 1,350 lines (~55 KB) handling Commitments, Friend Debts, and EMIs plus all their dialogs in a single file, making state brittle and hard to extend.
+
+Navigation & mobile UX friction:
+
+MobileNav.tsx squeezes 6 tabs into the bottom bar (Dashboard, Habits, Tasks, Finance, Goals, Profile), omits Analytics on mobile, and ignores settings.habitOnlyMode / settings.showFinance (unlike Header.tsx).
+
+FinanceOverviewWidget.tsx renders both an Add button and an Open button, yet both execute router.push('/finance')—Add does not actually open AddTransactionModal.
+
+The floating + Add button in FinancePageContent.tsx is offset to right-20 / md:right-24 to avoid colliding with PomodoroFloating.tsx, creating an awkward floating-button cluster.
+
+Category budget editing is duplicated in both MonthlyBudgetModal.tsx and AccountsTab.tsx.
+
+Repository hygiene: ~4 MB of Playwright .nyc_output/ JSON dumps, junit.xml, build.log, scratch/ scripts, and 20+ root-level status .md files are tracked directly in git and should be gitignored or archived under /docs.   
+abhishek-ab7/habitflow
+
+2. Competitive Benchmark: Premium Expense & Budget Trackers
+To elevate HabitFlow's Finance tab to premium fintech quality, here is what the strongest global and Indian trackers do best and what to adopt directly:
+
+App	Standout Features	UI / UX Strengths	What to Steal for HabitFlow
+Monarch Money	Customizable dashboard, Sankey cash-flow reports, recurring bill calendar, flexible rollover budgets, transaction "Needs Review" workflow, savings goals.	Clean web-first hierarchy; clear visual separation of Cash Flow vs. Net Worth vs. Recurring.	Sankey cash-flow chart, Recurring calendar view, "Needs Review" queue for SMS imports, and per-category rollover toggles.
+Copilot Money	Best-in-class cash-flow & pacing telemetry, tag-based grouping (e.g., personal vs. work/reimbursable), smart auto-categorization rules.	Curated, low-clutter dark/glass aesthetic; spending pace curve comparing current month vs. budget trajectory.	Cumulative Spending Pace line chart (are you ahead or behind pace for day 19 of the month?) and first-class Tags UI.
+Fold Money (India)	Indian UPI/bank/card/MF/EPF/NPS net worth tracking, unified Cash Flow widget with persistent filters, Generic Merchants for UPI transfers, custom net-worth entries, recurring price-hike detection.	Ultra-clean typography, zero loan-spam clutter, smart enrichment of raw UPI names ("Pramod" -> "Autorickshaw").	Generic Merchant aliases in your SMS parser/quick-add, Investments/SIPs separated from Expenses, and sticky filter state.
+FinArt (India)	Privacy-first automatic parsing from bank SMS, emails, and push notifications; multi-card bill reminders; ad-free.	Zero-friction capture pipeline—solves India's shift from bank SMS to app push notifications.	Notification/email paste + CSV/PDF bank statement importer alongside your existing SMS importer, plus deduplication rules.
+YNAB / PocketGuard	Zero-based envelope budgeting ("give every rupee a job") and explicit "In My Pocket" / Safe-to-Spend calculation after bills & savings.	Eliminates decision fatigue with one actionable daily/monthly spendable number.	Safe-to-Spend Hero Card with a clickable formula breakdown (your store already computes the inputs!).
+3. Finance Tab Overhaul: What to Move, Refactor & Add
+A. Information Architecture — What to Move & Split
+Right now, FinancePageContent.tsx crams everything into 3 tabs (Overview, Trackers, Accounts). Restructure into 4 focused sub-tabs (keeping mobile clean with a segmented pill bar):   
+abhishek-ab7/habitflow
+
+Overview (Cash Flow & Pacing):
+
+Replace the generic "Spent this month" hero with a Safe-to-Spend & Cash Flow Hero showing: Safe to Spend Today (safeToSpendDaily), Safe to Spend This Month (safeToSpendMonthly), Income vs. Spent, and Net Savings Rate %.
+
+Add a Cumulative Spending Pace Chart (this month's daily burn curve vs. ideal budget slope & last month's curve) next to your existing 6-Month Bar Chart.
+
+Add a Category Donut / Horizontal Treemap with interactive tap-to-filter.
+
+Activity (Full Ledger — Move out of Overview):
+
+Move the full searchable transaction feed out of the bottom of OverviewTab (keep only the Top 5 Recent + "Needs Review" on Overview) into a dedicated Activity view.
+
+Group transactions by date headers (Today, Yesterday, 17 Nov) with daily subtotals.
+
+Expose the missing filter chips already in your store: Type (All / Expense / Income / Transfer), Category, Account, Tag, and Date Range.
+
+Add swipe actions / bulk selection (Mark Reviewed, Change Category, Delete).
+
+Commitments & Bills (Refactor TrackersTab.tsx):
+
+Break the 1,350-line TrackersTab.tsx into modular sub-components (CommitmentsSection, FriendsLedgerSection, EmisSection, SubscriptionsCalendar).
+
+Add a Monthly Bill & Obligation Calendar plotting Rent, EMIs, Commitments, Credit Card due dates, SIP dates, and OTT/Wi-Fi/Gym renewals on one visual calendar.
+
+Add a Debt Payoff Simulator (Snowball vs. Avalanche) across active EMIs, Credit Card dues, and Friend Borrows to show exact debt-free month and interest saved.
+
+Accounts & Net Worth (Clean up AccountsTab.tsx):
+
+Move Category Limits OUT of AccountsTab (keep budget limits exclusively in the Budgets modal/drawer, and add a dedicated "Manage Categories" sheet for creating/archiving custom categories and icons).
+
+Separate accounts into Assets (Bank, UPI, Cash, Wallets, Investments/SIPs) vs. Liabilities (Credit Card outstanding, Active Loans/EMIs, Borrowed from Friends) to compute a real Net Worth header.
+
+Add Account Transfer as a first-class flow (e.g., Bank -> Credit Card bill payment, or Bank -> UPI wallet) so internal moves never inflate spending.
+
+B. High-Impact Features to Add
+Credit Card Smart Management: Add creditLimit, statementDay, and dueDay fields to credit_card accounts. Show a live utilization bar (<30% healthy, >50% amber, >75% rose), unbilled vs. billed due amounts, and a one-tap "Pay Card Bill" transfer button.
+
+Investments / SIPs as a First-Class Flow: Add a savings_investment transaction type (or dedicated SIP tracker for Mutual Funds/FDs/Stocks) so monthly SIPs count toward Savings Rate and Net Worth instead of looking like "expenses" that blow up your spending budget.
+
+Split Transactions & Auto-Friend Linking: Allow splitting a single ₹1,200 dinner or grocery bill across two categories OR splitting with a friend so your share logs as an expense while their share automatically creates a lent DebtRecord (merging Splitwise into your existing Friends tracker!).
+
+Smart Categorization Rules & Generic UPI Merchants: When a user edits an SMS-imported transaction (e.g., UPI/SWIGGY -> Food, or UPI/RAMESH -> Local Kirana), prompt "Always apply this rule?" and persist lightweight keyword rules in Dexie/Supabase.
+
+Rollover Budgets & Zero-Based Toggle: Extend your existing commitment rollover logic to expense categories (e.g., unused ₹500 in Shopping/Personal Care rolls into next month's cap, or resets cleanly).
+
+Sankey Cash Flow View: On desktop/analytics, add a clean Income -> Fixed Obligations (Rent/EMI/Commitments) -> Variable Spending -> Savings/SIPs flow diagram.
+
+Statement Import (CSV/Excel) + Receipt Notes: Complement your SMS parser with a quick CSV/bank-statement mapper and optional lightweight receipt attachment/note tags.
+
+HabitFlow's Unique Edge — Habit ↔ Finance Cross-Links:
+
+Auto-Habit Triggers: Link a habit like "No-Spend Day", "Stay Under Daily Budget", or "Log Expenses Daily" to finance-store so completing your budget target automatically ticks the habit and awards XP via mediator.ts.
+
+Mood ↔ Spend Correlation: Combine your existing MoodCheckIn data with transaction timestamps in Analytics to surface behavioral insights (e.g., "Food delivery spend is 2.1× higher on Low/Stressed mood days").
+
+Financial Goals inside /goals: Allow linking a Goal (e.g., "Emergency Fund ₹50,000" or "Clear Credit Card Debt") to live finance accounts/debts so goal progress updates automatically instead of manually checking milestones.
+
+4. Unified Dashboard Design (Habits + Finance + Tasks + Goals)
+Right now, DashboardContent.tsx stacks HeroSection, MoodCheckIn, and Today's Momentum above BentoGrid, while FinanceOverviewWidget sits inside the grid as a sparse 3-number strip. To make both Habits and Finance feel equally premium, scannable, and cohesive, redesign the Dashboard around a 3-Layer Bento Command Center:   
+abhishek-ab7/habitflow
+
+Layer 1: Unified Top Command Bar (Compact, High-Signal)
+Left: Greeting + Date + Streak Shield / Level pill.
+
+Center: Workspace Lens Switcher (All | Focus & Habits | Money) — lets the user instantly filter the Bento Grid without digging into Settings.
+
+Right: Quick-Action Split Button (+ Habit · + Task · + Expense · Focus Mode) + compact 1-tap Mood Check-In pills (inline instead of taking up an entire horizontal banner row).
+
+Layer 2: Dual Hero Strip (50/50 Split on Desktop, Swipeable Carousel on Mobile)
+Instead of giving the full top hero solely to Habits/Tasks, pair them as two balanced flagship cards:
+
+Left Card — Today's Momentum (Habits + Tasks):
+
+Keep your animated ProgressRing (score / 100), Habits completed (4/6), Tasks done (2/4), and current streak flame.
+
+Add a Micro-Habit Quick Check Row (next 3 uncompleted habits right inside the hero for zero-scroll check-offs).
+
+Right Card — Financial Pulse (Safe-to-Spend + Pace):
+
+Hero number: Safe to Spend Today (e.g., ₹420 / day) + Monthly Budget Left (₹4,850 left · 11 days to go).
+
+Embedded mini pacing sparkline (Actual spend curve vs. green target pace line).
+
+Bottom pill row: Due in 7d (amber pill if obligations exist) + True 1-tap + Log Expense button that opens AddTransactionModal directly over the Dashboard (no page redirect!).
+
+Layer 3: Structured 12-Column Bento Grid
+Bento Slot	Desktop Span	Mobile Order	Content & Design Upgrade
+Today's Habits Matrix	7 cols	1	Interactive checklist with category color dot, streak badge, difficulty XP pill, and 7-day mini completion dots (no need to visit /habits for daily check-ins).
+Upcoming Bills & Cashflow Radar	5 cols	2	Next 3 upcoming dues (Rent, EMI, CC Bill, Commitment) with 1-tap "Mark Paid" + mini Income vs. Expense vs. SIP progress bar.
+Today's Tasks (Eisenhower / Priority)	6 cols	3	Clean top-5 due/overdue tasks with inline quick-add input (SmartTaskInput) and Pomodoro launch trigger.
+Top Spending Categories & Pace	6 cols	4	Top 4 budget categories with slim progress bars, % pace indicator (vertical "today" marker line on every progress bar!), and 3 most recent transactions.
+Active Focus Goals (Life + Money)	7 cols	5	Unified goal cards supporting both Milestone Goals (e.g., fitness/career) and Live Financial Goals (Emergency Fund / Debt Payoff progress auto-synced from finance-store).
+AI Coach & Behavioral Insights	5 cols	6	Cross-domain daily nudge combining habit consistency, mood, and spending pace (e.g., "3-day gym streak + under food budget by ₹600 this week").
+5. UI & Visual Polish Upgrades (Habit + Finance Design System)
+Fix Mobile Navigation (6 tabs -> 5 slots with Center + Sheet):
+
+Replace the cramped 6-item bottom bar with 4 primary destinations + a raised center + Quick Action Button: Home | Habits | [ + ] | Finance | More (opens clean drawer for Tasks, Goals, Analytics, Leaderboard, Settings).
+
+Tapping [ + ] opens a sleek bottom sheet with 3 thumb-reachable triggers: Log Expense (Keypad), Quick Task, and Check Habit / Start Focus. This also eliminates the floating + Add vs. Pomodoro button collision on /finance.
+
+Add a "Day-of-Month" Marker to Every Budget Progress Bar: On day 19 of a 30-day month (~63% through the month), render a subtle 2px vertical tick mark at 63% on every category bar. Instantly knowing "I'm at 78% spend on day 19" is far more actionable than raw percentages.
+
+Unify Card Surfaces: DashboardContent.tsx uses heavy glassmorphism (bg-card/35 backdrop-blur-2xl rounded-3xl border-white/10), whereas OverviewTab.tsx uses flat solid cards (rounded-2xl border-border bg-card). Standardize on one crisp elevation hierarchy (rounded-2xl, subtle 1px border, consistent padding p-5, and font-mono tabular-nums on every metric, streak count, and ₹ amount).   
+abhishek-ab7/habitflow
+
+Semantic Color Discipline: Reserve Emerald strictly for positive momentum / income / under-budget, Amber for pace warnings / upcoming dues, Rose strictly for over-budget / overdue / liabilities, and Violet/Indigo for gamification/AI/investments. Avoid mixing accent colors arbitrarily inside dense cards.
+
+Would you like me to start by implementing the highest-leverage fixes—such as two-way FinanceSyncEngine pull/delete + wiring the unused Safe-to-Spend & Cash Flow Hero + building the unified Dashboard FinancePulseWidget with 1-tap quick-add—or would you prefer a full phased engineering roadmap (PLAN-finance-v2.md) mapped directly to your files first?
+
+All
+make very very detailed and very comprehensive plan . and also add one more thing in the app like weekly habit or twice a week not all habits for whole week like gym only 5 or 6 days a week i do but i did not go to today i should mark it on that day i can not explain do you understand what i mean
+
+Yes — I understand 100% what you mean, and it is one of the biggest UX pain points in almost every habit tracker (including HabitFlow right now).
+
+Here is the exact behavior you are describing:
+
+Not every habit is a 7-days-a-week habit. You might do Gym 5 or 6 days/week (flexible days — you don't always know in advance whether Wednesday or Sunday will be your off day), Laundry / Room Cleaning 2 days/week, or Weekly Review 1 day/week.
+
+On a day you skip the gym (e.g., today is Thursday and you're resting), you want to mark today as a "Rest Day" / "Off Day" right on that cell so:
+
+The cell shows a clean Rest / Off indicator (not an empty hole or red failure).
+
+Your streak stays alive and your Today's Momentum score isn't penalized, because you are still on track to hit your 5/7 or 6/7 weekly target.
+
+You don't have to burn a Streak Shield (frozen) for a normal planned rest day — Streak Shields stay reserved for unplanned misses beyond your weekly off-day allowance.
+
+Once you've used up your allowed rest days for that week (e.g., 2 rest days on a 5×/week habit), any further skipped day counts as an actual miss.
+
+Right now in your codebase, Habit already stores targetDaysPerWeek and HabitCompletion already has an optional skipped?: boolean field, but calculateCurrentStreak(), calculateBestStreak(), calculateCompletionRate(), getTodayProgress(), and SortableHabitRow.tsx completely ignore both fields and treat every habit like a rigid 7-day daily streak.   
+abhishek-ab7/habitflow
+
+Below is the complete, end-to-end Product & Engineering Master Plan covering Flexible Habits & Rest Days, Finance V2, Unified Dashboard & Mobile Nav V2, Cross-Domain Habit ↔ Finance Links, and a 6-Phase File-by-File Execution Roadmap.
+
+Part 1: Flexible Habits & Smart Rest Days Engine (Habit Engine V2)
+1.1 Supported Schedule Modes (4 Patterns)
+Upgrade every habit from a single targetDaysPerWeek integer to a clean Schedule Engine supporting four real-world patterns:
+
+Mode	frequencyType	Example Use Case	How Rest Days & Streaks Work
+Daily	'daily'	Drink 3L Water, Take Creatine, Log Expenses	Expected all 7 days. Missing a day requires a Streak Shield (frozen) or breaks the streak.
+Flexible Weekly Quota	'weekly_flexible'	Gym (5x or 6x / week), Read (4x / week), Laundry (2x / week), Deep Clean (1x / week)	User gets 7 - targetDaysPerWeek Free Rest Days per week (Mon–Sun). User can tap any day to mark it Rest Day. Streak is tracked in Active Weeks AND/OR Active Streak Days without breaking on rest days.
+Specific Weekdays	'specific_days'	Push/Pull/Legs on Mon–Sat (Sun off), Call Parents on Wed & Sun	scheduledDays: number[] (e.g. [1,2,3,4,5,6]). Non-scheduled days are auto-marked Auto-Rest (muted/hatched cell) and excluded from Today's Momentum, while still allowing a manual "Bonus Done" if you actually do it on Sunday.
+Every N Days (Interval)	'interval'	Hair Wash / Razor / Plant Watering every 3 days	intervalDays: number. After completion on Day 0, Days 1..(N-1) automatically render as Interval Rest until Day N is due.
+1.2 Cell State Machine (4 Distinct Day States)
+Right now a habit cell is mostly binary (completed vs. empty, plus frozen). Upgrade CompletionStatus to 5 explicit states:
+
+completed (Solid primary/category fill + checkmark) — Habit done; awards full XP.
+
+rest (Soft slate/teal pill with Moon/Coffee icon, skipped: true, status: 'rest') — Intentional Rest / Off Day.
+
+Does not break streak (as long as weekly rest count 
+≤7−targetDaysPerWeek).
+
+Removes the habit from Today's Momentum remaining queue (or marks it "Settled for Today" with a calm badge so your daily ring can still hit 100%!).
+
+Awards 0 XP (prevents XP farming) and does not consume a Streak Shield.
+
+Optional Auto-Rest: For weekly_flexible habits, once you hit 5/5 completions by Friday, Saturday and Sunday automatically display a subtle "Weekly Goal Met — Free Rest" state (can still be tapped for Bonus XP!).
+
+frozen (Icy blue Shield icon) — Emergency Streak Shield used when you genuinely miss a required day (e.g., 3rd missed day on a 5×/week habit, or missed day on a 7×/week habit).
+
+missed (Subtle rose dot/outline, only shown on past unfulfilled required days) — Broke quota / missed without rest allowance or shield.
+
+pending (Default empty cell) — Not yet logged for today or future.
+
+1.3 Exact Math: Streaks, Completion Rate & Today's Momentum
+A. Flexible Weekly Streak Algorithm (src/lib/calculations/index.ts)
+Replace the rigid consecutive-day loop in calculateCurrentStreak(habit, completions, today) with schedule-aware logic:
+
+If frequencyType === 'daily': Keep current consecutive-day logic (treating frozen as pass-through).
+
+If frequencyType === 'specific_days': Walk backwards day-by-day. If a date's dayOfWeek is NOT in scheduledDays, skip over it transparently (if user completed it anyway, count as +1 bonus). If it IS in scheduledDays, require completed or frozen.
+
+If frequencyType === 'weekly_flexible' (e.g., Gym 5×/week):
+
+Group completions into calendar weeks (Mon–Sun, configurable via weekStartsOn).
+
+Weekly Streak (weeklyStreak): Count consecutive completed past weeks where completedCount >= targetDaysPerWeek (plus the current in-progress week if it is still mathematically achievable: completedThisWeek + remainingDaysInWeek >= targetDaysPerWeek, OR already met).
+
+Continuous Day Streak (currentStreak): Walk backwards day-by-day; a day passes if:
+
+status === 'completed' (+1 to day streak), OR
+
+status === 'frozen' (pass-through, +0), OR
+
+status === 'rest' (or empty day inside a week whose total completed >= targetDaysPerWeek, or inside the current week where nonCompletedDaysSoFar <= 7 - targetDaysPerWeek) (pass-through, +0).
+
+Result: If you do Gym Mon, Tue, Wed, mark Thu as Rest, and do Fri, Sat — your streak stays unbroken and displays 5d 🔥 · 5/5 wk! If you take 3 rest days on a 5×/week habit (so max possible that week is 4/5), the 3rd rest day prompts: "You've used all 2 rest days this week. Use a Streak Shield or mark as Missed?"
+
+Completion Rate (calculateCompletionRate):
+
+Instead of completed / totalCalendarDays (which unfairly caps a 5×/week habit at 71%!), calculate:
+
+Expected Sessions=sum of expected days across elapsed weeks (capped by today)
+Completion Rate=min(100,round( 
+Expected Sessions
+completed
+​
+ ×100))
+Now hitting 5/5 gym sessions every week shows 100% Consistency instead of 71%!
+
+B. Today's Momentum Score (DashboardContent.tsx & habit-store.ts)
+Update getTodayProgress() to classify every active habit for today into:
+
+dueToday: Required today (not yet completed, not marked rest, not already at weekly quota, not an auto-rest weekday).
+
+settledToday: Completed today OR explicitly marked rest (within weekly rest budget) OR weekly quota already reached.
+
+Formula:
+
+Habits that are Auto-Rest (e.g., Sunday on a Mon–Sat habit) or Weekly Quota Already Met (e.g., already did 5/5 Gym by Friday) are excluded from today's denominator (shown in a collapsed "Resting / Weekly Goal Met" chip below today's checklist).
+
+When you tap "Rest Today" on Gym (within your allowed rest budget), Gym moves cleanly into the "Resting Today" tray and your Today's Momentum recalculates immediately so you can still achieve a 100 Score for the day!
+
+1.4 UX Interaction Design (Zero Friction on Desktop & Mobile)
+Habit Creation / Edit Modal (habit-form-modal.tsx):
+
+Add a clean Schedule Mode Selector: Daily | X Days / Week | Specific Days | Every N Days.
+
+For X Days / Week, show quick preset pills (1×, 2×, 3×, 4×, 5×, 6×) + live helper text: "Includes 2 flexible rest days per week. Mark any day as Rest without breaking your streak."
+
+For Specific Days, show interactive M T W T F S S pill toggles.
+
+Habit Grid (SortableHabitRow.tsx & habit-grid.tsx):
+
+Left-click / Tap (empty cell): Mark Completed (keep instant 1-tap speed for the primary action!).
+
+Cycle or Quick-Action Menu for Rest Day:
+
+Desktop: Right-click (context menu — onContextMenu is already wired in SortableHabitRow.tsx) OR hover micro-pill -> Mark Done · Mark Rest Day (2 left) · Use Streak Shield · Add Note.   
+abhishek-ab7/habitflow
+
+Mobile: Long-press cell (or swipe left on the habit row in Dashboard HabitOverview) -> compact action popover with Mark Rest Day (X left this week) button!
+
+Optional 3-State Tap Mode (toggle in Settings for power users): Tap 1 = Done, Tap 2 = Rest Day (if rest days remain), Tap 3 = Clear.
+
+Weekly Quota Pill on Every Flexible Row: Next to the habit name in the grid and dashboard, display a compact live pill:
+
+3/5 wk (in progress)
+
+5/5 ✓ (emerald badge — quota met!)
+
+1 rest left (subtle muted tooltip/sublabel)
+
+1.5 Schema Updates for Habit Engine V2
+TypeScript
+// src/lib/types.ts
+export type HabitFrequencyType = 'daily' | 'weekly_flexible' | 'specific_days' | 'interval';
+export type CompletionStatus = 'completed' | 'rest' | 'missed' | 'frozen';
+
+export interface Habit {
+  // ...existing fields...
+  frequencyType: HabitFrequencyType;      // default: targetDaysPerWeek === 7 ? 'daily' : 'weekly_flexible'
+  targetDaysPerWeek: number;              // 1-7 (used by daily & weekly_flexible)
+  scheduledDays?: number[];               // 0=Sun..6=Sat (used by specific_days)
+  intervalDays?: number;                  // e.g., 2, 3, 4 (used by interval)
+  allowBonusCompletions?: boolean;        // default true
+  weekStartsOn?: 0 | 1;                   // 1 = Monday (default)
+}
+
+export interface HabitCompletion {
+  // ...existing fields...
+  status?: CompletionStatus;              // 'completed' | 'rest' | 'missed' | 'frozen'
+  skipped?: boolean;                      // true when status === 'rest'
+  restReason?: string;                    // optional short tag: 'Recovery', 'Travel', 'Sick', 'Planned Off'
+}
+Part 2: Finance V2 — Complete Feature, Architecture & UI Blueprint
+2.1 Critical Engineering & Sync Fixes (Do First!)
+Before adding new finance UI, resolve every structural defect discovered in the codebase:
+
+Implement True Two-Way Sync + Tombstone Deletes (src/lib/sync/engines/finance-sync.ts):
+
+Currently FinanceSyncEngine.sync() only pushes dirty rows and hardcodes pulled: 0.   
+abhishek-ab7/habitflow
+
+Add Pull Phase for all 8 existing tables + new Finance V2 tables (finance_categories, finance_accounts, finance_transactions, finance_budgets, monthly_commitments, debt_records, debt_installments, emi_trackers, finance_sip_plans, finance_categorization_rules, finance_recurring_bills).
+
+Conflict Resolution: Compare generation_counter and updated_at using your existing conflict-resolution.ts strategy (higher generationCounter wins; tie-break on latest updatedAt).
+
+Soft-Delete Tombstones: Add deletedAt?: string | null across finance models so deleting a transaction/EMI/debt on Phone A propagates to Laptop B instead of reappearing on pull.
+
+Fix Net Worth vs. Liquid Balance Math (AccountsTab.tsx & finance-store.ts):
+
+Separate account balance calculation into:
+
+Liquid Cash: bank + upi + cash + wallet
+
+Investments: investment (new account type for Mutual Funds / FDs / Stocks)
+
+Short-Term Liabilities: credit_card (store outstanding balance as positive currentDue or clearly sign-treat as liability, never add to liquid balance!)
+
+Long-Term / Personal Liabilities: Active EMIs remaining principal + Borrowed friend debts.
+
+Receivables: Lent to friends.
+
+True Net Worth 
+=Liquid+Investments+Receivables−Credit Card Dues−Active EMIs−Borrowed.
+
+Decompose Monolithic TrackersTab.tsx (1,350 lines -> 5 modular components):
+
+src/components/finance/trackers/CommitmentsSection.tsx
+
+src/components/finance/trackers/FriendsLedgerSection.tsx
+
+src/components/finance/trackers/EmisSection.tsx
+
+src/components/finance/trackers/SubscriptionsCalendar.tsx
+
+src/components/finance/trackers/DebtPayoffSimulator.tsx
+
+Surface Dead Store Fields & Remove Duplicate Controls:
+
+Remove Category Limit editing from AccountsTab.tsx (duplicated with MonthlyBudgetModal.tsx) and replace it with a clean Category & Merchant Rules Manager sheet (addCategory, custom icons/colors, archive category, rollover toggle).
+
+Add Expected Income + Savings / SIP Target inputs to MonthlyBudgetModal.tsx (currently missing despite expectedIncome existing in FinanceBudget).
+
+Wire tags, isRecurring, recurrenceRule, subcategory, transfer (toAccountId), and splitWithFriend into AddTransactionModal.tsx.
+
+
+abhishek-ab7/habitflow
+2.2 Finance Page V2 — 4-Tab Information Architecture
+Replace the overloaded 3-tab structure (Overview | Trackers | Accounts) with 4 clean, purpose-built tabs (horizontal segmented pill bar):   
+abhishek-ab7/habitflow
+
+Tab 1: Overview (Executive Cash Flow & Pacing)
+Safe-to-Spend Hero Card (surfaces the calculations already in getMonthlySummary()):   
+abhishek-ab7/habitflow
+
+Primary Hero Metric: Safe to Spend Today (e.g., ₹420 / day) + Safe to Spend Remaining (₹4,620 for 11 days).
+
+Expandable Formula Pill (How is this calculated?):
+Income/Budget − Already Spent − Unpaid Fixed Bills (Rent/EMI/Commitments) − Planned SIPs 
+÷ Remaining Days.
+
+4-Column Micro Strip: Income (Emerald) · Spent (Foreground) · Invested/SIP (Violet) · Due Soon (Amber).
+
+Cumulative Daily Burn & Pace Chart (Copilot Money style):
+
+Recharts AreaChart / LineChart plotting Day 1 → Day 30:
+
+Dashed Gray Diagonal: Ideal linear budget slope.
+
+Faint Muted Line: Last month's cumulative spend.
+
+Bold Primary/Amber/Rose Curve: Current month's cumulative spend up to today with a glowing dot on today's date + badge: "₹640 under pace" or "₹820 ahead of pace".
+
+Category Budgets with Day-of-Month Pace Tick:
+
+Keep your clean category progress bars, but add a vertical 2px "Today" tick mark at (dayOfMonth / daysInMonth) * 100% across every bar.
+
+Add Rollover Badge (e.g., +₹350 carried from Oct) for categories with rolloverEnabled: true.
+
+Add Category Donut / Breakdown Toggle (Bar List vs. Donut Chart) — tapping any slice/row filters directly into Tab 2 (Activity) for that category.
+
+6-Month & Yearly Trend + Sankey Cash Flow Toggle:
+
+Keep SpendingTrendChart.tsx and add a Cash Flow (Sankey) tab view showing: Income → Fixed Obligations (Rent/EMI/Commitments) + Variable Categories + SIPs/Savings.
+
+
+abhishek-ab7/habitflow
+Needs Review + Top 5 Recent Transactions Card:
+
+Highlights any auto-imported SMS/CSV entries marked needsReview: true with 1-tap Approve or Recategorize, followed by the 5 newest transactions and a View All Activity → link.
+
+Tab 2: Activity (Full Searchable Ledger — Moved out of Overview)
+Sticky Filter Bar:
+
+Search box (matches title, merchant, notes, tags).
+
+Persistent filter chips (wiring the unused fields in FinanceFilterState): Type (All / Expense / Income / Investment / Transfer) · Category · Account · Tag · Needs Review · Date Range.   
+abhishek-ab7/habitflow
+
+Date-Grouped Feed:
+
+Transactions grouped under sticky headers (Today · -₹380, Yesterday · -₹1,240, 17 Nov · +₹14,500).
+
+Inline badges for Recurring, Split, Offset: Family, EMI, Tag chips, and Account pill.
+
+Bulk & Quick Actions:
+
+Multi-select checkboxes for Bulk Recategorize, Bulk Tag, Mark Reviewed, and Delete.
+
+Quick Export: Export filtered view to CSV or Monthly Summary PDF/JSON backup.
+
+CSV / Bank Statement Import Button right beside the existing SMS button.
+
+Tab 3: Bills & Debt (Refactored TrackersTab + Calendar + SIPs + Payoff Simulator)
+Organize into clean collapsible/sub-pill sections so it never feels like an endless scroll:
+
+Cashflow Radar & Monthly Bill Calendar:
+
+Compact interactive month grid highlighting due dates with color-coded dots: Rent / Commitments (Pink), EMIs (Amber), Credit Card Due Dates (Rose), Mutual Fund SIPs (Violet), Subscriptions (Cyan).
+
+Tapping any date shows all obligations due that day with 1-tap "Mark Paid" (which creates the linked transaction and updates balances/streaks).
+
+Monthly Commitments (Keep & Polish):
+
+Preserve your standout Direct Payment + Offset Expense + Auto-Rollover engine.
+
+
+abhishek-ab7/habitflow
+Friends Ledger (Lend & Borrow + Splitwise-Lite):
+
+Keep your existing Borrowed/Lent tracker, plus add 1-tap WhatsApp / UPI Payment Reminder text copy ("Hey Rahul, gentle reminder for ₹650 from dinner — UPI: ...") and automatic creation when splitting an expense in AddTransactionModal.
+
+
+abhishek-ab7/habitflow
+EMIs, Credit Card Bills & Debt Payoff Simulator:
+
+Keep EMI tracker with remaining tenure & total interest readout.   
+abhishek-ab7/habitflow
+
+Debt Payoff Simulator Widget: Aggregates active Credit Card dues, EMIs, and Friend Borrows. Includes a slider for "Extra Monthly Payment (₹0 – ₹10,000)" and toggles Avalanche (Highest Interest First) vs. Snowball (Smallest Balance First) to show exact Debt-Free Date and Total Interest Saved.
+
+Investments & SIP Tracker (New First-Class Section):
+
+Dedicated cards for monthly SIPs (e.g., Mutual Funds, Stocks, Gold, RD) with SIP date, amount, total invested so far, and 1-tap "Log SIP Debit" (logged as type: 'investment' so it boosts your Savings Rate and Net Worth instead of triggering over-budget expense warnings).
+
+Tab 4: Accounts & Net Worth (Cleaned-Up AccountsTab)
+Net Worth Hero Banner:
+
+Displays Net Worth, Liquid Cash, Investments, and Total Liabilities with a mini 6-month Net Worth sparkline.
+
+Grouped Account Cards:
+
+Liquid Accounts (UPI, Bank, Cash, Wallets) — quick Transfer button (Bank → UPI or Bank → Credit Card) and Reconcile Balance action (automatically creates an optional "Balance Adjustment" entry instead of silently corrupting history).
+
+Credit Cards (Smart Card Tiles): Shows Current Outstanding / Credit Limit, visual Utilization Bar (Emerald <30%, Amber 30–50%, Rose >50%), Statement Date, Due Date, and 1-tap "Pay Bill" transfer flow.
+
+Investment Accounts: Tracks total invested corpus per SIP/broker/FD.
+
+Smart Rules & Categories Manager:
+
+Create/edit/archive custom categories, set category rollover preferences, and manage Auto-Categorization & Generic UPI Merchant Rules (e.g., "SWIGGY" → Food, "PRAMOD" → Auto/Travel).
+
+Data Portability:
+
+Export CSV, Export Full JSON Backup, Import Bank Statement CSV, and Reset to ₹0 (safely tucked in a Danger Zone collapsible).
+
+2.3 Premium Transaction Capture Upgrades (AddTransactionModal.tsx & SmsImportModal.tsx)
+4 Transaction Types in Top Pill: Expense | Income | Investment (SIP) | Transfer.
+
+Natural Language Quick-Parse Bar (Optional Toggle): Type "320 eggs and oats upi" or "1200 dinner split with Aadi" and auto-fill amount, category, account, and split instantly (reusing your existing deterministic + Gemini /api/ai/parse-expense route).   
+abhishek-ab7/habitflow
+
+Split Transaction Toggle:
+
+Mode A — Category Split: Split one receipt across multiple categories (e.g., ₹800 Supermarket -> ₹500 Groceries + ₹300 Personal Care).
+
+Mode B — Split with Friend: Enter total bill ₹1,000 + "Split 50/50 with Aadi" -> logs your ₹500 expense AND automatically adds ₹500 lent entry to Aadi's ledger in debtRecords.
+
+Smart Learning Prompt on SMS/Edit: When you change the category or merchant name of an SMS-imported transaction, show a subtle non-blocking toast/checkbox: "Always categorize ZEPTO as Groceries?" -> saves a local rule in financeCategorizationRules.
+
+First-Class Tags & Recurrence: Quick tag chips (#pg, #diet, #office, #reimbursable, #travel) + Make Recurring toggle (Monthly / Weekly / Yearly + due day).
+
+2.4 Schema & Database Additions (Dexie v12 + Supabase Migration)
+TypeScript
+// Additions to src/lib/types.ts
+
+export type FinanceAccountType = 'cash' | 'bank' | 'upi' | 'credit_card' | 'wallet' | 'investment';
+export type FinanceTransactionType = 'expense' | 'income' | 'transfer' | 'investment';
+
+export interface FinanceAccount {
+  // ...existing fields...
+  creditLimit?: number;          // for credit_card
+  statementDay?: number;         // 1-31
+  dueDay?: number;               // 1-31
+  includeInNetWorth?: boolean;   // default true
+  deletedAt?: string | null;
+}
+
+export interface FinanceCategory {
+  // ...existing fields...
+  rolloverEnabled?: boolean;     // carry unused budget into next month
+  deletedAt?: string | null;
+}
+
+export interface FinanceTransaction {
+  // ...existing fields...
+  merchantName?: string;         // cleaned display merchant (Generic Merchant alias)
+  rawMerchant?: string;          // raw UPI/SMS string for rule matching
+  needsReview?: boolean;         // true for auto-imported SMS/CSV until approved
+  splitGroupId?: string | null;  // links multi-category split lines
+  linkedSipId?: string | null;
+  deletedAt?: string | null;
+}
+
+export interface FinanceSipPlan {
+  id: string;
+  userId: string;
+  name: string;                  // e.g., "Parag Parikh Flexi Cap"
+  platform?: string;             // e.g., "Groww", "Coin"
+  assetClass: 'equity_mf' | 'debt_mf' | 'stocks' | 'gold' | 'rd_fd' | 'other';
+  monthlyAmount: number;
+  sipDayOfMonth: number;         // 1-31
+  totalInvested: number;
+  currentValue?: number;
+  accountId?: string;
+  isActive: boolean;
+  lastInvestedMonthKey?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface FinanceCategorizationRule {
+  id: string;
+  userId: string;
+  matchPattern: string;          // lowercase substring or regex (e.g., "swiggy", "blinkit")
+  cleanMerchantName?: string;    // e.g., "Swiggy" or "Local Kirana"
+  categoryId: string;
+  defaultTags?: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface FinanceRecurringBill {
+  id: string;
+  userId: string;
+  name: string;                  // e.g., "PG Rent", "Wi-Fi", "Gym Membership", "Spotify"
+  amount: number;
+  cadence: 'monthly' | 'quarterly' | 'yearly';
+  dueDayOfMonth: number;
+  categoryId: string;
+  accountId?: string;
+  lastPaidMonthKey?: string;
+  previousAmount?: number;       // detects price hikes!
+  autoRemind: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+Part 3: Cross-Domain "Life OS" Intelligence (HabitFlow's Unfair Advantage)
+Standalone habit apps don't know your money; standalone finance apps don't know your habits or mood. Connecting them via src/lib/stores/mediator.ts makes HabitFlow genuinely unique:
+
+Finance-Triggered Habits (Auto-Tick + XP):
+
+Add optional autoTrackRule metadata to Habit:
+
+log_expense_today -> Auto-completes when 
+≥1 transaction is logged today.
+
+under_daily_safe_spend -> Evaluates at end of day (or live preview) if today's non-fixed spending 
+≤ safeToSpendDaily.
+
+no_spend_day -> Auto-marks complete if zero discretionary expenses logged.
+
+sip_completed_month -> Auto-marks monthly investing habit when all active SIPs are paid.
+
+Awards Wealth XP (UserStats.wealth, which already exists in src/lib/types.ts!) through gamification-store.ts.   
+abhishek-ab7/habitflow
+
+Live Financial Goals in /goals:
+
+Extend Goal with optional financialLink:
+
+type: 'savings_target' | 'debt_payoff' | 'net_worth' | 'sip_corpus'
+
+targetAmount: number, linkedAccountIds?: string[], linkedDebtIds?: string[].
+
+Goal cards automatically compute % progress, projected completion date based on current savings rate, and render a live ₹ progress bar right beside regular milestone goals!
+
+Mood ↔ Spend Behavioral Analytics (/analytics):
+
+Cross-join moodLogs with financeTransactions by date (YYYY-MM-DD).
+
+Surface concrete behavioral cards:
+
+"Average daily discretionary spend on Stressed/Sad days vs Calm/Happy days."
+
+"Your Gym streak days correlate with 24% lower food-delivery spend."
+
+Part 4: Unified Dashboard V2 & Mobile Navigation V2 Design
+4.1 Dashboard V2 — 3-Layer Bento Command Center
+Right now DashboardContent.tsx gives Habits/Momentum the full hero spotlight and hides Finance inside a sparse 3-metric widget whose + Add button just redirects to /finance. Upgrade the dashboard into a cohesive 3-Layer Life Command Center:   
+abhishek-ab7/habitflow
+
+Layer 1: Compact Unified Command Header
+Left: Contextual greeting (Good morning, Abhi) + Date + compact Level / XP / Streak Shield pill.
+
+Center: Workspace Lens Switcher (All | Habits & Focus | Finance) — instantaneously filters the Bento layout without entering Settings.
+
+Right: Inline 1-Tap Mood Strip (5 compact emoji/icon pills instead of a full-width separate MoodCheckIn card taking vertical space) + Focus Mode button.
+
+Layer 2: Dual Hero Strip (50/50 Split on Desktop · Swipeable Snap-Cards on Mobile)
+Left Hero: Today's Momentum (Habits + Tasks)	Right Hero: Financial Pulse (Safe-to-Spend)
+Animated ProgressRing (score / 100) with schedule-aware math (excludes auto-rest & marked-rest habits).	Hero number: Safe to Spend Today (₹XXX / day) + sublabel ₹X,XXX left for Y days.
+Chips: Habits 4/5 · Resting 1 · Tasks 2/4 · Streak 🔥 12d.	Embedded mini cumulative pace sparkline (Actual spend vs. green target slope) + status pill (On Pace / ₹420 Ahead).
+Quick-Check Strip: Next 3 uncompleted habits right inside the card with 1-tap ✓ and secondary 🌙 Rest button.	Action Footer: Amber Due in 7d: ₹X,XXX pill + true 1-tap + Log Expense button that opens AddTransactionModal directly as a modal over the Dashboard (no route redirect!).
+Layer 3: Structured 12-Column Responsive Bento Grid
+Plaintext
+Desktop (12-col grid)                                       Mobile Stack Order
+┌──────────────────────────────┬──────────────────────────┐
+│ 1. Today's Habits Checklist  │ 2. Cashflow & Dues Radar │  1. Dual Hero Carousel
+│    (7 cols)                  │    (5 cols)              │  2. Today's Habits Checklist
+│    • Check + Rest Day toggle │    • Next 3 dues + Pay   │  3. Cashflow & Dues Radar
+│    • Weekly quota (4/5 wk)   │    • Income/Spend/SIP    │  4. Today's Tasks
+│    • 7-day mini status dots  │      horizontal bar      │  5. Top Budget Categories
+├──────────────────────────────┼──────────────────────────┤  6. Focus Goals (Life + ₹)
+│ 3. Today's Tasks & Focus     │ 4. Budget Pace & Recent  │  7. Weekly Review / AI Coach
+│    (6 cols)                  │    (6 cols)              │
+│    • Inline SmartTaskInput   │    • Top 4 categories w/ │
+│    • Priority badges + Pomo  │      "Today" tick marker │
+│                              │    • 3 newest txns       │
+├──────────────────────────────┴──────────────────────────┤
+│ 5. Focus Goals — Life Milestones + Live Financial Goals │
+│    (7 cols)                  │ 6. AI Coach / Insights   │
+│                              │    (5 cols)              │
+│                              │    • Cross-domain nudges │
+└──────────────────────────────┴──────────────────────────┘
+Keep your existing @dnd-kit drag-and-drop customization in BentoGrid.tsx, adding a Reset to Recommended Layout button and honoring the Workspace Lens (All / Habits & Focus / Finance).
+
+4.2 Mobile Navigation V2 (5 Slots + Universal [ + ] Sheet)
+Fix the 6-tab cramp, missing Analytics on mobile, ignored showFinance/habitOnlyMode flags, and floating + Add vs. PomodoroFloating collision:   
+abhishek-ab7/habitflow
+
+Plaintext
+┌──────────┬──────────┬──────────────┬──────────┬──────────┐
+│   Home   │  Habits  │     [ + ]    │ Finance  │   More   │
+│ (Dash)   │  (Grid)  │ (Raised FAB) │ (Ledger) │ (Drawer) │
+└──────────┴──────────┴──────────────┴──────────┴──────────┘
+Center [ + ] Button: Opens a fast thumb-reachable Universal Quick-Add Bottom Sheet:
+
+Log Expense / Income (opens AddTransactionModal immediately from any page)
+
+Paste / Import SMS (opens SmsImportModal)
+
+Quick Task (inline input)
+
+New Habit (opens HabitFormModal)
+
+Start Focus / Pomodoro (replaces the overlapping floating Pomodoro bubble on mobile!)
+
+More Drawer: Clean grid for Tasks, Goals, Analytics (now reachable on mobile!), Leaderboard, and Settings, respecting habitOnlyMode and module toggles consistently with Header.tsx.
+
+4.3 Unified Visual Design System Polish
+Reconcile Surface Hierarchy: Dashboard currently mixes heavy glassmorphism (bg-card/35 backdrop-blur-2xl rounded-3xl border-white/10) while Finance uses flat solid cards (rounded-2xl border-border bg-card). Standardize across the entire app using shared design tokens in src/lib/design-tokens.ts:   
+abhishek-ab7/habitflow
+
+Tier 1 (Hero Cards): rounded-2xl border border-border/80 bg-card/85 backdrop-blur-md shadow-sm with a subtle top-edge inner highlight.
+
+Tier 2 (Standard Bento / Finance Cards): rounded-2xl border border-border bg-card p-5.
+
+Tier 3 (Nested Rows / Sub-tiles): rounded-xl bg-muted/40 hover:bg-muted/70 transition-colors.
+
+Tabular Numeric Discipline: Apply font-mono tabular-nums tracking-tight on every ₹ amount, percentage, streak counter, and weekly ratio (5/6 wk) so numbers never jitter during updates.
+
+Strict Semantic Color System:
+
+Emerald: Completed habits, Income, Under-budget / On-pace, Debt settled.
+
+Teal/Slate: Rest Days (status: 'rest'), Auto-Rest weekdays, Transfers.
+
+Amber: Near budget limit (80–99%), Ahead of spending pace, Upcoming dues within 7 days.
+
+Rose: Over budget (>100%), Overdue bills, Credit Card utilization >50%, Missed required habits.
+
+Violet/Indigo: Investments/SIPs, XP/Gamification, AI insights, Focus Mode.
+
+Part 5: 6-Phase Implementation Roadmap (File-by-File Plan)
+Phase 1 — Database, Types & Sync Foundation (Zero UI Breakage)
+Goal: Upgrade schemas safely and fix the one-way Finance sync & liability bugs.
+
+Files to Modify / Create:
+
+src/lib/types.ts — Add HabitFrequencyType, rest status, scheduledDays, intervalDays, deletedAt, FinanceSipPlan, FinanceCategorizationRule, FinanceRecurringBill, credit card fields, investment tx type, financialLink on Goal.
+
+src/lib/db.ts — Bump to db.version(12) adding financeSipPlans, financeCategorizationRules, financeRecurringBills tables + migration script backfilling frequencyType on existing habits (targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily').
+
+supabase/migrations/20261120_habit_v2_and_finance_v2.sql — Add new columns (frequency_type, scheduled_days, interval_days, rest_reason, deleted_at, credit card fields, needs_review, merchant_name) + new tables with RLS policies.
+
+src/lib/sync/engines/finance-sync.ts — Implement full two-way Pull + generationCounter conflict resolution + soft-delete tombstone sync.
+
+src/lib/sync/engines/habits-sync.ts — Sync new habit schedule fields and rest / restReason completion fields.
+
+Phase 2 — Flexible Habits & Smart Rest Days Engine
+Goal: Ship flexible weekly habits (e.g., 5–6×/week Gym, 2×/week chores), specific weekday schedules, and 1-tap Rest Day marking.
+
+Files to Modify / Create:
+
+src/lib/calculations/index.ts — Implement schedule-aware calculateCurrentStreak(), calculateBestStreak(), calculateWeeklyStreak(), calculateCompletionRate(), and getHabitWeekProgress(habit, completions, date).
+
+src/lib/stores/habit-store.ts — Add markRestDay(habitId, date, reason?), clearRestDay(), update getTodayProgress() (exclude auto-rest/quota-met/rested habits from remaining denominator), enforce weekly rest-day budget (7 - targetDaysPerWeek), and update streak caching.
+
+src/components/habits/habit-form-modal.tsx — Add 4-mode Schedule Selector (Daily / X Days per Week / Specific Days / Every N Days) with live rest-day budget preview.
+
+src/components/habits/SortableHabitRow.tsx & src/components/habits/habit-grid.tsx — Render rest cells (Moon icon), auto-rest cells, weekly progress pill (4/5 wk), desktop right-click / hover Rest Day toggle, and mobile long-press popover.
+
+src/components/dashboard/habit-overview.tsx — Add inline Rest Day action button + collapsed "Resting / Weekly Goal Met" tray.
+
+Phase 3 — Finance Core Overhaul (4-Tab IA, Safe-to-Spend, Activity & Charts)
+Goal: Turn Finance into a premium Copilot/Monarch/Fold-caliber tracker.
+
+Files to Modify / Create:
+
+src/lib/stores/finance-store.ts — Add SIP CRUD, Recurring Bills CRUD, Categorization Rules CRUD, getDailySpendingPace(), getNetWorthSummary(), getRolloverBudgetForCategory(), approveReviewedTransactions(), splitTransactionWithFriend(), and fix liability vs. liquid math.
+
+src/components/finance/FinancePageContent.tsx — Switch to 4 tabs (Overview | Activity | Bills & Debt | Accounts), remove duplicate FAB collision.
+
+src/components/finance/OverviewTab.tsx — Replace hero with Safe-to-Spend Hero Card, add DailyPaceChart.tsx, add Day-of-Month pace ticks on category bars, add Needs Review card, keep only Top 5 recent transactions.
+
+src/components/finance/ActivityTab.tsx (new) — Date-grouped full transaction ledger, full filter bar (category, account, tag, type, date range, needs review), bulk actions, CSV statement importer.
+
+src/components/finance/DailyPaceChart.tsx (new) & src/components/finance/CashFlowSankey.tsx (new).
+
+src/components/finance/AddTransactionModal.tsx — Add Investment (SIP) & Transfer tabs, Tags chips, Recurring toggle, Split-by-Category & Split-with-Friend flows, and NLP quick-fill bar.
+
+src/components/finance/MonthlyBudgetModal.tsx — Add Expected Income, Planned SIP Target, Rollover toggles, and Custom Category creator.
+
+src/components/finance/SmsImportModal.tsx — Integrate financeCategorizationRules auto-matching, Generic UPI Merchant aliases, needsReview flag, and "Always apply this rule?" prompt.
+
+Phase 4 — Modular Bills, Credit Cards, SIPs & Debt Payoff Simulator
+Goal: Split the 1,350-line TrackersTab.tsx and ship high-value Indian fintech features.
+
+Files to Modify / Create:
+
+Refactor src/components/finance/TrackersTab.tsx -> src/components/finance/BillsAndDebtTab.tsx composing:
+
+src/components/finance/trackers/BillCalendar.tsx (new)
+
+src/components/finance/trackers/CommitmentsSection.tsx (extracted)
+
+src/components/finance/trackers/FriendsLedgerSection.tsx (extracted + UPI reminder copy)
+
+src/components/finance/trackers/EmisSection.tsx (extracted)
+
+src/components/finance/trackers/SipTrackerSection.tsx (new)
+
+src/components/finance/trackers/DebtPayoffSimulator.tsx (new — Avalanche vs. Snowball)
+
+src/components/finance/AccountsTab.tsx — Net Worth Hero, Assets vs. Liabilities separation, Credit Card utilization bars + billing cycle + 1-tap Pay Bill, Rules & Categories manager.
+
+Phase 5 — Unified Dashboard V2, Mobile Nav V2 & Cross-Domain Intelligence
+Goal: Make Dashboard & Mobile UX feel like one cohesive, polished flagship product.
+
+Files to Modify / Create:
+
+src/components/dashboard/DashboardContent.tsx — Implement 3-Layer Command Center, Workspace Lens Switcher (All | Habits & Focus | Finance), compact inline Mood strip, Dual Hero Strip, and shared modal mount for direct + Log Expense from Dashboard.
+
+src/components/dashboard/FinanceOverviewWidget.tsx -> upgrade into FinancePulseHero.tsx (Safe-to-Spend + mini pace sparkline + true modal trigger) + CashflowRadarWidget.tsx (upcoming dues + 1-tap Pay) + TopCategoriesWidget.tsx.
+
+src/components/layout/MobileNav.tsx — Upgrade to 5-slot bar with raised Center [ + ] Universal Action Sheet + More drawer respecting habitOnlyMode/showFinance.
+
+src/lib/stores/mediator.ts — Wire Finance -> Habit auto-completion triggers (no_spend_day, under_daily_safe_spend, log_expense_today) and Wealth XP awards.
+
+src/components/goals/goal-form-modal.tsx & goal-card.tsx — Add Live Financial Goal linking.
+
+src/components/analytics/AnalyticsPageContent.tsx — Add Mood ↔ Spend correlation widget & schedule-adjusted Habit consistency charts.
+
+Phase 6 — Testing, Performance & Repo Hygiene
+Unit Tests (Vitest):
+
+src/lib/calculations/__tests__/flexible-habits.test.ts — Test 5×/week & 6×/week Gym streak preservation on Rest Days, rest-day budget overflow (>2 rest days on 5×/week), specific weekdays auto-rest, interval habits, and weekly completion rate math (5/5 = 100%).
+
+src/lib/stores/__tests__/finance-store.test.ts — Expand tests for Net Worth (credit card as liability), SIP exclusion from expense budget, category rollover carry-forward, split-with-friend debt creation, and Avalanche vs. Snowball payoff math.
+
+src/lib/sync/__tests__/finance-sync.test.ts — Verify two-way pull, conflict resolution, and soft-delete propagation.
+
+E2E Tests (Playwright):
+
+Mark Rest Day on a 5×/week habit and assert Today's Momentum hits 100% and streak remains intact.
+
+Log expense directly from Dashboard modal -> verify Safe-to-Spend updates immediately without navigation.
+
+Split an expense with a friend -> verify both Expense entry and Friend Lent ledger update atomically.
+
+Repository Cleanup:
+
+Add .nyc_output/, junit.xml, build*.log to .gitignore and remove tracked artifacts from git; move root-level AI_*.md, PERFORMANCE_*.md, and mobile-*.md docs into /docs/archive/.
+
+
+abhishek-ab7/habitflow
+Where would you like to start first — Phase 1 + Phase 2 (Database v12 + Flexible Weekly Habits & Rest Days) so you can immediately track your 5–6×/week Gym & rest days cleanly, or Phase 1 + Phase 3 (Finance Sync Fix + Safe-to-Spend & 4-Tab Finance V2)?
+
+All
+
+
+
+
+Gemini is AI and can make mistakes.
+

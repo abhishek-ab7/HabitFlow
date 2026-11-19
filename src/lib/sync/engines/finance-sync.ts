@@ -6,15 +6,28 @@ import type { ISynchronizer } from '../types';
 import type { SyncEngine } from '../sync-engine';
 
 /**
- * FinanceSyncEngine synchronizes FlowFinance tables between Dexie (local IndexedDB)
- * and Supabase PostgreSQL with generationCounter conflict resolution.
+ * FinanceSyncEngine synchronizes FlowFinance V2 tables between Dexie (local IndexedDB)
+ * and Supabase PostgreSQL with two-way push + pull, generationCounter conflict resolution,
+ * and soft-delete tombstones (deletedAt).
  */
 export class FinanceSyncEngine implements ISynchronizer {
   readonly domainName = 'Finance';
 
+  private shouldApplyRemote(local: any | undefined, remote: any): boolean {
+    if (!local) return true;
+    const remoteGen = Number(remote.generation_counter || 0);
+    const localGen = Number(local.generationCounter || 0);
+    if (remoteGen > localGen) return true;
+    if (remoteGen === localGen && remote.updated_at && local.updatedAt) {
+      return new Date(remote.updated_at).getTime() > new Date(local.updatedAt).getTime();
+    }
+    return false;
+  }
+
   async sync(userId: string): Promise<{ pushed: number; pulled: number; status: 'success' | 'partial_failure' }> {
     const supabase = getSupabaseClient();
     let pushed = 0;
+    let pulled = 0;
     let hasError = false;
 
     // 1. Sync Dirty Local Categories -> Remote
@@ -37,7 +50,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         subcategories: cat.subcategories,
         order_index: cat.order,
         is_system: cat.isSystem,
-        is_archived: cat.archived,
+        is_archived: cat.archived || !!cat.deletedAt,
         generation_counter: cat.generationCounter || 1,
         created_at: cat.createdAt,
         updated_at: cat.updatedAt,
@@ -49,6 +62,44 @@ export class FinanceSyncEngine implements ISynchronizer {
       } else {
         hasError = true;
       }
+    }
+
+    // Pull Remote Categories -> Local
+    try {
+      const { data: remoteCats, error: pullCatErr } = await (supabase
+        .from('finance_categories') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullCatErr && Array.isArray(remoteCats)) {
+        for (const r of remoteCats) {
+          const local = await db.financeCategories.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.financeCategories.put({
+              id: r.id,
+              userId: r.user_id,
+              name: r.name,
+              slug: r.slug,
+              type: r.type,
+              icon: r.icon,
+              color: r.color,
+              monthlyBudgetLimit: Number(r.monthly_budget_limit || 0),
+              rolloverEnabled: r.rollover_enabled ?? local?.rolloverEnabled ?? false,
+              subcategories: r.subcategories || [],
+              order: r.order_index ?? 0,
+              isSystem: !!r.is_system,
+              archived: !!r.is_archived,
+              deletedAt: r.deleted_at || (r.is_archived ? r.updated_at : null),
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal if remote table unavailable
     }
 
     // 2. Sync Dirty Local Accounts -> Remote
@@ -69,7 +120,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         color: acc.color,
         icon: acc.icon,
         is_default: acc.isDefault,
-        is_archived: acc.archived,
+        is_archived: acc.archived || !!acc.deletedAt,
         generation_counter: acc.generationCounter || 1,
         created_at: acc.createdAt,
         updated_at: acc.updatedAt,
@@ -81,6 +132,45 @@ export class FinanceSyncEngine implements ISynchronizer {
       } else {
         hasError = true;
       }
+    }
+
+    // Pull Remote Accounts -> Local
+    try {
+      const { data: remoteAccs, error: pullAccErr } = await (supabase
+        .from('finance_accounts') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullAccErr && Array.isArray(remoteAccs)) {
+        for (const r of remoteAccs) {
+          const local = await db.financeAccounts.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.financeAccounts.put({
+              id: r.id,
+              userId: r.user_id,
+              name: r.name,
+              type: r.type,
+              balance: Number(r.balance || 0),
+              creditLimit: r.credit_limit ?? local?.creditLimit,
+              statementDay: r.statement_day ?? local?.statementDay,
+              dueDay: r.due_day ?? local?.dueDay,
+              includeInNetWorth: r.include_in_net_worth ?? local?.includeInNetWorth ?? true,
+              currency: r.currency || 'INR',
+              color: r.color || '#10b981',
+              icon: r.icon || 'Wallet',
+              isDefault: !!r.is_default,
+              archived: !!r.is_archived,
+              deletedAt: r.deleted_at || null,
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
     }
 
     // 3. Sync Dirty Monthly Commitments -> Remote
@@ -104,7 +194,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         auto_rollover_overpayment: comm.autoRolloverOverpayment,
         icon: comm.icon,
         color: comm.color,
-        is_active: comm.isActive,
+        is_active: comm.isActive && !comm.deletedAt,
         notes: comm.notes || null,
         generation_counter: comm.generationCounter || 1,
         created_at: comm.createdAt,
@@ -117,6 +207,45 @@ export class FinanceSyncEngine implements ISynchronizer {
       } else {
         hasError = true;
       }
+    }
+
+    // Pull Remote Monthly Commitments -> Local
+    try {
+      const { data: remoteComms, error: pullCommErr } = await (supabase
+        .from('monthly_commitments') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullCommErr && Array.isArray(remoteComms)) {
+        for (const r of remoteComms) {
+          const local = await db.monthlyCommitments.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.monthlyCommitments.put({
+              id: r.id,
+              userId: r.user_id,
+              title: r.title,
+              recipientName: r.recipient_name,
+              relationship: r.relationship || 'Family',
+              monthlyTargetAmount: Number(r.monthly_target_amount || 0),
+              dueDayOfMonth: Number(r.due_day_of_month || 5),
+              category: r.category || 'family_support',
+              defaultCategoryId: r.default_category_id || undefined,
+              autoRolloverOverpayment: !!r.auto_rollover_overpayment,
+              icon: r.icon || 'HeartHandshake',
+              color: r.color || '#ec4899',
+              isActive: !!r.is_active,
+              notes: r.notes || undefined,
+              deletedAt: r.deleted_at || null,
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
     }
 
     // 4. Sync Dirty Debt Records -> Remote
@@ -142,7 +271,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         repayment_schedule: debt.repaymentSchedule,
         planned_monthly_installment: debt.plannedMonthlyInstallment || null,
         due_day_of_month: debt.dueDayOfMonth || null,
-        status: debt.status,
+        status: debt.deletedAt ? 'archived' : debt.status,
         notes: debt.notes || null,
         color: debt.color,
         generation_counter: debt.generationCounter || 1,
@@ -156,6 +285,50 @@ export class FinanceSyncEngine implements ISynchronizer {
       } else {
         hasError = true;
       }
+    }
+
+    // Pull Remote Debt Records -> Local
+    try {
+      const { data: remoteDebts, error: pullDebtErr } = await (supabase
+        .from('debt_records') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullDebtErr && Array.isArray(remoteDebts)) {
+        for (const r of remoteDebts) {
+          const local = await db.debtRecords.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.debtRecords.put({
+              id: r.id,
+              userId: r.user_id,
+              personName: r.person_name,
+              contactInfo: r.contact_info || undefined,
+              direction: r.direction,
+              title: r.title,
+              principalAmount: Number(r.principal_amount || 0),
+              totalRepaidAmount: Number(r.total_repaid_amount || 0),
+              remainingAmount: Number(r.remaining_amount || 0),
+              startDate: r.start_date,
+              targetSettlementDate: r.target_settlement_date || undefined,
+              repaymentSchedule: r.repayment_schedule || 'flexible',
+              plannedMonthlyInstallment: r.planned_monthly_installment
+                ? Number(r.planned_monthly_installment)
+                : undefined,
+              dueDayOfMonth: r.due_day_of_month ? Number(r.due_day_of_month) : undefined,
+              status: r.status || 'active',
+              notes: r.notes || undefined,
+              color: r.color || '#3b82f6',
+              deletedAt: r.deleted_at || null,
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
     }
 
     // 5. Sync Dirty Debt Installments -> Remote
@@ -188,6 +361,41 @@ export class FinanceSyncEngine implements ISynchronizer {
       } else {
         hasError = true;
       }
+    }
+
+    // Pull Remote Debt Installments -> Local
+    try {
+      const { data: remoteInsts, error: pullInstErr } = await (supabase
+        .from('debt_installments') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullInstErr && Array.isArray(remoteInsts)) {
+        for (const r of remoteInsts) {
+          const local = await db.debtInstallments.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.debtInstallments.put({
+              id: r.id,
+              userId: r.user_id,
+              debtId: r.debt_id,
+              amount: Number(r.amount || 0),
+              date: r.date,
+              monthKey: r.month_key,
+              paymentMethod: r.payment_method || 'upi',
+              transactionId: r.transaction_id || null,
+              note: r.note || undefined,
+              balanceAfterPayment: Number(r.balance_after_payment || 0),
+              deletedAt: r.deleted_at || null,
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
     }
 
     // 6. Sync Dirty EMI Trackers -> Remote
@@ -227,6 +435,48 @@ export class FinanceSyncEngine implements ISynchronizer {
       } else {
         hasError = true;
       }
+    }
+
+    // Pull Remote EMI Trackers -> Local
+    try {
+      const { data: remoteEmis, error: pullEmiErr } = await (supabase
+        .from('emi_trackers') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullEmiErr && Array.isArray(remoteEmis)) {
+        for (const r of remoteEmis) {
+          const local = await db.emiTrackers.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.emiTrackers.put({
+              id: r.id,
+              userId: r.user_id,
+              loanName: r.loan_name,
+              lenderName: r.lender_name,
+              principalAmount: Number(r.principal_amount || 0),
+              interestRateAnnual: Number(r.interest_rate_annual || 0),
+              emiAmount: Number(r.emi_amount || 0),
+              tenureMonths: Number(r.tenure_months || 1),
+              paidMonths: Number(r.paid_months || 0),
+              startDate: r.start_date,
+              billingDayOfMonth: Number(r.billing_day_of_month || 5),
+              categoryId: r.category_id,
+              accountId: r.account_id || undefined,
+              autoCreateTaskReminder: !!r.auto_create_task_reminder,
+              lastPaidMonthKey: r.last_paid_month_key || undefined,
+              status: r.status || 'active',
+              notes: r.notes || undefined,
+              deletedAt: r.deleted_at || null,
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
     }
 
     // 7. Sync Dirty Finance Transactions -> Remote
@@ -271,6 +521,56 @@ export class FinanceSyncEngine implements ISynchronizer {
       }
     }
 
+    // Pull Remote Finance Transactions -> Local
+    try {
+      const { data: remoteTxs, error: pullTxErr } = await (supabase
+        .from('finance_transactions') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullTxErr && Array.isArray(remoteTxs)) {
+        for (const r of remoteTxs) {
+          const local = await db.financeTransactions.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.financeTransactions.put({
+              id: r.id,
+              userId: r.user_id,
+              title: r.title,
+              merchantName: r.merchant_name ?? local?.merchantName,
+              rawMerchant: r.raw_merchant ?? local?.rawMerchant,
+              amount: Number(r.amount || 0),
+              type: r.type || 'expense',
+              categoryId: r.category_id,
+              subcategory: r.subcategory || undefined,
+              accountId: r.account_id,
+              toAccountId: r.to_account_id || undefined,
+              date: r.date,
+              monthKey: r.month_key || (r.date ? r.date.slice(0, 7) : ''),
+              notes: r.notes || undefined,
+              tags: Array.isArray(r.tags) ? r.tags : [],
+              isRecurring: !!r.is_recurring,
+              recurrenceRule: r.recurrence_rule || undefined,
+              needsReview: r.needs_review ?? local?.needsReview ?? false,
+              splitGroupId: r.split_group_id ?? local?.splitGroupId ?? null,
+              linkedCommitmentId: r.linked_commitment_id || null,
+              commitmentContributionType: r.commitment_contribution_type || null,
+              linkedDebtId: r.linked_debt_id || null,
+              linkedDebtInstallmentId: r.linked_debt_installment_id || null,
+              linkedEmiId: r.linked_emi_id || null,
+              linkedSipId: r.linked_sip_id ?? local?.linkedSipId ?? null,
+              deletedAt: r.deleted_at || null,
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
     // 8. Sync Dirty Finance Budgets -> Remote
     const dirtyBudgets = await db.financeBudgets
       .where('userId')
@@ -300,10 +600,84 @@ export class FinanceSyncEngine implements ISynchronizer {
       }
     }
 
-    logger.info('[FinanceSyncEngine] Completed FlowFinance sync cycle');
+    // Pull Remote Finance Budgets -> Local
+    try {
+      const { data: remoteBudgets, error: pullBudgetErr } = await (supabase
+        .from('finance_budgets') as any)
+        .select('*')
+        .eq('user_id', userId);
+      if (!pullBudgetErr && Array.isArray(remoteBudgets)) {
+        for (const r of remoteBudgets) {
+          const local = await db.financeBudgets.get(r.id);
+          if (this.shouldApplyRemote(local, r)) {
+            await db.financeBudgets.put({
+              id: r.id,
+              userId: r.user_id,
+              monthKey: r.month_key,
+              totalBudget: Number(r.total_budget || 0),
+              expectedIncome: Number(r.expected_income || 0),
+              plannedSipAmount: r.planned_sip_amount ?? local?.plannedSipAmount,
+              currency: r.currency || 'INR',
+              notes: r.notes || undefined,
+              deletedAt: r.deleted_at || null,
+              generationCounter: r.generation_counter || 1,
+              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+              updatedAt: r.updated_at || new Date().toISOString(),
+              isDirty: false,
+            });
+            pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    // 9. Optional Sync for V2 SIP Plans, Categorization Rules & Recurring Bills (gracefully skipped if remote table doesn't exist yet)
+    try {
+      if (db.financeSipPlans) {
+        const dirtySips = await db.financeSipPlans
+          .where('userId')
+          .equals(userId)
+          .filter((s) => !!s.isDirty)
+          .toArray();
+        for (const sip of dirtySips) {
+          const { error } = await (supabase.from('finance_sip_plans') as any).upsert({
+            id: sip.id,
+            user_id: userId,
+            name: sip.name,
+            platform: sip.platform || null,
+            asset_class: sip.assetClass,
+            monthly_amount: sip.monthlyAmount,
+            sip_day_of_month: sip.sipDayOfMonth,
+            start_date: sip.startDate,
+            total_invested: sip.totalInvested,
+            current_value: sip.currentValue,
+            expected_return_annual: sip.expectedReturnAnnual || null,
+            account_id: sip.accountId || null,
+            category_id: sip.categoryId || null,
+            last_invested_month_key: sip.lastInvestedMonthKey || null,
+            is_active: sip.isActive && !sip.deletedAt,
+            color: sip.color,
+            notes: sip.notes || null,
+            generation_counter: sip.generationCounter || 1,
+            created_at: sip.createdAt,
+            updated_at: sip.updatedAt,
+          });
+          if (!error) {
+            await db.financeSipPlans.update(sip.id, { isDirty: false });
+            pushed++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    logger.info('[FinanceSyncEngine] Completed FlowFinance V2 two-way sync cycle');
     return {
       pushed,
-      pulled: 0,
+      pulled,
       status: hasError ? 'partial_failure' : 'success',
     };
   }
@@ -314,3 +688,4 @@ export async function syncFinanceWithRetry(engine: SyncEngine): Promise<void> {
   const syncer = new FinanceSyncEngine();
   await engine.withRetry(() => syncer.sync(engine.userId!), 'syncFinance');
 }
+

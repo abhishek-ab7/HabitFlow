@@ -3,7 +3,8 @@
 import { useMemo, useState, useCallback, useEffect, memo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3 } from 'lucide-react';
+import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3, Moon } from 'lucide-react';
+import { getHabitWeekProgress, isHabitAutoRestOnDate } from '@/lib/calculations';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -114,7 +115,16 @@ export const HabitGrid = memo(function HabitGrid({
     setShowLogModal(false);
     toast.success('Progress log updated');
   };
-  const { reorder, freezeHabit } = useHabitStore();
+  const { reorder, freezeHabit, markRestDay } = useHabitStore();
+
+  const handleMobileRest = async (habitId: string, dateStr: string) => {
+    try {
+      await markRestDay(habitId, dateStr);
+      toast.success('Rest day updated');
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
 
   const handleMobileFreeze = async (habitId: string, dateStr: string) => {
     try {
@@ -357,6 +367,7 @@ export const HabitGrid = memo(function HabitGrid({
         {habits.map((habit) => {
           const streak = streaks.get(habit.id) || 0;
           const habitsCompletionsMap = completionsMapByHabit.get(habit.id) || new Map();
+          const weekProg = getHabitWeekProgress(habit, completions, new Date());
 
           return (
             <motion.div
@@ -384,11 +395,24 @@ export const HabitGrid = memo(function HabitGrid({
                       >
                         {habit.category}
                       </Badge>
+                      {weekProg.targetCount < 7 && (
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "text-[9px] px-1.5 py-0 h-4 font-mono tabular-nums",
+                            weekProg.quotaMet
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                              : "bg-teal-500/10 text-teal-600 dark:text-teal-400"
+                          )}
+                        >
+                          {weekProg.completedCount}/{weekProg.targetCount} wk {weekProg.quotaMet ? '✓' : ''}
+                        </Badge>
+                      )}
                       {streak > 0 && (
                         <Badge
                           variant="secondary"
                           className={cn(
-                            "text-[9px] px-1.5 py-0 h-4 font-bold gap-0.5",
+                            "text-[9px] px-1.5 py-0 h-4 font-bold gap-0.5 font-mono tabular-nums",
                             getStreakStyle(streak)
                           )}
                         >
@@ -407,7 +431,7 @@ export const HabitGrid = memo(function HabitGrid({
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuContent align="end" className="w-48">
                     <DropdownMenuItem onClick={() => onEdit(habit)}>
                       <Pencil className="h-4 w-4 mr-2" />
                       Edit
@@ -416,6 +440,14 @@ export const HabitGrid = memo(function HabitGrid({
                       <Edit3 className="h-4 w-4 mr-2 text-amber-500" />
                       Log Notes / Progress
                     </DropdownMenuItem>
+                    {weekProg.restAllowedCount > 0 && (
+                      <DropdownMenuItem onClick={() => handleMobileRest(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
+                        <Moon className="h-4 w-4 mr-2 text-teal-500" />
+                        {weekProg.isRestedToday
+                          ? 'Clear Rest Today'
+                          : `Rest Today (${weekProg.restRemainingCount} left)`}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => handleMobileFreeze(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
                       <Snowflake className="h-4 w-4 mr-2" />
                       Freeze Today
@@ -447,8 +479,10 @@ export const HabitGrid = memo(function HabitGrid({
               <div className="grid grid-cols-5 gap-1.5">
                 {mobileDays.map(({ day, dateStr, isFuture: isFutureDate, isToday: isTodayDate, dayLabel }) => {
                   const comp = habitsCompletionsMap.get(dateStr);
-                  const isCompleted = comp?.completed && comp?.status !== 'frozen';
+                  const isCompleted = !!(comp?.completed && comp?.status !== 'frozen' && comp?.status !== 'rest' && !comp?.skipped);
                   const isFrozen = comp?.status === 'frozen';
+                  const isRest = !!(comp && (comp.status === 'rest' || comp.skipped));
+                  const isAutoRest = !isCompleted && !isFrozen && !isRest && isHabitAutoRestOnDate(habit, completions, dateStr);
                   
                   return (
                     <button
@@ -463,13 +497,17 @@ export const HabitGrid = memo(function HabitGrid({
                         "h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-all relative overflow-hidden border",
                         isCompleted
                           ? "bg-success/15 border-success/30 text-success"
-                          : isFrozen
-                            ? "bg-sky-500/15 border-sky-500/30 text-sky-500"
-                            : isFutureDate
-                              ? "bg-muted/10 border-transparent opacity-30 cursor-not-allowed"
-                              : isTodayDate
-                                ? "bg-primary/5 border-dashed border-primary text-primary font-bold animate-pulse"
-                                : "bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/50"
+                          : isRest
+                            ? "bg-teal-500/15 border-teal-500/30 text-teal-600 dark:text-teal-400"
+                            : isFrozen
+                              ? "bg-sky-500/15 border-sky-500/30 text-sky-500"
+                              : isAutoRest
+                                ? "bg-muted/20 border-dashed border-border/60 text-muted-foreground/60"
+                                : isFutureDate
+                                  ? "bg-muted/10 border-transparent opacity-30 cursor-not-allowed"
+                                  : isTodayDate
+                                    ? "bg-primary/5 border-dashed border-primary text-primary font-bold"
+                                    : "bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/50"
                       )}
                     >
                       <span className="text-[9px] font-bold uppercase opacity-60">
@@ -477,6 +515,8 @@ export const HabitGrid = memo(function HabitGrid({
                       </span>
                       {isCompleted ? (
                         <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      ) : isRest || isAutoRest ? (
+                        <Moon className="h-3.5 w-3.5" />
                       ) : isFrozen ? (
                         <Snowflake className="h-3 w-3" />
                       ) : habit.isQuantitative && comp?.value && comp.value > 0 ? (

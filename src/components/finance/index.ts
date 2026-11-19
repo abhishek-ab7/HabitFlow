@@ -2,6 +2,7 @@ export { FinancePageContent } from './FinancePageContent';
 export { AddTransactionModal } from './AddTransactionModal';
 export { MonthlyBudgetModal } from './MonthlyBudgetModal';
 export { OverviewTab } from './OverviewTab';
+export { ActivityTab } from './ActivityTab';
 export { TrackersTab } from './TrackersTab';
 export { AccountsTab } from './AccountsTab';
 export { CategoryIcon } from './CategoryIcon';
