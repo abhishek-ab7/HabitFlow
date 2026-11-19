@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+// @ts-ignore
 import { loadEnvConfig } from '@next/env';
 
 // Load all Next.js environment variables (including .env.local)

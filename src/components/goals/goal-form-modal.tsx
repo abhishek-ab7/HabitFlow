@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { format, addDays } from 'date-fns';
-import { X, Plus, Trash2, Star } from 'lucide-react';
+import { X, Plus, Trash2, Star, Landmark, PiggyBank, ArrowDownRight, TrendingUp } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { Goal, GoalFormData, AreaOfLife, Priority } from '@/lib/types';
+import type { Goal, GoalFormData, AreaOfLife, Priority, FinancialGoalLink, FinancialGoalLinkType } from '@/lib/types';
+import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { GOAL_TEMPLATES } from '@/lib/goal-templates';
 
 interface GoalFormModalProps {
@@ -50,6 +51,9 @@ export function GoalFormModal({
   goal,
   existingMilestones = [],
 }: GoalFormModalProps) {
+  const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary } = useFinanceStore();
+  const netWorthSummary = getNetWorthSummary();
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [areaOfLife, setAreaOfLife] = useState<AreaOfLife>('personal_growth');
@@ -60,6 +64,15 @@ export function GoalFormModal({
   const [isFocus, setIsFocus] = useState(false);
   const [errors, setErrors] = useState<{ title?: string; deadline?: string }>({});
   const [activeTab, setActiveTab] = useState<'details' | 'templates'>('details');
+
+  // Financial Link state
+  const [enableFinancialLink, setEnableFinancialLink] = useState(false);
+  const [financialLinkType, setFinancialLinkType] = useState<FinancialGoalLinkType>('savings_target');
+  const [financialTargetAmount, setFinancialTargetAmount] = useState('');
+  const [financialStartingAmount, setFinancialStartingAmount] = useState('');
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [selectedDebtIds, setSelectedDebtIds] = useState<string[]>([]);
+  const [selectedSipIds, setSelectedSipIds] = useState<string[]>([]);
 
   const isEditing = !!goal;
 
@@ -77,6 +90,23 @@ export function GoalFormModal({
           setDeadline(format(new Date(goal.deadline), 'yyyy-MM-dd'));
           setMilestones(existingMilestones.length > 0 ? existingMilestones : ['']);
           setIsFocus(goal.isFocus);
+          if (goal.financialLink) {
+            setEnableFinancialLink(true);
+            setFinancialLinkType(goal.financialLink.type);
+            setFinancialTargetAmount(String(goal.financialLink.targetAmount || ''));
+            setFinancialStartingAmount(goal.financialLink.startingAmount !== undefined ? String(goal.financialLink.startingAmount) : '');
+            setSelectedAccountIds(goal.financialLink.linkedAccountIds || []);
+            setSelectedDebtIds(goal.financialLink.linkedDebtIds || []);
+            setSelectedSipIds(goal.financialLink.linkedSipIds || []);
+          } else {
+            setEnableFinancialLink(goal.areaOfLife === 'finance');
+            setFinancialLinkType('savings_target');
+            setFinancialTargetAmount('');
+            setFinancialStartingAmount('');
+            setSelectedAccountIds([]);
+            setSelectedDebtIds([]);
+            setSelectedSipIds([]);
+          }
         } else {
           setTitle('');
           setDescription('');
@@ -86,6 +116,13 @@ export function GoalFormModal({
           setDeadline(format(addDays(new Date(), 30), 'yyyy-MM-dd'));
           setMilestones(['']);
           setIsFocus(false);
+          setEnableFinancialLink(false);
+          setFinancialLinkType('savings_target');
+          setFinancialTargetAmount('');
+          setFinancialStartingAmount('');
+          setSelectedAccountIds([]);
+          setSelectedDebtIds([]);
+          setSelectedSipIds([]);
         }
         setErrors({});
       });
@@ -136,6 +173,18 @@ export function GoalFormModal({
       return;
     }
 
+    let financialLink: FinancialGoalLink | undefined = undefined;
+    if (enableFinancialLink && Number(financialTargetAmount) > 0) {
+      financialLink = {
+        type: financialLinkType,
+        targetAmount: Math.max(0, Number(financialTargetAmount) || 0),
+        startingAmount: financialStartingAmount ? Number(financialStartingAmount) : undefined,
+        linkedAccountIds: selectedAccountIds.length > 0 ? selectedAccountIds : undefined,
+        linkedDebtIds: selectedDebtIds.length > 0 ? selectedDebtIds : undefined,
+        linkedSipIds: selectedSipIds.length > 0 ? selectedSipIds : undefined,
+      };
+    }
+
     onSubmit({
       title: title.trim(),
       description: description.trim() || undefined,
@@ -145,6 +194,7 @@ export function GoalFormModal({
       deadline,
       milestones: milestones.filter(m => m.trim() !== ''),
       isFocus,
+      financialLink,
     });
 
     onOpenChange(false);
@@ -286,7 +336,12 @@ export function GoalFormModal({
                     <button
                       key={area.value}
                       type="button"
-                      onClick={() => setAreaOfLife(area.value)}
+                      onClick={() => {
+                        setAreaOfLife(area.value);
+                        if (area.value === 'finance' && !enableFinancialLink) {
+                          setEnableFinancialLink(true);
+                        }
+                      }}
                       className={cn(
                         "px-3 py-1.5 rounded-full text-sm font-medium border transition-all",
                         areaOfLife === area.value
@@ -373,6 +428,221 @@ export function GoalFormModal({
                     This goal will be pinned to your dashboard.
                   </p>
                 </div>
+              </div>
+
+              {/* Financial Link Section */}
+              <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-500">
+                      <Landmark className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="enable-fin-link" className="text-sm font-semibold text-foreground cursor-pointer">
+                          Live Financial Balance Link
+                        </label>
+                        <Badge variant="outline" className="border-sky-500/40 text-sky-600 dark:text-sky-400 bg-sky-500/10 text-[10px] px-1.5 py-0 font-medium">
+                          Life OS Link
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Automatically sync monetary progress with live bank balances, debt payoff, or SIPs
+                      </p>
+                    </div>
+                  </div>
+                  <Checkbox
+                    id="enable-fin-link"
+                    checked={enableFinancialLink}
+                    onCheckedChange={(c) => setEnableFinancialLink(!!c)}
+                  />
+                </div>
+
+                {enableFinancialLink && (
+                  <div className="space-y-4 pt-2 border-t border-sky-500/20">
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                        Financial Metric Type
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: 'savings_target' as const, label: 'Savings Target', icon: PiggyBank, desc: 'Bank & Emergency Fund' },
+                          { id: 'debt_payoff' as const, label: 'Debt Payoff', icon: ArrowDownRight, desc: 'Clear Loans & EMIs' },
+                          { id: 'sip_corpus' as const, label: 'SIP Portfolio', icon: TrendingUp, desc: 'Mutual Funds / Wealth' },
+                          { id: 'net_worth' as const, label: 'Net Worth', icon: Landmark, desc: 'Assets minus Debts' },
+                        ].map((m) => {
+                          const Icon = m.icon;
+                          const isSel = financialLinkType === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setFinancialLinkType(m.id)}
+                              className={cn(
+                                "p-2.5 rounded-lg border text-left flex flex-col justify-between transition-all text-xs",
+                                isSel
+                                  ? "border-sky-500 bg-sky-500/15 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500"
+                                  : "border-border/60 bg-background/50 hover:bg-muted text-muted-foreground"
+                              )}
+                            >
+                              <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                                <Icon className="h-3.5 w-3.5 text-sky-500" />
+                                <span>{m.label}</span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground mt-1 line-clamp-1">{m.desc}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-foreground block mb-1">
+                          Target Amount (₹) *
+                        </label>
+                        <Input
+                          type="number"
+                          placeholder="e.g. 100000"
+                          value={financialTargetAmount}
+                          onChange={(e) => setFinancialTargetAmount(e.target.value)}
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-foreground block mb-1">
+                          Starting / Baseline Amount (₹)
+                        </label>
+                        <Input
+                          type="number"
+                          placeholder="e.g. 10000 (optional)"
+                          value={financialStartingAmount}
+                          onChange={(e) => setFinancialStartingAmount(e.target.value)}
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Contextual account / item selector */}
+                    {financialLinkType === 'savings_target' && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground block">
+                          Link Specific Accounts (optional)
+                        </label>
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                          {accounts.filter(a => a.type !== 'credit_card').map(acc => {
+                            const isChecked = selectedAccountIds.includes(acc.id);
+                            return (
+                              <button
+                                key={acc.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedAccountIds(prev =>
+                                    isChecked ? prev.filter(id => id !== acc.id) : [...prev, acc.id]
+                                  );
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md text-xs border font-medium transition-all flex items-center gap-1.5",
+                                  isChecked
+                                    ? "bg-sky-500 text-white border-sky-600"
+                                    : "bg-background border-border/60 text-muted-foreground hover:bg-muted"
+                                )}
+                              >
+                                <span>{acc.name}</span>
+                                <span className="font-mono text-[10px] opacity-80">{formatINR(acc.balance)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {selectedAccountIds.length === 0 ? "Tracking all non-credit accounts combined." : `Tracking ${selectedAccountIds.length} selected account(s).`}
+                        </p>
+                      </div>
+                    )}
+
+                    {financialLinkType === 'debt_payoff' && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground block">
+                          Link Specific Debts / EMIs (optional)
+                        </label>
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                          {[...debtRecords.map(d => ({ id: d.id, name: d.title || d.personName, amount: d.remainingAmount })),
+                            ...emiTrackers.map(e => ({ id: e.id, name: e.loanName, amount: Math.max(0, (e.tenureMonths - e.paidMonths) * e.emiAmount) }))].map(d => {
+                            const isChecked = selectedDebtIds.includes(d.id);
+                            return (
+                              <button
+                                key={d.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDebtIds(prev =>
+                                    isChecked ? prev.filter(id => id !== d.id) : [...prev, d.id]
+                                  );
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md text-xs border font-medium transition-all flex items-center gap-1.5",
+                                  isChecked
+                                    ? "bg-rose-500 text-white border-rose-600"
+                                    : "bg-background border-border/60 text-muted-foreground hover:bg-muted"
+                                )}
+                              >
+                                <span>{d.name}</span>
+                                <span className="font-mono text-[10px] opacity-80">{formatINR(d.amount)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {selectedDebtIds.length === 0 ? "Tracking all active debts & EMIs combined." : `Tracking ${selectedDebtIds.length} selected debt item(s).`}
+                        </p>
+                      </div>
+                    )}
+
+                    {financialLinkType === 'sip_corpus' && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-muted-foreground block">
+                          Link Specific SIP Portfolios (optional)
+                        </label>
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                          {sipPlans.map(sip => {
+                            const isChecked = selectedSipIds.includes(sip.id);
+                            return (
+                              <button
+                                key={sip.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSipIds(prev =>
+                                    isChecked ? prev.filter(id => id !== sip.id) : [...prev, sip.id]
+                                  );
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md text-xs border font-medium transition-all flex items-center gap-1.5",
+                                  isChecked
+                                    ? "bg-indigo-500 text-white border-indigo-600"
+                                    : "bg-background border-border/60 text-muted-foreground hover:bg-muted"
+                                )}
+                              >
+                                <span>{sip.name}</span>
+                                <span className="font-mono text-[10px] opacity-80">{formatINR(sip.currentValue || sip.totalInvested)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {selectedSipIds.length === 0 ? "Tracking all active SIP investment portfolios." : `Tracking ${selectedSipIds.length} selected SIP(s).`}
+                        </p>
+                      </div>
+                    )}
+
+                    {financialLinkType === 'net_worth' && (
+                      <div className="p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-xs flex items-center justify-between">
+                        <span className="text-muted-foreground">Current Live Net Worth:</span>
+                        <span className="font-mono font-bold text-sky-600 dark:text-sky-400">
+                          {formatINR(netWorthSummary.netWorth)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Milestones */}

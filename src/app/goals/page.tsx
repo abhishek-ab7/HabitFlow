@@ -154,6 +154,8 @@ function GoalsPageContent() {
         priority: data.priority,
         startDate: data.startDate,
         deadline: data.deadline,
+        isFocus: data.isFocus,
+        financialLink: data.financialLink,
       });
 
       // Handle milestones - add new ones

@@ -5,13 +5,13 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { subDays, subYears, format } from 'date-fns';
-import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile } from 'lucide-react';
+import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile, Brain, Sparkles, AlertCircle, ShoppingBag } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { TimeRangeTabs } from '@/components/analytics';
 import { AchievementsGallery } from '@/components/analytics/AchievementsGallery';
-import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore } from '@/lib/stores';
+import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore, useFinanceStore, formatINR } from '@/lib/stores';
 import {
   calculateDailyStats,
   calculateCategoryBreakdown,
@@ -95,6 +95,13 @@ export default function AnalyticsPageContent() {
       getMoodForDate: s.getMoodForDate,
     }))
   );
+  const { transactions, categories, loadFinanceData } = useFinanceStore(
+    useShallow((s) => ({
+      transactions: s.transactions,
+      categories: s.categories,
+      loadFinanceData: s.loadFinanceData,
+    }))
+  );
   const completedSessions = usePomodoroStore((s) => s.completedSessions);
 
   // Pre-map completions by habitId and dateStr for O(1) grid lookups
@@ -114,6 +121,7 @@ export default function AnalyticsPageContent() {
     loadHabits();
     loadGoals();
     loadTasks();
+    loadFinanceData();
 
     const end = new Date();
     const start = subYears(end, 1);
@@ -128,7 +136,7 @@ export default function AnalyticsPageContent() {
     }
     
     loadMoodLogs(startStr, endStr);
-  }, [loadHabits, loadCompletions, loadGoals, loadTasks, loadMoodLogs]);
+  }, [loadHabits, loadCompletions, loadGoals, loadTasks, loadMoodLogs, loadFinanceData]);
 
   // Calculate date range based on selection
   const dateRange = useMemo(() => {
@@ -219,6 +227,103 @@ export default function AnalyticsPageContent() {
       activeHabits: activeHabits.length,
     };
   }, [habits, completions, goals, dateRange]);
+
+  // Behavioral Correlations: Mood & Habits × Spending
+  const behavioralCorrelations = useMemo(() => {
+    const expenseTransactions = transactions.filter(t => t.type === 'expense');
+
+    // Map daily spending
+    const dailySpendMap = new Map<string, { total: number; impulse: number }>();
+    const impulseKeywords = ['food', 'dining', 'restaurant', 'swiggy', 'zomato', 'blinkit', 'zepto', 'shopping', 'amazon', 'flipkart', 'coffee', 'cafe', 'uber', 'entertainment', 'cinema'];
+
+    expenseTransactions.forEach(tx => {
+      const dateKey = tx.date.split('T')[0];
+      const prev = dailySpendMap.get(dateKey) || { total: 0, impulse: 0 };
+      const descLower = (tx.title || tx.notes || '').toLowerCase();
+      const merchantLower = (tx.merchantName || '').toLowerCase();
+      const cat = categories.find(c => c.id === tx.categoryId);
+      const catLower = (cat?.name || '').toLowerCase();
+
+      const isImpulse = impulseKeywords.some(kw => 
+        descLower.includes(kw) || merchantLower.includes(kw) || catLower.includes(kw)
+      );
+
+      dailySpendMap.set(dateKey, {
+        total: prev.total + tx.amount,
+        impulse: prev.impulse + (isImpulse ? tx.amount : 0),
+      });
+    });
+
+    const stressedSpends: number[] = [];
+    const calmSpends: number[] = [];
+    const stressedImpulseSpends: number[] = [];
+    const calmImpulseSpends: number[] = [];
+
+    const highHabitSpends: number[] = [];
+    const lowHabitSpends: number[] = [];
+
+    dailySpendMap.forEach((spend, dateKey) => {
+      const mood = getMoodForDate(dateKey);
+      if (mood === 'stressed' || mood === 'sad') {
+        stressedSpends.push(spend.total);
+        stressedImpulseSpends.push(spend.impulse);
+      } else if (mood === 'calm' || mood === 'happy') {
+        calmSpends.push(spend.total);
+        calmImpulseSpends.push(spend.impulse);
+      }
+
+      const habitDayStat = analyticsData.dailyStats.find(d => d.date === dateKey);
+      if (habitDayStat) {
+        if (habitDayStat.completionRate >= 70) {
+          highHabitSpends.push(spend.total);
+        } else if (habitDayStat.completionRate < 50) {
+          lowHabitSpends.push(spend.total);
+        }
+      }
+    });
+
+    const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+    const avgStressedSpend = Math.round(avg(stressedSpends));
+    const avgCalmSpend = Math.round(avg(calmSpends));
+    const avgStressedImpulse = Math.round(avg(stressedImpulseSpends));
+    const avgCalmImpulse = Math.round(avg(calmImpulseSpends));
+
+    const avgHighHabitSpend = Math.round(avg(highHabitSpends));
+    const avgLowHabitSpend = Math.round(avg(lowHabitSpends));
+
+    const moodDiffPct = avgCalmSpend > 0 
+      ? Math.round(((avgStressedSpend - avgCalmSpend) / avgCalmSpend) * 100)
+      : (avgStressedSpend > 0 ? 100 : 0);
+
+    const impulseDiffPct = avgCalmImpulse > 0
+      ? Math.round(((avgStressedImpulse - avgCalmImpulse) / avgCalmImpulse) * 100)
+      : (avgStressedImpulse > 0 ? 100 : 0);
+
+    const habitDiffPct = avgHighHabitSpend > 0
+      ? Math.round(((avgLowHabitSpend - avgHighHabitSpend) / avgHighHabitSpend) * 100)
+      : 0;
+
+    const hasData = dailySpendMap.size > 0;
+
+    return {
+      hasData,
+      dailyCount: dailySpendMap.size,
+      avgStressedSpend,
+      avgCalmSpend,
+      avgStressedImpulse,
+      avgCalmImpulse,
+      avgHighHabitSpend,
+      avgLowHabitSpend,
+      moodDiffPct,
+      impulseDiffPct,
+      habitDiffPct,
+      stressedDaysCount: stressedSpends.length,
+      calmDaysCount: calmSpends.length,
+      highHabitDaysCount: highHabitSpends.length,
+      lowHabitDaysCount: lowHabitSpends.length,
+    };
+  }, [transactions, categories, getMoodForDate, analyticsData.dailyStats]);
 
   // Generate insights based on data
   const insights = useMemo((): Insight[] => {
@@ -592,6 +697,187 @@ export default function AnalyticsPageContent() {
                 <InsightsCards insights={insights} />
               </FadeIn>
             </div>
+
+            {/* Life OS Behavioral Correlations: Mood & Habits × Spending */}
+            <FadeIn delay={0.55}>
+              <Card className="border-border/60 shadow-sm overflow-hidden bg-gradient-to-br from-card via-card to-muted/20">
+                <CardHeader className="pb-3 border-b border-border/40">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                        <Brain className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base font-bold">
+                            Life OS Behavioral Correlations: Mood, Habits & Spending
+                          </CardTitle>
+                          <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/10 text-violet-600 dark:text-violet-300 border border-violet-500/20">
+                            Cross-Domain Sync
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          How your emotional state and habit consistency directly influence daily discretionary outflow
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-4">
+                  {!behavioralCorrelations || !behavioralCorrelations.hasData ? (
+                    <div className="py-8 text-center text-muted-foreground text-sm space-y-2">
+                      <ShoppingBag className="h-8 w-8 mx-auto opacity-40" />
+                      <p className="font-medium text-foreground">Awaiting Cross-Domain Data</p>
+                      <p className="text-xs max-w-md mx-auto">
+                        Log transactions in Finance and track your daily Mood to unlock real-time impulse spending patterns and habit correlation insights.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Correlation 1: Mood vs Impulse Spending */}
+                        <div className="p-3.5 rounded-xl border border-border/50 bg-background/50 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Mood × Food & Shopping
+                            </span>
+                            <span className={cn(
+                              "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border",
+                              behavioralCorrelations.impulseDiffPct > 0
+                                ? "bg-rose-500/10 text-rose-600 border-rose-500/20"
+                                : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                            )}>
+                              {behavioralCorrelations.impulseDiffPct > 0 ? `+${behavioralCorrelations.impulseDiffPct}% impulse` : 'Disciplined'}
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <span className="text-sm">😤</span> Stressed / Sad days:
+                              </span>
+                              <span className="font-mono font-bold tabular-nums text-foreground">
+                                {formatINR(behavioralCorrelations.avgStressedImpulse || behavioralCorrelations.avgStressedSpend)}/day
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <span className="text-sm">😌</span> Calm / Happy days:
+                              </span>
+                              <span className="font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                {formatINR(behavioralCorrelations.avgCalmImpulse || behavioralCorrelations.avgCalmSpend)}/day
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
+                            <div
+                              className="h-full bg-rose-500"
+                              style={{ width: `${Math.min(100, Math.max(20, (behavioralCorrelations.avgStressedImpulse / (behavioralCorrelations.avgStressedImpulse + behavioralCorrelations.avgCalmImpulse || 1)) * 100))}%` }}
+                            />
+                            <div
+                              className="h-full bg-emerald-500"
+                              style={{ width: `${Math.min(100, Math.max(20, (behavioralCorrelations.avgCalmImpulse / (behavioralCorrelations.avgStressedImpulse + behavioralCorrelations.avgCalmImpulse || 1)) * 100))}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Correlation 2: Habit Consistency vs Daily Outflow */}
+                        <div className="p-3.5 rounded-xl border border-border/50 bg-background/50 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Habit Streaks × Outflow
+                            </span>
+                            <span className={cn(
+                              "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border",
+                              behavioralCorrelations.habitDiffPct > 0
+                                ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
+                                : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                            )}>
+                              {behavioralCorrelations.habitDiffPct > 0 ? `+${behavioralCorrelations.habitDiffPct}% on broken days` : 'Optimal'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <Flame className="h-3.5 w-3.5 text-emerald-500" /> Streaks Active (&ge;70%):
+                              </span>
+                              <span className="font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                {formatINR(behavioralCorrelations.avgHighHabitSpend)}/day
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <AlertCircle className="h-3.5 w-3.5 text-amber-500" /> Off-Track Days (&lt;50%):
+                              </span>
+                              <span className="font-mono font-bold tabular-nums text-foreground">
+                                {formatINR(behavioralCorrelations.avgLowHabitSpend)}/day
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
+                            <div
+                              className="h-full bg-emerald-500"
+                              style={{ width: `${Math.min(100, Math.max(20, (behavioralCorrelations.avgHighHabitSpend / (behavioralCorrelations.avgHighHabitSpend + behavioralCorrelations.avgLowHabitSpend || 1)) * 100))}%` }}
+                            />
+                            <div
+                              className="h-full bg-amber-500"
+                              style={{ width: `${Math.min(100, Math.max(20, (behavioralCorrelations.avgLowHabitSpend / (behavioralCorrelations.avgHighHabitSpend + behavioralCorrelations.avgLowHabitSpend || 1)) * 100))}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Correlation 3: Life OS Coping Index */}
+                        <div className="p-3.5 rounded-xl border border-border/50 bg-background/50 space-y-2.5 flex flex-col justify-between">
+                          <div>
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1">
+                              Emotional Coping Index
+                            </span>
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-2xl font-mono font-bold tabular-nums text-foreground">
+                                {behavioralCorrelations.impulseDiffPct > 20 ? 'High' : behavioralCorrelations.impulseDiffPct > 0 ? 'Moderate' : 'Low'}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                coping sensitivity
+                              </span>
+                            </div>
+                          </div>
+
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">
+                            {behavioralCorrelations.impulseDiffPct > 20
+                              ? "Stress noticeably drives higher food delivery and retail purchases."
+                              : "Discretionary purchases remain consistent across emotional states."}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* AI Behavioral Takeaway Bar */}
+                      <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/20 flex items-start gap-2.5">
+                        <Sparkles className="h-4 w-4 text-violet-500 shrink-0 mt-0.5" />
+                        <div className="text-xs leading-relaxed text-muted-foreground">
+                          <span className="font-semibold text-foreground">Life OS Behavioral Insight: </span>
+                          {behavioralCorrelations.impulseDiffPct > 15 ? (
+                            <span>
+                              On days logged as stressed or sad, your food delivery and impulse retail spend increases by <strong className="text-rose-600 dark:text-rose-400 font-mono">+{behavioralCorrelations.impulseDiffPct}%</strong>. We recommend creating an auto-tracked habit: <em>"5-min evening meditation or walk"</em> to pause before checking delivery apps.
+                            </span>
+                          ) : behavioralCorrelations.habitDiffPct > 15 ? (
+                            <span>
+                              Maintaining habit consistency has a strong positive financial spillover: daily spending is <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{behavioralCorrelations.habitDiffPct}% lower</strong> on days when you complete &ge;70% of your habits.
+                            </span>
+                          ) : (
+                            <span>
+                              Your daily spending habits show resilient discipline across emotional states. Continuing to log moods and expenses will further refine these cross-domain intelligence models.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </FadeIn>
           </div>
 
           {/* Heatmap - Full Width */}

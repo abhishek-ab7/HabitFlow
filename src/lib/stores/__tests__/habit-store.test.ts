@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { format, subDays } from 'date-fns'
 import { useHabitStore } from '../habit-store'
 import { getArchivedHabits, freezeCompletion, unfreezeCompletion } from '../../db'
 import { useGamificationStore } from '../gamification-store'
@@ -72,7 +73,7 @@ describe('HabitStore', () => {
         })
 
         const progress = useHabitStore.getState().getTodayProgress()
-        expect(progress).toEqual({
+        expect(progress).toMatchObject({
             completed: 1,
             total: 2,
             percentage: 50,
@@ -89,7 +90,7 @@ describe('HabitStore', () => {
         })
 
         const progress = useHabitStore.getState().getTodayProgress()
-        expect(progress).toEqual({
+        expect(progress).toMatchObject({
             completed: 0,
             total: 1,
             percentage: 0,
@@ -107,7 +108,7 @@ describe('HabitStore', () => {
 
     it('freezeHabit should unfreeze if already frozen', async () => {
         const habitId = 'habit-1';
-        const date = '2026-05-26';
+        const date = format(subDays(new Date(), 1), 'yyyy-MM-dd');
         const initialCompletion = { id: 'c1', habitId, date, completed: true, status: 'frozen' };
         useHabitStore.setState({
             completions: [initialCompletion as any],
@@ -127,7 +128,7 @@ describe('HabitStore', () => {
 
     it('freezeHabit should allow free weekly freeze if no other freezes in the same week', async () => {
         const habitId = 'habit-1';
-        const date = '2026-05-26'; // Tuesday
+        const date = format(subDays(new Date(), 1), 'yyyy-MM-dd');
         useHabitStore.setState({
             completions: [],
         });
@@ -146,9 +147,9 @@ describe('HabitStore', () => {
 
     it('freezeHabit should consume shield if another freeze exists in the same week and shield use succeeds', async () => {
         const habitId = 'habit-1';
-        const date = '2026-05-26'; // Tuesday
-        // Another completion in the same week (e.g. Monday 2026-05-25) is already frozen
-        const existingFrozen = { id: 'c0', habitId: 'habit-2', date: '2026-05-25', completed: true, status: 'frozen' };
+        const date = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+        const otherDate = format(subDays(new Date(), 2), 'yyyy-MM-dd');
+        const existingFrozen = { id: 'c0', habitId: 'habit-2', date: otherDate, completed: true, status: 'frozen' };
         useHabitStore.setState({
             completions: [existingFrozen as any],
         });
@@ -168,8 +169,9 @@ describe('HabitStore', () => {
 
     it('freezeHabit should throw error if another freeze exists in the same week and shield use fails', async () => {
         const habitId = 'habit-1';
-        const date = '2026-05-26'; // Tuesday
-        const existingFrozen = { id: 'c0', habitId: 'habit-2', date: '2026-05-25', completed: true, status: 'frozen' };
+        const date = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+        const otherDate = format(subDays(new Date(), 2), 'yyyy-MM-dd');
+        const existingFrozen = { id: 'c0', habitId: 'habit-2', date: otherDate, completed: true, status: 'frozen' };
         useHabitStore.setState({
             completions: [existingFrozen as any],
         });

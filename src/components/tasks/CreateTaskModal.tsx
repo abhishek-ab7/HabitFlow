@@ -17,10 +17,22 @@ type Goal = Database['public']['Tables']['goals']['Row']
 interface CreateTaskModalProps {
     onTaskCreated?: () => void
     defaultDate?: Date
+    open?: boolean
+    onOpenChange?: (open: boolean) => void
+    hideTrigger?: boolean
 }
 
-export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalProps) {
-    const [open, setOpen] = useState(false)
+export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOpen, onOpenChange: controlledOnOpenChange, hideTrigger }: CreateTaskModalProps) {
+    const [internalOpen, setInternalOpen] = useState(false)
+    const isControlled = controlledOpen !== undefined
+    const open = isControlled ? controlledOpen : internalOpen
+    const setOpen = (val: boolean) => {
+        if (isControlled) {
+            controlledOnOpenChange?.(val)
+        } else {
+            setInternalOpen(val)
+        }
+    }
     const [loading, setLoading] = useState(false)
     const [title, setTitle] = useState("")
     const [description, setDescription] = useState("")
@@ -166,12 +178,14 @@ export function CreateTaskModal({ onTaskCreated, defaultDate }: CreateTaskModalP
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button className="gap-2 bg-primary/90 hover:bg-primary shadow-lg hover:shadow-primary/25 transition-all duration-300">
-                    <Plus className="h-4 w-4" />
-                    <span>New Task</span>
-                </Button>
-            </DialogTrigger>
+            {!hideTrigger && !isControlled && (
+                <DialogTrigger asChild>
+                    <Button className="gap-2 bg-primary/90 hover:bg-primary shadow-lg hover:shadow-primary/25 transition-all duration-300">
+                        <Plus className="h-4 w-4" />
+                        <span>New Task</span>
+                    </Button>
+                </DialogTrigger>
+            )}
             <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col bg-card/95 backdrop-blur-xl border-border/50">
                 <DialogHeader className="shrink-0">
                     <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent w-fit">

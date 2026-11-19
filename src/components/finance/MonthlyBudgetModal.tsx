@@ -119,7 +119,7 @@ export function MonthlyBudgetModal({
       await saveMonthlyBudgetSettings(selectedMonth, overallNum, numericLimits, {
         expectedIncome: expectedIncomeNum,
         plannedSipAmount: plannedSipNum,
-        categoryRolloverMap: categoryRollovers,
+        categoryRollovers: categoryRollovers,
       });
       toast.success('Monthly budgets & rollover envelopes saved');
       onOpenChange(false);

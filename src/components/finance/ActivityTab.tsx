@@ -209,10 +209,10 @@ export function ActivityTab({
       }
       const defaultAcc =
         accounts.find((a) => a.isDefault)?.id || accounts[0]?.id;
-      const count = await importTransactionsCsv(content, defaultAcc);
-      if (count > 0) {
+      const res = await importTransactionsCsv(content, defaultAcc);
+      if (res.importedCount > 0) {
         toast.success(
-          `Imported ${count} entries (flagged for quick review)`
+          `Imported ${res.importedCount} entries (flagged for quick review)`
         );
       } else {
         toast.info('No new non-duplicate rows found in CSV');

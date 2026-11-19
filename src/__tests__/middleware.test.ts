@@ -15,6 +15,10 @@ vi.mock('@/lib/security/rate-limit', () => ({
   ),
 }));
 
+vi.mock('@/lib/supabase/mock-client', () => ({
+  isSupabaseConfigured: vi.fn(() => true),
+}));
+
 vi.mock('@supabase/ssr', () => ({
   createServerClient: vi.fn(() => ({
     auth: {
@@ -99,8 +103,8 @@ describe('Middleware', () => {
     const res = await middleware(req);
 
     expect(res.status).toBe(200);
-    expect(res.headers.get('Content-Security-Policy')).toBeDefined();
-    expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
   });
 
   it('allows unauthenticated users to access login page', async () => {

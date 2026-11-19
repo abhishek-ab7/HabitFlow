@@ -255,8 +255,8 @@ export function AddTransactionModal({
         const friendShare =
           parseFloat(splitFriendShareStr) || Math.round(numericAmount / 2);
         const myShare = Math.max(0, numericAmount - friendShare);
-        await splitTransactionWithFriend(
-          {
+        await splitTransactionWithFriend({
+          txData: {
             title: autoTitle,
             amount: numericAmount,
             type: 'expense',
@@ -264,10 +264,9 @@ export function AddTransactionModal({
             accountId: resolvedAccountId,
             date,
           },
-          splitFriendName.trim(),
-          friendShare,
-          myShare
-        );
+          friendName: splitFriendName.trim(),
+          friendShareAmount: friendShare,
+        });
         toast.success(
           `Logged your share (${formatINR(myShare)}) & added ${formatINR(
             friendShare

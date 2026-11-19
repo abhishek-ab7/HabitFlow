@@ -396,7 +396,7 @@ export function OverviewTab({
                           innerRadius={52}
                           outerRadius={78}
                           paddingAngle={2}
-                          onClick={(entry) => {
+                          onClick={(entry: any) => {
                             if (entry?.id) handleCategoryDrilldown(entry.id);
                           }}
                           className="cursor-pointer"

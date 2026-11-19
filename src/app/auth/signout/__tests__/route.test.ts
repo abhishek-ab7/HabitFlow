@@ -8,6 +8,10 @@ vi.mock('@/lib/security/url-validator', () => ({
   validateRedirectUrl: vi.fn((origin, path, fallback) => origin + path),
 }));
 
+vi.mock('@/lib/supabase/mock-client', () => ({
+  isSupabaseConfigured: vi.fn(() => true),
+}));
+
 // Mock @supabase/ssr
 const mockSignOut = vi.fn().mockResolvedValue({ error: null });
 const mockCookiesSet = vi.fn();

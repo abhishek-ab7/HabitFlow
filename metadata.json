@@ -1,8 +1,1 @@
-{
-  "name": "Habit Flow",
-  "description": "A premium habit tracking and goal planning application with cloud sync to help you build better habits and achieve your goals.",
-  "requestFramePermissions": [],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
+{"name":"HabitFlow","description":"A premium habit tracking and goal planning application with cloud sync to help you build better habits and achieve your goals.","requestFramePermissions":[],"capabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}

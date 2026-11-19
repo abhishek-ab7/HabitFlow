@@ -16,6 +16,10 @@ import {
   ChevronUp,
   Plus,
   Sparkles,
+  Landmark,
+  PiggyBank,
+  ArrowDownRight,
+  TrendingUp,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +38,7 @@ import { ProgressRing, CountUp, ScaleOnHover, SuccessRipple } from '@/components
 import { cn } from '@/lib/utils';
 import { getDeadlineStatus, calculateHabitStats } from '@/lib/calculations';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { GoalRoadmapView } from './GoalRoadmapView';
 import { SMARTGoalAnalysis } from './SMARTGoalAnalysis';
 import type { Goal, Milestone, GoalStats, GoalStatus, Priority, AreaOfLife } from '@/lib/types';
@@ -88,6 +93,103 @@ export function GoalCard({
   const [rippleMilestone, setRippleMilestone] = useState<string | null>(null);
 
   const { habits, completions } = useHabitStore();
+  const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary, getMonthlySummary } = useFinanceStore();
+
+  const financialProgress = useMemo(() => {
+    if (!goal.financialLink || !goal.financialLink.targetAmount) return null;
+
+    const { type, targetAmount, startingAmount = 0, linkedAccountIds, linkedDebtIds, linkedSipIds } = goal.financialLink;
+
+    let currentAmount = 0;
+    let label = 'Live Financial Balance';
+    let icon = Landmark;
+
+    if (type === 'savings_target') {
+      label = 'Savings Target';
+      icon = PiggyBank;
+      const relevantAccounts = linkedAccountIds && linkedAccountIds.length > 0
+        ? accounts.filter(a => linkedAccountIds.includes(a.id))
+        : accounts.filter(a => a.type !== 'credit_card');
+      currentAmount = relevantAccounts.reduce((sum, a) => sum + (a.balance || 0), 0);
+    } else if (type === 'debt_payoff') {
+      label = 'Debt Payoff';
+      icon = ArrowDownRight;
+      const allDebts = [
+        ...debtRecords.map(d => ({ id: d.id, amount: d.remainingAmount, initial: d.principalAmount || d.remainingAmount })),
+        ...emiTrackers.map(e => ({
+          id: e.id,
+          amount: Math.max(0, (e.tenureMonths - e.paidMonths) * e.emiAmount),
+          initial: e.principalAmount,
+        }))
+      ];
+      const relevantDebts = linkedDebtIds && linkedDebtIds.length > 0
+        ? allDebts.filter(d => linkedDebtIds.includes(d.id))
+        : allDebts;
+      
+      const currentRemaining = relevantDebts.reduce((sum, d) => sum + d.amount, 0);
+      const initialTotal = startingAmount || targetAmount;
+      currentAmount = Math.max(0, initialTotal - currentRemaining);
+    } else if (type === 'net_worth') {
+      label = 'Net Worth Milestone';
+      icon = Landmark;
+      const nw = getNetWorthSummary();
+      currentAmount = nw.netWorth;
+    } else if (type === 'sip_corpus') {
+      label = 'SIP Corpus';
+      icon = TrendingUp;
+      const relevantSips = linkedSipIds && linkedSipIds.length > 0
+        ? sipPlans.filter(s => linkedSipIds.includes(s.id))
+        : sipPlans;
+      currentAmount = relevantSips.reduce((sum, s) => sum + (s.currentValue || s.totalInvested || 0), 0);
+    }
+
+    const remaining = Math.max(0, targetAmount - currentAmount);
+    const progressPct = targetAmount > 0 
+      ? Math.min(100, Math.max(0, Math.round(((currentAmount - (type === 'net_worth' ? startingAmount : 0)) / (targetAmount - (type === 'net_worth' ? startingAmount : 0) || 1)) * 100)))
+      : 0;
+
+    // Projected completion estimation
+    let projectionText: string | null = null;
+    if (progressPct >= 100) {
+      projectionText = 'Target Achieved!';
+    } else {
+      const summary = getMonthlySummary(format(new Date(), 'yyyy-MM'));
+      const netCashFlow = summary.totalIncome - summary.totalSpent;
+      const monthlyNetSavings = netCashFlow > 0 ? netCashFlow : summary.safeToSpendMonthly;
+      
+      let monthlyPace = monthlyNetSavings;
+      if (type === 'sip_corpus') {
+        const totalMonthlySip = sipPlans.filter(s => s.isActive).reduce((sum, s) => sum + s.monthlyAmount, 0);
+        monthlyPace = totalMonthlySip > 0 ? totalMonthlySip : monthlyNetSavings;
+      } else if (type === 'debt_payoff') {
+        const monthlyDebtPmt = emiTrackers.reduce((sum, e) => sum + e.emiAmount, 0) + (debtRecords.length > 0 ? 5000 : 0);
+        monthlyPace = monthlyDebtPmt > 0 ? monthlyDebtPmt : monthlyNetSavings;
+      }
+
+      if (monthlyPace > 0 && remaining > 0) {
+        const monthsNeeded = Math.ceil(remaining / monthlyPace);
+        if (monthsNeeded <= 1) {
+          projectionText = 'Projected: Reached this month';
+        } else if (monthsNeeded <= 12) {
+          projectionText = `Projected: ~${monthsNeeded} months (at ₹${Math.round(monthlyPace).toLocaleString('en-IN')}/mo)`;
+        } else {
+          const years = (monthsNeeded / 12).toFixed(1);
+          projectionText = `Projected: ~${years} years (at ₹${Math.round(monthlyPace).toLocaleString('en-IN')}/mo)`;
+        }
+      }
+    }
+
+    return {
+      type,
+      label,
+      Icon: icon,
+      currentAmount,
+      targetAmount,
+      remaining,
+      progressPct,
+      projectionText,
+    };
+  }, [goal.financialLink, accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary, getMonthlySummary]);
 
   const healthScore = useMemo(() => {
     const getLinkedCategories = (area: string): string[] => {
@@ -253,6 +355,57 @@ export function GoalCard({
         </CardHeader>
 
         <CardContent className="space-y-4 flex-1">
+          {/* Live Financial Link Section */}
+          {financialProgress && (
+            <div className="rounded-xl border border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-sky-700 dark:text-sky-300">
+                  <financialProgress.Icon className="h-3.5 w-3.5 text-sky-500" />
+                  <span>{financialProgress.label}</span>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Sync
+                </div>
+              </div>
+
+              <div className="flex items-baseline justify-between">
+                <div className="flex items-baseline gap-1">
+                  <span className="font-mono text-base font-bold tabular-nums text-foreground">
+                    {formatINR(financialProgress.currentAmount)}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    / {formatINR(financialProgress.targetAmount)}
+                  </span>
+                </div>
+                <span className="font-mono text-xs font-bold tabular-nums text-sky-600 dark:text-sky-400">
+                  {financialProgress.progressPct}%
+                </span>
+              </div>
+
+              {/* Monetary Progress Bar */}
+              <div className="h-2 w-full bg-muted/80 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${financialProgress.progressPct}%` }}
+                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                />
+              </div>
+
+              {financialProgress.projectionText && (
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                  <span className="truncate">{financialProgress.projectionText}</span>
+                  {financialProgress.remaining > 0 && (
+                    <span className="font-mono tabular-nums text-[10px] shrink-0 font-medium">
+                      {formatINR(financialProgress.remaining)} to go
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Progress section */}
           <div className="flex items-center gap-4">
             <ProgressRing progress={stats.progress} size={80} strokeWidth={6}>

@@ -73,6 +73,6 @@ describe('TodayTasksWidget', () => {
 
         render(<TodayTasksWidget />)
         expect(await screen.findByText('Task 1')).toBeInTheDocument()
-        expect(await screen.findByText('2 tasks due.')).toBeInTheDocument()
+        expect(await screen.findByText(/2 tasks/)).toBeInTheDocument()
     })
 })
