@@ -182,6 +182,21 @@ export class SyncEngine {
       this.log('info', 'Offline mode activated');
       this.notifyStatus({ type: 'idle', message: 'Offline - changes will sync when online' });
     });
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && this.isOnline && this.userId) {
+          this.log('info', 'App resumed to foreground, triggering sync...');
+          this.syncAll();
+        }
+      });
+    }
+
+    window.addEventListener('focus', () => {
+      if (this.isOnline && this.userId && !this.isSyncing) {
+        this.syncAll();
+      }
+    });
   }
 
   private async loadPendingOperations() {
@@ -457,12 +472,16 @@ export class SyncEngine {
 
     switch (op.type) {
       case 'create':
-      case 'update':
-        await this.supabase.from(op.table).upsert(op.data);
+      case 'update': {
+        const { error: upsertErr } = await this.supabase.from(op.table).upsert(op.data);
+        if (upsertErr) throw upsertErr;
         break;
-      case 'delete':
-        await this.supabase.from(op.table).delete().eq('id', op.data.id);
+      }
+      case 'delete': {
+        const { error: delErr } = await this.supabase.from(op.table).delete().eq('id', op.data.id);
+        if (delErr) throw delErr;
         break;
+      }
     }
   }
 
@@ -826,40 +845,54 @@ export class SyncEngine {
       });
   }
 
+  private pendingRealtimeTables = new Set<string>();
+
   private debouncedSync(table: string) {
+    this.pendingRealtimeTables.add(table);
+
     if (this.syncDebounceTimer) {
       clearTimeout(this.syncDebounceTimer);
     }
 
     this.syncDebounceTimer = setTimeout(async () => {
-      this.log('info', `Realtime change detected in ${table}, syncing...`);
+      const tablesToSync = Array.from(this.pendingRealtimeTables);
+      this.pendingRealtimeTables.clear();
 
-      try {
-        const syncFn = syncTableMap[table];
-        if (syncFn) {
-          await syncFn(this);
-        }
+      this.log('info', `Realtime change detected in [${tablesToSync.join(', ')}], syncing...`);
 
-        // If a finance table changed, refresh the in-memory finance store
-        if (
-          table.startsWith('finance_') ||
-          table === 'monthly_commitments' ||
-          table === 'debt_records' ||
-          table === 'debt_installments' ||
-          table === 'emi_trackers'
-        ) {
-          try {
-            const { useFinanceStore } = await import('@/lib/stores/finance-store');
-            await useFinanceStore.getState().loadFinanceData(this.userId || undefined);
-          } catch (e) {
-            this.log('warn', 'Failed to reload finance store after realtime sync', e);
+      let hasFinanceChange = false;
+
+      for (const t of tablesToSync) {
+        try {
+          const syncFn = syncTableMap[t];
+          if (syncFn) {
+            await syncFn(this);
           }
-        }
 
-        this.notifyStatus({ type: 'success', message: 'Data updated' });
-      } catch (error) {
-        this.log('error', `Realtime sync failed for ${table}`, error);
+          if (
+            t.startsWith('finance_') ||
+            t === 'monthly_commitments' ||
+            t === 'debt_records' ||
+            t === 'debt_installments' ||
+            t === 'emi_trackers'
+          ) {
+            hasFinanceChange = true;
+          }
+        } catch (error) {
+          this.log('error', `Realtime sync failed for ${t}`, error);
+        }
       }
+
+      if (hasFinanceChange) {
+        try {
+          const { useFinanceStore } = await import('@/lib/stores/finance-store');
+          await useFinanceStore.getState().loadFinanceData(this.userId || undefined);
+        } catch (e) {
+          this.log('warn', 'Failed to reload finance store after realtime sync', e);
+        }
+      }
+
+      this.notifyStatus({ type: 'success', message: 'Data updated' });
     }, SYNC_DEBOUNCE_MS);
   }
 
@@ -887,6 +920,7 @@ export class SyncEngine {
 
       try {
         const syncer = new FinanceSyncEngine();
+        await syncer.migrateOrphanedRecords(this.userId);
         const result = await syncer.sync(this.userId);
         if (result.status === 'success') {
           useSyncStatusStore.getState().setLastSyncTime(new Date());

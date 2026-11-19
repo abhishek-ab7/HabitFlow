@@ -36,11 +36,21 @@ export class SyncCoordinator {
           logger.info(`[SyncCoordinator] Initializing sync pipeline for domain: ${synchronizer.domainName}`);
           const result = await synchronizer.sync(userId);
           
-          report.details[synchronizer.domainName] = {
-            status: 'success',
-            pushed: result.pushed,
-            pulled: result.pulled
-          };
+          if (result.status === 'partial_failure') {
+            failedDomains++;
+            report.details[synchronizer.domainName] = {
+              status: 'failed',
+              error: 'Partial synchronization failure',
+              pushed: result.pushed,
+              pulled: result.pulled
+            };
+          } else {
+            report.details[synchronizer.domainName] = {
+              status: 'success',
+              pushed: result.pushed,
+              pulled: result.pulled
+            };
+          }
         } catch (error: any) {
           failedDomains++;
           logger.error(`[SyncCoordinator] Critical boundary failure inside [${synchronizer.domainName}] domain:`, error);

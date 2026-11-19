@@ -24,11 +24,58 @@ export class FinanceSyncEngine implements ISynchronizer {
     return false;
   }
 
+  /**
+   * Automatically migrates orphaned local-demo-user or unassigned records in Dexie
+   * to the authenticated user ID before synchronizing.
+   */
+  public async migrateOrphanedRecords(userId: string): Promise<number> {
+    if (!userId || userId === 'local-demo-user') return 0;
+    const demoUserId = 'local-demo-user';
+    const tables: any[] = [
+      db.financeCategories,
+      db.financeAccounts,
+      db.financeTransactions,
+      db.financeBudgets,
+      db.monthlyCommitments,
+      db.debtRecords,
+      db.debtInstallments,
+      db.emiTrackers,
+      ...(db.financeSipPlans ? [db.financeSipPlans] : []),
+      ...(db.financeCategorizationRules ? [db.financeCategorizationRules] : []),
+      ...(db.financeRecurringBills ? [db.financeRecurringBills] : []),
+    ];
+
+    let count = 0;
+    const now = new Date().toISOString();
+    for (const table of tables) {
+      try {
+        const stranded = await table
+          .filter((item: any) => !item.userId || item.userId === demoUserId)
+          .toArray();
+        for (const item of stranded) {
+          await table.update(item.id, {
+            userId,
+            isDirty: true,
+            generationCounter: (item.generationCounter || 1) + 1,
+            updatedAt: now,
+          });
+          count++;
+        }
+      } catch (err) {
+        logger.warn('[FinanceSyncEngine] Error migrating orphaned records in table', err);
+      }
+    }
+    return count;
+  }
+
   async sync(userId: string): Promise<{ pushed: number; pulled: number; status: 'success' | 'partial_failure' }> {
     const supabase = getSupabaseClient();
     let pushed = 0;
     let pulled = 0;
     let hasError = false;
+
+    // Auto-claim any stranded records created offline or before auth was completed
+    await this.migrateOrphanedRecords(userId);
 
     // 1. Sync Dirty Local Categories -> Remote
     const dirtyCategories = await db.financeCategories
@@ -75,7 +122,22 @@ export class FinanceSyncEngine implements ISynchronizer {
         .eq('user_id', userId);
       if (!pullCatErr && Array.isArray(remoteCats)) {
         for (const r of remoteCats) {
-          const local = await db.financeCategories.get(r.id);
+          let local = await db.financeCategories.get(r.id);
+          if (!local && r.slug) {
+            const sameSlug = await db.financeCategories
+              .where('userId')
+              .equals(r.user_id)
+              .filter((c) => c.slug === r.slug)
+              .first();
+            if (sameSlug && sameSlug.id !== r.id) {
+              const txs = await db.financeTransactions.where('categoryId').equals(sameSlug.id).toArray();
+              for (const tx of txs) {
+                await db.financeTransactions.update(tx.id, { categoryId: r.id });
+              }
+              await db.financeCategories.delete(sameSlug.id);
+              local = sameSlug;
+            }
+          }
           if (this.shouldApplyRemote(local, r)) {
             await db.financeCategories.put({
               id: r.id,
@@ -151,7 +213,21 @@ export class FinanceSyncEngine implements ISynchronizer {
         .eq('user_id', userId);
       if (!pullAccErr && Array.isArray(remoteAccs)) {
         for (const r of remoteAccs) {
-          const local = await db.financeAccounts.get(r.id);
+          let local = await db.financeAccounts.get(r.id);
+          if (!local && r.name && r.type) {
+            const sameDefaultAcc = await db.financeAccounts
+              .where('userId')
+              .equals(r.user_id)
+              .filter((a) => a.name === r.name && a.type === r.type && a.balance === 0 && !a.archived)
+              .first();
+            if (sameDefaultAcc && sameDefaultAcc.id !== r.id) {
+              const txCount = await db.financeTransactions.where('accountId').equals(sameDefaultAcc.id).count();
+              if (txCount === 0) {
+                await db.financeAccounts.delete(sameDefaultAcc.id);
+                local = sameDefaultAcc;
+              }
+            }
+          }
           if (this.shouldApplyRemote(local, r)) {
             await db.financeAccounts.put({
               id: r.id,
@@ -519,23 +595,25 @@ export class FinanceSyncEngine implements ISynchronizer {
         continue;
       }
 
+      const safeMonthKey = tx.monthKey || (tx.date ? tx.date.slice(0, 7) : new Date().toISOString().slice(0, 7));
+      const safeDate = tx.date || new Date().toISOString().slice(0, 10);
       const payload = {
         id: tx.id,
         user_id: userId,
-        title: tx.title,
+        title: tx.title || 'Untitled Transaction',
         merchant_name: tx.merchantName || null,
         raw_merchant: tx.rawMerchant || null,
-        amount: tx.amount,
-        type: tx.type,
+        amount: Number(tx.amount || 0),
+        type: tx.type || 'expense',
         category_id: tx.categoryId,
         subcategory: tx.subcategory || null,
         account_id: tx.accountId,
         to_account_id: tx.toAccountId || null,
-        date: tx.date,
-        month_key: tx.monthKey,
+        date: safeDate,
+        month_key: safeMonthKey,
         notes: tx.notes || null,
-        tags: tx.tags || [],
-        is_recurring: tx.isRecurring,
+        tags: Array.isArray(tx.tags) ? tx.tags : [],
+        is_recurring: !!tx.isRecurring,
         recurrence_rule: tx.recurrenceRule || null,
         needs_review: !!tx.needsReview,
         split_group_id: tx.splitGroupId || null,
@@ -547,10 +625,24 @@ export class FinanceSyncEngine implements ISynchronizer {
         linked_sip_id: tx.linkedSipId || null,
         deleted_at: tx.deletedAt || null,
         generation_counter: tx.generationCounter || 1,
-        created_at: tx.createdAt,
-        updated_at: tx.updatedAt,
+        created_at: tx.createdAt || new Date().toISOString(),
+        updated_at: tx.updatedAt || new Date().toISOString(),
       };
-      const { error } = await (supabase.from('finance_transactions') as any).upsert(payload);
+      let { error } = await (supabase.from('finance_transactions') as any).upsert(payload);
+      if (error && (error as any).code === '23503') {
+        logger.warn('[FinanceSyncEngine] Foreign key 23503 violation on transaction upsert, retrying with unlinked references:', error);
+        const unlinkedPayload = {
+          ...payload,
+          linked_commitment_id: null,
+          commitment_contribution_type: null,
+          linked_debt_id: null,
+          linked_debt_installment_id: null,
+          linked_emi_id: null,
+          linked_sip_id: null,
+        };
+        const retryResult = await (supabase.from('finance_transactions') as any).upsert(unlinkedPayload);
+        error = retryResult.error;
+      }
       if (!error) {
         await db.financeTransactions.update(tx.id, { isDirty: false });
         pushed++;
@@ -666,7 +758,17 @@ export class FinanceSyncEngine implements ISynchronizer {
         .eq('user_id', userId);
       if (!pullBudgetErr && Array.isArray(remoteBudgets)) {
         for (const r of remoteBudgets) {
-          const local = await db.financeBudgets.get(r.id);
+          let local = await db.financeBudgets.get(r.id);
+          if (!local && r.month_key) {
+            const sameMonth = await db.financeBudgets
+              .where('[userId+monthKey]')
+              .equals([r.user_id, r.month_key])
+              .first();
+            if (sameMonth && sameMonth.id !== r.id) {
+              await db.financeBudgets.delete(sameMonth.id);
+              local = sameMonth;
+            }
+          }
           if (this.shouldApplyRemote(local, r)) {
             await db.financeBudgets.put({
               id: r.id,
@@ -674,7 +776,7 @@ export class FinanceSyncEngine implements ISynchronizer {
               monthKey: r.month_key,
               totalBudget: Number(r.total_budget || 0),
               expectedIncome: Number(r.expected_income || 0),
-              plannedSipAmount: r.planned_sip_amount ?? local?.plannedSipAmount,
+              plannedSipAmount: r.planned_sip_amount ? Number(r.planned_sip_amount) : (local?.plannedSipAmount ?? 0),
               currency: r.currency || 'INR',
               notes: r.notes || undefined,
               deletedAt: r.deleted_at || null,
@@ -913,6 +1015,7 @@ export class FinanceSyncEngine implements ISynchronizer {
 export async function syncFinanceWithRetry(engine: SyncEngine): Promise<void> {
   if (!engine.userId) return;
   const syncer = new FinanceSyncEngine();
+  await syncer.migrateOrphanedRecords(engine.userId);
   await engine.withRetry(() => syncer.sync(engine.userId!), 'syncFinance');
   try {
     const { useFinanceStore } = await import('@/lib/stores/finance-store');

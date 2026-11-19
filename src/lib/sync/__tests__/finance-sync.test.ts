@@ -14,14 +14,20 @@ const mockDelete = vi.fn().mockReturnValue({
 const mockSelect = vi.fn().mockReturnValue({
   eq: vi.fn().mockResolvedValue({ data: [], error: null }),
 });
+const customTableHandlers: Record<string, any> = {};
 
 vi.mock('@/lib/supabase/client', () => ({
   getSupabaseClient: vi.fn(() => ({
-    from: vi.fn((table: string) => ({
-      upsert: mockUpsert,
-      delete: mockDelete,
-      select: mockSelect,
-    })),
+    from: vi.fn((table: string) => {
+      if (customTableHandlers[table]) {
+        return customTableHandlers[table];
+      }
+      return {
+        upsert: mockUpsert,
+        delete: mockDelete,
+        select: mockSelect,
+      };
+    }),
     channel: vi.fn().mockReturnValue({
       on: vi.fn().mockReturnThis(),
       subscribe: vi.fn(),
@@ -49,6 +55,9 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    for (const key of Object.keys(customTableHandlers)) {
+      delete customTableHandlers[key];
+    }
     await db.financeCategories.clear();
     await db.financeAccounts.clear();
     await db.financeTransactions.clear();
@@ -325,5 +334,122 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     // The failed item remains dirty for next retry
     const cat = await db.financeCategories.get('cat-err');
     expect(cat?.isDirty).toBe(true);
+  });
+
+  test('7. Automatically adopts stranded demo records directly inside sync() without store pre-load', async () => {
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+
+    await db.financeTransactions.add({
+      id: 'tx-orphan-auto',
+      userId: 'local-demo-user',
+      title: 'Phone purchase before login',
+      amount: 45000,
+      type: 'expense',
+      categoryId: 'cat-1',
+      accountId: 'acc-1',
+      date: '2026-11-19',
+      monthKey: '2026-11',
+      tags: [],
+      isRecurring: false,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(result.pushed).toBeGreaterThanOrEqual(1);
+
+    const tx = await db.financeTransactions.get('tx-orphan-auto');
+    expect(tx?.userId).toBe(userId);
+    expect(tx?.isDirty).toBe(false);
+  });
+
+  test('8. Recovers from foreign key violation (code 23503) by retrying with unlinked references', async () => {
+    // First call fails with 23503 (e.g. linked commitment does not exist on remote)
+    mockUpsert
+      .mockResolvedValueOnce({ error: { message: 'violates foreign key constraint', code: '23503' } })
+      .mockResolvedValueOnce({ error: null });
+
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+
+    await db.financeTransactions.add({
+      id: 'tx-fk-fail',
+      userId,
+      title: 'Monthly Rent via Commitment',
+      amount: 15000,
+      type: 'expense',
+      categoryId: 'cat-1',
+      accountId: 'acc-1',
+      date: '2026-11-19',
+      monthKey: '2026-11',
+      tags: [],
+      isRecurring: false,
+      linkedCommitmentId: 'comm-missing-remote',
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(result.pushed).toBe(1);
+
+    const tx = await db.financeTransactions.get('tx-fk-fail');
+    expect(tx?.isDirty).toBe(false);
+  });
+
+  test('9. Deduplicates budgets by [userId+monthKey] when remote budget has different ID', async () => {
+    const now = new Date().toISOString();
+    // Local budget created with local UUID
+    await db.financeBudgets.add({
+      id: 'bgt-local-uuid',
+      userId,
+      monthKey: '2026-11',
+      totalBudget: 40000,
+      expectedIncome: 60000,
+      currency: 'INR',
+      isDirty: false,
+      generationCounter: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Remote returns budget for same month with remote UUID
+    customTableHandlers['finance_budgets'] = {
+      upsert: mockUpsert,
+      delete: mockDelete,
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'bgt-remote-uuid',
+              user_id: userId,
+              month_key: '2026-11',
+              total_budget: 55000,
+              expected_income: 70000,
+              currency: 'INR',
+              generation_counter: 2,
+              updated_at: new Date(Date.now() + 10000).toISOString(),
+            },
+          ],
+          error: null,
+        }),
+      }),
+    };
+
+    const syncer = new FinanceSyncEngine();
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(result.pulled).toBeGreaterThanOrEqual(1);
+
+    // Old local UUID must be deleted, new remote UUID must exist
+    const oldLocal = await db.financeBudgets.get('bgt-local-uuid');
+    expect(oldLocal).toBeUndefined();
+    const newRemote = await db.financeBudgets.get('bgt-remote-uuid');
+    expect(newRemote).toBeDefined();
+    expect(newRemote?.totalBudget).toBe(55000);
   });
 });
