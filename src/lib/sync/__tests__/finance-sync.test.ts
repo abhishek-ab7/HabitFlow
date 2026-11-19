@@ -452,4 +452,108 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     expect(newRemote).toBeDefined();
     expect(newRemote?.totalBudget).toBe(55000);
   });
+
+  test('10. Deduplicates local categories by slug and accounts by (name, type), remapping transaction references', async () => {
+    const { deduplicateFinanceRecordsInDexie } = await import('../engines/finance-sync');
+    const now = new Date().toISOString();
+
+    // Two categories with same slug
+    await db.financeCategories.add({
+      id: 'cat-dup-1',
+      userId,
+      name: 'Food & Dining',
+      slug: 'food-dining',
+      type: 'expense',
+      color: '#f97316',
+      icon: 'Utensils',
+      monthlyBudgetLimit: 0,
+      subcategories: [],
+      isSystem: true,
+      archived: false,
+      order: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.financeCategories.add({
+      id: 'cat-dup-2',
+      userId,
+      name: 'Food & Dining',
+      slug: 'food-dining',
+      type: 'expense',
+      color: '#f97316',
+      icon: 'Utensils',
+      monthlyBudgetLimit: 5000,
+      subcategories: [],
+      isSystem: true,
+      archived: false,
+      order: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Two accounts with same name and type
+    await db.financeAccounts.add({
+      id: 'acc-dup-1',
+      userId,
+      name: 'Cash',
+      type: 'cash',
+      balance: 0,
+      currency: 'INR',
+      color: '#f59e0b',
+      icon: 'Banknote',
+      isDefault: false,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.financeAccounts.add({
+      id: 'acc-dup-2',
+      userId,
+      name: 'Cash',
+      type: 'cash',
+      balance: 1500,
+      currency: 'INR',
+      color: '#f59e0b',
+      icon: 'Banknote',
+      isDefault: false,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Transaction pointing to the empty duplicate account and cat-dup-2
+    await db.financeTransactions.add({
+      id: 'tx-dup-test',
+      userId,
+      title: 'Snacks',
+      amount: 150,
+      type: 'expense',
+      accountId: 'acc-dup-1',
+      categoryId: 'cat-dup-2',
+      date: '2026-11-19',
+      monthKey: '2026-11',
+      tags: [],
+      isRecurring: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await deduplicateFinanceRecordsInDexie(userId);
+
+    // Categories: only 1 food-dining remains
+    const remainingCats = await db.financeCategories.where('userId').equals(userId).toArray();
+    expect(remainingCats.length).toBe(1);
+    expect(remainingCats[0].id).toBe('cat-dup-2');
+
+    // Accounts: only 1 Cash remains, with balance 1500
+    const remainingAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
+    expect(remainingAccs.length).toBe(1);
+    expect(remainingAccs[0].id).toBe('acc-dup-2');
+    expect(remainingAccs[0].balance).toBe(1500);
+
+    // Transaction was remapped from acc-dup-1 to acc-dup-2
+    const tx = await db.financeTransactions.get('tx-dup-test');
+    expect(tx?.accountId).toBe('acc-dup-2');
+    expect(tx?.categoryId).toBe('cat-dup-2');
+  });
 });

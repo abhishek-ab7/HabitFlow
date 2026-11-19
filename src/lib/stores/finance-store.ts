@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { getSyncEngine } from '@/lib/sync';
+import { deduplicateFinanceRecordsInDexie } from '@/lib/sync/engines/finance-sync';
 import { CrossDomainActionMediator } from './mediator';
 import type {
   FinanceAccount,
@@ -485,34 +486,43 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
   resetFilters: () => set({ filters: INITIAL_FILTERS }),
 
   seedInitialFinanceData: async (userId: string) => {
-    const existingCatCount = await db.financeCategories.where('userId').equals(userId).count();
-    const existingAccCount = await db.financeAccounts.where('userId').equals(userId).count();
-    if (existingCatCount > 0 && existingAccCount > 0) return;
+    const existingCats = await db.financeCategories.where('userId').equals(userId).toArray();
+    const existingAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
+    if (existingCats.length > 0 && existingAccs.length > 0) return;
+
+    const existingSlugs = new Set(existingCats.map((c) => c.slug).filter(Boolean));
+    const existingAccKeys = new Set(
+      existingAccs.map((a) => `${a.name.trim().toLowerCase()}_${a.type}`)
+    );
 
     const now = new Date().toISOString();
 
-    // 1. Seed 10 Clean Categories (all budget limits start at ₹0 until customized)
-    if (existingCatCount === 0) {
-      const categories: FinanceCategory[] = DEFAULT_FINANCE_CATEGORIES.map((c) => ({
-        ...c,
-        id: crypto.randomUUID(),
-        userId,
-        isDirty: true,
-        generationCounter: 1,
-        createdAt: now,
-        updatedAt: now,
-      }));
-      await db.financeCategories.bulkAdd(categories);
+    // 1. Seed Clean Categories (only if user has 0 categories, avoiding any slug duplicate)
+    if (existingCats.length === 0) {
+      const categories: FinanceCategory[] = DEFAULT_FINANCE_CATEGORIES
+        .filter((c) => !existingSlugs.has(c.slug))
+        .map((c) => ({
+          ...c,
+          id: crypto.randomUUID(),
+          userId,
+          isDirty: true,
+          generationCounter: 1,
+          createdAt: now,
+          updatedAt: now,
+        }));
+      if (categories.length > 0) {
+        await db.financeCategories.bulkAdd(categories);
+      }
     }
 
-    // 2. Seed Clean ₹0 Starter Accounts (Fresh Start — no dummy balances or transactions)
-    if (existingAccCount === 0) {
-      const starterAccounts: FinanceAccount[] = [
+    // 2. Seed Clean ₹0 Starter Accounts (only if user has 0 accounts, avoiding any name+type duplicate)
+    if (existingAccs.length === 0) {
+      const starterAccounts: FinanceAccount[] = ([
         {
           id: crypto.randomUUID(),
           userId,
           name: 'UPI',
-          type: 'upi',
+          type: 'upi' as const,
           balance: 0,
           currency: 'INR',
           color: '#10b981',
@@ -528,7 +538,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           id: crypto.randomUUID(),
           userId,
           name: 'Bank Account',
-          type: 'bank',
+          type: 'bank' as const,
           balance: 0,
           currency: 'INR',
           color: '#3b82f6',
@@ -544,7 +554,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           id: crypto.randomUUID(),
           userId,
           name: 'Cash',
-          type: 'cash',
+          type: 'cash' as const,
           balance: 0,
           currency: 'INR',
           color: '#f59e0b',
@@ -560,7 +570,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           id: crypto.randomUUID(),
           userId,
           name: 'Credit Card',
-          type: 'credit_card',
+          type: 'credit_card' as const,
           balance: 0,
           currency: 'INR',
           color: '#8b5cf6',
@@ -572,8 +582,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           createdAt: now,
           updatedAt: now,
         },
-      ];
-      await db.financeAccounts.bulkAdd(starterAccounts);
+      ] as FinanceAccount[]).filter((a) => !existingAccKeys.has(`${a.name.trim().toLowerCase()}_${a.type}`));
+
+      if (starterAccounts.length > 0) {
+        await db.financeAccounts.bulkAdd(starterAccounts);
+      }
     }
 
     if (userId !== 'local-demo-user') {
@@ -702,6 +715,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         }
       }
 
+      await deduplicateFinanceRecordsInDexie(userId);
+
       await get().seedInitialFinanceData(userId);
 
       const [
@@ -782,10 +797,29 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           : Promise.resolve([]),
       ]);
 
+      // In-memory safety guard: ensure no duplicate category slugs or account (name, type)
+      const uniqueCategories: FinanceCategory[] = [];
+      const seenCategorySlugs = new Set<string>();
+      for (const cat of categories) {
+        const key = cat.slug || cat.id;
+        if (seenCategorySlugs.has(key)) continue;
+        seenCategorySlugs.add(key);
+        uniqueCategories.push(cat);
+      }
+
+      const uniqueAccounts: FinanceAccount[] = [];
+      const seenAccountKeys = new Set<string>();
+      for (const acc of accounts) {
+        const key = `${acc.name.trim().toLowerCase()}_${acc.type}`;
+        if (seenAccountKeys.has(key)) continue;
+        seenAccountKeys.add(key);
+        uniqueAccounts.push(acc);
+      }
+
       set({
         currentUserId: userId,
-        categories,
-        accounts,
+        categories: uniqueCategories,
+        accounts: uniqueAccounts,
         transactions,
         budgets,
         commitments,

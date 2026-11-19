@@ -6,6 +6,119 @@ import type { ISynchronizer } from '../types';
 import type { SyncEngine } from '../sync-engine';
 
 /**
+ * Automatically cleans up any duplicate categories (same slug) or accounts (same name + type)
+ * in Dexie IndexedDB for the specified user, remapping any foreign-key transaction references
+ * to the canonical record and deleting redundant duplicates.
+ */
+export async function deduplicateFinanceRecordsInDexie(userId: string): Promise<void> {
+  if (!userId) return;
+
+  try {
+    // 1. Deduplicate Categories by slug
+    const allCats = await db.financeCategories.where('userId').equals(userId).toArray();
+    const catsBySlug = new Map<string, typeof allCats>();
+    for (const cat of allCats) {
+      if (!cat.slug || cat.deletedAt) continue;
+      const list = catsBySlug.get(cat.slug) || [];
+      list.push(cat);
+      catsBySlug.set(cat.slug, list);
+    }
+
+    for (const [, catGroup] of catsBySlug) {
+      if (catGroup.length <= 1) continue;
+
+      let bestCat = catGroup[0];
+      let bestScore = -1;
+
+      for (const cat of catGroup) {
+        const txCount = await db.financeTransactions.where('categoryId').equals(cat.id).count();
+        const commCount = await db.monthlyCommitments.filter((m) => m.defaultCategoryId === cat.id).count();
+        const ruleCount = db.financeCategorizationRules
+          ? await db.financeCategorizationRules.where('categoryId').equals(cat.id).count()
+          : 0;
+        const budgetBonus = (cat.monthlyBudgetLimit || 0) > 0 ? 50 : 0;
+        const score = txCount * 10 + commCount * 10 + ruleCount * 10 + budgetBonus;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestCat = cat;
+        }
+      }
+
+      for (const cat of catGroup) {
+        if (cat.id === bestCat.id) continue;
+
+        const txs = await db.financeTransactions.where('categoryId').equals(cat.id).toArray();
+        for (const tx of txs) {
+          await db.financeTransactions.update(tx.id, { categoryId: bestCat.id });
+        }
+
+        const comms = await db.monthlyCommitments.filter((m) => m.defaultCategoryId === cat.id).toArray();
+        for (const comm of comms) {
+          await db.monthlyCommitments.update(comm.id, { defaultCategoryId: bestCat.id });
+        }
+
+        if (db.financeCategorizationRules) {
+          const rules = await db.financeCategorizationRules.where('categoryId').equals(cat.id).toArray();
+          for (const rule of rules) {
+            await db.financeCategorizationRules.update(rule.id, { categoryId: bestCat.id });
+          }
+        }
+
+        await db.financeCategories.delete(cat.id);
+      }
+    }
+
+    // 2. Deduplicate Accounts by (name, type)
+    const allAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
+    const accsByKey = new Map<string, typeof allAccs>();
+    for (const acc of allAccs) {
+      if (!acc.name || acc.deletedAt) continue;
+      const key = `${acc.name.trim().toLowerCase()}_${acc.type}`;
+      const list = accsByKey.get(key) || [];
+      list.push(acc);
+      accsByKey.set(key, list);
+    }
+
+    for (const [, accGroup] of accsByKey) {
+      if (accGroup.length <= 1) continue;
+
+      let bestAcc = accGroup[0];
+      let bestScore = -1;
+
+      for (const acc of accGroup) {
+        const txCount = await db.financeTransactions.where('accountId').equals(acc.id).count();
+        const balanceBonus = Math.abs(acc.balance || 0) > 0 ? 100 : 0;
+        const score = txCount * 10 + balanceBonus;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestAcc = acc;
+        }
+      }
+
+      for (const acc of accGroup) {
+        if (acc.id === bestAcc.id) continue;
+
+        if ((acc.balance || 0) !== 0 && (bestAcc.balance || 0) === 0) {
+          await db.financeAccounts.update(bestAcc.id, { balance: acc.balance });
+          bestAcc.balance = acc.balance;
+        }
+
+        const txs = await db.financeTransactions.where('accountId').equals(acc.id).toArray();
+        for (const tx of txs) {
+          await db.financeTransactions.update(tx.id, { accountId: bestAcc.id });
+        }
+
+        await db.financeAccounts.delete(acc.id);
+      }
+    }
+  } catch (err) {
+    logger.warn('[FinanceSyncEngine] Deduplication error in Dexie:', err);
+  }
+}
+
+/**
  * FinanceSyncEngine synchronizes FlowFinance V2 tables between Dexie (local IndexedDB)
  * and Supabase PostgreSQL with two-way push + pull, generationCounter conflict resolution,
  * and soft-delete tombstones (deletedAt).
@@ -76,6 +189,9 @@ export class FinanceSyncEngine implements ISynchronizer {
 
     // Auto-claim any stranded records created offline or before auth was completed
     await this.migrateOrphanedRecords(userId);
+
+    // Clean up any duplicate categories or accounts before syncing
+    await deduplicateFinanceRecordsInDexie(userId);
 
     // 1. Sync Dirty Local Categories -> Remote
     const dirtyCategories = await db.financeCategories
@@ -993,6 +1109,9 @@ export class FinanceSyncEngine implements ISynchronizer {
     } catch {
       // Non-fatal
     }
+
+    // Run local deduplication to ensure any duplicate slugs or accounts in Dexie are merged
+    await deduplicateFinanceRecordsInDexie(userId);
 
     if (pulled > 0) {
       try {
