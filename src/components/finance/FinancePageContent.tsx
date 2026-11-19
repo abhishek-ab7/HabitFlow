@@ -21,6 +21,7 @@ import { AddTransactionModal } from './AddTransactionModal';
 import { MonthlyBudgetModal } from './MonthlyBudgetModal';
 import { SmsImportModal } from './SmsImportModal';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/providers/auth-provider';
 
 type ActiveTab = 'overview' | 'activity' | 'trackers' | 'accounts';
 
@@ -51,12 +52,13 @@ export function FinancePageContent() {
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
   const [focusCategoryId, setFocusCategoryId] = useState<string | null>(null);
 
+  const { user } = useAuth();
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [sharedSmsText, setSharedSmsText] = useState<string | null>(null);
 
   useEffect(() => {
-    loadFinanceData();
-  }, [loadFinanceData]);
+    loadFinanceData(user?.id);
+  }, [loadFinanceData, user?.id]);
 
   // Handle Web Share Target / Shortcuts / Tasker (?sms=... or ?text=...) once loaded
   useEffect(() => {

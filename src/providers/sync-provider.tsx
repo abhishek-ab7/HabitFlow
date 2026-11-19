@@ -125,7 +125,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           useGoalStore.getState().loadGoals(),
           useHabitStore.getState().loadHabits(),
           useTaskStore.getState().loadTasks(),
-          useFinanceStore.getState().loadFinanceData(),
+          useFinanceStore.getState().loadFinanceData(userId),
         ]);
 
         if (!active) return;

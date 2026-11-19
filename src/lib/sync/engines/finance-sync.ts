@@ -34,7 +34,7 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyCategories = await db.financeCategories
       .where('userId')
       .equals(userId)
-      .filter((c) => !!c.isDirty)
+      .filter((c) => c.isDirty !== false)
       .toArray();
 
     for (const cat of dirtyCategories) {
@@ -46,20 +46,21 @@ export class FinanceSyncEngine implements ISynchronizer {
         type: cat.type,
         icon: cat.icon,
         color: cat.color,
-        monthly_budget_limit: cat.monthlyBudgetLimit,
-        subcategories: cat.subcategories,
-        order_index: cat.order,
-        is_system: cat.isSystem,
-        is_archived: cat.archived || !!cat.deletedAt,
+        monthly_budget_limit: Number(cat.monthlyBudgetLimit || 0),
+        subcategories: cat.subcategories || [],
+        order_index: cat.order ?? 0,
+        is_system: !!cat.isSystem,
+        is_archived: !!cat.archived || !!cat.deletedAt,
         generation_counter: cat.generationCounter || 1,
-        created_at: cat.createdAt,
-        updated_at: cat.updatedAt,
+        created_at: cat.createdAt || new Date().toISOString(),
+        updated_at: cat.updatedAt || new Date().toISOString(),
       };
       const { error } = await (supabase.from('finance_categories') as any).upsert(payload);
       if (!error) {
         await db.financeCategories.update(cat.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] Category upsert failed:', error);
         hasError = true;
       }
     }
@@ -106,7 +107,7 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyAccounts = await db.financeAccounts
       .where('userId')
       .equals(userId)
-      .filter((a) => !!a.isDirty)
+      .filter((a) => a.isDirty !== false)
       .toArray();
 
     for (const acc of dirtyAccounts) {
@@ -115,21 +116,22 @@ export class FinanceSyncEngine implements ISynchronizer {
         user_id: userId,
         name: acc.name,
         type: acc.type,
-        balance: acc.balance,
-        currency: acc.currency,
-        color: acc.color,
-        icon: acc.icon,
-        is_default: acc.isDefault,
-        is_archived: acc.archived || !!acc.deletedAt,
+        balance: Number(acc.balance || 0),
+        currency: acc.currency || 'INR',
+        color: acc.color || '#10b981',
+        icon: acc.icon || 'Landmark',
+        is_default: !!acc.isDefault,
+        is_archived: !!acc.archived || !!acc.deletedAt,
         generation_counter: acc.generationCounter || 1,
-        created_at: acc.createdAt,
-        updated_at: acc.updatedAt,
+        created_at: acc.createdAt || new Date().toISOString(),
+        updated_at: acc.updatedAt || new Date().toISOString(),
       };
       const { error } = await (supabase.from('finance_accounts') as any).upsert(payload);
       if (!error) {
         await db.financeAccounts.update(acc.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] Account upsert failed:', error);
         hasError = true;
       }
     }
@@ -177,7 +179,7 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyCommitments = await db.monthlyCommitments
       .where('userId')
       .equals(userId)
-      .filter((c) => !!c.isDirty)
+      .filter((c) => c.isDirty !== false)
       .toArray();
 
     for (const comm of dirtyCommitments) {
@@ -186,25 +188,26 @@ export class FinanceSyncEngine implements ISynchronizer {
         user_id: userId,
         title: comm.title,
         recipient_name: comm.recipientName,
-        relationship: comm.relationship,
-        monthly_target_amount: comm.monthlyTargetAmount,
-        due_day_of_month: comm.dueDayOfMonth,
-        category: comm.category,
+        relationship: comm.relationship || 'Family',
+        monthly_target_amount: Number(comm.monthlyTargetAmount || 0),
+        due_day_of_month: Number(comm.dueDayOfMonth || 5),
+        category: comm.category || 'family_support',
         default_category_id: comm.defaultCategoryId || null,
-        auto_rollover_overpayment: comm.autoRolloverOverpayment,
-        icon: comm.icon,
-        color: comm.color,
+        auto_rollover_overpayment: !!comm.autoRolloverOverpayment,
+        icon: comm.icon || 'HeartHandshake',
+        color: comm.color || '#ec4899',
         is_active: comm.isActive && !comm.deletedAt,
         notes: comm.notes || null,
         generation_counter: comm.generationCounter || 1,
-        created_at: comm.createdAt,
-        updated_at: comm.updatedAt,
+        created_at: comm.createdAt || new Date().toISOString(),
+        updated_at: comm.updatedAt || new Date().toISOString(),
       };
       const { error } = await (supabase.from('monthly_commitments') as any).upsert(payload);
       if (!error) {
         await db.monthlyCommitments.update(comm.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] Commitment upsert failed:', error);
         hasError = true;
       }
     }
@@ -252,7 +255,7 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyDebts = await db.debtRecords
       .where('userId')
       .equals(userId)
-      .filter((d) => !!d.isDirty)
+      .filter((d) => d.isDirty !== false)
       .toArray();
 
     for (const debt of dirtyDebts) {
@@ -283,6 +286,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         await db.debtRecords.update(debt.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] Debt upsert failed:', error);
         hasError = true;
       }
     }
@@ -335,7 +339,7 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyInstallments = await db.debtInstallments
       .where('userId')
       .equals(userId)
-      .filter((i) => !!i.isDirty)
+      .filter((i) => i.isDirty !== false)
       .toArray();
 
     for (const inst of dirtyInstallments) {
@@ -359,6 +363,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         await db.debtInstallments.update(inst.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] Installment upsert failed:', error);
         hasError = true;
       }
     }
@@ -402,7 +407,7 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyEmis = await db.emiTrackers
       .where('userId')
       .equals(userId)
-      .filter((e) => !!e.isDirty)
+      .filter((e) => e.isDirty !== false)
       .toArray();
 
     for (const emi of dirtyEmis) {
@@ -433,6 +438,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         await db.emiTrackers.update(emi.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] EMI upsert failed:', error);
         hasError = true;
       }
     }
@@ -483,10 +489,25 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyTransactions = await db.financeTransactions
       .where('userId')
       .equals(userId)
-      .filter((t) => !!t.isDirty)
+      .filter((t) => t.isDirty !== false)
       .toArray();
 
     for (const tx of dirtyTransactions) {
+      if (tx.deletedAt) {
+        const { error } = await (supabase.from('finance_transactions') as any)
+          .delete()
+          .eq('id', tx.id)
+          .eq('user_id', userId);
+        if (!error) {
+          await db.financeTransactions.delete(tx.id);
+          pushed++;
+        } else {
+          logger.error('[FinanceSyncEngine] Transaction remote delete failed:', error);
+          hasError = true;
+        }
+        continue;
+      }
+
       const payload = {
         id: tx.id,
         user_id: userId,
@@ -504,7 +525,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         is_recurring: tx.isRecurring,
         recurrence_rule: tx.recurrenceRule || null,
         linked_commitment_id: tx.linkedCommitmentId || null,
-        commitment_contribution_type: tx.commitmentContributionType || null,
+        commitment_contribution_type: tx.linkedCommitmentId ? (tx.commitmentContributionType || 'offset_expense') : null,
         linked_debt_id: tx.linkedDebtId || null,
         linked_debt_installment_id: tx.linkedDebtInstallmentId || null,
         linked_emi_id: tx.linkedEmiId || null,
@@ -517,6 +538,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         await db.financeTransactions.update(tx.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] Transaction upsert failed:', error);
         hasError = true;
       }
     }
@@ -575,10 +597,25 @@ export class FinanceSyncEngine implements ISynchronizer {
     const dirtyBudgets = await db.financeBudgets
       .where('userId')
       .equals(userId)
-      .filter((b) => !!b.isDirty)
+      .filter((b) => b.isDirty !== false)
       .toArray();
 
     for (const budget of dirtyBudgets) {
+      if (budget.deletedAt) {
+        const { error } = await (supabase.from('finance_budgets') as any)
+          .delete()
+          .eq('id', budget.id)
+          .eq('user_id', userId);
+        if (!error) {
+          await db.financeBudgets.delete(budget.id);
+          pushed++;
+        } else {
+          logger.error('[FinanceSyncEngine] Budget remote delete failed:', error);
+          hasError = true;
+        }
+        continue;
+      }
+
       const payload = {
         id: budget.id,
         user_id: userId,
@@ -591,11 +628,13 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: budget.createdAt,
         updated_at: budget.updatedAt,
       };
-      const { error } = await (supabase.from('finance_budgets') as any).upsert(payload);
+      const { error } = await (supabase.from('finance_budgets') as any)
+        .upsert(payload, { onConflict: 'user_id,month_key' });
       if (!error) {
         await db.financeBudgets.update(budget.id, { isDirty: false });
         pushed++;
       } else {
+        logger.error('[FinanceSyncEngine] Budget upsert failed:', error);
         hasError = true;
       }
     }
@@ -639,7 +678,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         const dirtySips = await db.financeSipPlans
           .where('userId')
           .equals(userId)
-          .filter((s) => !!s.isDirty)
+          .filter((s) => s.isDirty !== false)
           .toArray();
         for (const sip of dirtySips) {
           const { error } = await (supabase.from('finance_sip_plans') as any).upsert({
@@ -667,11 +706,22 @@ export class FinanceSyncEngine implements ISynchronizer {
           if (!error) {
             await db.financeSipPlans.update(sip.id, { isDirty: false });
             pushed++;
+          } else {
+            logger.error('[FinanceSyncEngine] SIP plan upsert failed:', error);
           }
         }
       }
     } catch {
       // Non-fatal
+    }
+
+    if (pulled > 0) {
+      try {
+        const { useFinanceStore } = await import('@/lib/stores/finance-store');
+        await useFinanceStore.getState().loadFinanceData(userId);
+      } catch {
+        // Non-fatal
+      }
     }
 
     logger.info('[FinanceSyncEngine] Completed FlowFinance V2 two-way sync cycle');
@@ -687,5 +737,11 @@ export async function syncFinanceWithRetry(engine: SyncEngine): Promise<void> {
   if (!engine.userId) return;
   const syncer = new FinanceSyncEngine();
   await engine.withRetry(() => syncer.sync(engine.userId!), 'syncFinance');
+  try {
+    const { useFinanceStore } = await import('@/lib/stores/finance-store');
+    await useFinanceStore.getState().loadFinanceData(engine.userId);
+  } catch (err) {
+    logger.warn('[FinanceSyncEngine] Failed to refresh store after sync', err);
+  }
 }
 

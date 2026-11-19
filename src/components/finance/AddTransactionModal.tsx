@@ -27,6 +27,7 @@ import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
 import { SmsImportModal } from './SmsImportModal';
 import { toast } from 'sonner';
+import { useAuth } from '@/providers/auth-provider';
 
 interface AddTransactionModalProps {
   open: boolean;
@@ -87,15 +88,16 @@ export function AddTransactionModal({
   // Smart Merchant Rule checkbox
   const [saveMerchantRule, setSaveMerchantRule] = useState(false);
 
+  const { user } = useAuth();
   const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
   const [isLocalSmsOpen, setIsLocalSmsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (open && categories.length === 0) {
-      loadFinanceData();
+      loadFinanceData(user?.id);
     }
-  }, [open, categories.length, loadFinanceData]);
+  }, [open, categories.length, loadFinanceData, user?.id]);
 
   useEffect(() => {
     if (!open) {

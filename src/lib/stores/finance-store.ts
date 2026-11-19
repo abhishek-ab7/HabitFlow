@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { getSyncEngine } from '@/lib/sync';
 import { CrossDomainActionMediator } from './mediator';
 import type {
   FinanceAccount,
@@ -390,20 +391,71 @@ export interface SixMonthTrendPoint {
   isOverBudget: boolean;
 }
 
-async function resolveCurrentUserId(
+export async function resolveCurrentUserId(
   customUserId?: string,
   storeUserId?: string | null
 ): Promise<string> {
-  if (customUserId) return customUserId;
-  if (storeUserId) return storeUserId;
+  if (customUserId && customUserId !== 'local-demo-user') return customUserId;
   try {
     const supabase = getSupabaseClient();
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    return session?.user?.id || 'local-demo-user';
+    if (session?.user?.id) return session.user.id;
   } catch {
-    return 'local-demo-user';
+    // Non-blocking
+  }
+  if (storeUserId && storeUserId !== 'local-demo-user') return storeUserId;
+  return 'local-demo-user';
+}
+
+function notifyFinanceSync() {
+  try {
+    const syncEngine = getSyncEngine();
+    syncEngine.triggerFinanceSync();
+  } catch {
+    // Non-blocking in offline / test environments
+  }
+}
+
+async function migrateLocalDemoFinanceRecords(targetUserId: string) {
+  try {
+    const demoUserId = 'local-demo-user';
+    const tables = [
+      db.financeCategories,
+      db.financeAccounts,
+      db.financeTransactions,
+      db.financeBudgets,
+      db.monthlyCommitments,
+      db.debtRecords,
+      db.debtInstallments,
+      db.emiTrackers,
+      ...(db.financeSipPlans ? [db.financeSipPlans] : []),
+      ...(db.financeCategorizationRules ? [db.financeCategorizationRules] : []),
+      ...(db.financeRecurringBills ? [db.financeRecurringBills] : []),
+    ];
+
+    let migratedAny = false;
+    for (const table of tables) {
+      const demoRecords = await table.where('userId').equals(demoUserId).toArray();
+      if (demoRecords.length > 0) {
+        migratedAny = true;
+        for (const item of demoRecords) {
+          await table.update(item.id, {
+            userId: targetUserId,
+            isDirty: true,
+            generationCounter: (item.generationCounter || 1) + 1,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    if (migratedAny) {
+      notifyFinanceSync();
+    }
+  } catch (err) {
+    console.warn('[FinanceStore] Demo records migration error:', err);
   }
 }
 
@@ -445,6 +497,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         ...c,
         id: crypto.randomUUID(),
         userId,
+        isDirty: true,
+        generationCounter: 1,
         createdAt: now,
         updatedAt: now,
       }));
@@ -465,6 +519,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           icon: 'Smartphone',
           isDefault: true,
           archived: false,
+          isDirty: true,
+          generationCounter: 1,
           createdAt: now,
           updatedAt: now,
         },
@@ -479,6 +535,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           icon: 'Landmark',
           isDefault: false,
           archived: false,
+          isDirty: true,
+          generationCounter: 1,
           createdAt: now,
           updatedAt: now,
         },
@@ -493,6 +551,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           icon: 'Banknote',
           isDefault: false,
           archived: false,
+          isDirty: true,
+          generationCounter: 1,
           createdAt: now,
           updatedAt: now,
         },
@@ -507,11 +567,17 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           icon: 'CreditCard',
           isDefault: false,
           archived: false,
+          isDirty: true,
+          generationCounter: 1,
           createdAt: now,
           updatedAt: now,
         },
       ];
       await db.financeAccounts.bulkAdd(starterAccounts);
+    }
+
+    if (userId !== 'local-demo-user') {
+      notifyFinanceSync();
     }
   },
 
@@ -570,6 +636,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const userId = await resolveCurrentUserId(customUserId, get().currentUserId);
+
+      // Auto-migrate orphaned local-demo-user records to this authenticated user account
+      if (userId && userId !== 'local-demo-user') {
+        await migrateLocalDemoFinanceRecords(userId);
+      }
 
       // One-time cleanup: purge legacy pre-seeded sample records while preserving categories
       if (typeof window !== 'undefined') {
@@ -767,6 +838,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       rawMerchant: data.rawMerchant?.trim(),
       needsReview: data.needsReview ?? false,
       splitGroupId: data.splitGroupId || null,
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
@@ -781,7 +854,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           ? -tx.amount
           : -tx.amount;
       const newBalance = account.balance + delta;
-      await db.financeAccounts.update(account.id, { balance: newBalance, updatedAt: now });
+      await db.financeAccounts.update(account.id, { balance: newBalance, isDirty: true, updatedAt: now });
     }
 
     if (data.type === 'transfer' && data.toAccountId) {
@@ -789,6 +862,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       if (toAcc) {
         await db.financeAccounts.update(toAcc.id, {
           balance: toAcc.balance + tx.amount,
+          isDirty: true,
           updatedAt: now,
         });
       }
@@ -815,6 +889,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           transactionId: tx.id,
           note: tx.title,
           balanceAfterPayment: newRemaining,
+          isDirty: true,
+          generationCounter: 1,
           createdAt: now,
           updatedAt: now,
         };
@@ -824,6 +900,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           totalRepaidAmount: newRepaid,
           remainingAmount: newRemaining,
           status: newStatus,
+          isDirty: true,
           updatedAt: now,
         });
       }
@@ -831,6 +908,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
 
     await db.financeTransactions.add(tx);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
 
     // Notify when category monthly spending exceeds 90% of its defined budget
     if (tx.type === 'expense') {
@@ -910,11 +988,13 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const updatedFields: Partial<FinanceTransaction> = {
       ...data,
       monthKey: updatedDate.slice(0, 7),
+      isDirty: true,
       updatedAt: now,
     };
 
     await db.financeTransactions.update(id, updatedFields);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
 
     const updatedType = data.type || existing.type;
     const updatedCategoryId = data.categoryId || existing.categoryId;
@@ -1005,8 +1085,9 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       });
     }
 
-    await db.financeTransactions.update(id, { deletedAt: now, updatedAt: now });
+    await db.financeTransactions.update(id, { deletedAt: now, isDirty: true, updatedAt: now });
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
   },
 
   approveReviewedTransaction: async (id) => {
@@ -1015,9 +1096,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const now = new Date().toISOString();
     await db.financeTransactions.update(id, {
       needsReview: false,
+      isDirty: true,
       updatedAt: now,
     });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   bulkUpdateTransactions: async (ids, updates) => {
@@ -1029,12 +1112,14 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       for (const id of ids) {
         await db.financeTransactions.update(id, {
           ...updates,
+          isDirty: true,
           updatedAt: now,
         });
       }
     });
 
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
   },
 
   bulkDeleteTransactions: async (ids) => {
@@ -1278,10 +1363,12 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     await db.financeTransactions.update(transactionId, {
       linkedCommitmentId: commitmentId,
       commitmentContributionType: commitmentId ? contributionType : null,
+      isDirty: true,
       updatedAt: now,
     });
 
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   addCommitment: async (data) => {
@@ -1291,11 +1378,14 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       ...data,
       id: crypto.randomUUID(),
       userId,
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
     await db.monthlyCommitments.add(commitment);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
     return commitment;
   },
 
@@ -1303,16 +1393,18 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const existing = get().commitments.find((c) => c.id === id);
     if (!existing) return;
     const now = new Date().toISOString();
-    await db.monthlyCommitments.update(id, { ...data, updatedAt: now });
+    await db.monthlyCommitments.update(id, { ...data, isDirty: true, updatedAt: now });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   deleteCommitment: async (id) => {
     const existing = get().commitments.find((c) => c.id === id);
     if (!existing) return;
     const now = new Date().toISOString();
-    await db.monthlyCommitments.update(id, { isActive: false, deletedAt: now, updatedAt: now });
+    await db.monthlyCommitments.update(id, { isActive: false, deletedAt: now, isDirty: true, updatedAt: now });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   settleCommitmentBalance: async (commitmentId, accountId, monthKey) => {
@@ -1372,11 +1464,14 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       totalRepaidAmount: 0,
       remainingAmount: Number(data.principalAmount),
       status: 'active',
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
     await db.debtRecords.add(record);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
     return record;
   },
 
@@ -1437,6 +1532,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         isRecurring: false,
         linkedDebtId: debt.id,
         linkedDebtInstallmentId: installmentId,
+        isDirty: true,
+        generationCounter: 1,
         createdAt: now,
         updatedAt: now,
       };
@@ -1446,6 +1543,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       const balanceDelta = txType === 'income' ? Number(amount) : -Number(amount);
       await db.financeAccounts.update(selectedAccount.id, {
         balance: selectedAccount.balance + balanceDelta,
+        isDirty: true,
         updatedAt: now,
       });
     }
@@ -1461,6 +1559,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       transactionId: selectedAccount && debtCat ? transactionId : null,
       note: note || `Installment payment (${paymentMethod.toUpperCase()})`,
       balanceAfterPayment: newRemaining,
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
@@ -1470,10 +1570,12 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       totalRepaidAmount: newRepaid,
       remainingAmount: newRemaining,
       status: newStatus,
+      isDirty: true,
       updatedAt: now,
     });
 
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
 
     try {
       await CrossDomainActionMediator.onFinanceEvent({
@@ -1500,6 +1602,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       principalAmount: newPrincipal,
       remainingAmount: newRemaining,
       status: 'active',
+      isDirty: true,
       notes: note
         ? `${debt.notes ? debt.notes + ' | ' : ''}Top-up +${formatINR(additionalAmount)}: ${note}`
         : debt.notes,
@@ -1507,6 +1610,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     });
 
     await get().loadFinanceData(debt.userId);
+    notifyFinanceSync();
   },
 
   deleteDebtRecord: async (id) => {
@@ -1515,10 +1619,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const now = new Date().toISOString();
     const installments = await db.debtInstallments.where('debtId').equals(id).toArray();
     for (const inst of installments) {
-      await db.debtInstallments.update(inst.id, { deletedAt: now, updatedAt: now });
+      await db.debtInstallments.update(inst.id, { deletedAt: now, isDirty: true, updatedAt: now });
     }
-    await db.debtRecords.update(id, { status: 'archived', deletedAt: now, updatedAt: now });
+    await db.debtRecords.update(id, { status: 'archived', deletedAt: now, isDirty: true, updatedAt: now });
     await get().loadFinanceData(debt.userId);
+    notifyFinanceSync();
   },
 
   addEmiTracker: async (data) => {
@@ -1528,11 +1633,14 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       ...data,
       id: crypto.randomUUID(),
       userId,
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
     await db.emiTrackers.add(emi);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
     return emi;
   },
 
@@ -1600,8 +1708,9 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const emi = get().emiTrackers.find((e) => e.id === id);
     if (!emi) return;
     const now = new Date().toISOString();
-    await db.emiTrackers.update(id, { deletedAt: now, updatedAt: now });
+    await db.emiTrackers.update(id, { deletedAt: now, isDirty: true, updatedAt: now });
     await get().loadFinanceData(emi.userId);
+    notifyFinanceSync();
   },
 
   // ============================================
@@ -1615,11 +1724,14 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       ...data,
       id: crypto.randomUUID(),
       userId,
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
     await db.financeSipPlans.add(sip);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
     return sip;
   },
 
@@ -1627,16 +1739,18 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     const existing = get().sipPlans.find((s) => s.id === id);
     if (!existing) return;
     const now = new Date().toISOString();
-    await db.financeSipPlans.update(id, { ...data, updatedAt: now });
+    await db.financeSipPlans.update(id, { ...data, isDirty: true, updatedAt: now });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   deleteSipPlan: async (id) => {
     const existing = get().sipPlans.find((s) => s.id === id);
     if (!existing) return;
     const now = new Date().toISOString();
-    await db.financeSipPlans.update(id, { isActive: false, deletedAt: now, updatedAt: now });
+    await db.financeSipPlans.update(id, { isActive: false, deletedAt: now, isDirty: true, updatedAt: now });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   payMonthlySip: async (sipId, accountId, date) => {
@@ -1846,19 +1960,23 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       ...data,
       id: crypto.randomUUID(),
       userId,
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
     await db.financeAccounts.add(account);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
     return account;
   },
 
   updateAccount: async (id, data) => {
     const existing = get().accounts.find((a) => a.id === id);
     if (!existing) return;
-    await db.financeAccounts.update(id, { ...data, updatedAt: new Date().toISOString() });
+    await db.financeAccounts.update(id, { ...data, isDirty: true, updatedAt: new Date().toISOString() });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   deleteAccount: async (id) => {
@@ -1868,9 +1986,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     await db.financeAccounts.update(id, {
       archived: true,
       deletedAt: now,
+      isDirty: true,
       updatedAt: now,
     });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   addCategory: async (data) => {
@@ -1880,11 +2000,14 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       ...data,
       id: crypto.randomUUID(),
       userId,
+      isDirty: true,
+      generationCounter: 1,
       createdAt: now,
       updatedAt: now,
     };
     await db.financeCategories.add(category);
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
     return category;
   },
 
@@ -1893,9 +2016,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     if (!existing) return;
     await db.financeCategories.update(id, {
       ...data,
+      isDirty: true,
       updatedAt: new Date().toISOString(),
     });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   deleteCategory: async (id) => {
@@ -1905,9 +2030,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     await db.financeCategories.update(id, {
       archived: true,
       deletedAt: now,
+      isDirty: true,
       updatedAt: now,
     });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   updateCategoryBudget: async (categoryId, monthlyBudgetLimit) => {
@@ -1915,9 +2042,11 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     if (!existing) return;
     await db.financeCategories.update(categoryId, {
       monthlyBudgetLimit: Number(monthlyBudgetLimit),
+      isDirty: true,
       updatedAt: new Date().toISOString(),
     });
     await get().loadFinanceData(existing.userId);
+    notifyFinanceSync();
   },
 
   setMonthlyBudget: async (monthKey, totalBudget, expectedIncome, plannedSipAmount) => {
@@ -1932,6 +2061,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
           expectedIncome !== undefined ? Number(expectedIncome) : existing.expectedIncome,
         plannedSipAmount:
           plannedSipAmount !== undefined ? Number(plannedSipAmount) : existing.plannedSipAmount,
+        isDirty: true,
         updatedAt: now,
       });
     } else {
@@ -1943,6 +2073,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         expectedIncome: expectedIncome !== undefined ? Number(expectedIncome) : 0,
         plannedSipAmount: plannedSipAmount !== undefined ? Number(plannedSipAmount) : 0,
         currency: 'INR',
+        isDirty: true,
+        generationCounter: 1,
         createdAt: now,
         updatedAt: now,
       };
@@ -1950,6 +2082,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     }
 
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
   },
 
   saveMonthlyBudgetSettings: async (monthKey, totalBudget, categoryLimits, options) => {
@@ -1962,6 +2095,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
       await db.financeCategories.update(categoryId, {
         monthlyBudgetLimit: normalized,
         ...(rolloverFlag !== undefined ? { rolloverEnabled: rolloverFlag } : {}),
+        isDirty: true,
         updatedAt: now,
       });
     }
@@ -1982,6 +2116,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         totalBudget: normalizedTotal,
         expectedIncome: normalizedIncome,
         plannedSipAmount: normalizedSip,
+        isDirty: true,
         updatedAt: now,
       });
     } else if (normalizedTotal > 0 || normalizedIncome > 0 || normalizedSip > 0) {
@@ -1993,6 +2128,8 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
         expectedIncome: normalizedIncome,
         plannedSipAmount: normalizedSip,
         currency: 'INR',
+        isDirty: true,
+        generationCounter: 1,
         createdAt: now,
         updatedAt: now,
       };
@@ -2000,6 +2137,7 @@ export const useFinanceStore = create<FinanceStore>((set, get) => ({
     }
 
     await get().loadFinanceData(userId);
+    notifyFinanceSync();
   },
 
   exportTransactionsCsv: (monthKey) => {

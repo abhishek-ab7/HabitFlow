@@ -24,9 +24,13 @@ const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   user_settings: syncUserSettingsWithRetry,
   mood_logs: syncMoodLogsWithRetry,
   finance_transactions: syncFinanceWithRetry,
+  finance_accounts: syncFinanceWithRetry,
+  finance_categories: syncFinanceWithRetry,
   monthly_commitments: syncFinanceWithRetry,
   debt_records: syncFinanceWithRetry,
+  debt_installments: syncFinanceWithRetry,
   emi_trackers: syncFinanceWithRetry,
+  finance_budgets: syncFinanceWithRetry,
 };
 
 export type SyncStatus =
@@ -343,6 +347,15 @@ export class SyncEngine {
       if (this.userId && typeof localStorage !== 'undefined') {
         localStorage.setItem(`habit_sync_last_at_${this.userId}`, this.lastSyncAt.toISOString());
       }
+
+      // Reload finance store so pulled cloud data updates UI immediately
+      try {
+        const { useFinanceStore } = await import('@/lib/stores/finance-store');
+        await useFinanceStore.getState().loadFinanceData(this.userId);
+      } catch (e) {
+        this.log('warn', 'Failed to refresh finance store after syncAll', e);
+      }
+
       this.notifyStatus({
         type: 'success',
         message: 'All data synced',
@@ -732,6 +745,46 @@ export class SyncEngine {
         { event: '*', schema: 'public', table: 'user_settings', filter: `user_id=eq.${this.userId}` },
         () => this.debouncedSync('user_settings')
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_transactions', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_transactions')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_accounts', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_accounts')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_categories', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_categories')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'monthly_commitments', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('monthly_commitments')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'debt_records', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('debt_records')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'debt_installments', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('debt_installments')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'emi_trackers', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('emi_trackers')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_budgets', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_budgets')
+      )
       .subscribe((status) => {
         this.log('info', `Realtime subscription status: ${status}`);
       });
@@ -751,11 +804,62 @@ export class SyncEngine {
           await syncFn(this);
         }
 
+        // If a finance table changed, refresh the in-memory finance store
+        if (
+          table.startsWith('finance_') ||
+          table === 'monthly_commitments' ||
+          table === 'debt_records' ||
+          table === 'debt_installments' ||
+          table === 'emi_trackers'
+        ) {
+          try {
+            const { useFinanceStore } = await import('@/lib/stores/finance-store');
+            await useFinanceStore.getState().loadFinanceData(this.userId || undefined);
+          } catch (e) {
+            this.log('warn', 'Failed to reload finance store after realtime sync', e);
+          }
+        }
+
         this.notifyStatus({ type: 'success', message: 'Data updated' });
       } catch (error) {
         this.log('error', `Realtime sync failed for ${table}`, error);
       }
     }, SYNC_DEBOUNCE_MS);
+  }
+
+  private financeSyncDebounceTimer: NodeJS.Timeout | null = null;
+
+  public triggerFinanceSync(): void {
+    if (this.financeSyncDebounceTimer) {
+      clearTimeout(this.financeSyncDebounceTimer);
+    }
+
+    this.financeSyncDebounceTimer = setTimeout(async () => {
+      await this.authReady;
+      if (!this.userId) {
+        try {
+          const { data: { session } } = await this.supabase.auth.getSession();
+          if (session?.user?.id) {
+            this.userId = session.user.id;
+          }
+        } catch {
+          // offline
+        }
+      }
+
+      if (!this.userId || !this.isOnline) return;
+
+      try {
+        const syncer = new FinanceSyncEngine();
+        const result = await syncer.sync(this.userId);
+        if (result.pulled > 0) {
+          const { useFinanceStore } = await import('@/lib/stores/finance-store');
+          await useFinanceStore.getState().loadFinanceData(this.userId);
+        }
+      } catch (err) {
+        this.log('warn', 'triggerFinanceSync failed', err);
+      }
+    }, 400);
   }
 
   private cleanupRealtime() {
