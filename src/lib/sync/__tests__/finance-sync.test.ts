@@ -311,6 +311,7 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
       icon: 'Tag',
       color: '#f00',
       monthlyBudgetLimit: 100,
+      subcategories: [],
       order: 0,
       isSystem: false,
       archived: false,
