@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,6 @@ import type {
   CommitmentContributionType,
 } from '@/lib/types';
 import {
-  Delete,
   ChevronDown,
   ChevronUp,
   Trash2,
@@ -37,8 +36,6 @@ interface AddTransactionModalProps {
   defaultDebtId?: string | null;
   onOpenSmsImport?: () => void;
 }
-
-const KEYPAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'backspace'] as const;
 
 export function AddTransactionModal({
   open,
@@ -68,7 +65,7 @@ export function AddTransactionModal({
   const todayStr = new Date().toISOString().split('T')[0];
 
   const [type, setType] = useState<FinanceTransactionType>('expense');
-  const [amountStr, setAmountStr] = useState('0');
+  const [amountStr, setAmountStr] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [accountId, setAccountId] = useState('');
   const [toAccountId, setToAccountId] = useState('');
@@ -79,6 +76,8 @@ export function AddTransactionModal({
     useState<CommitmentContributionType>('offset_expense');
   const [linkedDebtId, setLinkedDebtId] = useState<string>('none');
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+
+  const amountInputRef = useRef<HTMLInputElement>(null);
 
   // Split with Friend state
   const [isSplitEnabled, setIsSplitEnabled] = useState(false);
@@ -104,9 +103,14 @@ export function AddTransactionModal({
       return;
     }
 
+    // Auto-focus amount input to trigger native phone keyboard on open
+    const focusTimer = setTimeout(() => {
+      amountInputRef.current?.focus();
+    }, 80);
+
     if (editingTransaction) {
       setType(editingTransaction.type);
-      setAmountStr(String(editingTransaction.amount));
+      setAmountStr(editingTransaction.amount ? String(editingTransaction.amount) : '');
       setCategoryId(editingTransaction.categoryId);
       setAccountId(editingTransaction.accountId);
       setToAccountId(editingTransaction.toAccountId || '');
@@ -122,7 +126,7 @@ export function AddTransactionModal({
       );
       setIsSplitEnabled(false);
       setSaveMerchantRule(false);
-      return;
+      return () => clearTimeout(focusTimer);
     }
 
     const defaultCat = categories[0];
@@ -130,7 +134,7 @@ export function AddTransactionModal({
     const secondAcc = accounts.find((a) => a.id !== defaultAcc?.id) || accounts[0];
 
     setType('expense');
-    setAmountStr('0');
+    setAmountStr('');
     setCategoryId(defaultCat?.id || '');
     setAccountId(defaultAcc?.id || '');
     setToAccountId(secondAcc?.id || '');
@@ -144,6 +148,8 @@ export function AddTransactionModal({
     setSplitFriendName('');
     setSplitFriendShareStr('');
     setSaveMerchantRule(false);
+
+    return () => clearTimeout(focusTimer);
   }, [
     open,
     editingTransaction,
@@ -165,58 +171,13 @@ export function AddTransactionModal({
     }
   };
 
-  const handleKeypadPress = useCallback((key: string) => {
-    setAmountStr((prev) => {
-      if (key === 'backspace') {
-        if (prev.length <= 1) return '0';
-        return prev.slice(0, -1);
-      }
-      if (key === '.') {
-        if (prev.includes('.')) return prev;
-        return `${prev}.`;
-      }
-      const dotIdx = prev.indexOf('.');
-      if (dotIdx !== -1 && prev.length - dotIdx > 2) return prev;
-      if (prev.length >= 9) return prev;
-      if (prev === '0') return key;
-      return `${prev}${key}`;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!open || isCategorySheetOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT')
-      ) {
-        return;
-      }
-      if (/^[0-9]$/.test(e.key)) {
-        e.preventDefault();
-        handleKeypadPress(e.key);
-      } else if (e.key === '.') {
-        e.preventDefault();
-        handleKeypadPress('.');
-      } else if (e.key === 'Backspace') {
-        e.preventDefault();
-        handleKeypadPress('backspace');
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, isCategorySheetOpen, handleKeypadPress]);
-
   const selectedCategory = categories.find((c) => c.id === categoryId) || categories[0];
   const numericAmount = parseFloat(amountStr) || 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      toast.error('Tap the keypad to enter an amount');
+      toast.error('Please enter a valid amount');
       return;
     }
 
@@ -400,21 +361,37 @@ export function AddTransactionModal({
         {/* Scrollable Sheet Body */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
           <div className="px-4 py-3 space-y-3.5">
-            {/* Hero Amount Display */}
-            <div className="text-center py-1.5">
-              <div className="inline-flex items-baseline justify-center gap-1">
-                <span className="text-2xl font-semibold text-muted-foreground">₹</span>
-                <span
-                  className={`text-4xl sm:text-5xl font-bold font-mono tabular-nums tracking-tight ${
+            {/* Hero Amount Input (Opens Native Phone Keyboard) */}
+            <div
+              className="text-center py-2 px-4 cursor-text"
+              onClick={() => amountInputRef.current?.focus()}
+            >
+              <div className="inline-flex items-center justify-center gap-1.5 max-w-full">
+                <span className="text-3xl sm:text-4xl font-semibold text-muted-foreground select-none">₹</span>
+                <input
+                  ref={amountInputRef}
+                  id="tx-amount-input"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  value={amountStr}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(',', '.');
+                    if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                      setAmountStr(val);
+                    }
+                  }}
+                  placeholder="0"
+                  autoFocus
+                  className={`w-full max-w-[260px] text-4xl sm:text-5xl font-bold font-mono tabular-nums tracking-tight text-center bg-transparent border-b-2 border-transparent hover:border-border/60 focus:border-primary outline-none focus:outline-none transition-colors ${
                     type === 'income'
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : type === 'investment'
                       ? 'text-violet-600 dark:text-violet-400'
                       : 'text-foreground'
                   }`}
-                >
-                  {amountStr}
-                </span>
+                  aria-label="Transaction Amount in Rupees"
+                />
               </div>
             </div>
 
@@ -758,21 +735,6 @@ export function AddTransactionModal({
                   )}
                 </div>
               )}
-            </div>
-
-            {/* Tactile 3x4 Numeric Keypad */}
-            <div className="grid grid-cols-3 gap-2 pt-1">
-              {KEYPAD_KEYS.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => handleKeypadPress(key)}
-                  aria-label={key === 'backspace' ? 'Backspace' : `Digit ${key}`}
-                  className="h-11 rounded-xl bg-muted/60 hover:bg-muted active:scale-95 transition-transform flex items-center justify-center text-lg font-semibold font-mono tabular-nums text-foreground select-none"
-                >
-                  {key === 'backspace' ? <Delete className="w-5 h-5" /> : key}
-                </button>
-              ))}
             </div>
           </div>
 
