@@ -301,8 +301,8 @@ export function OverviewTab({
         </div>
 
         {/* Category Budgets with Pace Tick Markers + Bar/Donut Toggle */}
-        <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-          <div className="flex items-center justify-between gap-2">
+        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-foreground">
                 Category Breakdown &amp; Pace
@@ -314,15 +314,15 @@ export function OverviewTab({
               </p>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded-xl bg-muted">
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <div className="inline-flex items-center p-1 rounded-xl bg-muted/80 border border-border/60">
                 <button
                   type="button"
                   onClick={() => setCategoryViewMode('bars')}
                   aria-label="Progress bars view"
-                  className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  className={`h-7 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                     categoryViewMode === 'bars'
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-card text-foreground shadow-xs border border-border/50'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -333,9 +333,9 @@ export function OverviewTab({
                   type="button"
                   onClick={() => setCategoryViewMode('donut')}
                   aria-label="Category donut view"
-                  className={`h-8 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  className={`h-7 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
                     categoryViewMode === 'donut'
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-card text-foreground shadow-xs border border-border/50'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -347,9 +347,11 @@ export function OverviewTab({
               <button
                 type="button"
                 onClick={() => onOpenBudgetModal()}
-                className="h-8 px-2.5 rounded-xl text-xs font-semibold text-primary hover:bg-primary/10 transition-colors whitespace-nowrap shrink-0"
+                className="h-9 px-3 rounded-xl border border-border/70 bg-card/60 hover:bg-muted text-xs font-semibold text-primary flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+                title="Manage Category Limits"
               >
-                Limits
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Limits</span>
               </button>
             </div>
           </div>

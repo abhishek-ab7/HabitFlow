@@ -542,33 +542,6 @@ export function AccountsTab() {
               </div>
             )}
           </section>
-
-          {/* Tools & Fresh Start Reset */}
-          <div className="rounded-2xl border border-border bg-card p-4 space-y-2.5">
-            <p className="text-xs font-medium text-muted-foreground">
-              Data Export &amp; Fresh Start
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleExportCsv}
-                className="min-h-[40px] flex-1 gap-2 text-xs rounded-xl"
-              >
-                <Download className="w-4 h-4" />
-                Export CSV
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsResetDialogOpen(true)}
-                className="min-h-[40px] flex-1 gap-2 text-xs text-rose-500 hover:text-rose-600 rounded-xl"
-              >
-                <RotateCcw className="w-4 h-4" />
-                Reset to ₹0
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* Right Column: Categories + Rollover + Smart Merchant Auto-Categorization Rules */}
@@ -777,6 +750,41 @@ export function AccountsTab() {
           </section>
         </div>
       </div>
+
+      {/* Bottom Utility: Data Export & Fresh Start */}
+      <section className="rounded-2xl border border-border/80 bg-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Download className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">
+              Data Management &amp; Fresh Start
+            </h3>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Export all transactions to a CSV spreadsheet or reset all accounts to ₹0 for a fresh financial cycle.
+          </p>
+        </div>
+        <div className="flex items-center gap-2.5 w-full sm:w-auto shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleExportCsv}
+            className="min-h-[40px] flex-1 sm:flex-initial gap-2 text-xs font-semibold rounded-xl"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsResetDialogOpen(true)}
+            className="min-h-[40px] flex-1 sm:flex-initial gap-2 text-xs font-semibold text-rose-500 hover:text-rose-600 border-rose-200/50 hover:border-rose-300 dark:border-rose-900/40 rounded-xl"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Reset to ₹0</span>
+          </Button>
+        </div>
+      </section>
 
       {/* Dialog: Edit Account */}
       <Dialog

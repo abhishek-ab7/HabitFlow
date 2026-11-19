@@ -44,39 +44,40 @@ export function FinanceOverviewWidget() {
 
   return (
     <section className="bg-card/35 backdrop-blur-2xl backdrop-saturate-150 rounded-3xl border border-white/10 shadow-xl overflow-hidden">
-      <div className="p-5 sm:p-6 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+      <div className="p-4 sm:p-6 space-y-4">
+        <div className="flex items-start sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-primary/10 text-primary shrink-0 mt-0.5 sm:mt-0">
               <Wallet className="h-5 w-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold tracking-tight text-foreground">
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground leading-snug">
                 Cashflow &amp; Budget Radar
               </h2>
-              <p className="text-xs text-muted-foreground font-mono tabular-nums">
-                Net Worth {formatINR(netWorth.netWorth)} · Month pace{' '}
-                {summary.dayOfMonthProgressPct}%
+              <p className="text-xs text-muted-foreground font-mono tabular-nums truncate">
+                Net Worth {formatINR(netWorth.netWorth)} · Pace {summary.dayOfMonthProgressPct}%
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <Button
               size="sm"
               onClick={() => setIsQuickAddOpen(true)}
-              className="gap-1.5 text-xs min-h-[38px] px-3 rounded-xl whitespace-nowrap"
+              className="gap-1 text-xs h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl whitespace-nowrap font-medium shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
-              Log Expense
+              <span className="hidden sm:inline">Log Expense</span>
+              <span className="sm:hidden">Log</span>
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => router.push('/finance')}
-              className="group gap-1 text-xs min-h-[38px] px-2.5 text-muted-foreground hover:text-primary whitespace-nowrap"
+              className="group gap-1 text-xs h-8 sm:h-9 px-2 sm:px-2.5 text-muted-foreground hover:text-primary rounded-xl whitespace-nowrap"
+              title="Open FlowFinance"
             >
-              Open
+              <span className="hidden sm:inline">Open</span>
               <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
             </Button>
           </div>

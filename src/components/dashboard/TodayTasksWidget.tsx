@@ -114,44 +114,46 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
 
     return (
         <section className="bg-card/30 backdrop-blur-2xl backdrop-saturate-150 rounded-3xl border border-white/10 shadow-2xl overflow-hidden tour-tasks-widget">
-            <div className="p-6 md:p-8 space-y-6">
-                <div className="flex items-center justify-between">
-                    <div className="space-y-1.5">
-                        <h2 className="text-2xl font-bold tracking-tight flex items-center gap-3">
-                            <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
-                                <CalendarCheck className="h-6 w-6 text-primary" />
-                            </div>
-                            Today&apos;s Focus &amp; Financial Dues
-                        </h2>
-                        <p className="text-sm text-muted-foreground ml-12">
-                            {totalFocusCount > 0
-                                ? `${allFocusTasks.length} ${allFocusTasks.length === 1 ? 'task' : 'tasks'} & ${financialObligations.length} financial obligation(s) due soon.`
-                                : "All caught up!"}
-                        </p>
+            <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
+                <div className="flex items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+                        <div className="p-2 sm:p-2.5 rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary mt-0.5 sm:mt-0">
+                            <CalendarCheck className="h-5 w-5 sm:h-6 sm:w-6" />
+                        </div>
+                        <div className="space-y-0.5 min-w-0">
+                            <h2 className="text-base sm:text-xl md:text-2xl font-bold tracking-tight text-foreground leading-snug">
+                                Today&apos;s Focus &amp; Financial Dues
+                            </h2>
+                            <p className="text-xs sm:text-sm text-muted-foreground">
+                                {totalFocusCount > 0
+                                    ? `${allFocusTasks.length} ${allFocusTasks.length === 1 ? 'task' : 'tasks'} & ${financialObligations.length} obligation(s) due soon`
+                                    : "All caught up!"}
+                            </p>
+                        </div>
                     </div>
                     <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => router.push('/tasks')}
-                        className="group gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl transition-all h-9 text-sm px-4"
+                        className="group shrink-0 gap-1 sm:gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl transition-all h-8 sm:h-9 text-xs sm:text-sm px-2.5 sm:px-4"
                     >
-                        View All
-                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                        <span>View All</span>
+                        <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform group-hover:translate-x-1" />
                     </Button>
                 </div>
 
                 {/* Upcoming Financial Obligations (EMIs, Monthly Commitments, Friend Debt Installments due within 5 days) */}
                 {financialObligations.length > 0 && (
                     <div className="space-y-2.5">
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                                 <Wallet className="w-3.5 h-3.5 text-emerald-500" />
-                                Due Financial Commitments &amp; EMIs (Next 5 Days)
+                                Due Commitments &amp; EMIs (Next 5 Days)
                             </span>
                             <button
                                 type="button"
                                 onClick={() => router.push('/finance')}
-                                className="text-xs text-primary hover:underline"
+                                className="text-[11px] sm:text-xs text-primary hover:underline font-medium"
                             >
                                 Manage in FlowFinance →
                             </button>
