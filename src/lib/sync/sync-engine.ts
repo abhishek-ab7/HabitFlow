@@ -31,6 +31,9 @@ const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   debt_installments: syncFinanceWithRetry,
   emi_trackers: syncFinanceWithRetry,
   finance_budgets: syncFinanceWithRetry,
+  finance_sip_plans: syncFinanceWithRetry,
+  finance_categorization_rules: syncFinanceWithRetry,
+  finance_recurring_bills: syncFinanceWithRetry,
 };
 
 export type SyncStatus =
@@ -42,7 +45,25 @@ export type SyncStatus =
 export interface PendingOperation {
   id: string;
   type: 'create' | 'update' | 'delete';
-  table: 'habits' | 'completions' | 'goals' | 'milestones' | 'tasks' | 'user_settings' | 'mood_logs';
+  table:
+    | 'habits'
+    | 'completions'
+    | 'goals'
+    | 'milestones'
+    | 'tasks'
+    | 'user_settings'
+    | 'mood_logs'
+    | 'finance_categories'
+    | 'finance_accounts'
+    | 'finance_transactions'
+    | 'finance_budgets'
+    | 'monthly_commitments'
+    | 'debt_records'
+    | 'debt_installments'
+    | 'emi_trackers'
+    | 'finance_sip_plans'
+    | 'finance_categorization_rules'
+    | 'finance_recurring_bills';
   data: any;
   timestamp: number;
   retryCount: number;
@@ -785,6 +806,21 @@ export class SyncEngine {
         { event: '*', schema: 'public', table: 'finance_budgets', filter: `user_id=eq.${this.userId}` },
         () => this.debouncedSync('finance_budgets')
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_sip_plans', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_sip_plans')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_categorization_rules', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_categorization_rules')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_recurring_bills', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_recurring_bills')
+      )
       .subscribe((status) => {
         this.log('info', `Realtime subscription status: ${status}`);
       });
@@ -852,6 +888,10 @@ export class SyncEngine {
       try {
         const syncer = new FinanceSyncEngine();
         const result = await syncer.sync(this.userId);
+        if (result.status === 'success') {
+          useSyncStatusStore.getState().setLastSyncTime(new Date());
+          useSyncStatusStore.getState().setSyncError(null);
+        }
         if (result.pulled > 0) {
           const { useFinanceStore } = await import('@/lib/stores/finance-store');
           await useFinanceStore.getState().loadFinanceData(this.userId);

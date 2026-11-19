@@ -184,4 +184,145 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     const syncedTx = await db.financeTransactions.get('tx-stranded');
     expect(syncedTx?.isDirty).toBe(false);
   });
+
+  test('5. Pushes dirty accounts, commitments, debts, emis, and budgets cleanly', async () => {
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+
+    await db.financeAccounts.add({
+      id: 'acc-1',
+      userId,
+      name: 'HDFC Bank',
+      type: 'bank',
+      balance: 15000,
+      currency: 'INR',
+      color: '#10b981',
+      icon: 'Landmark',
+      isDefault: true,
+      archived: false,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.monthlyCommitments.add({
+      id: 'comm-1',
+      userId,
+      title: "Mother's Support",
+      recipientName: 'Mom',
+      relationship: 'Family',
+      monthlyTargetAmount: 3000,
+      dueDayOfMonth: 5,
+      category: 'family_support',
+      autoRolloverOverpayment: true,
+      icon: 'HeartHandshake',
+      color: '#ec4899',
+      isActive: true,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.debtRecords.add({
+      id: 'debt-1',
+      userId,
+      personName: 'Rahul',
+      direction: 'lent',
+      title: 'Dinner bill split',
+      principalAmount: 2000,
+      totalRepaidAmount: 500,
+      remainingAmount: 1500,
+      startDate: '2026-11-01',
+      repaymentSchedule: 'monthly_partial',
+      status: 'active',
+      color: '#f59e0b',
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.debtInstallments.add({
+      id: 'inst-1',
+      userId,
+      debtId: 'debt-1',
+      amount: 500,
+      date: '2026-11-15',
+      monthKey: '2026-11',
+      paymentMethod: 'upi',
+      balanceAfterPayment: 1500,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.emiTrackers.add({
+      id: 'emi-1',
+      userId,
+      loanName: 'MacBook EMI',
+      lenderName: 'Apple HDFC',
+      principalAmount: 120000,
+      interestRateAnnual: 0,
+      emiAmount: 10000,
+      tenureMonths: 12,
+      paidMonths: 2,
+      startDate: '2026-09-01',
+      billingDayOfMonth: 5,
+      categoryId: 'cat-1',
+      autoCreateTaskReminder: true,
+      status: 'active',
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.financeBudgets.add({
+      id: 'bgt-1',
+      userId,
+      monthKey: '2026-11',
+      totalBudget: 60000,
+      expectedIncome: 90000,
+      currency: 'INR',
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(result.pushed).toBe(6);
+
+    const updatedAcc = await db.financeAccounts.get('acc-1');
+    expect(updatedAcc?.isDirty).toBe(false);
+    const updatedComm = await db.monthlyCommitments.get('comm-1');
+    expect(updatedComm?.isDirty).toBe(false);
+  });
+
+  test('6. Handles partial remote failure gracefully without crashing', async () => {
+    mockUpsert.mockResolvedValueOnce({ error: { message: 'Database connection failed', code: '500' } });
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+
+    await db.financeCategories.add({
+      id: 'cat-err',
+      userId,
+      name: 'Err Cat',
+      slug: 'err-cat',
+      type: 'expense',
+      icon: 'Tag',
+      color: '#f00',
+      monthlyBudgetLimit: 100,
+      order: 0,
+      isSystem: false,
+      archived: false,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('partial_failure');
+    // The failed item remains dirty for next retry
+    const cat = await db.financeCategories.get('cat-err');
+    expect(cat?.isDirty).toBe(true);
+  });
 });

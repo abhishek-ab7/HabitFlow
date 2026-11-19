@@ -47,10 +47,12 @@ export class FinanceSyncEngine implements ISynchronizer {
         icon: cat.icon,
         color: cat.color,
         monthly_budget_limit: Number(cat.monthlyBudgetLimit || 0),
+        rollover_enabled: !!cat.rolloverEnabled,
         subcategories: cat.subcategories || [],
         order_index: cat.order ?? 0,
         is_system: !!cat.isSystem,
         is_archived: !!cat.archived || !!cat.deletedAt,
+        deleted_at: cat.deletedAt || null,
         generation_counter: cat.generationCounter || 1,
         created_at: cat.createdAt || new Date().toISOString(),
         updated_at: cat.updatedAt || new Date().toISOString(),
@@ -117,11 +119,16 @@ export class FinanceSyncEngine implements ISynchronizer {
         name: acc.name,
         type: acc.type,
         balance: Number(acc.balance || 0),
+        credit_limit: acc.creditLimit !== undefined ? Number(acc.creditLimit) : null,
+        statement_day: acc.statementDay ?? null,
+        due_day: acc.dueDay ?? null,
+        include_in_net_worth: acc.includeInNetWorth !== false,
         currency: acc.currency || 'INR',
         color: acc.color || '#10b981',
         icon: acc.icon || 'Landmark',
         is_default: !!acc.isDefault,
         is_archived: !!acc.archived || !!acc.deletedAt,
+        deleted_at: acc.deletedAt || null,
         generation_counter: acc.generationCounter || 1,
         created_at: acc.createdAt || new Date().toISOString(),
         updated_at: acc.updatedAt || new Date().toISOString(),
@@ -198,6 +205,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         color: comm.color || '#ec4899',
         is_active: comm.isActive && !comm.deletedAt,
         notes: comm.notes || null,
+        deleted_at: comm.deletedAt || null,
         generation_counter: comm.generationCounter || 1,
         created_at: comm.createdAt || new Date().toISOString(),
         updated_at: comm.updatedAt || new Date().toISOString(),
@@ -277,6 +285,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         status: debt.deletedAt ? 'archived' : debt.status,
         notes: debt.notes || null,
         color: debt.color,
+        deleted_at: debt.deletedAt || null,
         generation_counter: debt.generationCounter || 1,
         created_at: debt.createdAt,
         updated_at: debt.updatedAt,
@@ -354,6 +363,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         transaction_id: inst.transactionId || null,
         note: inst.note || null,
         balance_after_payment: inst.balanceAfterPayment,
+        deleted_at: inst.deletedAt || null,
         generation_counter: inst.generationCounter || 1,
         created_at: inst.createdAt,
         updated_at: inst.updatedAt,
@@ -429,6 +439,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         last_paid_month_key: emi.lastPaidMonthKey || null,
         status: emi.status,
         notes: emi.notes || null,
+        deleted_at: emi.deletedAt || null,
         generation_counter: emi.generationCounter || 1,
         created_at: emi.createdAt,
         updated_at: emi.updatedAt,
@@ -512,6 +523,8 @@ export class FinanceSyncEngine implements ISynchronizer {
         id: tx.id,
         user_id: userId,
         title: tx.title,
+        merchant_name: tx.merchantName || null,
+        raw_merchant: tx.rawMerchant || null,
         amount: tx.amount,
         type: tx.type,
         category_id: tx.categoryId,
@@ -524,11 +537,15 @@ export class FinanceSyncEngine implements ISynchronizer {
         tags: tx.tags || [],
         is_recurring: tx.isRecurring,
         recurrence_rule: tx.recurrenceRule || null,
+        needs_review: !!tx.needsReview,
+        split_group_id: tx.splitGroupId || null,
         linked_commitment_id: tx.linkedCommitmentId || null,
         commitment_contribution_type: tx.linkedCommitmentId ? (tx.commitmentContributionType || 'offset_expense') : null,
         linked_debt_id: tx.linkedDebtId || null,
         linked_debt_installment_id: tx.linkedDebtInstallmentId || null,
         linked_emi_id: tx.linkedEmiId || null,
+        linked_sip_id: tx.linkedSipId || null,
+        deleted_at: tx.deletedAt || null,
         generation_counter: tx.generationCounter || 1,
         created_at: tx.createdAt,
         updated_at: tx.updatedAt,
@@ -622,8 +639,10 @@ export class FinanceSyncEngine implements ISynchronizer {
         month_key: budget.monthKey,
         total_budget: budget.totalBudget,
         expected_income: budget.expectedIncome,
+        planned_sip_amount: Number(budget.plannedSipAmount || 0),
         currency: budget.currency,
         notes: budget.notes || null,
+        deleted_at: budget.deletedAt || null,
         generation_counter: budget.generationCounter || 1,
         created_at: budget.createdAt,
         updated_at: budget.updatedAt,
@@ -672,7 +691,7 @@ export class FinanceSyncEngine implements ISynchronizer {
       // Non-fatal
     }
 
-    // 9. Optional Sync for V2 SIP Plans, Categorization Rules & Recurring Bills (gracefully skipped if remote table doesn't exist yet)
+    // 9. Sync for V2 SIP Plans, Categorization Rules & Recurring Bills
     try {
       if (db.financeSipPlans) {
         const dirtySips = await db.financeSipPlans
@@ -699,6 +718,7 @@ export class FinanceSyncEngine implements ISynchronizer {
             is_active: sip.isActive && !sip.deletedAt,
             color: sip.color,
             notes: sip.notes || null,
+            deleted_at: sip.deletedAt || null,
             generation_counter: sip.generationCounter || 1,
             created_at: sip.createdAt,
             updated_at: sip.updatedAt,
@@ -708,6 +728,163 @@ export class FinanceSyncEngine implements ISynchronizer {
             pushed++;
           } else {
             logger.error('[FinanceSyncEngine] SIP plan upsert failed:', error);
+          }
+        }
+
+        const { data: remoteSips, error: pullSipErr } = await (supabase
+          .from('finance_sip_plans') as any)
+          .select('*')
+          .eq('user_id', userId);
+        if (!pullSipErr && Array.isArray(remoteSips)) {
+          for (const r of remoteSips) {
+            const local = await db.financeSipPlans.get(r.id);
+            if (this.shouldApplyRemote(local, r)) {
+              await db.financeSipPlans.put({
+                id: r.id,
+                userId: r.user_id,
+                name: r.name,
+                platform: r.platform || undefined,
+                assetClass: r.asset_class || 'equity_mf',
+                monthlyAmount: Number(r.monthly_amount || 0),
+                sipDayOfMonth: Number(r.sip_day_of_month || 5),
+                startDate: r.start_date,
+                totalInvested: Number(r.total_invested || 0),
+                currentValue: Number(r.current_value || 0),
+                expectedReturnAnnual: r.expected_return_annual ? Number(r.expected_return_annual) : undefined,
+                accountId: r.account_id || undefined,
+                categoryId: r.category_id || undefined,
+                lastInvestedMonthKey: r.last_invested_month_key || undefined,
+                isActive: !!r.is_active,
+                color: r.color || '#10b981',
+                notes: r.notes || undefined,
+                deletedAt: r.deleted_at || null,
+                generationCounter: r.generation_counter || 1,
+                createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+                updatedAt: r.updated_at || new Date().toISOString(),
+                isDirty: false,
+              });
+              pulled++;
+            }
+          }
+        }
+      }
+
+      if (db.financeCategorizationRules) {
+        const dirtyRules = await db.financeCategorizationRules
+          .where('userId')
+          .equals(userId)
+          .filter((r) => r.isDirty !== false)
+          .toArray();
+        for (const rule of dirtyRules) {
+          const { error } = await (supabase.from('finance_categorization_rules') as any).upsert({
+            id: rule.id,
+            user_id: userId,
+            match_pattern: rule.matchPattern,
+            clean_merchant_name: rule.cleanMerchantName,
+            category_id: rule.categoryId,
+            subcategory: rule.subcategory || null,
+            default_tags: rule.defaultTags || [],
+            is_active: rule.isActive && !rule.deletedAt,
+            deleted_at: rule.deletedAt || null,
+            generation_counter: rule.generationCounter || 1,
+            created_at: rule.createdAt,
+            updated_at: rule.updatedAt,
+          });
+          if (!error) {
+            await db.financeCategorizationRules.update(rule.id, { isDirty: false });
+            pushed++;
+          }
+        }
+        const { data: remoteRules } = await (supabase.from('finance_categorization_rules') as any)
+          .select('*')
+          .eq('user_id', userId);
+        if (Array.isArray(remoteRules)) {
+          for (const r of remoteRules) {
+            const local = await db.financeCategorizationRules.get(r.id);
+            if (this.shouldApplyRemote(local, r)) {
+              await db.financeCategorizationRules.put({
+                id: r.id,
+                userId: r.user_id,
+                matchPattern: r.match_pattern,
+                cleanMerchantName: r.clean_merchant_name,
+                categoryId: r.category_id,
+                subcategory: r.subcategory || undefined,
+                defaultTags: r.default_tags || [],
+                isActive: !!r.is_active,
+                deletedAt: r.deleted_at || null,
+                generationCounter: r.generation_counter || 1,
+                createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+                updatedAt: r.updated_at || new Date().toISOString(),
+                isDirty: false,
+              });
+              pulled++;
+            }
+          }
+        }
+      }
+
+      if (db.financeRecurringBills) {
+        const dirtyBills = await db.financeRecurringBills
+          .where('userId')
+          .equals(userId)
+          .filter((b) => b.isDirty !== false)
+          .toArray();
+        for (const bill of dirtyBills) {
+          const { error } = await (supabase.from('finance_recurring_bills') as any).upsert({
+            id: bill.id,
+            user_id: userId,
+            name: bill.name,
+            amount: bill.amount,
+            previous_amount: bill.previousAmount || null,
+            cadence: bill.cadence,
+            due_day_of_month: bill.dueDayOfMonth,
+            category_id: bill.categoryId,
+            account_id: bill.accountId || null,
+            auto_log: bill.autoLog,
+            last_paid_month_key: bill.lastPaidMonthKey || null,
+            is_active: bill.isActive && !bill.deletedAt,
+            color: bill.color,
+            icon: bill.icon,
+            deleted_at: bill.deletedAt || null,
+            generation_counter: bill.generationCounter || 1,
+            created_at: bill.createdAt,
+            updated_at: bill.updatedAt,
+          });
+          if (!error) {
+            await db.financeRecurringBills.update(bill.id, { isDirty: false });
+            pushed++;
+          }
+        }
+        const { data: remoteBills } = await (supabase.from('finance_recurring_bills') as any)
+          .select('*')
+          .eq('user_id', userId);
+        if (Array.isArray(remoteBills)) {
+          for (const r of remoteBills) {
+            const local = await db.financeRecurringBills.get(r.id);
+            if (this.shouldApplyRemote(local, r)) {
+              await db.financeRecurringBills.put({
+                id: r.id,
+                userId: r.user_id,
+                name: r.name,
+                amount: Number(r.amount || 0),
+                previousAmount: r.previous_amount ? Number(r.previous_amount) : undefined,
+                cadence: r.cadence || 'monthly',
+                dueDayOfMonth: Number(r.due_day_of_month || 5),
+                categoryId: r.category_id,
+                accountId: r.account_id || undefined,
+                autoLog: !!r.auto_log,
+                lastPaidMonthKey: r.last_paid_month_key || undefined,
+                isActive: !!r.is_active,
+                color: r.color || '#6366f1',
+                icon: r.icon || 'Calendar',
+                deletedAt: r.deleted_at || null,
+                generationCounter: r.generation_counter || 1,
+                createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+                updatedAt: r.updated_at || new Date().toISOString(),
+                isDirty: false,
+              });
+              pulled++;
+            }
           }
         }
       }
