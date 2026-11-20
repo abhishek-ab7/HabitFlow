@@ -295,6 +295,22 @@ export function buildFinanceQAContext(params: {
     return { monthKey: mk, income, spent, invested };
   });
 
+  const categoriesById = new Map(categories.map((c) => [c.id, c.name]));
+  const accountsById = new Map(accounts.map((a) => [a.id, a.name]));
+  const recentTransactions = [...activeTxs]
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .slice(0, 25)
+    .map((tx) => ({
+      date: tx.date,
+      title: tx.title,
+      merchant: tx.merchantName || tx.title,
+      amount: Math.round(tx.amount),
+      type: tx.type,
+      category: categoriesById.get(tx.categoryId) || 'Other',
+      account: accountsById.get(tx.accountId) || 'Account',
+      tags: Array.isArray(tx.tags) ? tx.tags : [],
+    }));
+
   return {
     currency: 'INR',
     selectedMonth,
@@ -334,6 +350,7 @@ export function buildFinanceQAContext(params: {
         type: a.type,
         balance: Math.round(a.balance),
         creditLimit: a.creditLimit || null,
+        isDefault: Boolean(a.isDefault),
       })),
     recurringBills: recurringBills
       .filter((b) => b.isActive && !b.deletedAt)
@@ -370,6 +387,7 @@ export function buildFinanceQAContext(params: {
         remaining: Math.round(d.remainingAmount),
       })),
     topMerchants,
+    recentTransactions,
     trailingMonths,
     anomalies: anomalies.map((a) => ({
       severity: a.severity,

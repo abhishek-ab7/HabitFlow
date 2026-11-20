@@ -27,7 +27,6 @@ import {
   Layers,
   Check,
   RotateCcw,
-  Plus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -530,7 +529,7 @@ export default function SettingsPageContent() {
           className="mb-8"
         />
 
-        <BentoGrid className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:auto-rows-auto">
+        <BentoGrid autoRows={false} className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
           {/* ACCOUNT */}
           <BentoGridItem
             title="Account & Security"
@@ -964,33 +963,37 @@ export default function SettingsPageContent() {
                     </div>
                   </div>
 
-                  {/* 4. Live Mini Preview Strip */}
+                  {/* 4. Non-interactive Theme Token Preview */}
                   <div
-                    aria-label="Live theme preview"
-                    className="rounded-xl bg-background border border-border p-3 flex flex-wrap items-center justify-between gap-3"
+                    aria-label="Theme color preview"
+                    className="rounded-xl bg-background border border-border p-3 space-y-2 select-none pointer-events-none"
                   >
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border text-xs">
-                        <span className="w-4 h-4 rounded-md bg-success/15 text-success flex items-center justify-center shrink-0">
-                          <Check className="w-3 h-3 stroke-[2.5]" />
-                        </span>
-                        <span className="font-medium text-foreground">Gym</span>
-                        <span aria-hidden="true" className="text-muted-foreground">·</span>
-                        <span className="font-mono tabular-nums text-muted-foreground">5/6 wk</span>
-                      </div>
-
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs">
-                        <span className="text-muted-foreground">Safe today:</span>
-                        <span className="font-mono font-semibold tabular-nums text-foreground">
-                          ₹420
-                        </span>
-                      </div>
+                    <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      <span>Palette Preview</span>
+                      <span>Sample only</span>
                     </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
+                          <span className="w-3.5 h-3.5 rounded bg-success/15 text-success flex items-center justify-center shrink-0">
+                            <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                          </span>
+                          <span className="font-medium text-foreground">Streak</span>
+                          <span className="font-mono tabular-nums text-muted-foreground">5/6</span>
+                        </div>
 
-                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium shadow-xs select-none whitespace-nowrap">
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add Entry</span>
-                    </span>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
+                          <span className="text-muted-foreground">Surface</span>
+                          <span className="font-mono font-semibold tabular-nums text-foreground">
+                            ₹420
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-medium whitespace-nowrap">
+                        <span>Primary Accent</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
               );
@@ -1051,7 +1054,7 @@ export default function SettingsPageContent() {
           {/* CLOUD SYNC */}
           {isAuthenticated && (
             <BentoGridItem
-              span={2}
+              span={3}
               title={
                 <div className="flex items-center gap-2">
                   <span>Cloud Sync</span>
@@ -1059,10 +1062,10 @@ export default function SettingsPageContent() {
                 </div>
               }
               icon={<CloudCog className="h-5 w-5 text-blue-500" />}
-              className="md:col-span-2 lg:col-span-2"
+              className="md:col-span-2 lg:col-span-3 self-start p-5"
               disableHover
             >
-              <div className="mt-2">
+              <div className="mt-1">
                 <SyncStatusPanel />
               </div>
             </BentoGridItem>

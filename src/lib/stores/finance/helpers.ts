@@ -417,6 +417,7 @@ export interface FinanceStore {
     data: Omit<FinanceAccount, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceAccount>;
   updateAccount: (id: string, data: Partial<FinanceAccount>) => Promise<void>;
+  setDefaultAccount: (accountId: string) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
   reconcileAccountBalance: (
     accountId: string,

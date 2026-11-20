@@ -298,13 +298,14 @@ export function parseSingleSmsOrNotification(
     accounts[0];
 
   const isDuplicate = existingTransactions.some((existing) => {
+    const existingTags = Array.isArray(existing.tags) ? existing.tags : [];
     if (referenceId && existing.notes?.includes(referenceId)) return true;
-    if (referenceId && existing.tags.includes(`ref:${referenceId}`)) return true;
+    if (referenceId && existingTags.includes(`ref:${referenceId}`)) return true;
     return (
       existing.date === date &&
       Math.abs(existing.amount - amount) < 0.01 &&
       existing.type === type &&
-      existing.title.toLowerCase() === title.toLowerCase()
+      (existing.title || '').toLowerCase() === title.toLowerCase()
     );
   });
 

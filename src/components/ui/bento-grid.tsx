@@ -4,13 +4,15 @@ import { motion } from 'framer-motion';
 interface BentoGridProps {
     className?: string;
     children: React.ReactNode;
+    autoRows?: boolean;
 }
 
-export const BentoGrid = ({ className, children }: BentoGridProps) => {
+export const BentoGrid = ({ className, children, autoRows = true }: BentoGridProps) => {
     return (
         <div
             className={cn(
-                'grid md:auto-rows-[10rem] grid-cols-1 md:grid-cols-3 gap-4 max-w-7xl mx-auto',
+                'grid grid-cols-1 md:grid-cols-3 gap-4 max-w-7xl mx-auto',
+                autoRows && 'md:auto-rows-[10rem]',
                 className
             )}
         >

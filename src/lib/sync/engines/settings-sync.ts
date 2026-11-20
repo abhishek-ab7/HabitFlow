@@ -4,6 +4,82 @@ import { logger } from '@/lib/logger';
 import type { MoodLog } from '@/lib/types';
 import type { ISynchronizer } from '../types';
 
+const OPTIONAL_SETTINGS_COLUMNS = [
+  'accent',
+  'dashboard_layout',
+  'motivation_text',
+  'stats',
+  'unlocked_themes',
+  'generation_counter',
+  'xp',
+  'level',
+  'gems',
+  'streak_shield',
+  'avatar_id',
+  'default_category',
+  'week_start_day',
+  'user_name',
+] as const;
+
+const unsupportedSettingsColumns = new Set<string>();
+
+function extractMissingColumn(error: { message?: string; details?: string } | null | undefined): string | null {
+  if (!error) return null;
+  const text = `${error.message || ''} ${error.details || ''}`;
+  const match =
+    text.match(/Could not find the ['"]([a-z0-9_]+)['"] column/i) ||
+    text.match(/column\s+["']?([a-z0-9_]+)["']?\s+(?:of|does not exist)/i);
+  return match ? match[1] : null;
+}
+
+async function upsertUserSettingsSafely(
+  supabase: any,
+  rawPayload: Record<string, any>
+): Promise<{ error: any }> {
+  const payload = { ...rawPayload };
+  for (const col of unsupportedSettingsColumns) {
+    delete payload[col];
+  }
+
+  let { error } = await (supabase.from('user_settings') as any).upsert(payload as any, {
+    onConflict: 'user_id',
+  });
+
+  let attempts = 0;
+  while (error && attempts < OPTIONAL_SETTINGS_COLUMNS.length) {
+    const code = String((error as any).code || '');
+    const missingCol = extractMissingColumn(error);
+    if (missingCol && Object.prototype.hasOwnProperty.call(payload, missingCol) && missingCol !== 'user_id') {
+      unsupportedSettingsColumns.add(missingCol);
+      delete payload[missingCol];
+      attempts++;
+      const retry = await (supabase.from('user_settings') as any).upsert(payload as any, {
+        onConflict: 'user_id',
+      });
+      error = retry.error;
+      continue;
+    }
+
+    // Fallback when PostgREST returns generic 400/PGRST204 without clear column name
+    if (code === 'PGRST204' || String(error.message || '').toLowerCase().includes('schema cache')) {
+      const nextOptional = OPTIONAL_SETTINGS_COLUMNS.find((c) => c in payload);
+      if (nextOptional) {
+        unsupportedSettingsColumns.add(nextOptional);
+        delete payload[nextOptional];
+        attempts++;
+        const retry = await (supabase.from('user_settings') as any).upsert(payload as any, {
+          onConflict: 'user_id',
+        });
+        error = retry.error;
+        continue;
+      }
+    }
+    break;
+  }
+
+  return { error };
+}
+
 export class UserSettingsSyncEngine implements ISynchronizer {
   public domainName = 'user_settings';
   private supabase = getSupabaseClient();
@@ -19,40 +95,32 @@ export class UserSettingsSyncEngine implements ISynchronizer {
     let pushedCount = 0;
 
     for (const settings of dirtyLocalSettings) {
-      const basePayload = {
+      const payload = {
         user_id: userId,
         user_name: settings.userName || null,
         avatar_id: settings.avatarId || 'avatar-1',
-        week_start_day: settings.weekStartsOn || 0,
+        week_start_day: Number(settings.weekStartsOn ?? 0),
         default_category: settings.defaultCategory || 'health',
         xp: settings.xp || 0,
         level: settings.level || 1,
         gems: settings.gems || 0,
         streak_shield: settings.streakShield || 0,
         stats: settings.stats || null,
-        unlocked_themes: settings.unlockedThemes || [],
+        unlocked_themes: Array.isArray(settings.unlockedThemes) ? settings.unlockedThemes : [],
         motivation_text: settings.motivation_text || null,
         dashboard_layout: settings.dashboardLayout || null,
         generation_counter: settings.generationCounter || 1,
-        updated_at: new Date().toISOString()
+        accent: settings.accent || 'mint',
+        updated_at: new Date().toISOString(),
       };
 
-      let { error } = await (this.supabase.from('user_settings') as any).upsert({
-        ...basePayload,
-        accent: settings.accent || 'mint',
-      } as any, {
-        onConflict: 'user_id'
-      });
+      const { error } = await upsertUserSettingsSafely(this.supabase, payload);
 
-      if (error && (error.code === 'PGRST204' || error.message?.includes('accent'))) {
-        const retry = await (this.supabase.from('user_settings') as any).upsert(basePayload as any, {
-          onConflict: 'user_id'
-        });
-        error = retry.error;
+      if (error) {
+        logger.warn('[UserSettingsSyncEngine Push Failure]:', error.message);
+        throw new Error(`[UserSettingsSyncEngine Push Failure]: ${error.message}`);
       }
 
-      if (error) throw new Error(`[UserSettingsSyncEngine Push Failure]: ${error.message}`);
-      
       await db.userSettings.update(settings.id, { isDirty: false });
       pushedCount++;
     }
@@ -207,34 +275,24 @@ export async function syncMoodLogsWithRetry(engine: any) {
 
 export async function pushUserSettingsToRemote(engine: any, settings: any) {
   const supabase = getSupabaseClient();
-  const basePayload = {
+  const payload = {
     user_id: engine.userId,
     user_name: settings.userName || null,
     avatar_id: settings.avatarId || 'avatar-1',
-    week_start_day: settings.weekStartsOn || 0,
+    week_start_day: Number(settings.weekStartsOn ?? 0),
     default_category: settings.defaultCategory || 'health',
     xp: settings.xp || 0,
     level: settings.level || 1,
     gems: settings.gems || 0,
     streak_shield: settings.streakShield || 0,
     stats: settings.stats || null,
-    unlocked_themes: settings.unlockedThemes || [],
+    unlocked_themes: Array.isArray(settings.unlockedThemes) ? settings.unlockedThemes : [],
     motivation_text: settings.motivation_text || null,
     dashboard_layout: settings.dashboardLayout || null,
     generation_counter: settings.generationCounter || 1,
-    updated_at: new Date().toISOString()
+    accent: settings.accent || 'mint',
+    updated_at: new Date().toISOString(),
   };
 
-  const { error } = await (supabase.from('user_settings') as any).upsert({
-    ...basePayload,
-    accent: settings.accent || 'mint',
-  } as any, {
-    onConflict: 'user_id'
-  });
-
-  if (error && (error.code === 'PGRST204' || error.message?.includes('accent'))) {
-    await (supabase.from('user_settings') as any).upsert(basePayload as any, {
-      onConflict: 'user_id'
-    });
-  }
+  await upsertUserSettingsSafely(supabase, payload);
 }

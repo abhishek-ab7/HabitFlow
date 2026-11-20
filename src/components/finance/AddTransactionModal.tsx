@@ -32,6 +32,7 @@ import {
   Check,
   Loader2,
   Send,
+  Star,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
@@ -132,6 +133,7 @@ export function AddTransactionModal({
     (s) => s.applyCategorizationRules
   );
   const addRecurringBill = useFinanceStore((s) => s.addRecurringBill);
+  const setDefaultAccount = useFinanceStore((s) => s.setDefaultAccount);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -176,6 +178,7 @@ export function AddTransactionModal({
   const amountInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const initializedSessionRef = useRef<string | null>(null);
 
   // Split with Friend state
   const [isSplitEnabled, setIsSplitEnabled] = useState(false);
@@ -227,11 +230,22 @@ export function AddTransactionModal({
 
   useEffect(() => {
     if (!open) {
+      initializedSessionRef.current = null;
       setIsCategorySheetOpen(false);
       recognitionRef.current?.stop();
       setIsListeningVoice(false);
       return;
     }
+
+    const sessionKey =
+      editingTransaction?.id || `new:${defaultCommitmentId || ''}:${defaultDebtId || ''}`;
+    if (initializedSessionRef.current === sessionKey) {
+      return;
+    }
+    if (!editingTransaction && activeCategories.length === 0 && activeAccounts.length === 0) {
+      return;
+    }
+    initializedSessionRef.current = sessionKey;
 
     const focusTimer = setTimeout(() => {
       amountInputRef.current?.focus();
@@ -390,7 +404,11 @@ export function AddTransactionModal({
         );
       }
 
-      toast.success('Form filled from Smart Capture');
+      toast.success(
+        json?.source === 'gemini'
+          ? 'Form filled via Gemini AI'
+          : 'Form filled via Smart Offline Parser'
+      );
     } catch {
       toast.error('Smart parse failed. Enter details manually.');
     } finally {
@@ -1192,9 +1210,36 @@ export function AddTransactionModal({
 
             {/* Payment Account Selector */}
             <div className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                {type === 'transfer' ? 'From Account' : 'Paid via'}
-              </span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {type === 'transfer' ? 'From Account' : 'Paid via'}
+                </span>
+                {type !== 'transfer' && accountId && (() => {
+                  const selectedAcc = activeAccounts.find((a) => a.id === accountId);
+                  if (!selectedAcc) return null;
+                  if (selectedAcc.isDefault) {
+                    return (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                        <Star className="w-3 h-3 fill-primary" />
+                        Default payment method
+                      </span>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await setDefaultAccount(selectedAcc.id);
+                        toast.success(`${selectedAcc.name} set as default Paid via`);
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      <Star className="w-3 h-3" />
+                      Set {selectedAcc.name} as default
+                    </button>
+                  );
+                })()}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {activeAccounts.map((acc) => {
                   const isSelected = accountId === acc.id;
@@ -1203,13 +1248,21 @@ export function AddTransactionModal({
                       key={acc.id}
                       type="button"
                       onClick={() => setAccountId(acc.id)}
-                      className={`min-h-[40px] px-2.5 rounded-xl border text-xs font-medium truncate transition-colors ${
+                      className={`min-h-[40px] px-2.5 rounded-xl border text-xs font-medium transition-colors flex items-center justify-center gap-1.5 truncate ${
                         isSelected
                           ? 'bg-foreground text-background border-foreground'
                           : 'bg-card text-foreground border-border hover:bg-muted'
                       }`}
                     >
-                      {acc.name}
+                      <span className="truncate">{acc.name}</span>
+                      {acc.isDefault && (
+                        <Star
+                          aria-label="Default account"
+                          className={`w-3 h-3 shrink-0 ${
+                            isSelected ? 'fill-background text-background' : 'fill-primary text-primary'
+                          }`}
+                        />
+                      )}
                     </button>
                   );
                 })}

@@ -55,7 +55,7 @@ export function SyncStatusPanel() {
     };
 
     return (
-        <div className="flex items-center justify-between gap-4 h-full w-full px-2">
+        <div className="flex items-center justify-between gap-4 w-full px-1 py-1">
             {/* Left: Status Visuals */}
             <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 shrink-0 rounded-full shadow-[0_0_15px_rgba(0,0,0,0.2)] ${getStatusColor()} transition-all duration-500 flex items-center justify-center ring-2 ring-white/10`}>

@@ -5,6 +5,48 @@ import { logger } from '@/lib/logger';
 import type { ISynchronizer } from '../types';
 import type { SyncEngine } from '../sync-engine';
 
+const missingRemoteFinanceTables = new Set<string>();
+const missingRemoteFinanceColumns = new Map<string, Set<string>>();
+
+function isMissingRelationError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '');
+  const msg = String(err.message || '');
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('Could not find the table') ||
+    msg.includes('does not exist') ||
+    Number(err.status) === 404
+  );
+}
+
+function getMissingColumnName(err: any): string | null {
+  if (!err) return null;
+  const msg = `${err.message || ''} ${err.details || ''}`;
+  const m =
+    msg.match(/Could not find the ['"]([a-z0-9_]+)['"] column/i) ||
+    msg.match(/column\s+["']?([a-z0-9_]+)["']?\s+does not exist/i);
+  return m ? m[1] : null;
+}
+
+function stripKnownMissingColumns(table: string, payload: Record<string, any>): Record<string, any> {
+  const cols = missingRemoteFinanceColumns.get(table);
+  if (!cols || cols.size === 0) return payload;
+  const copy = { ...payload };
+  for (const col of cols) delete copy[col];
+  return copy;
+}
+
+function recordMissingColumn(table: string, col: string) {
+  let set = missingRemoteFinanceColumns.get(table);
+  if (!set) {
+    set = new Set();
+    missingRemoteFinanceColumns.set(table, set);
+  }
+  set.add(col);
+}
+
 /**
  * Automatically cleans up any duplicate categories (same slug) or accounts (same name + type)
  * in Dexie IndexedDB for the specified user, remapping any foreign-key transaction references
@@ -745,10 +787,21 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: tx.createdAt || new Date().toISOString(),
         updated_at: tx.updatedAt || new Date().toISOString(),
       };
-      let { error } = await (supabase.from('finance_transactions') as any).upsert(payload);
+      const filteredTxPayload = stripKnownMissingColumns('finance_transactions', payload);
+      let { error } = await (supabase.from('finance_transactions') as any).upsert(filteredTxPayload);
+      if (error && (error as any).code === 'PGRST204') {
+        const missingCol = getMissingColumnName(error);
+        if (missingCol) {
+          recordMissingColumn('finance_transactions', missingCol);
+          const retryCol = await (supabase.from('finance_transactions') as any).upsert(
+            stripKnownMissingColumns('finance_transactions', payload)
+          );
+          error = retryCol.error;
+        }
+      }
       if (error && (error as any).code === '23503') {
         logger.warn('[FinanceSyncEngine] Foreign key 23503 violation on transaction upsert, retrying with unlinked references:', error);
-        const unlinkedPayload = {
+        const unlinkedPayload = stripKnownMissingColumns('finance_transactions', {
           ...payload,
           linked_commitment_id: null,
           commitment_contribution_type: null,
@@ -756,7 +809,7 @@ export class FinanceSyncEngine implements ISynchronizer {
           linked_debt_installment_id: null,
           linked_emi_id: null,
           linked_sip_id: null,
-        };
+        });
         const retryResult = await (supabase.from('finance_transactions') as any).upsert(unlinkedPayload);
         error = retryResult.error;
       }
@@ -858,8 +911,18 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: budget.createdAt,
         updated_at: budget.updatedAt,
       };
-      const { error } = await (supabase.from('finance_budgets') as any)
-        .upsert(payload, { onConflict: 'user_id,month_key' });
+      const filteredBudgetPayload = stripKnownMissingColumns('finance_budgets', payload);
+      let { error } = await (supabase.from('finance_budgets') as any)
+        .upsert(filteredBudgetPayload, { onConflict: 'user_id,month_key' });
+      if (error && (error as any).code === 'PGRST204') {
+        const missingCol = getMissingColumnName(error);
+        if (missingCol) {
+          recordMissingColumn('finance_budgets', missingCol);
+          const retryBudget = await (supabase.from('finance_budgets') as any)
+            .upsert(stripKnownMissingColumns('finance_budgets', payload), { onConflict: 'user_id,month_key' });
+          error = retryBudget.error;
+        }
+      }
       if (!error) {
         await db.financeBudgets.update(budget.id, { isDirty: false });
         pushed++;
@@ -1112,13 +1175,14 @@ export class FinanceSyncEngine implements ISynchronizer {
         }
       }
 
-      if (db.financeNetWorthSnapshots) {
+      if (db.financeNetWorthSnapshots && !missingRemoteFinanceTables.has('finance_net_worth_snapshots')) {
         const dirtySnapshots = await db.financeNetWorthSnapshots
           .where('userId')
           .equals(userId)
           .filter((s) => s.isDirty !== false)
           .toArray();
         for (const snap of dirtySnapshots) {
+          if (missingRemoteFinanceTables.has('finance_net_worth_snapshots')) break;
           const { error } = await (supabase.from('finance_net_worth_snapshots') as any).upsert(
             {
               id: snap.id,
@@ -1141,39 +1205,49 @@ export class FinanceSyncEngine implements ISynchronizer {
             },
             { onConflict: 'user_id,month_key' }
           );
-          if (!error) {
+          if (error) {
+            if (isMissingRelationError(error)) {
+              missingRemoteFinanceTables.add('finance_net_worth_snapshots');
+              logger.info('[FinanceSyncEngine] Skipping unmigrated table finance_net_worth_snapshots for this session.');
+              break;
+            }
+          } else {
             await db.financeNetWorthSnapshots.update(snap.id, { isDirty: false });
             pushed++;
           }
         }
-        const { data: remoteSnaps } = await (supabase.from('finance_net_worth_snapshots') as any)
-          .select('*')
-          .eq('user_id', userId);
-        if (Array.isArray(remoteSnaps)) {
-          for (const r of remoteSnaps) {
-            const local = await db.financeNetWorthSnapshots.get(r.id);
-            if (this.shouldApplyRemote(local, r)) {
-              await db.financeNetWorthSnapshots.put({
-                id: r.id,
-                userId: r.user_id,
-                monthKey: r.month_key,
-                snapshotDate: r.snapshot_date,
-                liquidAssets: Number(r.liquid_assets || 0),
-                investmentAssets: Number(r.investment_assets || 0),
-                friendReceivables: Number(r.friend_receivables || 0),
-                totalAssets: Number(r.total_assets || 0),
-                creditCardLiabilities: Number(r.credit_card_liabilities || 0),
-                emiRemainingPrincipal: Number(r.emi_remaining_principal || 0),
-                friendPayables: Number(r.friend_payables || 0),
-                totalLiabilities: Number(r.total_liabilities || 0),
-                netWorth: Number(r.net_worth || 0),
-                deletedAt: r.deleted_at || null,
-                generationCounter: r.generation_counter || 1,
-                createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-                updatedAt: r.updated_at || new Date().toISOString(),
-                isDirty: false,
-              });
-              pulled++;
+        if (!missingRemoteFinanceTables.has('finance_net_worth_snapshots')) {
+          const { data: remoteSnaps, error: pullSnapError } = await (supabase.from('finance_net_worth_snapshots') as any)
+            .select('*')
+            .eq('user_id', userId);
+          if (pullSnapError && isMissingRelationError(pullSnapError)) {
+            missingRemoteFinanceTables.add('finance_net_worth_snapshots');
+          } else if (Array.isArray(remoteSnaps)) {
+            for (const r of remoteSnaps) {
+              const local = await db.financeNetWorthSnapshots.get(r.id);
+              if (this.shouldApplyRemote(local, r)) {
+                await db.financeNetWorthSnapshots.put({
+                  id: r.id,
+                  userId: r.user_id,
+                  monthKey: r.month_key,
+                  snapshotDate: r.snapshot_date,
+                  liquidAssets: Number(r.liquid_assets || 0),
+                  investmentAssets: Number(r.investment_assets || 0),
+                  friendReceivables: Number(r.friend_receivables || 0),
+                  totalAssets: Number(r.total_assets || 0),
+                  creditCardLiabilities: Number(r.credit_card_liabilities || 0),
+                  emiRemainingPrincipal: Number(r.emi_remaining_principal || 0),
+                  friendPayables: Number(r.friend_payables || 0),
+                  totalLiabilities: Number(r.total_liabilities || 0),
+                  netWorth: Number(r.net_worth || 0),
+                  deletedAt: r.deleted_at || null,
+                  generationCounter: r.generation_counter || 1,
+                  createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+                  updatedAt: r.updated_at || new Date().toISOString(),
+                  isDirty: false,
+                });
+                pulled++;
+              }
             }
           }
         }

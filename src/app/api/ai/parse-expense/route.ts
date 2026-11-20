@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import {
+  FINANCE_GEMINI_MODEL,
+  createFinanceGeminiClient,
+  resolveGeminiApiKey,
+} from '@/lib/ai/gemini-server';
 
 interface CategoryInput {
   id: string;
@@ -145,17 +150,14 @@ export async function POST(req: NextRequest) {
     }
 
     const fallback = parseExpenseDeterministically(rawText);
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = resolveGeminiApiKey();
 
     if (!apiKey) {
       return NextResponse.json({ data: fallback, source: 'deterministic' });
     }
 
     try {
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-      });
+      const ai = createFinanceGeminiClient(apiKey);
 
       const categoryCatalog = categories.length
         ? categories
@@ -169,7 +171,7 @@ export async function POST(req: NextRequest) {
       const todayIso = getTodayIso();
 
       const response = await ai.models.generateContent({
-        model: 'gemini-4-hydrogen',
+        model: FINANCE_GEMINI_MODEL,
         contents: `Parse this Indian personal finance note or voice transcript into structured transaction JSON.
 Today's date is ${todayIso}.
 

@@ -740,6 +740,7 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
 
     return transactions.filter((tx) => {
       if (tx.deletedAt) return false;
+      const tags = Array.isArray(tx.tags) ? tx.tags : [];
       if (targetMonth !== 'all' && tx.monthKey !== targetMonth) return false;
       if (filters.type !== 'all' && tx.type !== filters.type) return false;
       if (filters.categoryId !== 'all' && tx.categoryId !== filters.categoryId) return false;
@@ -747,7 +748,7 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       if (filters.commitmentId !== 'all' && tx.linkedCommitmentId !== filters.commitmentId)
         return false;
       if (filters.debtId !== 'all' && tx.linkedDebtId !== filters.debtId) return false;
-      if (filters.tag && filters.tag !== 'all' && !tx.tags.includes(filters.tag)) return false;
+      if (filters.tag && filters.tag !== 'all' && !tags.includes(filters.tag)) return false;
       if (filters.needsReview === 'only_review' && !tx.needsReview) return false;
       if (filters.dateFrom && tx.date < filters.dateFrom) return false;
       if (filters.dateTo && tx.date > filters.dateTo) return false;
@@ -756,11 +757,11 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
 
       if (filters.searchQuery.trim()) {
         const q = filters.searchQuery.toLowerCase();
-        const matchTitle = tx.title.toLowerCase().includes(q);
+        const matchTitle = (tx.title || '').toLowerCase().includes(q);
         const matchMerchant = tx.merchantName?.toLowerCase().includes(q) || false;
         const matchSub = tx.subcategory?.toLowerCase().includes(q) || false;
         const matchNotes = tx.notes?.toLowerCase().includes(q) || false;
-        const matchTags = tx.tags.some((tag) => tag.toLowerCase().includes(q));
+        const matchTags = tags.some((tag) => tag.toLowerCase().includes(q));
         if (!matchTitle && !matchMerchant && !matchSub && !matchNotes && !matchTags) return false;
       }
 

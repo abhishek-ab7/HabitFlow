@@ -3,6 +3,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { toast } from 'sonner';
 import { db } from '@/lib/db';
 import { useFinanceStore, getCurrentMonthKey } from '../finance-store';
+import { buildDeterministicFinanceAnswer } from '@/lib/finance/qa-analyzer';
 
 // Mock mediator to avoid gamification side-effects in isolated finance store tests
 vi.mock('../mediator', () => ({
@@ -441,5 +442,118 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
       warnSpy.mockRestore();
       errSpy.mockRestore();
     }
+  });
+
+  test('9. getFilteredTransactions safely handles legacy transactions with undefined tags during search and tag filtering', async () => {
+    const store = useFinanceStore.getState();
+    const foodCat = store.categories.find((c) => c.slug === 'food-dining')!;
+    const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+
+    await store.addTransaction({
+      title: 'Swiggy Bowl',
+      amount: 320,
+      type: 'expense',
+      categoryId: foodCat.id,
+      accountId: upiAcc.id,
+      date: `${currentMonth}-12`,
+      tags: ['dinner'],
+    });
+
+    // Simulate legacy record with undefined tags in store state
+    useFinanceStore.setState((state) => ({
+      transactions: [
+        ...state.transactions,
+        {
+          id: 'legacy-no-tags',
+          userId: testUserId,
+          title: 'Legacy Coffee',
+          amount: 140,
+          type: 'expense',
+          categoryId: foodCat.id,
+          accountId: upiAcc.id,
+          date: `${currentMonth}-13`,
+          monthKey: currentMonth,
+          tags: undefined as unknown as string[],
+          isRecurring: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    }));
+
+    useFinanceStore.getState().setFilters({ searchQuery: 'coffee' });
+    const searchResults = useFinanceStore.getState().getFilteredTransactions(currentMonth);
+    expect(searchResults.map((t) => t.id)).toEqual(['legacy-no-tags']);
+
+    useFinanceStore.getState().setFilters({ searchQuery: '', tag: 'dinner' });
+    const tagResults = useFinanceStore.getState().getFilteredTransactions(currentMonth);
+    expect(tagResults.map((t) => t.title)).toEqual(['Swiggy Bowl']);
+  });
+
+  test('10. setDefaultAccount switches isDefault exclusively across user accounts', async () => {
+    const store = useFinanceStore.getState();
+    const bankAcc = store.accounts.find((a) => a.type === 'bank')!;
+    const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+
+    expect(upiAcc.isDefault).toBe(true);
+    expect(bankAcc.isDefault).toBe(false);
+
+    await store.setDefaultAccount(bankAcc.id);
+    const updated = useFinanceStore.getState().accounts;
+    expect(updated.find((a) => a.id === bankAcc.id)?.isDefault).toBe(true);
+    expect(updated.find((a) => a.id === upiAcc.id)?.isDefault).toBe(false);
+    expect(updated.filter((a) => a.isDefault)).toHaveLength(1);
+  });
+
+  test('11. Finance Q&A deterministic analyzer produces distinct answers per question intent', () => {
+    const context = {
+      selectedMonth: '2026-11',
+      monthlySummary: {
+        totalIncome: 80000,
+        totalSpent: 24500,
+        totalInvested: 15000,
+        safeToSpendMonthly: 18000,
+        safeToSpendDaily: 1800,
+        remainingDaysInMonth: 10,
+        savingsRatePct: 50,
+        remainingUnpaidBills: 2400,
+        remainingUnpaidEmis: 5000,
+        remainingUnpaidCommitments: 0,
+      },
+      netWorth: {
+        netWorth: 245000,
+        liquidAssets: 95000,
+        investmentAssets: 175000,
+        totalLiabilities: 25000,
+      },
+      categories: [
+        { name: 'Food & Dining', spent: 6200, budgetLimit: 8000, transactionCount: 9 },
+        { name: 'Transport', spent: 3100, budgetLimit: 4000, transactionCount: 6 },
+      ],
+      accounts: [{ name: 'UPI', type: 'upi', balance: 45000, isDefault: true }],
+      recurringBills: [{ name: 'Jio Fiber', amount: 999, cadence: 'monthly', dueDay: 15, annualized: 11988 }],
+      activeEmis: [{ name: 'Phone EMI', emiAmount: 5000, remainingMonths: 4, interestRate: 12 }],
+      activeSips: [{ name: 'Nifty 50 SIP', monthlyAmount: 10000, totalInvested: 100000, currentValue: 118000 }],
+      openFriendDebts: [],
+      topMerchants: [{ merchant: 'Swiggy', spent: 3400, count: 5, category: 'Food & Dining' }],
+      recentTransactions: [
+        { date: '2026-11-18', title: 'Swiggy Dinner', merchant: 'Swiggy', amount: 420, type: 'expense', category: 'Food & Dining', tags: [] },
+      ],
+      trailingMonths: [{ monthKey: '2026-11', income: 80000, spent: 24500, invested: 15000 }],
+      anomalies: [],
+    };
+
+    const foodAns = buildDeterministicFinanceAnswer('How much did I spend on Food?', context);
+    const nwAns = buildDeterministicFinanceAnswer('What is my current Net Worth?', context);
+    const crunchAns = buildDeterministicFinanceAnswer('Do I have any cash-flow crunch?', context);
+    const sipAns = buildDeterministicFinanceAnswer('How are my SIPs doing?', context);
+    const swiggyAns = buildDeterministicFinanceAnswer('Show my Swiggy orders', context);
+
+    expect(foodAns).toContain('Food & Dining');
+    expect(nwAns).toContain('₹2,45,000');
+    expect(crunchAns).toContain('remaining obligations');
+    expect(sipAns).toContain('Nifty 50 SIP');
+    expect(swiggyAns).toContain('Swiggy Dinner');
+    expect(new Set([foodAns, nwAns, crunchAns, sipAns, swiggyAns]).size).toBe(5);
   });
 });

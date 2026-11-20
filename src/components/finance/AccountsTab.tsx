@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Power,
   Tag,
+  Star,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -78,6 +79,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
 
   const addAccount = useFinanceStore((s) => s.addAccount);
   const updateAccount = useFinanceStore((s) => s.updateAccount);
+  const setDefaultAccount = useFinanceStore((s) => s.setDefaultAccount);
   const deleteAccount = useFinanceStore((s) => s.deleteAccount);
   const reconcileAccountBalance = useFinanceStore((s) => s.reconcileAccountBalance);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
@@ -131,6 +133,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const [accCreditLimit, setAccCreditLimit] = useState('100000');
   const [accDueDay, setAccDueDay] = useState('15');
   const [accBillingDay, setAccBillingDay] = useState('1');
+  const [accIsDefault, setAccIsDefault] = useState(false);
 
   // Reconcile Balance dialog
   const [reconcilingAccount, setReconcilingAccount] = useState<FinanceAccount | null>(
@@ -169,6 +172,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
     setAccCreditLimit(String(acc.creditLimit || 100000));
     setAccDueDay(String(acc.dueDay || 15));
     setAccBillingDay(String(acc.statementDay || 1));
+    setAccIsDefault(Boolean(acc.isDefault));
   };
 
   const openReconcileDialog = (acc: FinanceAccount) => {
@@ -221,6 +225,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       name: accName.trim(),
       balance: bal,
       type: accType,
+      isDefault: accIsDefault,
       creditLimit:
         accType === 'credit_card'
           ? parseFloat(accCreditLimit) || 100000
@@ -281,7 +286,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       currency: 'INR',
       color: colorMap[accType],
       icon: iconMap[accType],
-      isDefault: activeAccounts.length === 0,
+      isDefault: activeAccounts.length === 0 || accIsDefault,
       archived: false,
     });
     toast.success(`Added ${accName.trim()}`);
@@ -429,6 +434,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                   setAccName('');
                   setAccBalance('0');
                   setAccType('upi');
+                  setAccIsDefault(false);
                   setIsNewAccountOpen(true);
                 }}
                 className="min-h-[40px] px-3.5 gap-1.5 text-xs rounded-xl whitespace-nowrap"
@@ -594,12 +600,17 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                       <CategoryIcon name={acc.icon} className="w-4 h-4" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">
-                        {acc.name}
+                      <p className="text-sm font-semibold text-foreground truncate flex items-center gap-1.5">
+                        <span className="truncate">{acc.name}</span>
+                        {acc.isDefault && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/12 text-primary text-[10px] font-semibold shrink-0">
+                            <Star className="w-2.5 h-2.5 fill-primary" />
+                            Default
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-muted-foreground capitalize">
                         {acc.type.replace('_', ' ')}
-                        {acc.isDefault ? ' · Default' : ''}
                       </p>
                     </div>
                   </button>
@@ -608,6 +619,21 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                     <span className="text-sm sm:text-base font-bold font-mono tabular-nums text-foreground mr-1">
                       {formatINR(acc.balance)}
                     </span>
+                    {!acc.isDefault && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await setDefaultAccount(acc.id);
+                          toast.success(`${acc.name} set as default payment method`);
+                        }}
+                        title="Set as default Paid via account"
+                        aria-label={`Set ${acc.name} as default`}
+                        className="h-8 px-2 rounded-lg border border-border bg-background hover:bg-muted text-[11px] font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+                      >
+                        <Star className="w-3 h-3" />
+                        <span className="hidden sm:inline">Default</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => openReconcileDialog(acc)}
@@ -644,6 +670,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                   setAccName('');
                   setAccBalance('0');
                   setAccType('credit_card');
+                  setAccIsDefault(false);
                   setIsNewAccountOpen(true);
                 }}
                 className="text-xs font-semibold text-primary hover:underline"
@@ -681,8 +708,14 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                             <CreditCard className="w-5 h-5" />
                           </span>
                           <div className="min-w-0">
-                            <p className="text-sm font-bold text-foreground truncate">
-                              {card.name}
+                            <p className="text-sm font-bold text-foreground truncate flex items-center gap-1.5">
+                              <span className="truncate">{card.name}</span>
+                              {card.isDefault && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/12 text-primary text-[10px] font-semibold shrink-0">
+                                  <Star className="w-2.5 h-2.5 fill-primary" />
+                                  Default
+                                </span>
+                              )}
                             </p>
                             <p className="text-xs text-muted-foreground font-mono tabular-nums">
                               Limit {formatINR(limit)}
@@ -740,6 +773,21 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                       </div>
 
                       <div className="flex items-center justify-end gap-2">
+                        {!card.isDefault && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              await setDefaultAccount(card.id);
+                              toast.success(`${card.name} set as default payment method`);
+                            }}
+                            className="h-8 px-2.5 text-xs rounded-lg gap-1"
+                          >
+                            <Star className="w-3 h-3" />
+                            <span>Set Default</span>
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           size="sm"
@@ -1218,6 +1266,17 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                 </div>
               </div>
             )}
+            <label className="flex items-center gap-2.5 pt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={accIsDefault}
+                onChange={(e) => setAccIsDefault(e.target.checked)}
+                className="w-4 h-4 rounded border-border accent-primary"
+              />
+              <span className="text-xs font-medium text-foreground">
+                Use as default payment method (Paid via)
+              </span>
+            </label>
             <DialogFooter className="flex items-center justify-between gap-2">
               {activeAccounts.length > 1 && editingAccount && (
                 <Button
@@ -1343,6 +1402,17 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                 </div>
               </div>
             )}
+            <label className="flex items-center gap-2.5 pt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={accIsDefault}
+                onChange={(e) => setAccIsDefault(e.target.checked)}
+                className="w-4 h-4 rounded border-border accent-primary"
+              />
+              <span className="text-xs font-medium text-foreground">
+                Set as default payment method (Paid via)
+              </span>
+            </label>
             <DialogFooter>
               <Button
                 type="button"

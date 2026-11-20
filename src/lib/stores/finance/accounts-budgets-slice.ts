@@ -22,6 +22,7 @@ export type AccountsBudgetsSlice = Pick<
   | 'applyCategorizationRules'
   | 'addAccount'
   | 'updateAccount'
+  | 'setDefaultAccount'
   | 'deleteAccount'
   | 'reconcileAccountBalance'
   | 'recordCurrentNetWorthSnapshot'
@@ -103,9 +104,22 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
   addAccount: async (data) => {
     const userId = await resolveCurrentUserId(undefined, get().currentUserId);
     const now = new Date().toISOString();
+    const accountId = crypto.randomUUID();
+    if (data.isDefault) {
+      const existingAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
+      for (const acc of existingAccs) {
+        if (acc.isDefault) {
+          await db.financeAccounts.update(acc.id, {
+            isDefault: false,
+            isDirty: true,
+            updatedAt: now,
+          });
+        }
+      }
+    }
     const account: FinanceAccount = {
       ...data,
-      id: crypto.randomUUID(),
+      id: accountId,
       userId,
       isDirty: true,
       generationCounter: 1,
@@ -122,13 +136,45 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
   updateAccount: async (id, data) => {
     const existing = get().accounts.find((a) => a.id === id);
     if (!existing) return;
+    const now = new Date().toISOString();
+    if (data.isDefault === true) {
+      const userAccs = await db.financeAccounts.where('userId').equals(existing.userId).toArray();
+      for (const acc of userAccs) {
+        if (acc.id !== id && acc.isDefault) {
+          await db.financeAccounts.update(acc.id, {
+            isDefault: false,
+            isDirty: true,
+            updatedAt: now,
+          });
+        }
+      }
+    }
     await db.financeAccounts.update(id, {
       ...data,
       isDirty: true,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     });
     await get().loadFinanceData(existing.userId);
     await get().recordCurrentNetWorthSnapshot();
+    notifyFinanceSync();
+  },
+
+  setDefaultAccount: async (accountId) => {
+    const target = get().accounts.find((a) => a.id === accountId && !a.deletedAt && !a.archived);
+    if (!target) return;
+    const now = new Date().toISOString();
+    const userAccs = await db.financeAccounts.where('userId').equals(target.userId).toArray();
+    for (const acc of userAccs) {
+      const shouldBeDefault = acc.id === accountId;
+      if (Boolean(acc.isDefault) !== shouldBeDefault) {
+        await db.financeAccounts.update(acc.id, {
+          isDefault: shouldBeDefault,
+          isDirty: true,
+          updatedAt: now,
+        });
+      }
+    }
+    await get().loadFinanceData(target.userId);
     notifyFinanceSync();
   },
 

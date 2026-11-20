@@ -393,11 +393,16 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
         uniqueAccounts.push(acc);
       }
 
+      const normalizedTransactions = transactions.map((tx) => ({
+        ...tx,
+        tags: Array.isArray(tx.tags) ? tx.tags : [],
+      }));
+
       set({
         currentUserId: userId,
         categories: uniqueCategories,
         accounts: uniqueAccounts,
-        transactions,
+        transactions: normalizedTransactions,
         budgets,
         commitments,
         debtRecords,

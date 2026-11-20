@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
+import {
+  FINANCE_GEMINI_MODEL,
+  createFinanceGeminiClient,
+  resolveGeminiApiKey,
+} from '@/lib/ai/gemini-server';
 
 interface ReceiptImagePayload {
   data: string; // base64 without data: prefix
@@ -50,21 +55,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = resolveGeminiApiKey();
     if (!apiKey) {
       return NextResponse.json(
         {
-          error: 'Receipt OCR requires GEMINI_API_KEY on the server. You can enter the expense manually.',
+          error: 'Receipt OCR requires GEMINI_API_KEY on the server. Add GEMINI_API_KEY in Settings > Secrets, or enter the expense manually.',
           code: 'AI_UNAVAILABLE',
         },
         { status: 503 }
       );
     }
 
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
+    const ai = createFinanceGeminiClient(apiKey);
 
     const categorySlugs = categories.length
       ? categories.map((c) => `${c.slug} (${c.name})`).join(', ')
@@ -98,7 +100,7 @@ Return JSON with an "items" array. Use YYYY-MM-DD for dates (default ${todayIso}
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+      model: FINANCE_GEMINI_MODEL,
       contents: [{ role: 'user', parts }],
       config: {
         responseMimeType: 'application/json',
