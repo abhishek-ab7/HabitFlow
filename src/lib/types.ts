@@ -570,6 +570,8 @@ export interface FinanceTransaction {
   isDirty?: boolean;
 }
 
+export type FinanceBudgetMode = 'cap' | 'zero_based';
+
 export interface FinanceBudget {
   id: string;
   userId: string;
@@ -577,6 +579,8 @@ export interface FinanceBudget {
   totalBudget: number;
   expectedIncome: number;
   plannedSipAmount?: number;
+  budgetMode?: FinanceBudgetMode;
+  assignedIncome?: number;
   currency: string;
   notes?: string;
   deletedAt?: string | null;
@@ -584,6 +588,49 @@ export interface FinanceBudget {
   updatedAt: string;
   generationCounter?: number;
   isDirty?: boolean;
+}
+
+export interface FinanceNetWorthSnapshot {
+  id: string;
+  userId: string;
+  monthKey: string; // YYYY-MM
+  snapshotDate: string; // YYYY-MM-DD
+  liquidAssets: number;
+  investmentAssets: number;
+  friendReceivables: number;
+  totalAssets: number;
+  creditCardLiabilities: number;
+  emiRemainingPrincipal: number;
+  friendPayables: number;
+  totalLiabilities: number;
+  netWorth: number;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+}
+
+export interface CashFlowForecastPoint {
+  dayOffset: number;
+  dateStr: string;
+  label: string;
+  projectedBalance: number;
+  scheduledInflow: number;
+  scheduledOutflow: number;
+  discretionaryBurn: number;
+  events: string[];
+}
+
+export interface FinanceAnomalyAlert {
+  id: string;
+  severity: 'info' | 'warning' | 'critical';
+  kind: 'category_spike' | 'idle_friend_debt' | 'review_backlog' | 'cash_crunch' | 'subscription_hike';
+  title: string;
+  description: string;
+  amount?: number;
+  actionLabel: string;
+  actionTarget: 'activity' | 'trackers' | 'accounts' | 'budgets' | 'finance';
 }
 
 export type CommitmentCategory = 'family_support' | 'allowance' | 'shared_household' | 'rent' | 'other';
@@ -872,6 +919,8 @@ export interface FinanceFilterState {
   needsReview: 'all' | 'only_review';
   dateFrom?: string;
   dateTo?: string;
+  minAmount?: number;
+  maxAmount?: number;
 }
 
 

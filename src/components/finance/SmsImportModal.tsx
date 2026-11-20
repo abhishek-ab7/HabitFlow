@@ -24,6 +24,7 @@ import {
   Copy,
   Sparkles,
   AlertTriangle,
+  Wand2,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
@@ -35,6 +36,14 @@ interface SmsImportModalProps {
   initialText?: string | null;
 }
 
+interface PendingRulePrompt {
+  itemId: string;
+  merchantPattern: string;
+  cleanMerchantName: string;
+  categoryId: string;
+  categoryName: string;
+}
+
 export function SmsImportModal({
   open,
   onOpenChange,
@@ -43,7 +52,9 @@ export function SmsImportModal({
   const categories = useFinanceStore((s) => s.categories);
   const accounts = useFinanceStore((s) => s.accounts);
   const transactions = useFinanceStore((s) => s.transactions);
+  const categorizationRules = useFinanceStore((s) => s.categorizationRules);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
+  const addCategorizationRule = useFinanceStore((s) => s.addCategorizationRule);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -55,6 +66,9 @@ export function SmsImportModal({
   const [isImporting, setIsImporting] = useState(false);
   const [showAutomationGuide, setShowAutomationGuide] = useState(false);
   const [editingCategoryItemId, setEditingCategoryItemId] = useState<string | null>(null);
+  const [sendToReviewInbox, setSendToReviewInbox] = useState(true);
+  const [pendingRulePrompt, setPendingRulePrompt] = useState<PendingRulePrompt | null>(null);
+  const [isSavingRule, setIsSavingRule] = useState(false);
 
   useEffect(() => {
     if (open && categories.length === 0) {
@@ -71,20 +85,18 @@ export function SmsImportModal({
     }
 
     setIsParsing(true);
+    setPendingRulePrompt(null);
     try {
       let detected = parseSmsOrNotificationBatch(
         trimmed,
         categories,
         accounts,
-        transactions
+        transactions,
+        categorizationRules
       );
 
-      // Optional AI fallback when a single unstructured notification has no deterministic match
-      if (
-        detected.length === 0 &&
-        !trimmed.includes('\n') &&
-        process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES === 'true'
-      ) {
+      // Server-side AI fallback when a single unstructured notification has no deterministic match
+      if (detected.length === 0 && !trimmed.includes('\n')) {
         try {
           const res = await fetch('/api/ai/parse-expense', {
             method: 'POST',
@@ -114,17 +126,19 @@ export function SmsImportModal({
                 {
                   id: crypto.randomUUID(),
                   rawText: trimmed,
-                  title: aiData.title || 'Parsed Expense',
+                  rawMerchant: aiData.merchantName || aiData.title,
+                  title: aiData.merchantName || aiData.title || 'Parsed Expense',
                   amount: aiData.amount,
                   type: aiData.type === 'income' ? 'income' : 'expense',
                   categoryId: cat?.id || '',
                   categorySlug: cat?.slug || 'shopping-personal-care',
                   accountId: acc?.id || '',
                   paymentMethodType: aiData.paymentMethodType || 'upi',
-                  date: new Date().toISOString().split('T')[0],
+                  date: aiData.date || new Date().toISOString().split('T')[0],
                   isDuplicate: false,
                   confidence: aiData.confidence || 80,
                   selected: true,
+                  tags: Array.isArray(aiData.tags) ? aiData.tags : undefined,
                 },
               ];
             }
@@ -147,6 +161,7 @@ export function SmsImportModal({
   useEffect(() => {
     if (!open) {
       setEditingCategoryItemId(null);
+      setPendingRulePrompt(null);
       return;
     }
     if (initialText && initialText.trim()) {
@@ -201,6 +216,83 @@ export function SmsImportModal({
     );
   };
 
+  const handleCategorySelectedForItem = (categoryId: string) => {
+    if (!editingCategoryItemId) return;
+    const targetItem = parsedItems.find((i) => i.id === editingCategoryItemId);
+    const cat = categories.find((c) => c.id === categoryId);
+    updateItem(editingCategoryItemId, {
+      categoryId,
+      categorySlug: cat?.slug || targetItem?.categorySlug || '',
+    });
+
+    if (targetItem && cat) {
+      const merchantSeed = (targetItem.rawMerchant || targetItem.title || '').trim();
+      const lowerSeed = merchantSeed.toLowerCase();
+      const isGeneric =
+        merchantSeed.length < 3 ||
+        lowerSeed === 'bank / upi expense' ||
+        lowerSeed === 'bank / upi credit' ||
+        lowerSeed === 'parsed expense';
+
+      if (!isGeneric) {
+        const alreadyRule = categorizationRules.some(
+          (r) =>
+            !r.deletedAt &&
+            r.isActive &&
+            r.matchPattern.toLowerCase() === lowerSeed &&
+            r.categoryId === categoryId
+        );
+        if (!alreadyRule) {
+          setPendingRulePrompt({
+            itemId: targetItem.id,
+            merchantPattern: merchantSeed,
+            cleanMerchantName: targetItem.title.trim() || merchantSeed,
+            categoryId,
+            categoryName: cat.name,
+          });
+        }
+      }
+    }
+  };
+
+  const handleSaveSmartRule = async () => {
+    if (!pendingRulePrompt) return;
+    setIsSavingRule(true);
+    try {
+      const created = await addCategorizationRule({
+        matchPattern: pendingRulePrompt.merchantPattern,
+        cleanMerchantName: pendingRulePrompt.cleanMerchantName,
+        categoryId: pendingRulePrompt.categoryId,
+        isActive: true,
+      });
+
+      const patternLower = pendingRulePrompt.merchantPattern.toLowerCase();
+      const targetCat = categories.find((c) => c.id === pendingRulePrompt.categoryId);
+      setParsedItems((prev) =>
+        prev.map((item) => {
+          const hay = `${item.rawMerchant || ''} ${item.title} ${item.rawText}`.toLowerCase();
+          if (hay.includes(patternLower)) {
+            return {
+              ...item,
+              categoryId: pendingRulePrompt.categoryId,
+              categorySlug: targetCat?.slug || item.categorySlug,
+              matchedRuleId: created.id,
+              matchedRulePattern: created.matchPattern,
+            };
+          }
+          return item;
+        })
+      );
+
+      toast.success(
+        `Rule saved: "${pendingRulePrompt.merchantPattern}" → ${pendingRulePrompt.categoryName}`
+      );
+      setPendingRulePrompt(null);
+    } finally {
+      setIsSavingRule(false);
+    }
+  };
+
   const selectedItems = parsedItems.filter((item) => item.selected && item.amount > 0);
 
   const handleImportSelected = async () => {
@@ -214,25 +306,39 @@ export function SmsImportModal({
 
     setIsImporting(true);
     try {
+      let reviewQueued = 0;
       for (const item of selectedItems) {
+        const shouldReview = sendToReviewInbox && !item.matchedRuleId;
+        if (shouldReview) reviewQueued += 1;
+
+        const mergedTags = Array.from(
+          new Set([
+            'sms-import',
+            ...(item.tags || []),
+            ...(item.referenceId ? [`ref:${item.referenceId}`] : []),
+          ])
+        );
+
         await addTransaction({
           title: item.title.trim() || 'SMS Expense',
+          merchantName: item.title.trim() || undefined,
+          rawMerchant: item.rawMerchant || undefined,
           amount: Number(item.amount),
           type: item.type,
           categoryId: item.categoryId || fallbackCat,
           accountId: item.accountId || fallbackAcc,
           date: item.date,
+          needsReview: shouldReview,
           notes: `Imported from SMS/Notification: ${item.rawText.slice(0, 160)}`,
-          tags: [
-            'sms-import',
-            ...(item.referenceId ? [`ref:${item.referenceId}`] : []),
-          ],
+          tags: mergedTags,
         });
       }
       toast.success(
-        `Imported ${selectedItems.length} ${
-          selectedItems.length === 1 ? 'transaction' : 'transactions'
-        }`
+        reviewQueued > 0
+          ? `Imported ${selectedItems.length} entries (${reviewQueued} queued for Needs Review)`
+          : `Imported ${selectedItems.length} verified ${
+              selectedItems.length === 1 ? 'transaction' : 'transactions'
+            }`
       );
       onOpenChange(false);
     } finally {
@@ -252,12 +358,13 @@ export function SmsImportModal({
   };
 
   const editingCategoryItem = parsedItems.find((i) => i.id === editingCategoryItemId);
+  const activeRuleCount = categorizationRules.filter((r) => r.isActive && !r.deletedAt).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-[540px] w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col border-border bg-background"
+        className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-[560px] w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col border-border bg-background"
       >
         {/* Drag Handle */}
         <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
@@ -265,17 +372,17 @@ export function SmsImportModal({
         </div>
 
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-3.5 border-b border-border bg-card/85 backdrop-blur-md flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <MessageSquareText className="w-4 h-4" />
             </span>
             <div className="min-w-0">
               <DialogTitle className="text-base font-bold text-foreground truncate">
-                Fetch from SMS & Notifications
+                Fetch from SMS &amp; Notifications
               </DialogTitle>
               <p className="text-xs text-muted-foreground truncate">
-                Extract UPI, bank, and card alerts automatically
+                UPI, bank &amp; card parser · {activeRuleCount} active smart {activeRuleCount === 1 ? 'rule' : 'rules'}
               </p>
             </div>
           </div>
@@ -284,7 +391,7 @@ export function SmsImportModal({
             type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Close"
-            className="min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -355,26 +462,69 @@ export function SmsImportModal({
             </div>
           </div>
 
+          {/* Inline "Always Apply Rule?" Prompt after recategorization */}
+          {pendingRulePrompt && (
+            <div className="rounded-xl border border-primary/40 bg-primary/5 px-3.5 py-2.5 flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2 min-w-0 text-xs">
+                <Wand2 className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-foreground truncate">
+                  Always categorize <strong>{pendingRulePrompt.merchantPattern}</strong> as{' '}
+                  <strong>{pendingRulePrompt.categoryName}</strong>?
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isSavingRule}
+                  onClick={handleSaveSmartRule}
+                  className="h-8 px-2.5 rounded-lg text-xs font-semibold"
+                >
+                  {isSavingRule ? 'Saving...' : 'Apply Rule'}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => setPendingRulePrompt(null)}
+                  aria-label="Dismiss rule prompt"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Parsed Transactions Review List */}
           {hasParsed && (
             <div className="space-y-2.5 pt-1">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Detected ({parsedItems.length})
                 </h3>
                 {parsedItems.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const allSelected = parsedItems.every((i) => i.selected);
-                      setParsedItems((prev) =>
-                        prev.map((i) => ({ ...i, selected: !allSelected }))
-                      );
-                    }}
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    {parsedItems.every((i) => i.selected) ? 'Deselect all' : 'Select all'}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={sendToReviewInbox}
+                        onChange={(e) => setSendToReviewInbox(e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      <span>Flag unmatched for Review Inbox</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allSelected = parsedItems.every((i) => i.selected);
+                        setParsedItems((prev) =>
+                          prev.map((i) => ({ ...i, selected: !allSelected }))
+                        );
+                      }}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {parsedItems.every((i) => i.selected) ? 'Deselect all' : 'Select all'}
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -389,7 +539,7 @@ export function SmsImportModal({
                     return (
                       <div
                         key={item.id}
-                        className={`rounded-2xl border p-3.5 space-y-3 transition-colors ${
+                        className={`rounded-2xl border p-3.5 space-y-2.5 transition-colors ${
                           item.selected
                             ? 'border-primary/40 bg-card'
                             : 'border-border bg-muted/30 opacity-70'
@@ -436,7 +586,7 @@ export function SmsImportModal({
                                   })
                                 }
                                 aria-label="Amount"
-                                className="h-9 text-xs sm:text-sm font-mono font-bold text-right rounded-lg"
+                                className="h-9 text-xs sm:text-sm font-mono tabular-nums font-bold text-right rounded-lg"
                               />
                             </div>
                           </div>
@@ -465,11 +615,13 @@ export function SmsImportModal({
                             aria-label="Account"
                             className="h-8 px-2 text-xs rounded-lg border border-border bg-background text-foreground"
                           >
-                            {accounts.map((acc) => (
-                              <option key={acc.id} value={acc.id}>
-                                {acc.name}
-                              </option>
-                            ))}
+                            {accounts
+                              .filter((a) => !a.deletedAt)
+                              .map((acc) => (
+                                <option key={acc.id} value={acc.id}>
+                                  {acc.name}
+                                </option>
+                              ))}
                           </select>
 
                           <button
@@ -488,15 +640,26 @@ export function SmsImportModal({
                             {item.type}
                           </button>
 
-                          <span className="text-[11px] font-mono text-muted-foreground ml-auto">
+                          <span className="text-[11px] font-mono tabular-nums text-muted-foreground ml-auto">
                             {item.date}
                           </span>
                         </div>
 
-                        {item.isDuplicate && (
-                          <div className="pl-7 flex items-center gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                            <span>Possible duplicate of an already saved entry</span>
+                        {/* Unboxed metadata row: smart rule match / review status / duplicate */}
+                        {(item.matchedRulePattern || item.isDuplicate) && (
+                          <div className="pl-7 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                            {item.matchedRulePattern && (
+                              <span className="text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                                <Wand2 className="w-3 h-3 shrink-0" />
+                                Rule matched: {item.matchedRulePattern} · Auto-verified
+                              </span>
+                            )}
+                            {item.isDuplicate && (
+                              <span className="text-amber-600 dark:text-amber-400 font-medium inline-flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                Possible duplicate of an existing entry
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -507,7 +670,7 @@ export function SmsImportModal({
             </div>
           )}
 
-          {/* Auto-Capture Setup Guide (Android Share Target / Shortcuts / Tasker) */}
+          {/* Auto-Capture Setup Guide */}
           <div className="rounded-xl border border-border/70 bg-muted/20 overflow-hidden">
             <button
               type="button"
@@ -581,11 +744,7 @@ export function SmsImportModal({
           if (!next) setEditingCategoryItemId(null);
         }}
         selectedCategoryId={editingCategoryItem?.categoryId || ''}
-        onSelectCategory={(categoryId) => {
-          if (editingCategoryItemId) {
-            updateItem(editingCategoryItemId, { categoryId });
-          }
-        }}
+        onSelectCategory={handleCategorySelectedForItem}
       />
     </Dialog>
   );

@@ -161,6 +161,7 @@ export class CompletionsSyncEngine implements ISynchronizer {
         completed: c.completed,
         status: c.status || (c.skipped ? 'rest' : c.completed ? 'completed' : null),
         skipped: c.skipped ?? (c.status === 'rest'),
+        rest_reason: c.restReason || null,
         notes: c.note || null,
         value: c.value || 0,
         generation_counter: c.generationCounter || 1,
@@ -229,6 +230,7 @@ export class CompletionsSyncEngine implements ISynchronizer {
               completed: remote.completed,
               status: remote.status || (isRest ? 'rest' : remote.completed ? 'completed' : undefined),
               skipped: isRest,
+              restReason: remote.rest_reason || local?.restReason || undefined,
               note: remote.notes || undefined,
               value: remote.value || 0,
               generationCounter: remote.generation_counter || 1,
@@ -258,13 +260,18 @@ export async function syncCompletionsWithRetry(engine: any) {
 
 export async function pushHabitToRemote(engine: any, habit: Habit) {
   const supabase = getSupabaseClient();
-  await (supabase.from('habits') as any).upsert({
+  const payload = {
     id: habit.id,
     user_id: engine.userId,
     name: habit.name,
     icon: habit.icon || '✓',
     category: habit.category,
     target_days: habit.targetDaysPerWeek,
+    frequency_type: habit.frequencyType || (habit.targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily'),
+    scheduled_days: habit.scheduledDays || null,
+    interval_days: habit.intervalDays || null,
+    allow_bonus_completions: habit.allowBonusCompletions ?? true,
+    auto_track_rule: habit.autoTrackRule || null,
     is_archived: habit.archived,
     order_index: habit.order,
     is_quantitative: habit.isQuantitative || false,
@@ -272,5 +279,23 @@ export async function pushHabitToRemote(engine: any, habit: Habit) {
     unit: habit.unit || '',
     generation_counter: habit.generationCounter || 1,
     updated_at: new Date().toISOString()
-  });
+  };
+  const { error } = await (supabase.from('habits') as any).upsert(payload);
+  if (error) {
+    await (supabase.from('habits') as any).upsert({
+      id: habit.id,
+      user_id: engine.userId,
+      name: habit.name,
+      icon: habit.icon || '✓',
+      category: habit.category,
+      target_days: habit.targetDaysPerWeek,
+      is_archived: habit.archived,
+      order_index: habit.order,
+      is_quantitative: habit.isQuantitative || false,
+      target_value: habit.targetValue || 0,
+      unit: habit.unit || '',
+      generation_counter: habit.generationCounter || 1,
+      updated_at: new Date().toISOString()
+    });
+  }
 }

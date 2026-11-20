@@ -1,6 +1,7 @@
 import type {
   FinanceAccount,
   FinanceAccountType,
+  FinanceCategorizationRule,
   FinanceCategory,
   FinanceTransaction,
   FinanceTransactionType,
@@ -10,6 +11,7 @@ export interface ParsedSmsExpense {
   id: string;
   rawText: string;
   title: string;
+  rawMerchant?: string;
   amount: number;
   type: FinanceTransactionType;
   categoryId: string;
@@ -18,6 +20,9 @@ export interface ParsedSmsExpense {
   paymentMethodType: FinanceAccountType;
   date: string; // YYYY-MM-DD
   referenceId?: string;
+  tags?: string[];
+  matchedRuleId?: string;
+  matchedRulePattern?: string;
   isDuplicate: boolean;
   confidence: number;
   selected: boolean;
@@ -234,11 +239,26 @@ function isLikelyOtpOrNonTransaction(text: string): boolean {
   return !hasTransactionCue;
 }
 
+function matchCategorizationRule(
+  rawText: string,
+  extractedTitle: string,
+  rules: FinanceCategorizationRule[]
+): FinanceCategorizationRule | undefined {
+  const haystack = `${rawText} ${extractedTitle}`.toLowerCase();
+  return rules.find((rule) => {
+    if (!rule.isActive || rule.deletedAt) return false;
+    const pattern = rule.matchPattern.trim().toLowerCase();
+    if (!pattern) return false;
+    return haystack.includes(pattern);
+  });
+}
+
 export function parseSingleSmsOrNotification(
   rawText: string,
   categories: FinanceCategory[],
   accounts: FinanceAccount[],
-  existingTransactions: FinanceTransaction[] = []
+  existingTransactions: FinanceTransaction[] = [],
+  rules: FinanceCategorizationRule[] = []
 ): ParsedSmsExpense | null {
   const text = rawText.trim();
   if (!text || isLikelyOtpOrNonTransaction(text)) {
@@ -258,10 +278,15 @@ export function parseSingleSmsOrNotification(
   const type: FinanceTransactionType = isCredit ? 'income' : 'expense';
   const date = extractTransactionDate(text);
   const referenceId = extractReferenceId(text);
-  const title = extractMerchantOrTitle(text, type);
+  const extractedTitle = extractMerchantOrTitle(text, type);
+
+  // Check active user categorization rules first before heuristic category detection
+  const matchedRule = matchCategorizationRule(text, extractedTitle, rules);
+  const title = matchedRule?.cleanMerchantName?.trim() || extractedTitle;
 
   const matchedSlug = detectCategorySlug(text, type);
   const category =
+    (matchedRule ? categories.find((c) => c.id === matchedRule.categoryId) : undefined) ||
     categories.find((c) => c.slug === matchedSlug) ||
     categories.find((c) => c.type === type || c.type === 'both') ||
     categories[0];
@@ -283,12 +308,13 @@ export function parseSingleSmsOrNotification(
     );
   });
 
-  const confidence = referenceId ? 95 : title !== 'SMS Expense' ? 88 : 74;
+  const confidence = matchedRule ? 98 : referenceId ? 95 : title !== 'SMS Expense' ? 88 : 74;
 
   return {
     id: crypto.randomUUID(),
     rawText: text,
     title,
+    rawMerchant: extractedTitle,
     amount,
     type,
     categoryId: category?.id || '',
@@ -297,6 +323,9 @@ export function parseSingleSmsOrNotification(
     paymentMethodType,
     date,
     referenceId,
+    tags: matchedRule?.defaultTags ? [...matchedRule.defaultTags] : undefined,
+    matchedRuleId: matchedRule?.id,
+    matchedRulePattern: matchedRule?.matchPattern,
     isDuplicate,
     confidence,
     selected: !isDuplicate,
@@ -311,7 +340,8 @@ export function parseSmsOrNotificationBatch(
   rawInput: string,
   categories: FinanceCategory[],
   accounts: FinanceAccount[],
-  existingTransactions: FinanceTransaction[] = []
+  existingTransactions: FinanceTransaction[] = [],
+  rules: FinanceCategorizationRule[] = []
 ): ParsedSmsExpense[] {
   const trimmed = rawInput.trim();
   if (!trimmed) return [];
@@ -373,7 +403,8 @@ export function parseSmsOrNotificationBatch(
       msg,
       categories,
       accounts,
-      existingTransactions
+      existingTransactions,
+      rules
     );
     if (parsed) {
       results.push(parsed);

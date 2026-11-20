@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -22,6 +22,16 @@ import {
   MessageSquareText,
   Users,
   Sparkles,
+  Mic,
+  MicOff,
+  Camera,
+  Tag,
+  Plus,
+  Repeat,
+  Split,
+  Check,
+  Loader2,
+  Send,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
@@ -38,6 +48,65 @@ interface AddTransactionModalProps {
   onOpenSmsImport?: () => void;
 }
 
+interface SplitRow {
+  id: string;
+  categoryId: string;
+  amountStr: string;
+  note: string;
+}
+
+interface ScannedDraftItem {
+  id: string;
+  selected: boolean;
+  title: string;
+  merchantName: string;
+  amount: number;
+  type: 'expense' | 'income';
+  categoryId: string;
+  accountId: string;
+  date: string;
+  notes?: string;
+  tags?: string[];
+  fileName?: string;
+}
+
+interface SpeechRecognitionEventLike {
+  results: {
+    [index: number]: {
+      [index: number]: { transcript: string };
+    };
+  };
+}
+
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+}
+
+function readFileAsBase64(file: File): Promise<{ data: string; mimeType: string; fileName: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const commaIdx = result.indexOf(',');
+      const data = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
+      resolve({
+        data,
+        mimeType: file.type || 'image/jpeg',
+        fileName: file.name,
+      });
+    };
+    reader.onerror = () => reject(new Error('Failed to read image'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function AddTransactionModal({
   open,
   onOpenChange,
@@ -48,9 +117,11 @@ export function AddTransactionModal({
 }: AddTransactionModalProps) {
   const categories = useFinanceStore((s) => s.categories);
   const accounts = useFinanceStore((s) => s.accounts);
+  const transactions = useFinanceStore((s) => s.transactions);
   const commitments = useFinanceStore((s) => s.commitments);
   const debtRecords = useFinanceStore((s) => s.debtRecords);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
+  const addSplitTransactions = useFinanceStore((s) => s.addSplitTransactions);
   const updateTransaction = useFinanceStore((s) => s.updateTransaction);
   const deleteTransaction = useFinanceStore((s) => s.deleteTransaction);
   const splitTransactionWithFriend = useFinanceStore(
@@ -60,7 +131,7 @@ export function AddTransactionModal({
   const applyCategorizationRules = useFinanceStore(
     (s) => s.applyCategorizationRules
   );
-
+  const addRecurringBill = useFinanceStore((s) => s.addRecurringBill);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -71,6 +142,7 @@ export function AddTransactionModal({
   const [accountId, setAccountId] = useState('');
   const [toAccountId, setToAccountId] = useState('');
   const [title, setTitle] = useState('');
+  const [notes, setNotes] = useState('');
   const [date, setDate] = useState(todayStr);
   const [linkedCommitmentId, setLinkedCommitmentId] = useState<string>('none');
   const [commitmentContributionType, setCommitmentContributionType] =
@@ -78,7 +150,32 @@ export function AddTransactionModal({
   const [linkedDebtId, setLinkedDebtId] = useState<string>('none');
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
+  // Tags state
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
+
+  // Multi-Category Split state
+  const [isCategorySplitEnabled, setIsCategorySplitEnabled] = useState(false);
+  const [splitRows, setSplitRows] = useState<SplitRow[]>([]);
+
+  // Recurring Bill toggle state
+  const [isRecurringEnabled, setIsRecurringEnabled] = useState(false);
+  const [recurringCadence, setRecurringCadence] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [recurringDueDay, setRecurringDueDay] = useState<string>(
+    String(new Date().getDate())
+  );
+
+  // Smart Capture (NLP + Voice + Receipt OCR) state
+  const [nlpInput, setNlpInput] = useState('');
+  const [isNlpParsing, setIsNlpParsing] = useState(false);
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const [isScanningReceipts, setIsScanningReceipts] = useState(false);
+  const [scannedBatch, setScannedBatch] = useState<ScannedDraftItem[]>([]);
+  const [isSavingBatch, setIsSavingBatch] = useState(false);
+
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   // Split with Friend state
   const [isSplitEnabled, setIsSplitEnabled] = useState(false);
@@ -93,6 +190,35 @@ export function AddTransactionModal({
   const [isLocalSmsOpen, setIsLocalSmsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const activeCategories = useMemo(
+    () => categories.filter((c) => !c.deletedAt),
+    [categories]
+  );
+  const activeAccounts = useMemo(
+    () => accounts.filter((a) => !a.deletedAt),
+    [accounts]
+  );
+
+  const suggestedTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tx of transactions) {
+      if (tx.deletedAt || !tx.tags) continue;
+      for (const raw of tx.tags) {
+        const clean = raw.trim().toLowerCase();
+        if (!clean || clean.startsWith('ref:') || clean === 'sms-import') continue;
+        counts.set(clean, (counts.get(clean) || 0) + 1);
+      }
+    }
+    const defaults = ['work', 'reimbursable', 'travel', 'family', 'self-care'];
+    for (const d of defaults) {
+      if (!counts.has(d)) counts.set(d, 0);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([tag]) => tag);
+  }, [transactions]);
+
   useEffect(() => {
     if (open && categories.length === 0) {
       loadFinanceData(user?.id);
@@ -102,10 +228,11 @@ export function AddTransactionModal({
   useEffect(() => {
     if (!open) {
       setIsCategorySheetOpen(false);
+      recognitionRef.current?.stop();
+      setIsListeningVoice(false);
       return;
     }
 
-    // Auto-focus amount input to trigger native phone keyboard on open
     const focusTimer = setTimeout(() => {
       amountInputRef.current?.focus();
     }, 80);
@@ -117,23 +244,36 @@ export function AddTransactionModal({
       setAccountId(editingTransaction.accountId);
       setToAccountId(editingTransaction.toAccountId || '');
       setTitle(editingTransaction.title);
+      setNotes(editingTransaction.notes || '');
       setDate(editingTransaction.date);
+      setTags(editingTransaction.tags || []);
+      setTagInput('');
       setLinkedCommitmentId(editingTransaction.linkedCommitmentId || 'none');
       setCommitmentContributionType(
         editingTransaction.commitmentContributionType || 'offset_expense'
       );
       setLinkedDebtId(editingTransaction.linkedDebtId || 'none');
       setShowMoreOptions(
-        Boolean(editingTransaction.linkedCommitmentId || editingTransaction.linkedDebtId)
+        Boolean(
+          editingTransaction.linkedCommitmentId ||
+            editingTransaction.linkedDebtId ||
+            editingTransaction.notes
+        )
       );
       setIsSplitEnabled(false);
+      setIsCategorySplitEnabled(false);
+      setSplitRows([]);
+      setIsRecurringEnabled(false);
       setSaveMerchantRule(false);
+      setNlpInput('');
+      setScannedBatch([]);
       return () => clearTimeout(focusTimer);
     }
 
-    const defaultCat = categories[0];
-    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
-    const secondAcc = accounts.find((a) => a.id !== defaultAcc?.id) || accounts[0];
+    const defaultCat = activeCategories[0];
+    const defaultAcc = activeAccounts.find((a) => a.isDefault) || activeAccounts[0];
+    const secondAcc =
+      activeAccounts.find((a) => a.id !== defaultAcc?.id) || activeAccounts[0];
 
     setType('expense');
     setAmountStr('');
@@ -141,7 +281,10 @@ export function AddTransactionModal({
     setAccountId(defaultAcc?.id || '');
     setToAccountId(secondAcc?.id || '');
     setTitle('');
+    setNotes('');
     setDate(todayStr);
+    setTags([]);
+    setTagInput('');
     setLinkedCommitmentId(defaultCommitmentId || 'none');
     setCommitmentContributionType('offset_expense');
     setLinkedDebtId(defaultDebtId || 'none');
@@ -149,7 +292,14 @@ export function AddTransactionModal({
     setIsSplitEnabled(false);
     setSplitFriendName('');
     setSplitFriendShareStr('');
+    setIsCategorySplitEnabled(false);
+    setSplitRows([]);
+    setIsRecurringEnabled(false);
+    setRecurringCadence('monthly');
+    setRecurringDueDay(String(new Date().getDate()));
     setSaveMerchantRule(false);
+    setNlpInput('');
+    setScannedBatch([]);
 
     return () => clearTimeout(focusTimer);
   }, [
@@ -157,12 +307,11 @@ export function AddTransactionModal({
     editingTransaction,
     defaultCommitmentId,
     defaultDebtId,
-    categories,
-    accounts,
+    activeCategories,
+    activeAccounts,
     todayStr,
   ]);
 
-  // Auto-apply smart categorization rule when user types a title/merchant
   const handleTitleChange = (val: string) => {
     setTitle(val);
     if (!editingTransaction && val.trim().length >= 3) {
@@ -170,11 +319,317 @@ export function AddTransactionModal({
       if (matched.categoryId) {
         setCategoryId(matched.categoryId);
       }
+      if (matched.tags && matched.tags.length > 0) {
+        setTags((prev) => Array.from(new Set([...prev, ...matched.tags!])));
+      }
     }
   };
 
-  const selectedCategory = categories.find((c) => c.id === categoryId) || categories[0];
+  // NLP Quick-Parse handler
+  const runNlpParse = async (textToParse: string) => {
+    const clean = textToParse.trim();
+    if (!clean) return;
+    setIsNlpParsing(true);
+    try {
+      const res = await fetch('/api/ai/parse-expense', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawText: clean,
+          categories: activeCategories.map((c) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            subcategories: c.subcategories,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        toast.error('Could not parse that text. Try entering amount & item.');
+        return;
+      }
+      const json = await res.json();
+      const parsed = json?.data;
+      if (!parsed || !parsed.amount) {
+        toast.info('No clear amount detected in that phrase');
+        return;
+      }
+
+      if (parsed.type === 'income' || parsed.type === 'investment' || parsed.type === 'transfer') {
+        setType(parsed.type);
+      } else {
+        setType('expense');
+      }
+      setAmountStr(String(parsed.amount));
+      const nextTitle = parsed.merchantName || parsed.title || clean;
+      setTitle(nextTitle);
+      if (parsed.date) setDate(parsed.date);
+      if (parsed.notes) setNotes(parsed.notes);
+
+      const ruleMatch = applyCategorizationRules(nextTitle);
+      if (ruleMatch.categoryId) {
+        setCategoryId(ruleMatch.categoryId);
+      } else if (parsed.categorySlug) {
+        const matchedCat = activeCategories.find((c) => c.slug === parsed.categorySlug);
+        if (matchedCat) setCategoryId(matchedCat.id);
+      }
+
+      if (parsed.paymentMethodType) {
+        const matchedAcc = activeAccounts.find((a) => a.type === parsed.paymentMethodType);
+        if (matchedAcc) setAccountId(matchedAcc.id);
+      }
+
+      if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
+        setTags((prev) =>
+          Array.from(
+            new Set([
+              ...prev,
+              ...parsed.tags.map((t: string) => t.trim().toLowerCase()).filter(Boolean),
+            ])
+          )
+        );
+      }
+
+      toast.success('Form filled from Smart Capture');
+    } catch {
+      toast.error('Smart parse failed. Enter details manually.');
+    } finally {
+      setIsNlpParsing(false);
+    }
+  };
+
+  // Voice-to-Expense handler using Web Speech API
+  const handleToggleVoice = () => {
+    if (isListeningVoice) {
+      recognitionRef.current?.stop();
+      setIsListeningVoice(false);
+      return;
+    }
+
+    if (typeof window === 'undefined') return;
+    const SpeechRecCtor =
+      (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
+
+    if (!SpeechRecCtor) {
+      toast.error('Voice capture is not supported in this browser. Type in the smart bar instead.');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecCtor();
+      recognition.lang = 'en-IN';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript || '';
+        if (transcript.trim()) {
+          setNlpInput(transcript.trim());
+          runNlpParse(transcript.trim());
+        }
+      };
+      recognition.onerror = () => {
+        setIsListeningVoice(false);
+        toast.error('Could not capture voice audio. Check microphone permissions.');
+      };
+      recognition.onend = () => {
+        setIsListeningVoice(false);
+      };
+      recognitionRef.current = recognition;
+      setIsListeningVoice(true);
+      recognition.start();
+      toast.info('Listening... Say e.g. "Paid 420 for Swiggy dinner via UPI"');
+    } catch {
+      setIsListeningVoice(false);
+      toast.error('Failed to start voice capture');
+    }
+  };
+
+  // Receipt / UPI Screenshot OCR (1 to 5 images)
+  const handleReceiptFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = Array.from(e.target.files || []).slice(0, 5);
+    e.target.value = '';
+    if (fileList.length === 0) return;
+
+    setIsScanningReceipts(true);
+    try {
+      const images = await Promise.all(fileList.map(readFileAsBase64));
+      const res = await fetch('/api/ai/scan-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          images,
+          categories: activeCategories.map((c) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err?.error || 'Could not scan receipt images');
+        return;
+      }
+
+      const json = await res.json();
+      const items = Array.isArray(json?.items) ? json.items : [];
+      if (items.length === 0) {
+        toast.info('No readable expense totals found in the uploaded images');
+        return;
+      }
+
+      const defaultCatId = activeCategories[0]?.id || '';
+      const defaultAccId =
+        activeAccounts.find((a) => a.isDefault)?.id || activeAccounts[0]?.id || '';
+
+      const mapped: ScannedDraftItem[] = items
+        .filter((it: { amount?: number }) => Number(it.amount) > 0)
+        .map(
+          (
+            it: {
+              title?: string;
+              merchantName?: string;
+              amount: number;
+              type?: 'expense' | 'income';
+              categorySlug?: string;
+              paymentMethodType?: string;
+              date?: string;
+              notes?: string;
+              tags?: string[];
+            },
+            idx: number
+          ) => {
+            const name = it.merchantName || it.title || 'Scanned Receipt';
+            const ruleMatch = applyCategorizationRules(name);
+            const catBySlug = activeCategories.find((c) => c.slug === it.categorySlug);
+            const accByMethod = activeAccounts.find(
+              (a) => a.type === it.paymentMethodType
+            );
+            return {
+              id: crypto.randomUUID(),
+              selected: true,
+              title: it.title || name,
+              merchantName: name,
+              amount: Number(it.amount),
+              type: it.type === 'income' ? 'income' : 'expense',
+              categoryId: ruleMatch.categoryId || catBySlug?.id || defaultCatId,
+              accountId: accByMethod?.id || defaultAccId,
+              date: it.date || todayStr,
+              notes: it.notes,
+              tags: Array.from(new Set(['receipt-scan', ...(it.tags || [])])),
+              fileName: fileList[idx]?.name,
+            };
+          }
+        );
+
+      if (mapped.length === 0) {
+        toast.info('No valid amounts extracted from images');
+        return;
+      }
+
+      // Single image hydrates the form directly; 2-5 images open batch checklist
+      if (mapped.length === 1) {
+        const single = mapped[0];
+        setType(single.type);
+        setAmountStr(String(single.amount));
+        setTitle(single.merchantName || single.title);
+        setCategoryId(single.categoryId);
+        setAccountId(single.accountId);
+        setDate(single.date);
+        if (single.notes) {
+          setNotes(single.notes);
+          setShowMoreOptions(true);
+        }
+        if (single.tags) {
+          setTags((prev) => Array.from(new Set([...prev, ...single.tags!])));
+        }
+        toast.success('Receipt scanned and filled');
+      } else {
+        setScannedBatch(mapped);
+        toast.success(`Scanned ${mapped.length} receipts — review & save below`);
+      }
+    } catch {
+      toast.error('Receipt scan failed. Please try a clearer image.');
+    } finally {
+      setIsScanningReceipts(false);
+    }
+  };
+
+  const handleSaveScannedBatch = async () => {
+    const chosen = scannedBatch.filter((i) => i.selected && i.amount > 0);
+    if (chosen.length === 0) {
+      toast.error('Select at least one scanned receipt');
+      return;
+    }
+    setIsSavingBatch(true);
+    try {
+      for (const item of chosen) {
+        await addTransaction({
+          title: item.title,
+          merchantName: item.merchantName,
+          amount: item.amount,
+          type: item.type,
+          categoryId: item.categoryId || activeCategories[0]?.id || 'uncategorized',
+          accountId: item.accountId || activeAccounts[0]?.id || 'default',
+          date: item.date,
+          notes: item.notes,
+          tags: item.tags,
+          needsReview: true,
+        });
+      }
+      toast.success(`Saved ${chosen.length} scanned receipts to Review Inbox`);
+      setScannedBatch([]);
+      onOpenChange(false);
+    } finally {
+      setIsSavingBatch(false);
+    }
+  };
+
+  // Tag helpers
+  const addTagChip = (raw: string) => {
+    const clean = raw.trim().toLowerCase().replace(/^#/, '');
+    if (!clean) return;
+    if (!tags.includes(clean)) {
+      setTags((prev) => [...prev, clean]);
+    }
+    setTagInput('');
+  };
+
+  const removeTagChip = (tag: string) => {
+    setTags((prev) => prev.filter((t) => t !== tag));
+  };
+
+  const selectedCategory =
+    activeCategories.find((c) => c.id === categoryId) || activeCategories[0];
   const numericAmount = parseFloat(amountStr) || 0;
+
+  // Multi-Category Split helpers
+  const toggleCategorySplit = () => {
+    const next = !isCategorySplitEnabled;
+    setIsCategorySplitEnabled(next);
+    if (next) {
+      setIsSplitEnabled(false); // Mutually exclusive with friend split
+      const cat1 = categoryId || activeCategories[0]?.id || '';
+      const cat2 =
+        activeCategories.find((c) => c.id !== cat1)?.id || cat1;
+      const half = numericAmount > 0 ? Math.round((numericAmount / 2) * 100) / 100 : 0;
+      const rest = numericAmount > 0 ? Math.round((numericAmount - half) * 100) / 100 : 0;
+      setSplitRows([
+        { id: crypto.randomUUID(), categoryId: cat1, amountStr: half ? String(half) : '', note: '' },
+        { id: crypto.randomUUID(), categoryId: cat2, amountStr: rest ? String(rest) : '', note: '' },
+      ]);
+    } else {
+      setSplitRows([]);
+    }
+  };
+
+  const splitSum = useMemo(
+    () => splitRows.reduce((acc, r) => acc + (parseFloat(r.amountStr) || 0), 0),
+    [splitRows]
+  );
+  const splitRemaining = Math.round((numericAmount - splitSum) * 100) / 100;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,8 +638,8 @@ export function AddTransactionModal({
       return;
     }
 
-    const fallbackCat = categories[0]?.id || 'uncategorized';
-    const fallbackAcc = accounts[0]?.id || 'default';
+    const fallbackCat = activeCategories[0]?.id || 'uncategorized';
+    const fallbackAcc = activeAccounts[0]?.id || 'default';
     const resolvedCategoryId = categoryId || fallbackCat;
     const resolvedAccountId = accountId || fallbackAcc;
 
@@ -205,10 +660,66 @@ export function AddTransactionModal({
           matchPattern: title.trim(),
           cleanMerchantName: title.trim(),
           categoryId: resolvedCategoryId,
+          defaultTags: tags.length > 0 ? tags : undefined,
           isActive: true,
         });
       }
 
+      // Create recurring bill template if toggled on for new expenses
+      if (!editingTransaction && type === 'expense' && isRecurringEnabled) {
+        const parsedDue = Math.min(31, Math.max(1, parseInt(recurringDueDay, 10) || 1));
+        await addRecurringBill({
+          name: autoTitle,
+          amount: numericAmount,
+          categoryId: resolvedCategoryId,
+          accountId: resolvedAccountId,
+          cadence: recurringCadence,
+          dueDayOfMonth: parsedDue,
+          autoLog: false,
+          isActive: true,
+          color: '#06b6d4',
+          icon: 'Repeat',
+        });
+      }
+
+      // Multi-Category Split path
+      if (!editingTransaction && type === 'expense' && isCategorySplitEnabled) {
+        const validRows = splitRows.filter((r) => (parseFloat(r.amountStr) || 0) > 0);
+        if (validRows.length < 2) {
+          toast.error('Add at least 2 category rows with valid amounts');
+          return;
+        }
+        if (Math.abs(splitRemaining) > 0.01) {
+          toast.error(
+            `Split amounts must equal ${formatINR(numericAmount)} (${formatINR(
+              Math.abs(splitRemaining)
+            )} ${splitRemaining > 0 ? 'remaining' : 'over'})`
+          );
+          return;
+        }
+
+        await addSplitTransactions({
+          base: {
+            title: autoTitle,
+            merchantName: title.trim() || undefined,
+            type: 'expense',
+            accountId: resolvedAccountId,
+            date,
+            notes: notes.trim() || undefined,
+            tags: tags.length > 0 ? tags : undefined,
+          },
+          splits: validRows.map((r) => ({
+            categoryId: r.categoryId || fallbackCat,
+            amount: parseFloat(r.amountStr),
+            note: r.note.trim() || undefined,
+          })),
+        });
+        toast.success(`Saved ${validRows.length}-way split (${formatINR(numericAmount)})`);
+        onOpenChange(false);
+        return;
+      }
+
+      // Friend Split path
       if (
         !editingTransaction &&
         type === 'expense' &&
@@ -226,6 +737,8 @@ export function AddTransactionModal({
             categoryId: resolvedCategoryId,
             accountId: resolvedAccountId,
             date,
+            notes: notes.trim() || undefined,
+            tags: tags.length > 0 ? tags : undefined,
           },
           friendName: splitFriendName.trim(),
           friendShareAmount: friendShare,
@@ -248,6 +761,8 @@ export function AddTransactionModal({
         accountId: resolvedAccountId,
         toAccountId: type === 'transfer' ? toAccountId || undefined : undefined,
         date,
+        notes: notes.trim() || undefined,
+        tags: tags.length > 0 ? tags : undefined,
         needsReview: false,
         linkedCommitmentId:
           linkedCommitmentId !== 'none' ? linkedCommitmentId : null,
@@ -261,7 +776,9 @@ export function AddTransactionModal({
         toast.success('Updated entry');
       } else {
         await addTransaction(payload);
-        if (linkedCommitmentId !== 'none') {
+        if (isRecurringEnabled) {
+          toast.success('Saved entry & added recurring bill reminder');
+        } else if (linkedCommitmentId !== 'none') {
           toast.success('Saved and linked to commitment');
         } else {
           toast.success(
@@ -293,7 +810,7 @@ export function AddTransactionModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-[440px] w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col border-border bg-background"
+        className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-[470px] w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col border-border bg-background"
       >
         {/* Mobile Drag Handle */}
         <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
@@ -301,7 +818,7 @@ export function AddTransactionModal({
         </div>
 
         {/* Header with 4-Type Switcher */}
-        <div className="px-4 pt-2 pb-3 border-b border-border/60 flex items-center justify-between gap-2 shrink-0">
+        <div className="px-4 pt-2 pb-3 border-b border-border/60 bg-card/85 backdrop-blur-md flex items-center justify-between gap-2 shrink-0">
           <DialogTitle className="sr-only">
             {editingTransaction ? 'Edit Transaction' : 'Quick Add Transaction'}
           </DialogTitle>
@@ -318,7 +835,14 @@ export function AddTransactionModal({
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setType(t.id)}
+                onClick={() => {
+                  setType(t.id);
+                  if (t.id !== 'expense') {
+                    setIsCategorySplitEnabled(false);
+                    setIsSplitEnabled(false);
+                    setIsRecurringEnabled(false);
+                  }
+                }}
                 className={`min-h-[38px] px-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
                   type === t.id
                     ? 'bg-background text-foreground shadow-sm'
@@ -354,7 +878,7 @@ export function AddTransactionModal({
             type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Close"
-            className="min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -363,13 +887,167 @@ export function AddTransactionModal({
         {/* Scrollable Sheet Body */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-y-auto">
           <div className="px-4 py-3 space-y-3.5">
-            {/* Hero Amount Input (Opens Native Phone Keyboard) */}
+            {/* Smart Capture Bar (NLP + Voice + Multi-Receipt OCR) for New Entries */}
+            {!editingTransaction && (
+              <div className="rounded-xl border border-border bg-card p-2 space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <Sparkles className="w-3.5 h-3.5 text-primary absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={nlpInput}
+                      onChange={(e) => setNlpInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          runNlpParse(nlpInput);
+                        }
+                      }}
+                      placeholder='Smart fill: "380 Swiggy lunch UPI"'
+                      aria-label="Smart natural language expense capture"
+                      className="w-full h-9 pl-8 pr-2 rounded-lg bg-muted/40 border border-transparent focus:border-primary/50 focus:bg-background text-xs text-foreground placeholder:text-muted-foreground outline-none transition-colors"
+                    />
+                  </div>
+
+                  {nlpInput.trim().length > 0 && (
+                    <button
+                      type="button"
+                      disabled={isNlpParsing}
+                      onClick={() => runNlpParse(nlpInput)}
+                      aria-label="Parse natural language expense"
+                      className="h-9 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-1 shrink-0"
+                    >
+                      {isNlpParsing ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleToggleVoice}
+                    aria-label={isListeningVoice ? 'Stop voice input' : 'Voice to expense'}
+                    title="Voice to Expense"
+                    className={`h-9 w-9 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
+                      isListeningVoice
+                        ? 'border-rose-500 bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                        : 'border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {isListeningVoice ? (
+                      <MicOff className="w-4 h-4" />
+                    ) : (
+                      <Mic className="w-4 h-4" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isScanningReceipts}
+                    onClick={() => receiptInputRef.current?.click()}
+                    aria-label="Scan receipt or UPI screenshot"
+                    title="Scan 1–5 Receipts or UPI Screenshots"
+                    className="h-9 px-2.5 rounded-lg border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground flex items-center gap-1 shrink-0 transition-colors"
+                  >
+                    {isScanningReceipts ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5 text-primary" />
+                    )}
+                    <span className="hidden sm:inline">Scan</span>
+                  </button>
+                  <input
+                    ref={receiptInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleReceiptFilesSelected}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* Batch Receipt OCR Review Checklist (when 2-5 images scanned) */}
+                {scannedBatch.length > 0 && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-foreground">
+                        Scanned {scannedBatch.length} receipts · Review batch
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setScannedBatch([])}
+                        className="text-[11px] text-muted-foreground hover:text-foreground"
+                      >
+                        Discard
+                      </button>
+                    </div>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {scannedBatch.map((item) => {
+                        const cat = activeCategories.find((c) => c.id === item.categoryId);
+                        return (
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between gap-2 rounded-lg bg-background border border-border px-2.5 py-1.5 text-xs"
+                          >
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setScannedBatch((prev) =>
+                                  prev.map((x) =>
+                                    x.id === item.id ? { ...x, selected: !x.selected } : x
+                                  )
+                                )
+                              }
+                              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                                item.selected
+                                  ? 'bg-primary border-primary text-primary-foreground'
+                                  : 'border-input bg-background'
+                              }`}
+                            >
+                              {item.selected && <Check className="w-3 h-3" />}
+                            </button>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-foreground truncate">
+                                {item.merchantName}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                {cat?.name || 'General'} · {item.date}
+                              </p>
+                            </div>
+                            <span className="font-mono tabular-nums font-bold text-foreground shrink-0">
+                              {formatINR(item.amount)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={isSavingBatch}
+                      onClick={handleSaveScannedBatch}
+                      className="w-full h-9 rounded-lg text-xs font-semibold"
+                    >
+                      {isSavingBatch
+                        ? 'Saving batch...'
+                        : `Save ${scannedBatch.filter((i) => i.selected).length} to Review Inbox`}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Hero Amount Input */}
             <div
-              className="text-center py-2 px-4 cursor-text"
+              className="text-center py-1 px-4 cursor-text"
               onClick={() => amountInputRef.current?.focus()}
             >
               <div className="inline-flex items-center justify-center gap-1.5 max-w-full">
-                <span className="text-3xl sm:text-4xl font-semibold text-muted-foreground select-none">₹</span>
+                <span className="text-3xl sm:text-4xl font-semibold text-muted-foreground select-none">
+                  ₹
+                </span>
                 <input
                   ref={amountInputRef}
                   id="tx-amount-input"
@@ -401,7 +1079,7 @@ export function AddTransactionModal({
             {type !== 'transfer' ? (
               <div className="space-y-2">
                 <div className="grid grid-cols-12 gap-2.5 items-end">
-                  <div className="col-span-7 space-y-1">
+                  <div className={isCategorySplitEnabled ? 'col-span-12 space-y-1' : 'col-span-7 space-y-1'}>
                     <label
                       htmlFor="tx-description"
                       className="text-xs font-medium text-muted-foreground block"
@@ -421,42 +1099,44 @@ export function AddTransactionModal({
                     />
                   </div>
 
-                  <div className="col-span-5 space-y-1">
-                    <span className="text-xs font-medium text-muted-foreground block">
-                      Category
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsCategorySheetOpen(true)}
-                      className="w-full h-11 px-2.5 rounded-xl border border-input bg-card hover:bg-muted/60 flex items-center justify-between gap-1.5 text-left transition-colors"
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                          style={{
-                            borderWidth: '1.5px',
-                            borderStyle: 'solid',
-                            borderColor: `${selectedCategory?.color || '#64748b'}80`,
-                            backgroundColor: `${selectedCategory?.color || '#64748b'}15`,
-                            color: selectedCategory?.color || 'currentColor',
-                          }}
-                        >
-                          <CategoryIcon
-                            name={selectedCategory?.icon}
-                            className="w-3.5 h-3.5"
-                          />
-                        </span>
-                        <span className="text-xs font-medium text-foreground truncate">
-                          {selectedCategory?.name || 'Select'}
-                        </span>
+                  {!isCategorySplitEnabled && (
+                    <div className="col-span-5 space-y-1">
+                      <span className="text-xs font-medium text-muted-foreground block">
+                        Category
                       </span>
-                      <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCategorySheetOpen(true)}
+                        className="w-full h-11 px-2.5 rounded-xl border border-input bg-card hover:bg-muted/60 flex items-center justify-between gap-1.5 text-left transition-colors"
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span
+                            className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                            style={{
+                              borderWidth: '1.5px',
+                              borderStyle: 'solid',
+                              borderColor: `${selectedCategory?.color || '#64748b'}80`,
+                              backgroundColor: `${selectedCategory?.color || '#64748b'}15`,
+                              color: selectedCategory?.color || 'currentColor',
+                            }}
+                          >
+                            <CategoryIcon
+                              name={selectedCategory?.icon}
+                              className="w-3.5 h-3.5"
+                            />
+                          </span>
+                          <span className="text-xs font-medium text-foreground truncate">
+                            {selectedCategory?.name || 'Select'}
+                          </span>
+                        </span>
+                        <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {/* Smart Merchant Rule Toggle when user types a merchant name */}
-                {title.trim().length >= 3 && !editingTransaction && (
+                {/* Smart Merchant Rule Toggle */}
+                {title.trim().length >= 3 && !editingTransaction && !isCategorySplitEnabled && (
                   <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none pt-0.5">
                     <input
                       type="checkbox"
@@ -479,25 +1159,23 @@ export function AddTransactionModal({
                     To Account
                   </span>
                   <div className="flex gap-2 overflow-x-auto pb-1 no-swipe">
-                    {accounts
-                      .filter((a) => !a.deletedAt)
-                      .map((acc) => {
-                        const isSelected = toAccountId === acc.id;
-                        return (
-                          <button
-                            key={acc.id}
-                            type="button"
-                            onClick={() => setToAccountId(acc.id)}
-                            className={`shrink-0 min-h-[40px] px-3 rounded-xl border text-xs font-medium transition-colors whitespace-nowrap ${
-                              isSelected
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'bg-card text-foreground border-border hover:bg-muted'
-                            }`}
-                          >
-                            {acc.name}
-                          </button>
-                        );
-                      })}
+                    {activeAccounts.map((acc) => {
+                      const isSelected = toAccountId === acc.id;
+                      return (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => setToAccountId(acc.id)}
+                          className={`shrink-0 min-h-[40px] px-3 rounded-xl border text-xs font-medium transition-colors whitespace-nowrap ${
+                            isSelected
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-card text-foreground border-border hover:bg-muted'
+                          }`}
+                        >
+                          {acc.name}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -518,57 +1196,248 @@ export function AddTransactionModal({
                 {type === 'transfer' ? 'From Account' : 'Paid via'}
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {accounts
-                  .filter((a) => !a.deletedAt)
-                  .map((acc) => {
-                    const isSelected = accountId === acc.id;
-                    return (
-                      <button
-                        key={acc.id}
-                        type="button"
-                        onClick={() => setAccountId(acc.id)}
-                        className={`min-h-[40px] px-2.5 rounded-xl border text-xs font-medium truncate transition-colors ${
-                          isSelected
-                            ? 'bg-foreground text-background border-foreground'
-                            : 'bg-card text-foreground border-border hover:bg-muted'
-                        }`}
-                      >
-                        {acc.name}
-                      </button>
-                    );
-                  })}
+                {activeAccounts.map((acc) => {
+                  const isSelected = accountId === acc.id;
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => setAccountId(acc.id)}
+                      className={`min-h-[40px] px-2.5 rounded-xl border text-xs font-medium truncate transition-colors ${
+                        isSelected
+                          ? 'bg-foreground text-background border-foreground'
+                          : 'bg-card text-foreground border-border hover:bg-muted'
+                      }`}
+                    >
+                      {acc.name}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Split with Friend Quick Toggle (for new expenses) */}
-            {!editingTransaction && type === 'expense' && (
-              <div className="rounded-xl border border-border/70 bg-muted/20 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !isSplitEnabled;
-                    setIsSplitEnabled(next);
-                    if (next && numericAmount > 0 && !splitFriendShareStr) {
-                      setSplitFriendShareStr(String(Math.round(numericAmount / 2)));
-                    }
-                  }}
-                  className="w-full min-h-[40px] px-3 flex items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>
-                      {isSplitEnabled
-                        ? 'Splitting bill with a friend'
-                        : 'Split this bill with a friend'}
-                    </span>
+            {/* Interactive Tags Picker */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                  <Tag className="w-3 h-3" />
+                  Tags
+                </span>
+                {tags.length > 0 && (
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    {tags.length} added
                   </span>
-                  <span className="text-[11px] font-semibold text-primary">
-                    {isSplitEnabled ? 'Hide' : 'Split 50/50'}
-                  </span>
-                </button>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {tags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => removeTagChip(tag)}
+                    className="h-7 px-2.5 rounded-full bg-primary/10 text-primary text-xs font-medium inline-flex items-center gap-1 hover:bg-primary/20 transition-colors"
+                  >
+                    <span>#{tag}</span>
+                    <X className="w-3 h-3" />
+                  </button>
+                ))}
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        addTagChip(tagInput);
+                      }
+                    }}
+                    placeholder="+ Add tag"
+                    aria-label="Add tag"
+                    className="h-7 w-24 px-2 rounded-lg border border-border bg-card text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-primary"
+                  />
+                  {tagInput.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => addTagChip(tagInput)}
+                      className="h-7 px-2 rounded-lg bg-muted hover:bg-muted/80 text-xs font-semibold"
+                    >
+                      Add
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {suggestedTags
+                  .filter((t) => !tags.includes(t))
+                  .slice(0, 5)
+                  .map((sugg) => (
+                    <button
+                      key={sugg}
+                      type="button"
+                      onClick={() => addTagChip(sugg)}
+                      className="h-6 px-2 rounded-md border border-border/70 bg-muted/30 hover:bg-muted text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      +{sugg}
+                    </button>
+                  ))}
+              </div>
+            </div>
 
+            {/* Expense Power Toggles: Multi-Category Split, Friend Split, Make Recurring */}
+            {!editingTransaction && type === 'expense' && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={toggleCategorySplit}
+                    className={`min-h-[38px] px-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+                      isCategorySplitEnabled
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Split className="w-3.5 h-3.5" />
+                    <span>Split Cats</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isSplitEnabled;
+                      setIsSplitEnabled(next);
+                      if (next) {
+                        setIsCategorySplitEnabled(false);
+                        setSplitRows([]);
+                        if (numericAmount > 0 && !splitFriendShareStr) {
+                          setSplitFriendShareStr(String(Math.round(numericAmount / 2)));
+                        }
+                      }
+                    }}
+                    className={`min-h-[38px] px-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+                      isSplitEnabled
+                        ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                        : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Friend Split</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsRecurringEnabled((v) => !v)}
+                    className={`min-h-[38px] px-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+                      isRecurringEnabled
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Repeat className="w-3.5 h-3.5" />
+                    <span>Recurring</span>
+                  </button>
+                </div>
+
+                {/* Multi-Category Split Editor */}
+                {isCategorySplitEnabled && (
+                  <div className="rounded-xl border border-primary/30 bg-card p-3 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-foreground">
+                        Split across categories
+                      </span>
+                      <span
+                        className={`font-mono tabular-nums font-semibold ${
+                          Math.abs(splitRemaining) <= 0.01
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-amber-600 dark:text-amber-400'
+                        }`}
+                      >
+                        {Math.abs(splitRemaining) <= 0.01
+                          ? 'Balanced ₹0'
+                          : splitRemaining > 0
+                          ? `Remaining ${formatINR(splitRemaining)}`
+                          : `Over by ${formatINR(Math.abs(splitRemaining))}`}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {splitRows.map((row, idx) => (
+                        <div key={row.id} className="grid grid-cols-12 gap-1.5 items-center">
+                          <select
+                            aria-label={`Split category ${idx + 1}`}
+                            value={row.categoryId}
+                            onChange={(e) =>
+                              setSplitRows((prev) =>
+                                prev.map((r) =>
+                                  r.id === row.id ? { ...r, categoryId: e.target.value } : r
+                                )
+                              )
+                            }
+                            className="col-span-7 h-9 px-2 text-xs rounded-lg border border-input bg-background text-foreground"
+                          >
+                            {activeCategories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          <Input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={row.amountStr}
+                            onChange={(e) =>
+                              setSplitRows((prev) =>
+                                prev.map((r) =>
+                                  r.id === row.id ? { ...r, amountStr: e.target.value } : r
+                                )
+                              )
+                            }
+                            placeholder="₹0"
+                            aria-label={`Split amount ${idx + 1}`}
+                            className="col-span-4 h-9 text-xs font-mono tabular-nums text-right rounded-lg"
+                          />
+
+                          <button
+                            type="button"
+                            disabled={splitRows.length <= 2}
+                            onClick={() =>
+                              setSplitRows((prev) => prev.filter((r) => r.id !== row.id))
+                            }
+                            aria-label="Remove split row"
+                            className="col-span-1 h-9 flex items-center justify-center text-muted-foreground hover:text-rose-500 disabled:opacity-30"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSplitRows((prev) => [
+                          ...prev,
+                          {
+                            id: crypto.randomUUID(),
+                            categoryId: activeCategories[0]?.id || '',
+                            amountStr: splitRemaining > 0 ? String(splitRemaining) : '',
+                            note: '',
+                          },
+                        ])
+                      }
+                      className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Add category row
+                    </button>
+                  </div>
+                )}
+
+                {/* Friend Split Drawer */}
                 {isSplitEnabled && (
-                  <div className="p-3 border-t border-border/60 space-y-2.5">
+                  <div className="rounded-xl border border-indigo-500/30 bg-card p-3 space-y-2.5">
                     <div className="grid grid-cols-12 gap-2">
                       <div className="col-span-7">
                         <Input
@@ -591,11 +1460,11 @@ export function AddTransactionModal({
                           value={splitFriendShareStr}
                           onChange={(e) => setSplitFriendShareStr(e.target.value)}
                           placeholder="Friend owes ₹"
-                          className="h-9 text-xs font-mono rounded-lg"
+                          className="h-9 text-xs font-mono tabular-nums rounded-lg"
                         />
                       </div>
                     </div>
-                    <p className="text-[11px] text-muted-foreground font-mono">
+                    <p className="text-[11px] text-muted-foreground font-mono tabular-nums">
                       Your budget logs{' '}
                       <strong className="text-foreground">
                         {formatINR(
@@ -617,10 +1486,55 @@ export function AddTransactionModal({
                     </p>
                   </div>
                 )}
+
+                {/* Make Recurring Bill Config */}
+                {isRecurringEnabled && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-card p-3 grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="tx-rec-cadence"
+                        className="text-[11px] font-medium text-muted-foreground block"
+                      >
+                        Cadence
+                      </label>
+                      <select
+                        id="tx-rec-cadence"
+                        value={recurringCadence}
+                        onChange={(e) =>
+                          setRecurringCadence(
+                            e.target.value as 'monthly' | 'quarterly' | 'yearly'
+                          )
+                        }
+                        className="w-full h-9 px-2.5 text-xs rounded-lg border border-input bg-background text-foreground"
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="tx-rec-day"
+                        className="text-[11px] font-medium text-muted-foreground block"
+                      >
+                        Due Day (1–31)
+                      </label>
+                      <Input
+                        id="tx-rec-day"
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={recurringDueDay}
+                        onChange={(e) => setRecurringDueDay(e.target.value)}
+                        className="h-9 text-xs font-mono tabular-nums rounded-lg"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Collapsible Commitment / Friend / Date Linking */}
+            {/* Collapsible Date, Notes & Commitment/Friend Linking */}
             <div>
               <button
                 type="button"
@@ -628,9 +1542,9 @@ export function AddTransactionModal({
                 className="w-full min-h-[40px] px-3 rounded-xl border border-border/70 bg-muted/30 flex items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
                 <span>
-                  {linkedCommitmentId !== 'none' || linkedDebtId !== 'none'
-                    ? 'Linked to commitment or friend · Edit'
-                    : 'Link to Commitment, Friend, or Date'}
+                  {linkedCommitmentId !== 'none' || linkedDebtId !== 'none' || notes.trim()
+                    ? 'Date, Notes & Links · Configured'
+                    : 'Date, Notes, Commitment or Friend Link'}
                 </span>
                 {showMoreOptions ? (
                   <ChevronUp className="w-4 h-4" />
@@ -641,20 +1555,37 @@ export function AddTransactionModal({
 
               {showMoreOptions && (
                 <div className="mt-2 p-3 rounded-xl border border-border bg-muted/20 space-y-3">
-                  <div className="space-y-1">
-                    <label
-                      htmlFor="tx-date"
-                      className="text-xs font-medium text-muted-foreground block"
-                    >
-                      Date
-                    </label>
-                    <Input
-                      id="tx-date"
-                      type="date"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      className="h-10 text-sm"
-                    />
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="tx-date"
+                        className="text-xs font-medium text-muted-foreground block"
+                      >
+                        Date
+                      </label>
+                      <Input
+                        id="tx-date"
+                        type="date"
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="h-10 text-xs font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="tx-notes"
+                        className="text-xs font-medium text-muted-foreground block"
+                      >
+                        Notes
+                      </label>
+                      <Input
+                        id="tx-notes"
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Optional memo"
+                        className="h-10 text-xs"
+                      />
+                    </div>
                   </div>
 
                   {type === 'expense' && activeCommitments.length > 0 && (
@@ -762,8 +1693,12 @@ export function AddTransactionModal({
                 ? 'Saving...'
                 : editingTransaction
                 ? 'Update Entry'
+                : isCategorySplitEnabled
+                ? `Save ${splitRows.length}-Way Category Split`
                 : isSplitEnabled && splitFriendName.trim()
                 ? 'Save & Split with Friend'
+                : isRecurringEnabled
+                ? 'Save Entry & Recurring Bill'
                 : 'Save Entry'}
             </Button>
           </div>

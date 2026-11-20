@@ -7,6 +7,7 @@ import {
   ChevronRight,
   SlidersHorizontal,
   MessageSquareText,
+  Sparkles,
 } from 'lucide-react';
 import {
   useFinanceStore,
@@ -20,6 +21,7 @@ import { AccountsTab } from './AccountsTab';
 import { AddTransactionModal } from './AddTransactionModal';
 import { MonthlyBudgetModal } from './MonthlyBudgetModal';
 import { SmsImportModal } from './SmsImportModal';
+import { AskFinancesDrawer } from './AskFinancesDrawer';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -55,15 +57,18 @@ export function FinancePageContent() {
   const { user } = useAuth();
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [sharedSmsText, setSharedSmsText] = useState<string | null>(null);
+  const [isAskAiOpen, setIsAskAiOpen] = useState(false);
 
   useEffect(() => {
     loadFinanceData(user?.id);
   }, [loadFinanceData, user?.id]);
 
-  // Handle Web Share Target / Shortcuts / Tasker (?sms=... or ?text=...) once loaded
+  // Handle deep-links (?sms=..., ?tab=..., ?ask=1) once loaded
   useEffect(() => {
     if (isLoading || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
+    let mutated = false;
+
     const incoming = params.get('sms') || params.get('text');
     if (incoming && incoming.trim()) {
       setSharedSmsText(incoming);
@@ -72,6 +77,34 @@ export function FinancePageContent() {
       params.delete('text');
       params.delete('title');
       params.delete('url');
+      mutated = true;
+    }
+
+    const tabParam = params.get('tab');
+    if (
+      tabParam === 'overview' ||
+      tabParam === 'activity' ||
+      tabParam === 'trackers' ||
+      tabParam === 'accounts'
+    ) {
+      setActiveTab(tabParam);
+      params.delete('tab');
+      mutated = true;
+    }
+
+    if (params.get('ask') === '1') {
+      setIsAskAiOpen(true);
+      params.delete('ask');
+      mutated = true;
+    }
+
+    if (params.get('add') === '1') {
+      setIsAddTxModalOpen(true);
+      params.delete('add');
+      mutated = true;
+    }
+
+    if (mutated) {
       const nextSearch = params.toString();
       const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
       window.history.replaceState({}, '', nextUrl);
@@ -106,12 +139,12 @@ export function FinancePageContent() {
   return (
     <div className="container max-w-6xl mx-auto px-4 sm:px-6 pt-4 pb-28 md:py-6 md:pb-16 space-y-5">
       {/* Compact Header & Month Switcher */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
           Finance
         </h1>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="inline-flex items-center rounded-xl border border-border bg-card p-0.5">
             <button
               type="button"
@@ -133,6 +166,17 @@ export function FinancePageContent() {
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setIsAskAiOpen(true)}
+            className="min-h-[40px] sm:min-h-[44px] px-3 rounded-xl gap-1.5 whitespace-nowrap"
+            title="Ask AI about your finances"
+          >
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span className="text-xs sm:text-sm">Ask AI</span>
+          </Button>
 
           <Button
             type="button"
@@ -227,6 +271,7 @@ export function FinancePageContent() {
               onOpenTrackersTab={() => setActiveTab('trackers')}
               onOpenActivityTab={() => setActiveTab('activity')}
               onOpenAddTransaction={handleOpenNewTx}
+              onOpenAskAi={() => setIsAskAiOpen(true)}
             />
           )}
           {activeTab === 'activity' && (
@@ -242,16 +287,18 @@ export function FinancePageContent() {
           {activeTab === 'trackers' && (
             <TrackersTab onLogOffsetExpense={handleOpenOffsetForCommitment} />
           )}
-          {activeTab === 'accounts' && <AccountsTab />}
+          {activeTab === 'accounts' && (
+            <AccountsTab onOpenBudgetModal={handleOpenBudgetModal} />
+          )}
         </div>
       )}
 
-      {/* Floating Thumb-Zone Add Button */}
+      {/* Floating Desktop Quick-Add Button (Mobile uses MobileNav raised + button) */}
       <button
         type="button"
         onClick={handleOpenNewTx}
         aria-label="Add expense or income"
-        className="fixed bottom-20 right-20 md:bottom-6 md:right-24 z-40 h-12 md:h-14 px-5 rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-95 active:scale-95 transition-transform flex items-center gap-2 text-sm font-semibold whitespace-nowrap"
+        className="hidden md:flex fixed md:bottom-6 md:right-24 z-40 h-14 px-5 rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-95 active:scale-95 transition-transform items-center gap-2 text-sm font-semibold whitespace-nowrap"
       >
         <Plus className="w-5 h-5" />
         <span>Add</span>
@@ -282,6 +329,12 @@ export function FinancePageContent() {
         open={isSmsModalOpen}
         onOpenChange={setIsSmsModalOpen}
         initialText={sharedSmsText}
+      />
+
+      {/* Ask My Finances AI Q&A Drawer */}
+      <AskFinancesDrawer
+        open={isAskAiOpen}
+        onOpenChange={setIsAskAiOpen}
       />
     </div>
   );

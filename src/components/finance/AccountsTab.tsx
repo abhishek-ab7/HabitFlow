@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Plus,
   Download,
@@ -9,14 +9,27 @@ import {
   CreditCard,
   Sparkles,
   Trash2,
-  RefreshCw,
   ArrowRightLeft,
+  Scale,
+  SlidersHorizontal,
+  TrendingUp,
+  Power,
+  Tag,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from 'recharts';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type {
   FinanceAccount,
   FinanceAccountType,
-  FinanceCategory,
+  FinanceCategorizationRule,
 } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,38 +45,82 @@ import {
 import { CategoryIcon } from './CategoryIcon';
 import { toast } from 'sonner';
 
-export function AccountsTab() {
+interface AccountsTabProps {
+  onOpenBudgetModal?: (focusCategoryId?: string) => void;
+}
+
+function formatCompactINR(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs === 0) return '₹0';
+  if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(1).replace(/\.0$/, '')}L`;
+  if (abs >= 1000) return `${sign}₹${(abs / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `${sign}₹${Math.round(abs)}`;
+}
+
+function getDaysUntilDueDay(dueDay?: number): number | null {
+  if (!dueDay || dueDay < 1 || dueDay > 31) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let target = new Date(now.getFullYear(), now.getMonth(), Math.min(dueDay, 28));
+  if (target < today) {
+    target = new Date(now.getFullYear(), now.getMonth() + 1, Math.min(dueDay, 28));
+  }
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const accounts = useFinanceStore((s) => s.accounts);
   const categories = useFinanceStore((s) => s.categories);
+  const transactions = useFinanceStore((s) => s.transactions);
   const categorizationRules = useFinanceStore((s) => s.categorizationRules);
 
   const addAccount = useFinanceStore((s) => s.addAccount);
   const updateAccount = useFinanceStore((s) => s.updateAccount);
   const deleteAccount = useFinanceStore((s) => s.deleteAccount);
+  const reconcileAccountBalance = useFinanceStore((s) => s.reconcileAccountBalance);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
 
   const addCategory = useFinanceStore((s) => s.addCategory);
-  const updateCategory = useFinanceStore((s) => s.updateCategory);
-  const updateCategoryBudget = useFinanceStore((s) => s.updateCategoryBudget);
 
   const addCategorizationRule = useFinanceStore((s) => s.addCategorizationRule);
-  const deleteCategorizationRule = useFinanceStore(
-    (s) => s.deleteCategorizationRule
-  );
+  const updateCategorizationRule = useFinanceStore((s) => s.updateCategorizationRule);
+  const deleteCategorizationRule = useFinanceStore((s) => s.deleteCategorizationRule);
 
-  const getMonthlySummary = useFinanceStore((s) => s.getMonthlySummary);
   const getNetWorthSummary = useFinanceStore((s) => s.getNetWorthSummary);
+  const getNetWorthHistory = useFinanceStore((s) => s.getNetWorthHistory);
   const exportTransactionsCsv = useFinanceStore((s) => s.exportTransactionsCsv);
   const resetAllFinanceData = useFinanceStore((s) => s.resetAllFinanceData);
 
-  const summary = getMonthlySummary(selectedMonth);
   const netWorth = getNetWorthSummary();
+  const netWorthHistory = useMemo(
+    () => getNetWorthHistory(6),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getNetWorthHistory, accounts, transactions]
+  );
 
   const activeAccounts = accounts.filter((a) => !a.deletedAt && !a.archived);
   const assetAccounts = activeAccounts.filter((a) => a.type !== 'credit_card');
   const creditCards = activeAccounts.filter((a) => a.type === 'credit_card');
+  const activeCategories = categories.filter((c) => !c.deletedAt);
   const activeRules = categorizationRules.filter((r) => !r.deletedAt);
+
+  // Match counts per smart rule across historical transactions
+  const ruleMatchCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const rule of activeRules) {
+      const pattern = rule.matchPattern.toLowerCase();
+      let count = 0;
+      for (const tx of transactions) {
+        if (tx.deletedAt) continue;
+        const hay = `${tx.rawMerchant || ''} ${tx.merchantName || ''} ${tx.title}`.toLowerCase();
+        if (hay.includes(pattern)) count += 1;
+      }
+      map.set(rule.id, count);
+    }
+    return map;
+  }, [activeRules, transactions]);
 
   // Edit / Create Account dialog
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
@@ -73,17 +130,24 @@ export function AccountsTab() {
   const [accType, setAccType] = useState<FinanceAccountType>('upi');
   const [accCreditLimit, setAccCreditLimit] = useState('100000');
   const [accDueDay, setAccDueDay] = useState('15');
+  const [accBillingDay, setAccBillingDay] = useState('1');
+
+  // Reconcile Balance dialog
+  const [reconcilingAccount, setReconcilingAccount] = useState<FinanceAccount | null>(
+    null
+  );
+  const [reconcileTargetStr, setReconcileTargetStr] = useState('');
+  const [reconcileMode, setReconcileMode] = useState<'adjustment_tx' | 'silent'>(
+    'adjustment_tx'
+  );
+  const [isReconciling, setIsReconciling] = useState(false);
 
   // Pay Credit Card Bill dialog
   const [payingCard, setPayingCard] = useState<FinanceAccount | null>(null);
   const [payCardAmount, setPayCardAmount] = useState('');
   const [payCardFromAccId, setPayCardFromAccId] = useState('');
 
-  // Edit Category Limit dialog & New Custom Category dialog
-  const [editingCategory, setEditingCategory] = useState<FinanceCategory | null>(null);
-  const [catLimitInput, setCatLimitInput] = useState('0');
-  const [catRolloverInput, setCatRolloverInput] = useState(false);
-
+  // New Custom Category dialog
   const [isNewCatOpen, setIsNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const [newCatLimit, setNewCatLimit] = useState('0');
@@ -104,6 +168,45 @@ export function AccountsTab() {
     setAccType(acc.type);
     setAccCreditLimit(String(acc.creditLimit || 100000));
     setAccDueDay(String(acc.dueDay || 15));
+    setAccBillingDay(String(acc.statementDay || 1));
+  };
+
+  const openReconcileDialog = (acc: FinanceAccount) => {
+    setReconcilingAccount(acc);
+    setReconcileTargetStr(String(acc.balance));
+    setReconcileMode('adjustment_tx');
+  };
+
+  const handleConfirmReconcile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reconcilingAccount) return;
+    const actualBal = parseFloat(reconcileTargetStr);
+    if (isNaN(actualBal)) {
+      toast.error('Enter a valid balance amount');
+      return;
+    }
+    setIsReconciling(true);
+    try {
+      const res = await reconcileAccountBalance(
+        reconcilingAccount.id,
+        actualBal,
+        reconcileMode === 'adjustment_tx'
+      );
+      if (Math.abs(res.variance) < 0.01) {
+        toast.info('Account balance already matches');
+      } else {
+        toast.success(
+          reconcileMode === 'adjustment_tx'
+            ? `Reconciled ${reconcilingAccount.name} (${res.variance > 0 ? '+' : '-'}${formatINR(
+                Math.abs(res.variance)
+              )} logged)`
+            : `Updated ${reconcilingAccount.name} balance silently`
+        );
+      }
+      setReconcilingAccount(null);
+    } finally {
+      setIsReconciling(false);
+    }
   };
 
   const handleSaveAccountEdit = async (e: React.FormEvent) => {
@@ -121,6 +224,10 @@ export function AccountsTab() {
       creditLimit:
         accType === 'credit_card'
           ? parseFloat(accCreditLimit) || 100000
+          : undefined,
+      statementDay:
+        accType === 'credit_card'
+          ? Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1))
           : undefined,
       dueDay:
         accType === 'credit_card'
@@ -162,6 +269,10 @@ export function AccountsTab() {
         accType === 'credit_card'
           ? parseFloat(accCreditLimit) || 100000
           : undefined,
+      statementDay:
+        accType === 'credit_card'
+          ? Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1))
+          : undefined,
       dueDay:
         accType === 'credit_card'
           ? Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15))
@@ -187,7 +298,7 @@ export function AccountsTab() {
       toast.error('Select source account and amount');
       return;
     }
-    const fallbackCat = categories[0]?.id || 'uncategorized';
+    const fallbackCat = activeCategories[0]?.id || 'uncategorized';
     await addTransaction({
       title: `Credit Card Bill Settlement (${payingCard.name})`,
       amount: amt,
@@ -199,22 +310,6 @@ export function AccountsTab() {
     });
     toast.success(`Paid ${formatINR(amt)} toward ${payingCard.name}`);
     setPayingCard(null);
-  };
-
-  const handleSaveCategoryLimit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingCategory) return;
-    const limit = parseFloat(catLimitInput);
-    if (isNaN(limit) || limit < 0) {
-      toast.error('Enter 0 or a positive budget limit');
-      return;
-    }
-    await updateCategoryBudget(editingCategory.id, limit);
-    await updateCategory(editingCategory.id, {
-      rolloverEnabled: catRolloverInput,
-    });
-    toast.success(`Updated ${editingCategory.name}`);
-    setEditingCategory(null);
   };
 
   const handleCreateCustomCategory = async (e: React.FormEvent) => {
@@ -249,7 +344,7 @@ export function AccountsTab() {
 
   const handleAddRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetCatId = ruleCategoryId || categories[0]?.id;
+    const targetCatId = ruleCategoryId || activeCategories[0]?.id;
     if (!rulePattern.trim() || !targetCatId) {
       toast.error('Enter a merchant keyword and select a category');
       return;
@@ -263,6 +358,11 @@ export function AccountsTab() {
     toast.success(`Added rule for "${rulePattern.trim()}"`);
     setRulePattern('');
     setRuleCleanName('');
+  };
+
+  const handleToggleRule = async (rule: FinanceCategorizationRule) => {
+    await updateCategorizationRule(rule.id, { isActive: !rule.isActive });
+    toast.success(rule.isActive ? 'Rule paused' : 'Rule enabled');
   };
 
   const handleExportCsv = () => {
@@ -282,7 +382,7 @@ export function AccountsTab() {
   const handleConfirmReset = async () => {
     await resetAllFinanceData(true);
     setIsResetDialogOpen(false);
-    toast.success('All accounts reset to ₹0 and sample/logged entries cleared');
+    toast.success('All accounts reset to ₹0 and logged entries cleared');
   };
 
   const totalAssetsAndLiabilities =
@@ -291,60 +391,136 @@ export function AccountsTab() {
     (netWorth.totalAssets / totalAssetsAndLiabilities) * 100
   );
 
+  const reconcileVariance = reconcilingAccount
+    ? Math.round(
+        ((parseFloat(reconcileTargetStr) || 0) - reconcilingAccount.balance) * 100
+      ) / 100
+    : 0;
+
   return (
     <div className="space-y-6">
-      {/* 1. True Net Worth Header Card (Assets vs Liabilities) */}
-      <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              True Net Worth
-            </p>
-            <p
-              className={`text-3xl sm:text-4xl font-bold font-mono tabular-nums mt-1 ${
-                netWorth.netWorth >= 0
-                  ? 'text-foreground'
-                  : 'text-rose-600 dark:text-rose-400'
-              }`}
-            >
-              {formatINR(netWorth.netWorth)}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Liquid Cash + Investments &amp; SIPs + Friend Receivables − Credit Cards, EMIs &amp; Payables
-            </p>
+      {/* 1. True Net Worth Hero Card + 6-Month Net Worth Trajectory Chart */}
+      <section className="rounded-3xl border border-border bg-card/85 backdrop-blur-md shadow-sm p-5 sm:p-6 space-y-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+          <div className="lg:col-span-6 space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  True Net Worth
+                </p>
+                <p
+                  className={`text-3xl sm:text-4xl font-bold font-mono tabular-nums mt-1 ${
+                    netWorth.netWorth >= 0
+                      ? 'text-foreground'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  {formatINR(netWorth.netWorth)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Liquid Cash + Investments &amp; SIPs + Receivables − Cards, EMIs &amp; Payables
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setAccName('');
+                  setAccBalance('0');
+                  setAccType('upi');
+                  setIsNewAccountOpen(true);
+                }}
+                className="min-h-[40px] px-3.5 gap-1.5 text-xs rounded-xl whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                Add Account / Card
+              </Button>
+            </div>
+
+            {/* Assets vs Liabilities Proportion Bar */}
+            <div className="space-y-1.5">
+              <div className="h-2.5 w-full rounded-full bg-rose-500/25 overflow-hidden flex">
+                <div
+                  style={{ width: `${assetsSharePct}%` }}
+                  className="h-full bg-emerald-500 transition-all duration-300"
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs font-mono tabular-nums">
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                  Assets: {formatINR(netWorth.totalAssets)}
+                </span>
+                <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                  Liabilities: {formatINR(netWorth.totalLiabilities)}
+                </span>
+              </div>
+            </div>
           </div>
 
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => {
-              setAccName('');
-              setAccBalance('0');
-              setAccType('upi');
-              setIsNewAccountOpen(true);
-            }}
-            className="min-h-[40px] px-3.5 gap-1.5 text-xs rounded-xl whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            Add Account / Card
-          </Button>
-        </div>
-
-        {/* Assets vs Liabilities Proportion Bar */}
-        <div className="space-y-1.5">
-          <div className="h-2.5 w-full rounded-full bg-rose-500/25 overflow-hidden flex">
-            <div
-              style={{ width: `${assetsSharePct}%` }}
-              className="h-full bg-emerald-500 transition-all duration-300"
-            />
-          </div>
-          <div className="flex items-center justify-between text-xs font-mono tabular-nums">
-            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-              Assets: {formatINR(netWorth.totalAssets)}
-            </span>
-            <span className="text-rose-600 dark:text-rose-400 font-semibold">
-              Liabilities: {formatINR(netWorth.totalLiabilities)}
-            </span>
+          {/* 6-Month Net Worth Area Chart */}
+          <div className="lg:col-span-6 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-foreground inline-flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+                6-Month Net Worth Trend
+              </span>
+              <span className="text-[11px] font-mono tabular-nums text-muted-foreground">
+                {netWorthHistory.length} months tracked
+              </span>
+            </div>
+            <div className="h-36 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={netWorthHistory}
+                  margin={{ top: 6, right: 8, left: -14, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="netWorthGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="currentColor"
+                    className="text-border/50"
+                  />
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: 'currentColor' }}
+                    className="text-muted-foreground"
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={formatCompactINR}
+                    tick={{ fontSize: 10, fill: 'currentColor' }}
+                    className="text-muted-foreground font-mono"
+                    width={52}
+                  />
+                  <Tooltip
+                    formatter={(val: unknown) => [formatINR(Number(val) || 0), 'Net Worth']}
+                    contentStyle={{
+                      borderRadius: '12px',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--popover)',
+                      color: 'var(--popover-foreground)',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="netWorth"
+                    stroke="#10b981"
+                    strokeWidth={2.5}
+                    fill="url(#netWorthGrad)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
@@ -390,7 +566,7 @@ export function AccountsTab() {
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Asset Accounts + Credit Card Liabilities + Data Reset */}
+        {/* Left Column: Asset Accounts (with Reconcile) + Credit Card Cycle Intelligence */}
         <div className="lg:col-span-5 space-y-5">
           {/* Liquid & Investment Accounts */}
           <section className="space-y-2.5">
@@ -399,13 +575,15 @@ export function AccountsTab() {
             </h2>
             <div className="rounded-2xl border border-border bg-card divide-y divide-border/60 overflow-hidden">
               {assetAccounts.map((acc) => (
-                <button
+                <div
                   key={acc.id}
-                  type="button"
-                  onClick={() => openEditAccount(acc)}
-                  className="w-full min-h-[60px] px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-muted/40 transition-colors"
+                  className="min-h-[64px] px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => openEditAccount(acc)}
+                    className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                  >
                     <span
                       className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                       style={{
@@ -420,23 +598,41 @@ export function AccountsTab() {
                         {acc.name}
                       </p>
                       <p className="text-xs text-muted-foreground capitalize">
-                        {acc.type.replace('_', ' ')} · Tap to edit balance
+                        {acc.type.replace('_', ' ')}
+                        {acc.isDefault ? ' · Default' : ''}
                       </p>
                     </div>
-                  </div>
+                  </button>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-sm sm:text-base font-bold font-mono tabular-nums text-foreground">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-sm sm:text-base font-bold font-mono tabular-nums text-foreground mr-1">
                       {formatINR(acc.balance)}
                     </span>
-                    <Pencil className="w-3.5 h-3.5 text-muted-foreground/60" />
+                    <button
+                      type="button"
+                      onClick={() => openReconcileDialog(acc)}
+                      title="Reconcile actual bank balance"
+                      aria-label={`Reconcile ${acc.name} balance`}
+                      className="h-8 px-2 rounded-lg border border-border bg-background hover:bg-muted text-[11px] font-semibold text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+                    >
+                      <Scale className="w-3.5 h-3.5 text-primary" />
+                      <span className="hidden sm:inline">Reconcile</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditAccount(acc)}
+                      aria-label={`Edit ${acc.name}`}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </section>
 
-          {/* Credit Card Liabilities with Utilization Bar & 1-Tap Bill Settlement */}
+          {/* Credit Cards with Statement Cycle & Utilization Intelligence */}
           <section className="space-y-2.5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-foreground">
@@ -458,17 +654,17 @@ export function AccountsTab() {
 
             {creditCards.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border p-4 text-xs text-muted-foreground">
-                Add a Credit Card account to track credit utilization % and statement due dates.
+                Add a Credit Card account to track credit utilization %, statement close day, and bill due countdown.
               </div>
             ) : (
               <div className="space-y-3">
                 {creditCards.map((card) => {
                   const used =
-                    card.balance < 0
-                      ? Math.abs(card.balance)
-                      : card.balance;
+                    card.balance < 0 ? Math.abs(card.balance) : card.balance;
                   const limit = card.creditLimit || 100000;
+                  const available = Math.max(0, limit - used);
                   const utilPct = Math.min(100, Math.round((used / limit) * 100));
+                  const daysToDue = getDaysUntilDueDay(card.dueDay);
 
                   return (
                     <div
@@ -488,8 +684,11 @@ export function AccountsTab() {
                             <p className="text-sm font-bold text-foreground truncate">
                               {card.name}
                             </p>
-                            <p className="text-xs text-muted-foreground font-mono">
+                            <p className="text-xs text-muted-foreground font-mono tabular-nums">
                               Limit {formatINR(limit)}
+                              {card.statementDay
+                                ? ` · Closes Day ${card.statementDay}`
+                                : ''}
                               {card.dueDay ? ` · Due Day ${card.dueDay}` : ''}
                             </p>
                           </div>
@@ -500,30 +699,61 @@ export function AccountsTab() {
                             {formatINR(used)} due
                           </span>
                           <span className="text-[11px] text-muted-foreground">
-                            {utilPct}% utilization
+                            {utilPct}% used · Avail {formatINR(available)}
                           </span>
                         </div>
                       </div>
 
-                      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                        <div
-                          style={{ width: `${utilPct}%` }}
-                          className={`h-full rounded-full transition-all ${
-                            utilPct > 50
-                              ? 'bg-rose-500'
-                              : utilPct > 30
-                              ? 'bg-amber-500'
-                              : 'bg-emerald-500'
-                          }`}
-                        />
+                      <div className="space-y-1">
+                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                          <div
+                            style={{ width: `${utilPct}%` }}
+                            className={`h-full rounded-full transition-all ${
+                              utilPct > 50
+                                ? 'bg-rose-500'
+                                : utilPct > 30
+                                ? 'bg-amber-500'
+                                : 'bg-emerald-500'
+                            }`}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>
+                            {utilPct > 30
+                              ? 'Tip: Keep utilization under 30% for optimal credit score'
+                              : 'Healthy utilization (<30%)'}
+                          </span>
+                          {daysToDue !== null && (
+                            <span
+                              className={`font-mono tabular-nums font-semibold ${
+                                daysToDue <= 5
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-muted-foreground'
+                              }`}
+                            >
+                              {daysToDue === 0
+                                ? 'Due today'
+                                : `Due in ${daysToDue}d`}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      {used > 0 && (
-                        <div className="flex justify-end">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openReconcileDialog(card)}
+                          className="h-8 px-2.5 text-xs rounded-lg gap-1"
+                        >
+                          <Scale className="w-3.5 h-3.5" />
+                          <span>Reconcile</span>
+                        </Button>
+                        {used > 0 && (
                           <Button
                             type="button"
                             size="sm"
-                            variant="outline"
                             onClick={() => {
                               setPayingCard(card);
                               setPayCardAmount(String(used));
@@ -534,8 +764,8 @@ export function AccountsTab() {
                             <ArrowRightLeft className="w-3.5 h-3.5" />
                             <span>Pay Card Bill</span>
                           </Button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -544,115 +774,23 @@ export function AccountsTab() {
           </section>
         </div>
 
-        {/* Right Column: Categories + Rollover + Smart Merchant Auto-Categorization Rules */}
+        {/* Right Column: Smart Merchant Auto-Categorization Rules + Custom Category Directory */}
         <div className="lg:col-span-7 space-y-5">
-          {/* Categories & Rollover Settings */}
-          <section className="space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-bold text-foreground">
-                  Categories &amp; Monthly Envelopes ({selectedMonth})
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Tap any category to edit its monthly limit or unused rollover
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setIsNewCatOpen(true)}
-                className="h-9 px-3 rounded-xl gap-1.5 text-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Category
-              </Button>
-            </div>
-
-            <div className="rounded-2xl border border-border bg-card divide-y divide-border/60 overflow-hidden">
-              {summary.categoryBreakdown.map((item) => {
-                const hasLimit = item.budgetLimit > 0;
-                return (
-                  <button
-                    key={item.category.id}
-                    type="button"
-                    onClick={() => {
-                      setEditingCategory(item.category);
-                      setCatLimitInput(String(item.category.monthlyBudgetLimit || 0));
-                      setCatRolloverInput(Boolean(item.category.rolloverEnabled));
-                    }}
-                    className="w-full min-h-[56px] px-4 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-muted/40 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span
-                        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                        style={{
-                          backgroundColor: `${item.category.color}18`,
-                          color: item.category.color,
-                        }}
-                      >
-                        <CategoryIcon name={item.category.icon} className="w-4 h-4" />
-                      </span>
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-sm font-medium text-foreground truncate">
-                              {item.category.name}
-                            </span>
-                            {item.category.rolloverEnabled && (
-                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 shrink-0">
-                                <RefreshCw className="w-2.5 h-2.5" />
-                                Rollover
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-xs font-mono tabular-nums text-foreground shrink-0">
-                            {formatINR(item.spent)}
-                            {hasLimit && (
-                              <span className="text-muted-foreground">
-                                {' '}
-                                / {formatINR(item.budgetLimit)}
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        {hasLimit && (
-                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                            <div
-                              style={{
-                                width: `${Math.min(100, item.percentageOfBudget)}%`,
-                              }}
-                              className={`h-full rounded-full ${
-                                item.status === 'exceeded'
-                                  ? 'bg-rose-500'
-                                  : item.status === 'warning'
-                                  ? 'bg-amber-500'
-                                  : 'bg-emerald-500'
-                              }`}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
           {/* Smart Merchant Auto-Categorization Rules Engine */}
           <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
-            <div className="flex items-center gap-2.5">
-              <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <Sparkles className="w-4 h-4" />
-              </span>
-              <div>
-                <h2 className="text-sm font-bold text-foreground">
-                  Smart Merchant Categorization Rules ({activeRules.length})
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Automatically clean raw UPI/SMS merchant strings and assign categories
-                </p>
+            <div className="flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">
+                    Smart Merchant Rules ({activeRules.length})
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Auto-categorize SMS imports, receipt scans, and manual entries
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -690,17 +828,15 @@ export function AccountsTab() {
                 </Label>
                 <select
                   id="r-cat"
-                  value={ruleCategoryId || categories[0]?.id || ''}
+                  value={ruleCategoryId || activeCategories[0]?.id || ''}
                   onChange={(e) => setRuleCategoryId(e.target.value)}
                   className="w-full h-9 px-2 text-xs rounded-lg border border-input bg-background"
                 >
-                  {categories
-                    .filter((c) => !c.deletedAt)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
+                  {activeCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="sm:col-span-2">
@@ -710,49 +846,151 @@ export function AccountsTab() {
               </div>
             </form>
 
-            {activeRules.length > 0 && (
+            {activeRules.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground text-center">
+                No custom rules yet. Add a keyword above or recategorize an SMS import to build rules automatically.
+              </div>
+            ) : (
               <div className="divide-y divide-border/60 border-t border-border/60 pt-1">
                 {activeRules.map((rule) => {
-                  const cat = categories.find((c) => c.id === rule.categoryId);
+                  const cat = activeCategories.find((c) => c.id === rule.categoryId);
+                  const matches = ruleMatchCounts.get(rule.id) || 0;
                   return (
                     <div
                       key={rule.id}
-                      className="py-2 flex items-center justify-between gap-2 text-xs"
+                      className={`py-2.5 flex items-center justify-between gap-2 text-xs ${
+                        !rule.isActive ? 'opacity-55' : ''
+                      }`}
                     >
-                      <div className="min-w-0">
-                        <span className="font-mono font-semibold text-foreground">
-                          &ldquo;{rule.matchPattern}&rdquo;
-                        </span>
-                        <span className="text-muted-foreground">
-                          {' '}
-                          → {rule.cleanMerchantName} ·{' '}
-                        </span>
-                        <span className="font-semibold text-primary">
-                          {cat?.name || 'Category'}
-                        </span>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="truncate">
+                          <span className="font-mono font-semibold text-foreground">
+                            &ldquo;{rule.matchPattern}&rdquo;
+                          </span>
+                          <span className="text-muted-foreground">
+                            {' '}
+                            → {rule.cleanMerchantName} ·{' '}
+                          </span>
+                          <span className="font-semibold text-primary">
+                            {cat?.name || 'Category'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground font-mono tabular-nums">
+                          Matched {matches} historical {matches === 1 ? 'entry' : 'entries'} ·{' '}
+                          {rule.isActive ? 'Active' : 'Paused'}
+                        </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await deleteCategorizationRule(rule.id);
-                          toast.success('Rule deleted');
-                        }}
-                        className="text-muted-foreground hover:text-rose-500 p-1"
-                        aria-label="Delete rule"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleRule(rule)}
+                          title={rule.isActive ? 'Pause rule' : 'Enable rule'}
+                          aria-label={rule.isActive ? 'Pause rule' : 'Enable rule'}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            rule.isActive
+                              ? 'text-emerald-600 hover:bg-emerald-500/10'
+                              : 'text-muted-foreground hover:bg-muted'
+                          }`}
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await deleteCategorizationRule(rule.id);
+                            toast.success('Rule deleted');
+                          }}
+                          className="text-muted-foreground hover:text-rose-500 p-1.5 rounded-lg"
+                          aria-label="Delete rule"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             )}
           </section>
+
+          {/* Streamlined Categories Directory (Envelope budgets centralized in MonthlyBudgetModal) */}
+          <section className="rounded-2xl border border-border bg-card p-5 space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-muted text-foreground flex items-center justify-center shrink-0">
+                  <Tag className="w-4 h-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">
+                    Categories Directory ({activeCategories.length})
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Create custom categories or configure monthly limits in Budgets
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {onOpenBudgetModal && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onOpenBudgetModal()}
+                    className="h-9 px-3 rounded-xl gap-1.5 text-xs"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    Edit Envelopes
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setIsNewCatOpen(true)}
+                  className="h-9 px-3 rounded-xl gap-1.5 text-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  New Category
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {activeCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => onOpenBudgetModal?.(cat.id)}
+                  className="px-3 py-2 rounded-xl border border-border/70 bg-background hover:bg-muted/40 flex items-center gap-2 text-left transition-colors"
+                >
+                  <span
+                    className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                    style={{
+                      backgroundColor: `${cat.color}18`,
+                      color: cat.color,
+                    }}
+                  >
+                    <CategoryIcon name={cat.icon} className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground truncate">
+                      {cat.name}
+                    </p>
+                    <p className="text-[10px] font-mono tabular-nums text-muted-foreground">
+                      {cat.monthlyBudgetLimit > 0
+                        ? formatINR(cat.monthlyBudgetLimit)
+                        : 'No limit'}
+                      {cat.rolloverEnabled ? ' · Rollover' : ''}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
 
       {/* Bottom Utility: Data Export & Fresh Start */}
-      <section className="rounded-2xl border border-border/80 bg-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-6">
+      <section className="rounded-2xl border border-border/80 bg-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Download className="w-4 h-4 text-primary" />
@@ -786,6 +1024,100 @@ export function AccountsTab() {
         </div>
       </section>
 
+      {/* Dialog: 1-Tap Account Balance Reconciliation */}
+      <Dialog
+        open={!!reconcilingAccount}
+        onOpenChange={(o) => !o && setReconcilingAccount(null)}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Reconcile {reconcilingAccount?.name}</DialogTitle>
+            <DialogDescription>
+              Enter the real balance shown in your bank/wallet app. Current app balance:{' '}
+              <strong className="font-mono text-foreground">
+                {formatINR(reconcilingAccount?.balance || 0)}
+              </strong>
+              .
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleConfirmReconcile} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="rec-actual">Actual Bank / App Balance (₹)</Label>
+              <Input
+                id="rec-actual"
+                type="number"
+                step="0.01"
+                value={reconcileTargetStr}
+                onChange={(e) => setReconcileTargetStr(e.target.value)}
+                className="h-11 font-mono tabular-nums text-base"
+                required
+              />
+              {Math.abs(reconcileVariance) >= 0.01 && (
+                <p
+                  className={`text-xs font-mono tabular-nums font-semibold ${
+                    reconcileVariance > 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  Variance: {reconcileVariance > 0 ? '+' : '-'}
+                  {formatINR(Math.abs(reconcileVariance))}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground block">
+                How should we adjust this difference?
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReconcileMode('adjustment_tx')}
+                  className={`p-2.5 rounded-xl border text-left text-xs transition-colors ${
+                    reconcileMode === 'adjustment_tx'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border bg-card text-muted-foreground'
+                  }`}
+                >
+                  <p className="font-semibold text-foreground">Log Adjustment Tx</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Creates a clear ledger entry
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReconcileMode('silent')}
+                  className={`p-2.5 rounded-xl border text-left text-xs transition-colors ${
+                    reconcileMode === 'silent'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border bg-card text-muted-foreground'
+                  }`}
+                >
+                  <p className="font-semibold text-foreground">Silent Update</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Updates balance without a tx
+                  </p>
+                </button>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReconcilingAccount(null)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isReconciling}>
+                {isReconciling ? 'Reconciling...' : 'Confirm Balance'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Dialog: Edit Account */}
       <Dialog
         open={!!editingAccount}
@@ -795,7 +1127,7 @@ export function AccountsTab() {
           <DialogHeader>
             <DialogTitle>Edit Account</DialogTitle>
             <DialogDescription>
-              Update balance, account type, or credit card limit.
+              Update balance, account type, or credit card cycle details.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveAccountEdit} className="space-y-3.5 py-2">
@@ -842,20 +1174,38 @@ export function AccountsTab() {
               </div>
             </div>
             {accType === 'credit_card' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="ea-limit">Credit Limit (₹)</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="ea-limit" className="text-xs">
+                    Limit (₹)
+                  </Label>
                   <Input
                     id="ea-limit"
                     type="number"
                     min="1000"
                     value={accCreditLimit}
                     onChange={(e) => setAccCreditLimit(e.target.value)}
-                    className="h-11 font-mono tabular-nums"
+                    className="h-10 font-mono tabular-nums text-xs"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="ea-due">Due Day (1–31)</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="ea-cycle" className="text-xs">
+                    Close Day
+                  </Label>
+                  <Input
+                    id="ea-cycle"
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={accBillingDay}
+                    onChange={(e) => setAccBillingDay(e.target.value)}
+                    className="h-10 font-mono tabular-nums text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="ea-due" className="text-xs">
+                    Due Day
+                  </Label>
                   <Input
                     id="ea-due"
                     type="number"
@@ -863,7 +1213,7 @@ export function AccountsTab() {
                     max="31"
                     value={accDueDay}
                     onChange={(e) => setAccDueDay(e.target.value)}
-                    className="h-11 font-mono tabular-nums"
+                    className="h-10 font-mono tabular-nums text-xs"
                   />
                 </div>
               </div>
@@ -949,20 +1299,38 @@ export function AccountsTab() {
               </div>
             </div>
             {accType === 'credit_card' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="na-limit">Credit Limit (₹)</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="na-limit" className="text-xs">
+                    Limit (₹)
+                  </Label>
                   <Input
                     id="na-limit"
                     type="number"
                     min="1000"
                     value={accCreditLimit}
                     onChange={(e) => setAccCreditLimit(e.target.value)}
-                    className="h-11 font-mono tabular-nums"
+                    className="h-10 font-mono tabular-nums text-xs"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="na-due">Bill Due Day (1–31)</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="na-cycle" className="text-xs">
+                    Close Day
+                  </Label>
+                  <Input
+                    id="na-cycle"
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={accBillingDay}
+                    onChange={(e) => setAccBillingDay(e.target.value)}
+                    className="h-10 font-mono tabular-nums text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="na-due" className="text-xs">
+                    Due Day
+                  </Label>
                   <Input
                     id="na-due"
                     type="number"
@@ -970,7 +1338,7 @@ export function AccountsTab() {
                     max="31"
                     value={accDueDay}
                     onChange={(e) => setAccDueDay(e.target.value)}
-                    className="h-11 font-mono tabular-nums"
+                    className="h-10 font-mono tabular-nums text-xs"
                   />
                 </div>
               </div>
@@ -1040,61 +1408,13 @@ export function AccountsTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Edit Category Limit & Rollover */}
-      <Dialog
-        open={!!editingCategory}
-        onOpenChange={(o) => !o && setEditingCategory(null)}
-      >
-        <DialogContent className="sm:max-w-[380px]">
-          <DialogHeader>
-            <DialogTitle>{editingCategory?.name} Envelope</DialogTitle>
-            <DialogDescription>
-              Set a monthly budget limit and choose whether unused budget rolls over.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveCategoryLimit} className="space-y-3.5 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="cat-lim">Monthly Limit (₹)</Label>
-              <Input
-                id="cat-lim"
-                type="number"
-                min="0"
-                value={catLimitInput}
-                onChange={(e) => setCatLimitInput(e.target.value)}
-                className="h-11 font-mono tabular-nums"
-                required
-              />
-            </div>
-            <label className="flex items-center gap-2.5 text-xs min-h-[40px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={catRolloverInput}
-                onChange={(e) => setCatRolloverInput(e.target.checked)}
-                className="w-4 h-4 rounded border-input"
-              />
-              <span>Roll over unused budget from previous month</span>
-            </label>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditingCategory(null)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit">Save Envelope</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog: New Custom Category */}
+      {/* Dialog: Add Custom Category */}
       <Dialog open={isNewCatOpen} onOpenChange={setIsNewCatOpen}>
         <DialogContent className="sm:max-w-[380px]">
           <DialogHeader>
-            <DialogTitle>New Custom Category</DialogTitle>
+            <DialogTitle>New Expense Category</DialogTitle>
             <DialogDescription>
-              Add a custom expense category with its own monthly budget envelope.
+              Create a custom category with an optional monthly budget limit.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateCustomCategory} className="space-y-3.5 py-2">
@@ -1104,16 +1424,16 @@ export function AccountsTab() {
                 id="nc-name"
                 value={newCatName}
                 onChange={(e) => setNewCatName(e.target.value)}
-                placeholder="e.g., Pet Care, Fitness, Books"
+                placeholder="e.g., Pet Care, Side Hustle, Hobbies"
                 className="h-11"
                 required
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="nc-lim">Monthly Limit (₹)</Label>
+                <Label htmlFor="nc-limit">Monthly Limit (₹)</Label>
                 <Input
-                  id="nc-lim"
+                  id="nc-limit"
                   type="number"
                   min="0"
                   value={newCatLimit}
@@ -1122,9 +1442,9 @@ export function AccountsTab() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="nc-col">Accent Color</Label>
+                <Label htmlFor="nc-color">Accent Color</Label>
                 <Input
-                  id="nc-col"
+                  id="nc-color"
                   type="color"
                   value={newCatColor}
                   onChange={(e) => setNewCatColor(e.target.value)}
@@ -1146,14 +1466,13 @@ export function AccountsTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Confirm Fresh Start Reset */}
+      {/* Dialog: Fresh Start Reset Confirmation */}
       <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-        <DialogContent className="sm:max-w-[380px]">
+        <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>Reset All Finance Data?</DialogTitle>
+            <DialogTitle>Reset All Finance Data to ₹0?</DialogTitle>
             <DialogDescription>
-              This clears all transactions, budgets, commitments, friend debts, EMIs, and SIPs,
-              and resets every account balance to ₹0 while keeping your categories.
+              This clears all logged transactions and resets account balances to ₹0. Export a CSV backup first if you want to keep a copy.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1169,7 +1488,7 @@ export function AccountsTab() {
               variant="destructive"
               onClick={handleConfirmReset}
             >
-              Reset Everything to ₹0
+              Reset Everything
             </Button>
           </DialogFooter>
         </DialogContent>

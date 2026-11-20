@@ -1,0 +1,170 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenAI, Type } from '@google/genai';
+
+interface ReceiptImagePayload {
+  data: string; // base64 without data: prefix
+  mimeType: string;
+  fileName?: string;
+}
+
+interface CategoryInput {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface ScannedReceiptDraft {
+  id: string;
+  title: string;
+  merchantName: string;
+  amount: number;
+  type: 'expense' | 'income' | 'investment';
+  date: string;
+  categorySlug: string;
+  paymentMethodType: 'upi' | 'bank' | 'cash' | 'credit_card' | 'wallet';
+  referenceId?: string;
+  notes?: string;
+  confidence: number;
+  fileName?: string;
+}
+
+function getTodayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const rawImages: ReceiptImagePayload[] = Array.isArray(body?.images)
+      ? body.images.slice(0, 5)
+      : [];
+    const categories: CategoryInput[] = Array.isArray(body?.categories) ? body.categories : [];
+
+    if (rawImages.length === 0) {
+      return NextResponse.json(
+        { error: 'Please attach 1 to 5 receipt or UPI screenshot images.' },
+        { status: 400 }
+      );
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error: 'Receipt OCR requires GEMINI_API_KEY on the server. You can enter the expense manually.',
+          code: 'AI_UNAVAILABLE',
+        },
+        { status: 503 }
+      );
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+
+    const categorySlugs = categories.length
+      ? categories.map((c) => `${c.slug} (${c.name})`).join(', ')
+      : 'food-dining, groceries-household, medical-supplements, utilities-bills, family-commitments, shopping-personal-care, transport-fuel, emis-debt-repayment, entertainment-subscriptions, investments-savings';
+
+    const todayIso = getTodayIso();
+
+    const parts: Array<
+      | { text: string }
+      | { inlineData: { data: string; mimeType: string } }
+    > = [
+      {
+        text: `You are an expert Indian receipt, bill, and UPI payment screenshot (GPay, PhonePe, Paytm, CRED, Amazon Pay, bank app) OCR extractor.
+Today's date is ${todayIso}.
+Analyze the ${rawImages.length} attached image(s). Extract one structured transaction entry per valid receipt or payment screenshot.
+Ignore failed/cancelled payment screenshots.
+Available category slugs: ${categorySlugs}.
+Return JSON with an "items" array. Use YYYY-MM-DD for dates (default ${todayIso} if unclear).`,
+      },
+    ];
+
+    for (const img of rawImages) {
+      if (!img?.data) continue;
+      const cleanBase64 = img.data.includes(',') ? img.data.split(',')[1] : img.data;
+      parts.push({
+        inlineData: {
+          data: cleanBase64,
+          mimeType: img.mimeType || 'image/jpeg',
+        },
+      });
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: [{ role: 'user', parts }],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            items: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  merchantName: { type: Type.STRING },
+                  amount: { type: Type.NUMBER },
+                  type: { type: Type.STRING, enum: ['expense', 'income', 'investment'] },
+                  date: { type: Type.STRING },
+                  categorySlug: { type: Type.STRING },
+                  paymentMethodType: {
+                    type: Type.STRING,
+                    enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'],
+                  },
+                  referenceId: { type: Type.STRING, nullable: true },
+                  notes: { type: Type.STRING, nullable: true },
+                  confidence: { type: Type.NUMBER },
+                },
+                required: ['title', 'amount', 'type', 'date', 'categorySlug', 'paymentMethodType'],
+              },
+            },
+          },
+          required: ['items'],
+        },
+      },
+    });
+
+    const rawJson = response.text?.trim();
+    if (!rawJson) {
+      return NextResponse.json({ items: [] });
+    }
+
+    const parsed = JSON.parse(rawJson) as { items?: Array<Partial<ScannedReceiptDraft>> };
+    const normalized: ScannedReceiptDraft[] = (parsed.items || [])
+      .filter((item) => Number(item.amount) > 0)
+      .map((item, idx) => ({
+        id: crypto.randomUUID(),
+        title: (item.title || item.merchantName || 'Scanned Receipt').trim().slice(0, 80),
+        merchantName: (item.merchantName || item.title || '').trim().slice(0, 60),
+        amount: Math.round(Number(item.amount) * 100) / 100,
+        type:
+          item.type === 'income' || item.type === 'investment' || item.type === 'expense'
+            ? item.type
+            : 'expense',
+        date: /^\d{4}-\d{2}-\d{2}$/.test(item.date || '') ? item.date! : todayIso,
+        categorySlug: item.categorySlug || 'shopping-personal-care',
+        paymentMethodType: item.paymentMethodType || 'upi',
+        referenceId: item.referenceId || undefined,
+        notes: item.notes || undefined,
+        confidence: Number(item.confidence) || 90,
+        fileName: rawImages[idx]?.fileName,
+      }));
+
+    return NextResponse.json({ items: normalized });
+  } catch (error) {
+    console.error('[scan-receipt] OCR failed:', error);
+    return NextResponse.json(
+      { error: 'Could not read receipt image. Please try a clearer screenshot or enter manually.' },
+      { status: 500 }
+    );
+  }
+}

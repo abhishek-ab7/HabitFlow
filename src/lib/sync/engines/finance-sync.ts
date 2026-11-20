@@ -156,6 +156,7 @@ export class FinanceSyncEngine implements ISynchronizer {
       ...(db.financeSipPlans ? [db.financeSipPlans] : []),
       ...(db.financeCategorizationRules ? [db.financeCategorizationRules] : []),
       ...(db.financeRecurringBills ? [db.financeRecurringBills] : []),
+      ...(db.financeNetWorthSnapshots ? [db.financeNetWorthSnapshots] : []),
     ];
 
     let count = 0;
@@ -848,6 +849,8 @@ export class FinanceSyncEngine implements ISynchronizer {
         total_budget: budget.totalBudget,
         expected_income: budget.expectedIncome,
         planned_sip_amount: Number(budget.plannedSipAmount || 0),
+        budget_mode: budget.budgetMode || 'cap',
+        assigned_income: budget.assignedIncome !== undefined ? Number(budget.assignedIncome) : null,
         currency: budget.currency,
         notes: budget.notes || null,
         deleted_at: budget.deletedAt || null,
@@ -893,6 +896,8 @@ export class FinanceSyncEngine implements ISynchronizer {
               totalBudget: Number(r.total_budget || 0),
               expectedIncome: Number(r.expected_income || 0),
               plannedSipAmount: r.planned_sip_amount ? Number(r.planned_sip_amount) : (local?.plannedSipAmount ?? 0),
+              budgetMode: r.budget_mode === 'zero_based' ? 'zero_based' : (local?.budgetMode || 'cap'),
+              assignedIncome: r.assigned_income !== null && r.assigned_income !== undefined ? Number(r.assigned_income) : local?.assignedIncome,
               currency: r.currency || 'INR',
               notes: r.notes || undefined,
               deletedAt: r.deleted_at || null,
@@ -1095,6 +1100,73 @@ export class FinanceSyncEngine implements ISynchronizer {
                 isActive: !!r.is_active,
                 color: r.color || '#6366f1',
                 icon: r.icon || 'Calendar',
+                deletedAt: r.deleted_at || null,
+                generationCounter: r.generation_counter || 1,
+                createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+                updatedAt: r.updated_at || new Date().toISOString(),
+                isDirty: false,
+              });
+              pulled++;
+            }
+          }
+        }
+      }
+
+      if (db.financeNetWorthSnapshots) {
+        const dirtySnapshots = await db.financeNetWorthSnapshots
+          .where('userId')
+          .equals(userId)
+          .filter((s) => s.isDirty !== false)
+          .toArray();
+        for (const snap of dirtySnapshots) {
+          const { error } = await (supabase.from('finance_net_worth_snapshots') as any).upsert(
+            {
+              id: snap.id,
+              user_id: userId,
+              month_key: snap.monthKey,
+              snapshot_date: snap.snapshotDate,
+              liquid_assets: Number(snap.liquidAssets || 0),
+              investment_assets: Number(snap.investmentAssets || 0),
+              friend_receivables: Number(snap.friendReceivables || 0),
+              total_assets: Number(snap.totalAssets || 0),
+              credit_card_liabilities: Number(snap.creditCardLiabilities || 0),
+              emi_remaining_principal: Number(snap.emiRemainingPrincipal || 0),
+              friend_payables: Number(snap.friendPayables || 0),
+              total_liabilities: Number(snap.totalLiabilities || 0),
+              net_worth: Number(snap.netWorth || 0),
+              deleted_at: snap.deletedAt || null,
+              generation_counter: snap.generationCounter || 1,
+              created_at: snap.createdAt,
+              updated_at: snap.updatedAt,
+            },
+            { onConflict: 'user_id,month_key' }
+          );
+          if (!error) {
+            await db.financeNetWorthSnapshots.update(snap.id, { isDirty: false });
+            pushed++;
+          }
+        }
+        const { data: remoteSnaps } = await (supabase.from('finance_net_worth_snapshots') as any)
+          .select('*')
+          .eq('user_id', userId);
+        if (Array.isArray(remoteSnaps)) {
+          for (const r of remoteSnaps) {
+            const local = await db.financeNetWorthSnapshots.get(r.id);
+            if (this.shouldApplyRemote(local, r)) {
+              await db.financeNetWorthSnapshots.put({
+                id: r.id,
+                userId: r.user_id,
+                monthKey: r.month_key,
+                snapshotDate: r.snapshot_date,
+                liquidAssets: Number(r.liquid_assets || 0),
+                investmentAssets: Number(r.investment_assets || 0),
+                friendReceivables: Number(r.friend_receivables || 0),
+                totalAssets: Number(r.total_assets || 0),
+                creditCardLiabilities: Number(r.credit_card_liabilities || 0),
+                emiRemainingPrincipal: Number(r.emi_remaining_principal || 0),
+                friendPayables: Number(r.friend_payables || 0),
+                totalLiabilities: Number(r.total_liabilities || 0),
+                netWorth: Number(r.net_worth || 0),
                 deletedAt: r.deleted_at || null,
                 generationCounter: r.generation_counter || 1,
                 createdAt: r.created_at || r.updated_at || new Date().toISOString(),

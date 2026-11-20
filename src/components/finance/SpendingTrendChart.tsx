@@ -13,26 +13,29 @@ import {
   CartesianGrid,
   Tooltip,
   Cell,
+  ReferenceLine,
 } from 'recharts';
-import { BarChart3, TrendingUp, GitFork } from 'lucide-react';
+import { BarChart3, TrendingUp, GitFork, Compass, AlertTriangle } from 'lucide-react';
 import {
   useFinanceStore,
   formatINR,
   type SixMonthTrendPoint,
 } from '@/lib/stores/finance-store';
-import type { DailyPacePoint } from '@/lib/types';
+import type { DailyPacePoint, CashFlowForecastPoint } from '@/lib/types';
 
 interface SpendingTrendChartProps {
   onOpenBudgetModal: (focusCategoryId?: string) => void;
 }
 
-type AnalyticsChartMode = 'pace' | 'sankey' | 'trend';
+type AnalyticsChartMode = 'pace' | 'forecast' | 'sankey' | 'trend';
 
 function formatCompactINR(value: number): string {
-  if (value === 0) return '₹0';
-  if (value >= 100000) return `₹${(value / 100000).toFixed(1).replace(/\.0$/, '')}L`;
-  if (value >= 1000) return `₹${(value / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  return `₹${Math.round(value)}`;
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs === 0) return '₹0';
+  if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(1).replace(/\.0$/, '')}L`;
+  if (abs >= 1000) return `${sign}₹${(abs / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `${sign}₹${Math.round(abs)}`;
 }
 
 interface TrendTooltipProps {
@@ -129,11 +132,65 @@ function PaceTooltip({ active, payload }: PaceTooltipProps) {
   );
 }
 
+interface ForecastTooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    payload: CashFlowForecastPoint;
+  }>;
+}
+
+function ForecastTooltip({ active, payload }: ForecastTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null;
+  const point = payload[0].payload;
+
+  return (
+    <div className="rounded-xl border border-border bg-popover text-popover-foreground shadow-md px-3.5 py-2.5 text-xs space-y-1.5 min-w-[200px]">
+      <p className="font-semibold text-foreground font-mono tabular-nums">
+        {point.label} ({point.dateStr})
+      </p>
+      <div className="flex items-center justify-between gap-4 font-mono tabular-nums">
+        <span className="text-muted-foreground">Projected Liquid</span>
+        <span
+          className={`font-bold ${
+            point.projectedBalance < 0
+              ? 'text-rose-600 dark:text-rose-400'
+              : 'text-emerald-600 dark:text-emerald-400'
+          }`}
+        >
+          {formatINR(point.projectedBalance)}
+        </span>
+      </div>
+      {point.scheduledInflow > 0 && (
+        <div className="flex items-center justify-between gap-4 font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+          <span>Scheduled Inflow</span>
+          <span>+{formatINR(point.scheduledInflow)}</span>
+        </div>
+      )}
+      {point.scheduledOutflow > 0 && (
+        <div className="flex items-center justify-between gap-4 font-mono tabular-nums text-rose-600 dark:text-rose-400">
+          <span>Scheduled Bills/EMIs</span>
+          <span>-{formatINR(point.scheduledOutflow)}</span>
+        </div>
+      )}
+      {point.events.length > 0 && (
+        <div className="pt-1 border-t border-border/60 space-y-0.5 text-[11px] text-muted-foreground">
+          {point.events.slice(0, 3).map((ev, i) => (
+            <p key={i} className="truncate">
+              · {ev}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProps) {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const categories = useFinanceStore((s) => s.categories);
   const transactions = useFinanceStore((s) => s.transactions);
   const budgets = useFinanceStore((s) => s.budgets);
+  const accounts = useFinanceStore((s) => s.accounts);
   const getSixMonthSpendingTrends = useFinanceStore(
     (s) => s.getSixMonthSpendingTrends
   );
@@ -141,9 +198,12 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
     (s) => s.getYearlySpendingTrends
   );
   const getDailySpendingPace = useFinanceStore((s) => s.getDailySpendingPace);
+  const getCashFlowForecast = useFinanceStore((s) => s.getCashFlowForecast);
   const getMonthlySummary = useFinanceStore((s) => s.getMonthlySummary);
 
   const [chartMode, setChartMode] = useState<AnalyticsChartMode>('pace');
+  const [forecastHorizon, setForecastHorizon] = useState<30 | 60 | 90>(30);
+  const [includeBurn, setIncludeBurn] = useState(true);
   const [timeframe, setTimeframe] = useState<'monthly' | 'yearly'>('monthly');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [hoveredSankeyNode, setHoveredSankeyNode] = useState<string | null>(null);
@@ -158,6 +218,12 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
     () => getDailySpendingPace(selectedMonth),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [getDailySpendingPace, selectedMonth, transactions, budgets, categories]
+  );
+
+  const forecastData = useMemo(
+    () => getCashFlowForecast(forecastHorizon, includeBurn).points,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getCashFlowForecast, forecastHorizon, includeBurn, accounts, transactions, budgets]
   );
 
   const trendData = useMemo(
@@ -188,7 +254,6 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
       ? expenseCategories.find((c) => c.id === selectedCategoryId)
       : undefined;
 
-  // Pace status check
   const latestPacePoint = useMemo(() => {
     for (let i = paceData.length - 1; i >= 0; i--) {
       if (paceData[i].cumulativeSpent !== null) return paceData[i];
@@ -201,6 +266,21 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
     latestPacePoint.cumulativeSpent !== null &&
     latestPacePoint.idealCumulativeBudget > 0 &&
     latestPacePoint.cumulativeSpent > latestPacePoint.idealCumulativeBudget * 1.05;
+
+  const forecastMinPoint = useMemo(() => {
+    if (forecastData.length === 0) return null;
+    return forecastData.reduce((min, p) =>
+      p.projectedBalance < min.projectedBalance ? p : min
+    );
+  }, [forecastData]);
+
+  const forecastEndBalance =
+    forecastData.length > 0
+      ? forecastData[forecastData.length - 1].projectedBalance
+      : 0;
+  const hasForecastCrunch = Boolean(
+    forecastMinPoint && forecastMinPoint.projectedBalance < 0
+  );
 
   // Sankey flow model computation
   const sankeyModel = useMemo(() => {
@@ -226,7 +306,6 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
       inflowBase - (fixedObligations + investedTotal + variableSpend)
     );
 
-    // Top 4 variable categories + other
     const sortedCats = [...summary.categoryBreakdown]
       .filter((c) => c.spent > 0)
       .sort((a, b) => b.spent - a.spent);
@@ -318,12 +397,14 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-      {/* Top Bar: Title + 3-Way Chart Mode Switcher */}
+      {/* Top Bar: Title + 4-Way Chart Mode Switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
             {chartMode === 'pace' ? (
               <TrendingUp className="w-4 h-4" />
+            ) : chartMode === 'forecast' ? (
+              <Compass className="w-4 h-4" />
             ) : chartMode === 'sankey' ? (
               <GitFork className="w-4 h-4" />
             ) : (
@@ -334,6 +415,8 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
             <h2 className="text-sm font-bold text-foreground truncate">
               {chartMode === 'pace'
                 ? 'Cumulative Daily Spending Pace'
+                : chartMode === 'forecast'
+                ? `${forecastHorizon}-Day Cash-Flow Runway`
                 : chartMode === 'sankey'
                 ? 'Sankey Cash Flow Allocation'
                 : timeframe === 'monthly'
@@ -353,6 +436,13 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
                 ) : (
                   'Cumulative burn vs linear monthly trajectory'
                 )
+              ) : chartMode === 'forecast' ? (
+                <>
+                  Projected Day {forecastHorizon}: {formatINR(forecastEndBalance)}
+                  {forecastMinPoint
+                    ? ` · Low ${formatINR(forecastMinPoint.projectedBalance)}`
+                    : ''}
+                </>
               ) : chartMode === 'sankey' ? (
                 <>
                   {sankeyModel.inflowLabel}: {formatINR(sankeyModel.inflowBase)} →{' '}
@@ -371,11 +461,12 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
         <div
           role="group"
           aria-label="Visual analytics chart mode"
-          className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-muted shrink-0"
+          className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-muted shrink-0"
         >
           {(
             [
-              { id: 'pace', label: 'Daily Pace' },
+              { id: 'pace', label: 'Pace' },
+              { id: 'forecast', label: 'Forecast' },
               { id: 'sankey', label: 'Cash Flow' },
               { id: 'trend', label: '6M Trend' },
             ] as const
@@ -385,7 +476,7 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
               type="button"
               aria-pressed={chartMode === tab.id}
               onClick={() => setChartMode(tab.id)}
-              className={`min-h-[36px] px-2.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+              className={`min-h-[34px] px-2 sm:px-2.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
                 chartMode === tab.id
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
@@ -509,11 +600,113 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
         </div>
       )}
 
-      {/* Mode 2: Sankey Cash Flow Diagram */}
+      {/* Mode 2: 30 / 60 / 90-Day Payday Runway & Cash-Flow Forecast */}
+      {chartMode === 'forecast' && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="inline-flex items-center gap-1 p-0.5 rounded-lg bg-muted">
+              {([30, 60, 90] as const).map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => setForecastHorizon(days)}
+                  className={`h-7 px-2.5 rounded-md font-mono font-semibold text-[11px] transition-colors ${
+                    forecastHorizon === days
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {days}d
+                </button>
+              ))}
+            </div>
+
+            <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeBurn}
+                onChange={(e) => setIncludeBurn(e.target.checked)}
+                className="rounded border-input"
+              />
+              <span>Include daily avg burn</span>
+            </label>
+          </div>
+
+          {hasForecastCrunch && forecastMinPoint && (
+            <div className="rounded-xl border border-rose-500/35 bg-rose-500/5 px-3 py-2 flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>
+                Projected liquid balance dips to{' '}
+                <strong className="font-mono tabular-nums">
+                  {formatINR(forecastMinPoint.projectedBalance)}
+                </strong>{' '}
+                around <strong>{forecastMinPoint.label}</strong>. Consider trimming variable burn or staging bills.
+              </span>
+            </div>
+          )}
+
+          <div className="h-56 sm:h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={forecastData}
+                margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stopColor={hasForecastCrunch ? '#f43f5e' : '#0ea5e9'}
+                      stopOpacity={0.28}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor={hasForecastCrunch ? '#f43f5e' : '#0ea5e9'}
+                      stopOpacity={0.0}
+                    />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="currentColor"
+                  className="text-border/60"
+                />
+                <XAxis
+                  dataKey="label"
+                  axisLine={false}
+                  tickLine={false}
+                  minTickGap={22}
+                  tick={{ fontSize: 11, fill: 'currentColor' }}
+                  className="text-muted-foreground"
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={formatCompactINR}
+                  tick={{ fontSize: 11, fill: 'currentColor' }}
+                  className="text-muted-foreground font-mono"
+                  width={56}
+                />
+                <Tooltip content={<ForecastTooltip />} />
+                <ReferenceLine y={0} stroke="#f43f5e" strokeDasharray="4 4" />
+                <Area
+                  type="monotone"
+                  dataKey="projectedBalance"
+                  name="Projected Liquid Balance"
+                  stroke={hasForecastCrunch ? '#f43f5e' : '#0ea5e9'}
+                  strokeWidth={2.5}
+                  fill="url(#forecastGrad)"
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Mode 3: Sankey Cash Flow Diagram */}
       {chartMode === 'sankey' && (
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
-            {/* SVG Sankey Ribbon Diagram */}
             <div className="sm:col-span-7">
               <svg
                 viewBox="0 0 420 220"
@@ -538,7 +731,6 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
 
                   return (
                     <>
-                      {/* Source Node Bar */}
                       <rect
                         x={sourceX}
                         y={sourceTop}
@@ -581,8 +773,7 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
                         `;
 
                         const isHovered = hoveredSankeyNode === target.id;
-                        const isDimmed =
-                          hoveredSankeyNode !== null && !isHovered;
+                        const isDimmed = hoveredSankeyNode !== null && !isHovered;
 
                         return (
                           <g
@@ -635,7 +826,6 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
               </svg>
             </div>
 
-            {/* Legend & Interactive Breakdown Table */}
             <div className="sm:col-span-5 space-y-2">
               {sankeyModel.targets.map((t) => (
                 <div
@@ -672,7 +862,7 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
         </div>
       )}
 
-      {/* Mode 3: 6-Month / Yearly Spending vs. Budget BarChart */}
+      {/* Mode 4: 6-Month / Yearly Spending vs. Budget BarChart */}
       {chartMode === 'trend' && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">

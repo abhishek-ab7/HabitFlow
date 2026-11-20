@@ -23,6 +23,7 @@ import type {
   FinanceSipPlan,
   FinanceCategorizationRule,
   FinanceRecurringBill,
+  FinanceNetWorthSnapshot,
 } from './types';
 
 // Domain Type Aliases to resolve Primitive Obsession
@@ -53,6 +54,7 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   financeSipPlans: EntityTable<FinanceSipPlan, 'id'>;
   financeCategorizationRules: EntityTable<FinanceCategorizationRule, 'id'>;
   financeRecurringBills: EntityTable<FinanceRecurringBill, 'id'>;
+  financeNetWorthSnapshots: EntityTable<FinanceNetWorthSnapshot, 'id'>;
 };
 
 // Schema version 5 - Added HabitRoutines junction table for many-to-many
@@ -291,6 +293,29 @@ db.version(12).stores({
   }
 });
 
+// Schema version 13 - Finance V3: Net Worth Historical Snapshots & Split Group indexing
+db.version(13).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, isQuantitative, frequencyType',
+  completions: 'id, userId, habitId, date, [habitId+date], status, updatedAt',
+  goals: 'id, userId, title, areaOfLife, status, archived, isFocus, deadline, createdAt, updatedAt',
+  milestones: 'id, userId, goalId, completed, order, updatedAt',
+  userSettings: 'id, userId, updatedAt',
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+  moodLogs: 'id, userId, date, [userId+date], updatedAt',
+  financeCategories: 'id, userId, slug, type, order, archived, updatedAt',
+  financeAccounts: 'id, userId, type, isDefault, archived, updatedAt',
+  financeTransactions: 'id, userId, date, monthKey, categoryId, accountId, type, linkedCommitmentId, linkedDebtId, linkedEmiId, linkedSipId, splitGroupId, needsReview, [userId+monthKey], updatedAt',
+  financeBudgets: 'id, userId, monthKey, [userId+monthKey], updatedAt',
+  monthlyCommitments: 'id, userId, isActive, dueDayOfMonth, updatedAt',
+  debtRecords: 'id, userId, direction, status, updatedAt',
+  debtInstallments: 'id, userId, debtId, date, monthKey, transactionId, updatedAt',
+  emiTrackers: 'id, userId, status, billingDayOfMonth, updatedAt',
+  financeSipPlans: 'id, userId, isActive, sipDayOfMonth, updatedAt',
+  financeCategorizationRules: 'id, userId, isActive, categoryId, updatedAt',
+  financeRecurringBills: 'id, userId, isActive, dueDayOfMonth, updatedAt',
+  financeNetWorthSnapshots: 'id, userId, monthKey, [userId+monthKey], updatedAt',
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 
@@ -298,7 +323,8 @@ const syncTables = [
   'financeCategories', 'financeAccounts', 'financeTransactions',
   'financeBudgets', 'monthlyCommitments', 'debtRecords',
   'debtInstallments', 'emiTrackers',
-  'financeSipPlans', 'financeCategorizationRules', 'financeRecurringBills'
+  'financeSipPlans', 'financeCategorizationRules', 'financeRecurringBills',
+  'financeNetWorthSnapshots'
 ];
 
 syncTables.forEach(tableName => {

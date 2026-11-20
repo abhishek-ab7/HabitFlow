@@ -34,6 +34,7 @@ import { HabitFormModal } from '@/components/habits/habit-form-modal';
 import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
 import { FocusModeOverlay } from '@/components/dashboard/FocusModeOverlay';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { toast } from 'sonner';
 
 interface QuickActionItem {
@@ -110,6 +111,23 @@ export function MobileNav() {
   const [isFocusOverlayOpen, setIsFocusOverlayOpen] = useState(false);
 
   const { addHabit } = useHabitStore();
+  const settings = useGamificationStore((s) => s.settings);
+
+  const showFinance = settings?.showFinance !== false;
+  const showTasks = !settings?.habitOnlyMode && settings?.showTasks !== false;
+  const showGoals = !settings?.habitOnlyMode && settings?.showGoals !== false;
+
+  const swipeRoutes = showFinance
+    ? ['/dashboard', '/habits', '/finance']
+    : ['/dashboard', '/habits', '/analytics'];
+
+  const visibleMoreItems = MORE_MENU_ITEMS.filter((item) => {
+    if (item.href === '/tasks' && !showTasks) return false;
+    if (item.href === '/goals' && !showGoals) return false;
+    if (item.href === '/leaderboard' && settings?.habitOnlyMode) return false;
+    if (!showFinance && item.href === '/analytics') return false; // Promoted to slot 4 when finance is hidden
+    return true;
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -157,17 +175,17 @@ export function MobileNav() {
         Math.abs(deltaX) > 80 &&
         Math.abs(deltaX) > Math.abs(deltaY) * 2
       ) {
-        const currentIndex = PRIMARY_SWIPE_ROUTES.indexOf(pathname);
+        const currentIndex = swipeRoutes.indexOf(pathname);
         if (currentIndex === -1) return;
 
         let targetUrl = '';
         const swipeDirection: 'swipe-left' | 'swipe-right' =
           deltaX < 0 ? 'swipe-left' : 'swipe-right';
 
-        if (deltaX < 0 && currentIndex < PRIMARY_SWIPE_ROUTES.length - 1) {
-          targetUrl = PRIMARY_SWIPE_ROUTES[currentIndex + 1];
+        if (deltaX < 0 && currentIndex < swipeRoutes.length - 1) {
+          targetUrl = swipeRoutes[currentIndex + 1];
         } else if (deltaX > 0 && currentIndex > 0) {
-          targetUrl = PRIMARY_SWIPE_ROUTES[currentIndex - 1];
+          targetUrl = swipeRoutes[currentIndex - 1];
         }
 
         if (targetUrl) {
@@ -201,7 +219,7 @@ export function MobileNav() {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [mounted, pathname, router]);
+  }, [mounted, pathname, router, showFinance]);
 
   if (pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')) {
     return null;
@@ -209,44 +227,52 @@ export function MobileNav() {
 
   if (!mounted) return null;
 
-  const isMoreActive = MORE_MENU_ITEMS.some((item) => pathname.startsWith(item.href));
+  const isMoreActive = visibleMoreItems.some((item) => pathname.startsWith(item.href));
 
   const quickActions: QuickActionItem[] = [
-    {
-      id: 'expense',
-      title: 'Log Expense / Income',
-      description: 'Record spending, split with friends, or pay credit card',
-      icon: Wallet,
-      color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-      badge: 'Quick Add',
-      onClick: () => {
-        setIsQuickAddOpen(false);
-        setIsAddExpenseOpen(true);
-      },
-    },
-    {
-      id: 'sms',
-      title: 'Fetch from SMS & Alerts',
-      description: 'Auto-extract transactions from bank & UPI alerts',
-      icon: MessageSquareText,
-      color: 'text-primary bg-primary/10 border-primary/20',
-      badge: 'Smart Scan',
-      onClick: () => {
-        setIsQuickAddOpen(false);
-        setIsSmsImportOpen(true);
-      },
-    },
-    {
-      id: 'task',
-      title: 'New Task',
-      description: 'Capture an actionable to-do with deadline & AI subtasks',
-      icon: ListTodo,
-      color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20',
-      onClick: () => {
-        setIsQuickAddOpen(false);
-        setIsCreateTaskOpen(true);
-      },
-    },
+    ...(showFinance
+      ? [
+          {
+            id: 'expense',
+            title: 'Log Expense / Income',
+            description: 'Record spending, split with friends, or scan a receipt',
+            icon: Wallet,
+            color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
+            badge: 'Quick Add',
+            onClick: () => {
+              setIsQuickAddOpen(false);
+              setIsAddExpenseOpen(true);
+            },
+          },
+          {
+            id: 'sms',
+            title: 'Fetch from SMS & Alerts',
+            description: 'Auto-extract transactions from bank & UPI alerts',
+            icon: MessageSquareText,
+            color: 'text-primary bg-primary/10 border-primary/20',
+            badge: 'Smart Scan',
+            onClick: () => {
+              setIsQuickAddOpen(false);
+              setIsSmsImportOpen(true);
+            },
+          },
+        ]
+      : []),
+    ...(showTasks
+      ? [
+          {
+            id: 'task',
+            title: 'New Task',
+            description: 'Capture an actionable to-do with deadline & AI subtasks',
+            icon: ListTodo,
+            color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20',
+            onClick: () => {
+              setIsQuickAddOpen(false);
+              setIsCreateTaskOpen(true);
+            },
+          },
+        ]
+      : []),
     {
       id: 'habit',
       title: 'New Habit',
@@ -336,27 +362,50 @@ export function MobileNav() {
             </span>
           </div>
 
-          {/* Slot 4: Finance */}
-          <Link
-            href="/finance"
-            className={cn(
-              'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-finance',
-              pathname === '/finance' && 'text-primary'
-            )}
-          >
-            {pathname === '/finance' && (
-              <motion.div
-                layoutId="mobile-nav-pill"
-                className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          {/* Slot 4: Finance (or Analytics if Finance is disabled in settings) */}
+          {showFinance ? (
+            <Link
+              href="/finance"
+              className={cn(
+                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-finance',
+                pathname === '/finance' && 'text-primary'
+              )}
+            >
+              {pathname === '/finance' && (
+                <motion.div
+                  layoutId="mobile-nav-pill"
+                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                />
+              )}
+              <Wallet
+                className={cn('w-5 h-5', pathname === '/finance' && 'text-primary')}
+                strokeWidth={pathname === '/finance' ? 2.5 : 2}
               />
-            )}
-            <Wallet
-              className={cn('w-5 h-5', pathname === '/finance' && 'text-primary')}
-              strokeWidth={pathname === '/finance' ? 2.5 : 2}
-            />
-            <span className="text-[10px] font-semibold tracking-tight">Finance</span>
-          </Link>
+              <span className="text-[10px] font-semibold tracking-tight">Finance</span>
+            </Link>
+          ) : (
+            <Link
+              href="/analytics"
+              className={cn(
+                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors',
+                pathname === '/analytics' && 'text-primary'
+              )}
+            >
+              {pathname === '/analytics' && (
+                <motion.div
+                  layoutId="mobile-nav-pill"
+                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                />
+              )}
+              <BarChart3
+                className={cn('w-5 h-5', pathname === '/analytics' && 'text-primary')}
+                strokeWidth={pathname === '/analytics' ? 2.5 : 2}
+              />
+              <span className="text-[10px] font-semibold tracking-tight">Analytics</span>
+            </Link>
+          )}
 
           {/* Slot 5: More (Drawer) */}
           <button
@@ -484,7 +533,7 @@ export function MobileNav() {
           </div>
 
           <div className="p-4 space-y-2 overflow-y-auto">
-            {MORE_MENU_ITEMS.map((item) => {
+            {visibleMoreItems.map((item) => {
               const Icon = item.icon;
               const isActive = pathname.startsWith(item.href);
               return (
