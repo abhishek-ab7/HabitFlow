@@ -8,7 +8,6 @@ import {
 import { getSupabaseClient } from '../supabase/client';
 import type { Task, TaskFormData, TaskStatus } from '../types';
 import { getSyncEngine } from '../sync';
-import { useGamificationStore, XP_PER_TASK } from './gamification-store';
 
 interface TaskState {
     tasks: Task[];
@@ -156,12 +155,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         if (!task) return;
 
         const newStatus: TaskStatus = task.status === 'done' ? 'todo' : 'done';
-
-        if (newStatus === 'done') {
-            useGamificationStore.getState().addXp(XP_PER_TASK);
-        } else if (newStatus === 'todo' && task.status === 'done') {
-            useGamificationStore.getState().addXp(-XP_PER_TASK);
-        }
 
         const updates = { status: newStatus };
 

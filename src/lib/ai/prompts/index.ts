@@ -38,13 +38,12 @@ Current Context:
 - Time: ${timeOfDay}, ${new Date().toLocaleDateString()}
 - Unfinished Tasks: ${context?.unfinishedTasks || 0}
 - Today's Habits: ${context?.todaysHabits || 'No habits tracked yet'}
-- XP Level: ${userData?.level || 1}
 ${context?.burnoutRisk ? `- Burnout Risk: ${context.burnoutRisk}/100` : ''}
 ${context?.topPriorityTask ? `- Top Priority: ${context.topPriorityTask}` : ''}
 ${context?.upcomingDeadlines?.length ? `- Upcoming Deadlines: ${context.upcomingDeadlines.map(d => `${d.title} (${d.daysLeft} days)`).join(', ')}` : ''}
 
 Instructions:
-1. Start with a personalized greeting that acknowledges their level/progress
+1. Start with a personalized greeting that acknowledges their momentum and progress
 2. Give 1 specific, actionable recommendation based on their current context
 3. End with a motivational quote (not generic - tie it to their situation)
 4. Optionally add energyForecast ('low'/'medium'/'high'), streaksAtRisk (array), quickWins (array)
@@ -85,7 +84,7 @@ Be practical and consider work-life balance. Don't over-prioritize everything.`;
 }
 
 export function buildHabitRecommendationPrompt(input: HabitRecommendationInput): string {
-  const { goals, currentHabits, categoryPerformance, userLevel } = input;
+  const { goals, currentHabits, categoryPerformance } = input;
 
   return `You are a habit formation expert. Based on the user's goals and current habits, recommend 3-5 new atomic habits that will help them succeed.
 
@@ -96,8 +95,6 @@ Current Habits (${currentHabits.length} total):
 ${currentHabits.map(h => `- ${h.name} (${h.category})`).join('\n') || 'No habits yet'}
 
 ${categoryPerformance ? `Category Performance:\n${Object.entries(categoryPerformance).map(([cat, rate]) => `- ${cat}: ${rate}% completion rate`).join('\n')}` : ''}
-
-User Level: ${userLevel || 1}
 
 Instructions:
 Recommend 3-5 small, atomic habits that:
@@ -204,7 +201,6 @@ export function buildMilestoneGenerationPrompt(input: MilestoneGenerationInput):
 - Area of Life: ${goal.areaOfLife}
 
 **User Context:**
-- User Level: ${userContext?.userLevel || 1}
 - Timeline Preference: ${timelineMap[userContext?.timelinePreference || 'balanced']}
 - Existing Milestones: ${userContext?.currentMilestones || 0}
 

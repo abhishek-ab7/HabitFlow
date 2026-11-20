@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useCallback, useEffect, memo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
 import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3, Moon } from 'lucide-react';
@@ -11,7 +12,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { useGamificationStore } from '@/lib/stores/gamification-store';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +81,7 @@ export const HabitGrid = memo(function HabitGrid({
   onArchive,
   streaks,
 }: HabitGridProps) {
+  const router = useRouter();
   const [rippleCell, setRippleCell] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
@@ -89,9 +90,7 @@ export const HabitGrid = memo(function HabitGrid({
   const [logNote, setLogNote] = useState('');
   const [logValue, setLogValue] = useState(0);
 
-  const [showShieldPurchaseDialog, setShowShieldPurchaseDialog] = useState(false);
-  const [pendingFreezeHabitId, setPendingFreezeHabitId] = useState<string | null>(null);
-  const [pendingFreezeDate, setPendingFreezeDate] = useState<string | null>(null);
+  const [showNoShieldsDialog, setShowNoShieldsDialog] = useState(false);
 
   const handleOpenLogModal = (habit: Habit) => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -130,33 +129,11 @@ export const HabitGrid = memo(function HabitGrid({
     try {
       await freezeHabit(habitId, dateStr);
     } catch (err) {
-      if ((err as Error).message === 'GEMS_PURCHASE_AVAILABLE') {
-        setPendingFreezeHabitId(habitId);
-        setPendingFreezeDate(dateStr);
-        setShowShieldPurchaseDialog(true);
+      if ((err as Error).message === 'NO_SHIELDS_LEFT') {
+        setShowNoShieldsDialog(true);
       } else {
         toast.error((err as Error).message);
       }
-    }
-  };
-
-  const handleConfirmShieldPurchase = async () => {
-    if (!pendingFreezeHabitId || !pendingFreezeDate) return;
-    try {
-      const gamification = useGamificationStore.getState();
-      const bought = await gamification.buyShield();
-      if (bought) {
-        await freezeHabit(pendingFreezeHabitId, pendingFreezeDate);
-        toast.success("Streak Shield purchased and applied!");
-      } else {
-        toast.error("Failed to purchase Streak Shield. Not enough Gems.");
-      }
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setShowShieldPurchaseDialog(false);
-      setPendingFreezeHabitId(null);
-      setPendingFreezeDate(null);
     }
   };
   const containerRef = useRef<HTMLDivElement>(null);
@@ -626,34 +603,33 @@ export const HabitGrid = memo(function HabitGrid({
         </DialogContent>
       </Dialog>
 
-      {/* Streak Shield Retroactive Purchase Dialog (Mobile / Backup) */}
-      <Dialog open={showShieldPurchaseDialog} onOpenChange={setShowShieldPurchaseDialog}>
+      {/* No Streak Shields Remaining Dialog (Mobile / Backup) */}
+      <Dialog open={showNoShieldsDialog} onOpenChange={setShowNoShieldsDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Purchase Streak Shield?</DialogTitle>
+            <DialogTitle>No Streak Shields Remaining</DialogTitle>
             <DialogDescription>
-              You have no free weekly freezes or Streak Shields left. Would you like to buy a Streak Shield for 20 Gems to freeze this day and protect your streak?
+              You&apos;ve used this week&apos;s free freeze and have 0 Streak Shields left. Refill your personal Streak Shields in Settings to protect missed days.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex gap-2">
-            <Button 
+            <Button
               type="button"
-              variant="ghost" 
-              onClick={() => {
-                setShowShieldPurchaseDialog(false);
-                setPendingFreezeHabitId(null);
-                setPendingFreezeDate(null);
-              }}
+              variant="ghost"
+              onClick={() => setShowNoShieldsDialog(false)}
               className="flex-1 rounded-xl"
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               type="button"
-              onClick={handleConfirmShieldPurchase}
-              className="flex-1 rounded-xl bg-blue-500 hover:bg-blue-600 text-white"
+              onClick={() => {
+                setShowNoShieldsDialog(false);
+                router.push('/settings');
+              }}
+              className="flex-1 rounded-xl"
             >
-              Buy & Apply (20 Gems)
+              Refill in Settings
             </Button>
           </DialogFooter>
         </DialogContent>

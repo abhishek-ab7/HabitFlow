@@ -12,7 +12,6 @@ import {
   ListTodo,
   Target,
   BarChart3,
-  Trophy,
   User,
   MessageSquareText,
   Sparkles,
@@ -73,16 +72,9 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
   {
     href: '/analytics',
     label: 'Analytics',
-    description: 'Spending correlations, pace charts & skill trees',
+    description: 'Spending correlations, pace charts & heatmaps',
     icon: BarChart3,
     color: 'text-primary bg-primary/10',
-  },
-  {
-    href: '/leaderboard',
-    label: 'Leaderboard',
-    description: 'Global XP rankings, streaks & level rewards',
-    icon: Trophy,
-    color: 'text-invest bg-invest/10',
   },
   {
     href: '/settings',
@@ -124,7 +116,6 @@ export function MobileNav() {
   const visibleMoreItems = MORE_MENU_ITEMS.filter((item) => {
     if (item.href === '/tasks' && !showTasks) return false;
     if (item.href === '/goals' && !showGoals) return false;
-    if (item.href === '/leaderboard' && settings?.habitOnlyMode) return false;
     if (!showFinance && item.href === '/analytics') return false; // Promoted to slot 4 when finance is hidden
     return true;
   });
@@ -503,7 +494,7 @@ export function MobileNav() {
         </DialogContent>
       </Dialog>
 
-      {/* Sheet 2: More Drawer (Tasks, Goals, Analytics, Leaderboard, Settings) */}
+      {/* Sheet 2: More Drawer (Tasks, Goals, Analytics, Settings) */}
       <Dialog open={isMoreDrawerOpen} onOpenChange={setIsMoreDrawerOpen}>
         <DialogContent
           showCloseButton={false}

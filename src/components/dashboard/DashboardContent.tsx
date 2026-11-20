@@ -208,11 +208,9 @@ export default function DashboardContent() {
     }))
   );
 
-  const { settings, level, totalXp, loadGamification } = useGamificationStore(
+  const { settings, loadGamification } = useGamificationStore(
     useShallow((s) => ({
       settings: s.settings,
-      level: s.level,
-      totalXp: s.totalXp,
       loadGamification: s.loadGamification,
     }))
   );
@@ -629,7 +627,7 @@ export default function DashboardContent() {
     <div className="w-full px-4 py-4 sm:py-5 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-5 pb-24 md:pb-12">
       {/* LAYER 1: Unified Top Command Bar */}
       <header className="surface-card px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 tour-hero-section">
-        {/* Left: Greeting + Date + Unboxed Level/Streak/Shields */}
+        {/* Left: Greeting + Date + Streak/Shields */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate">
@@ -641,10 +639,6 @@ export default function DashboardContent() {
             </span>
           </div>
           <p className="text-xs text-muted-foreground font-mono tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-            <span>
-              Lv <strong className="text-foreground">{level}</strong> ({totalXp} XP)
-            </span>
-            <span aria-hidden="true">·</span>
             <span className="inline-flex items-center gap-1">
               <Flame className="w-3.5 h-3.5 text-amber-500" />
               <strong className="text-foreground">{currentMaxStreak}d</strong> streak

@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Lightbulb, Plus, Loader2, RefreshCw } from 'lucide-react';
 import { useGoalStore } from '@/lib/stores/goal-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
-import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -30,7 +29,6 @@ export function HabitSuggestions() {
 
   const { goals } = useGoalStore();
   const { habits, addHabit } = useHabitStore();
-  const { level } = useGamificationStore();
 
   const activeGoals = goals.filter(g => !g.archived);
 
@@ -57,8 +55,7 @@ export function HabitSuggestions() {
             id: h.id,
             name: h.name,
             category: h.category
-          })),
-          userLevel: level
+          }))
         })
       });
 

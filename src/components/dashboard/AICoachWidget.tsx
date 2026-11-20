@@ -68,7 +68,6 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
 
   const habits = useHabitStore((s) => s.habits);
   const tasks = useTaskStore((s) => s.tasks);
-  const level = useGamificationStore((s) => s.level);
   const settings = useGamificationStore((s) => s.settings);
   const financeTransactions = useFinanceStore((s) => s.transactions);
   const getSpendingAnomalies = useFinanceStore((s) => s.getSpendingAnomalies);
@@ -181,7 +180,7 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userData: { userName, level },
+          userData: { userName },
           context: {
             todaysHabits: todaysHabits.map((h) => h.name),
             unfinishedTasks: unfinishedTasks.map((t) => t.title),

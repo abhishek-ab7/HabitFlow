@@ -106,12 +106,10 @@ export function YearInReview() {
       }
     });
 
-    // Total Tasks Completed in 2026
+    // Total Tasks & Goals Completed in 2026
     const completedTasks2026 = tasks.filter(t => t.status === 'done' && t.due_date?.startsWith('2026')).length;
-
-    // Total XP in 2026 (Completions = 10 XP, Tasks = 20 XP, Goals = 100 XP)
     const completedGoals2026 = goals.filter(g => g.status === 'completed' && g.deadline?.startsWith('2026')).length;
-    const estimatedXP = totalCompletions * 10 + completedTasks2026 * 20 + completedGoals2026 * 100;
+    const totalMilestonesCompleted = totalCompletions + completedTasks2026 + completedGoals2026;
 
     return {
       totalCompletions,
@@ -120,7 +118,7 @@ export function YearInReview() {
       topCategoryCount,
       completedTasks: completedTasks2026,
       completedGoals: completedGoals2026,
-      estimatedXP
+      totalMilestonesCompleted,
     };
   }, [habits, completions, goals, tasks]);
 
@@ -386,26 +384,26 @@ export function YearInReview() {
       )
     },
     {
-      id: 'xp',
-      title: 'Power Leveling',
-      subtitle: 'XP & RPG stats',
-      gradient: 'from-rose-950 via-slate-900 to-zinc-900',
+      id: 'consistency',
+      title: 'Personal Consistency',
+      subtitle: 'Consistency Summary',
+      gradient: 'from-teal-950 via-slate-900 to-zinc-900',
       content: (
         <div className="flex flex-col items-center justify-center text-center h-full space-y-6 px-4">
           <motion.div
             initial={{ scale: 0.1, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.6 }}
-            className="w-28 h-28 rounded-full bg-gradient-to-tr from-rose-500 to-red-400 p-0.5 flex items-center justify-center shadow-[0_0_50px_rgba(244,63,94,0.3)]"
+            className="w-28 h-28 rounded-full bg-gradient-to-tr from-teal-500 to-emerald-400 p-0.5 flex items-center justify-center shadow-[0_0_50px_rgba(20,184,166,0.3)]"
           >
             <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
-              <Zap className="h-14 w-14 text-rose-500" />
+              <CheckCircle className="h-14 w-14 text-teal-400" />
             </div>
           </motion.div>
           <div className="space-y-2">
-            <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">Estimated Experience Points</h3>
+            <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">Total Actions Logged</h3>
             <h2 className="text-5xl font-black text-white font-mono">
-              +{stats2026.estimatedXP.toLocaleString()} <span className="text-2xl text-rose-500">XP</span>
+              {stats2026.totalMilestonesCompleted.toLocaleString()}
             </h2>
             <div className="flex justify-center gap-6 mt-3 text-xs text-muted-foreground bg-slate-950/60 py-2 px-4 rounded-xl border border-white/5">
               <div>
@@ -447,12 +445,12 @@ export function YearInReview() {
               <span className="font-bold text-amber-500 text-sm">{stats2026.bestStreak} Days</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span>Top Focus Skill:</span>
+              <span>Top Focus Area:</span>
               <span className="font-bold text-sky-400 text-sm">{stats2026.topCategory}</span>
             </div>
             <div className="flex justify-between items-center py-1">
-              <span>RPG Character Rank Gained:</span>
-              <span className="font-bold text-rose-500 text-sm">+{Math.round(stats2026.estimatedXP / 200)} Levels</span>
+              <span>Tasks &amp; Goals Completed:</span>
+              <span className="font-bold text-emerald-400 text-sm">{stats2026.completedTasks} Tasks · {stats2026.completedGoals} Goals</span>
             </div>
           </div>
 

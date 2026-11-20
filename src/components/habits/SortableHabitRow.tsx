@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical, Snowflake, Edit3, MessageSquarePlus, Share2, Moon } from 'lucide-react';
@@ -30,7 +31,6 @@ import { useHabitStore } from '@/lib/stores/habit-store';
 import { toast } from 'sonner';
 import { ShareCardModal } from './ShareCardModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { useGamificationStore } from '@/lib/stores/gamification-store';
 
 interface SortableHabitRowProps {
     habit: Habit;
@@ -94,8 +94,8 @@ export function SortableHabitRow({
     const [logNote, setLogNote] = useState('');
     const [logValue, setLogValue] = useState(0);
 
-    const [showShieldPurchaseDialog, setShowShieldPurchaseDialog] = useState(false);
-    const [pendingFreezeDate, setPendingFreezeDate] = useState<string | null>(null);
+    const router = useRouter();
+    const [showNoShieldsDialog, setShowNoShieldsDialog] = useState(false);
 
     const handleOpenLogModal = () => {
         const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -284,35 +284,13 @@ export function SortableHabitRow({
         try {
             await onFreeze(habit.id, dateStr);
         } catch (err) {
-            if ((err as Error).message === 'GEMS_PURCHASE_AVAILABLE') {
-                setPendingFreezeDate(dateStr);
-                setShowShieldPurchaseDialog(true);
+            if ((err as Error).message === 'NO_SHIELDS_LEFT') {
+                setShowNoShieldsDialog(true);
             } else {
                 toast.error((err as Error).message);
             }
         } finally {
             setTimeout(() => setRippleCell(null), 500);
-        }
-    };
-
-    const handleConfirmShieldPurchase = async () => {
-        if (!pendingFreezeDate) return;
-        try {
-            const gamification = useGamificationStore.getState();
-            const bought = await gamification.buyShield();
-            if (bought) {
-                if (onFreeze) {
-                    await onFreeze(habit.id, pendingFreezeDate);
-                }
-                toast.success("Streak Shield purchased and applied!");
-            } else {
-                toast.error("Failed to purchase Streak Shield. Not enough Gems.");
-            }
-        } catch (err) {
-            toast.error((err as Error).message);
-        } finally {
-            setShowShieldPurchaseDialog(false);
-            setPendingFreezeDate(null);
         }
     };
 
@@ -477,9 +455,6 @@ export function SortableHabitRow({
                     const cellKey = `${habit.id}-${dateStr}`;
                     const showRipple = rippleCell === cellKey && (isCompleted || isFrozen || isRest);
 
-                    const difficulty = habit.difficulty || 'medium';
-                    const xpAmount = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
-
                     const innerButton = (
                         <motion.button
                             onClick={(e) => handleCellClick(dateStr, isFutureDate, e.shiftKey)}
@@ -640,7 +615,7 @@ export function SortableHabitRow({
                                             isFrozen ? "text-sky-500 dark:text-sky-400" : "text-emerald-500 dark:text-emerald-400"
                                         )}
                                     >
-                                        {isFrozen ? "STREAK SAFE" : `+${xpAmount} XP`}
+                                        {isFrozen ? "STREAK SAFE" : "Done"}
                                     </motion.span>
                                 )}
                             </AnimatePresence>
@@ -901,33 +876,33 @@ export function SortableHabitRow({
                 </DialogContent>
             </Dialog>
 
-            {/* Streak Shield Retroactive Purchase Dialog */}
-            <Dialog open={showShieldPurchaseDialog} onOpenChange={setShowShieldPurchaseDialog}>
+            {/* No Streak Shields Remaining Dialog */}
+            <Dialog open={showNoShieldsDialog} onOpenChange={setShowNoShieldsDialog}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Purchase Streak Shield?</DialogTitle>
+                        <DialogTitle>No Streak Shields Remaining</DialogTitle>
                         <DialogDescription>
-                            You have no free weekly freezes or Streak Shields left. Would you like to buy a Streak Shield for 20 Gems to freeze this day and protect your streak?
+                            You&apos;ve used this week&apos;s free freeze and have 0 Streak Shields left. Refill your personal Streak Shields in Settings to protect missed days.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter className="flex gap-2">
-                        <Button 
+                        <Button
                             type="button"
-                            variant="ghost" 
-                            onClick={() => {
-                                setShowShieldPurchaseDialog(false);
-                                setPendingFreezeDate(null);
-                            }}
+                            variant="ghost"
+                            onClick={() => setShowNoShieldsDialog(false)}
                             className="flex-1 rounded-xl"
                         >
                             Cancel
                         </Button>
-                        <Button 
+                        <Button
                             type="button"
-                            onClick={handleConfirmShieldPurchase}
-                            className="flex-1 rounded-xl bg-blue-500 hover:bg-blue-600 text-white"
+                            onClick={() => {
+                                setShowNoShieldsDialog(false);
+                                router.push('/settings');
+                            }}
+                            className="flex-1 rounded-xl"
                         >
-                            Buy & Apply (20 Gems)
+                            Refill in Settings
                         </Button>
                     </DialogFooter>
                 </DialogContent>

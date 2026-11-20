@@ -7,8 +7,6 @@ import { SyncProvider } from '@/providers/sync-provider';
 import { Header, ShortcutsProvider, MobileNav, AppStartupGate } from '@/components/layout';
 import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
-import { LevelUpModal } from '@/components/gamification/LevelUpModal';
-import { GamificationRulesModal } from '@/components/gamification/GamificationRulesModal';
 import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
 import './globals.css';
 
@@ -89,8 +87,6 @@ export default function RootLayout({
                   </main>
                   <MobileNav />
                 </div>
-                <LevelUpModal />
-                <GamificationRulesModal />
                 <ShortcutsProvider />
                 <Toaster richColors position="bottom-right" />
                 <PomodoroFloating />

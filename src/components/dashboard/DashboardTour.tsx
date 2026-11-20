@@ -106,23 +106,23 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
       {
         target: 'body',
         title: 'Welcome to HabitFlow! 🚀',
-        content: 'HabitFlow is your gamified discipline workspace. Let\'s take a short interactive walkthrough to understand the workflow and tabs.',
-        benefit: 'Complete this quick tour to learn the streak mechanics, shortcut keys, and tabs.',
+        content: 'HabitFlow is your calm personal Life OS for habits, tasks, goals, and finances. Let\'s take a short interactive walkthrough of the workspace.',
+        benefit: 'Complete this quick tour to learn streak protection, shortcut keys, and tabs.',
         placement: 'center'
       },
       // 1. MINIMAL DASHBOARD STEPS
       {
         target: '.tour-hero-section',
         title: 'Dashboard Workspace 🏠',
-        content: 'Your daily center. This displays your today\'s focus, habits grid, and helpful insights from your AI Coach.',
-        benefit: 'Consolidates all high-level inputs in a single premium viewport.',
+        content: 'Your daily command center. View today\'s momentum, habits, financial pulse, and helpful insights.',
+        benefit: 'Consolidates all high-level inputs in a single calm viewport.',
         placement: 'bottom'
       },
       {
         target: '.tour-momentum-card',
         title: 'Daily Progress & Streaks ⚡',
-        content: 'Your Momentum Score updates live based on checked habits (60% weight) and completed tasks (40% weight). Log items consecutively to maintain streaks.',
-        benefit: 'Stack streaks to earn Gems, XP, and keep your leveling progression active.',
+        content: 'Your Momentum Score updates live based on scheduled habits and due tasks. Log items consistently to maintain streaks.',
+        benefit: 'Build lasting streaks while flexible rest days protect recovery.',
         placement: 'bottom'
       },
       // 2. NAVBAR SECTIONS
@@ -143,7 +143,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
       {
         target: '.tour-nav-habits, .tour-mobile-nav-habits',
         title: 'Habits Consistency 🗓️',
-        content: 'Set recurring habits, track Streaks, and write notes. If you are busy, freeze a habit (Right-click cell on Desktop or tap dropdown option on Mobile) to protect your streak. Freezing uses Streak Shields purchased in settings.',
+        content: 'Set recurring or flexible habits, track Streaks, and write notes. If you are busy, freeze a habit (Right-click cell on Desktop or tap dropdown option on Mobile) to protect your streak using Streak Shields refilled in Settings.',
         benefit: 'Streak Shield protection blocks streak resets so your hard work isn\'t lost.',
         placement: 'bottom'
       },
@@ -159,13 +159,6 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
         title: 'Productivity Analytics 📊',
         content: 'Review consistency charts, check-in activity heatmaps, and unlock your comprehensive Sunday morning reviews.',
         benefit: 'Track historical trends to optimize your daily schedules.',
-        placement: 'bottom'
-      },
-      {
-        target: '.tour-nav-leaderboard, .tour-mobile-nav-leaderboard',
-        title: 'Competitive Leaderboard 🏆',
-        content: 'Earn XP, unlock custom badges, and compare scores with peers on weekly league leaderboards.',
-        benefit: 'Gamified ranks maintain accountability and friendly discipline.',
         placement: 'bottom'
       }
     ];

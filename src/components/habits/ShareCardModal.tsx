@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useUserStore } from '@/lib/stores/user-store';
 import type { Habit } from '@/lib/types';
 
@@ -34,7 +33,6 @@ const CATEGORY_COLORS: Record<string, { primary: string; secondary: string; glow
 export function ShareCardModal({ open, onOpenChange, habit, streak }: ShareCardModalProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
-  const { level } = useGamificationStore();
   const { displayName } = useUserStore();
 
   const colors = habit ? (CATEGORY_COLORS[habit.category] || CATEGORY_COLORS.default) : CATEGORY_COLORS.default;
@@ -147,7 +145,7 @@ export function ShareCardModal({ open, onOpenChange, habit, streak }: ShareCardM
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.font = '500 13px system-ui, sans-serif';
-    ctx.fillText(`RPG Level ${level}`, 50, 735);
+    ctx.fillText('Personal Consistency', 50, 735);
 
     // Right logo info
     ctx.textAlign = 'right';
@@ -169,7 +167,7 @@ export function ShareCardModal({ open, onOpenChange, habit, streak }: ShareCardM
       // Draw canvas after render has settled
       setTimeout(drawCard, 200);
     }
-  }, [open, habit, streak, displayName, level]);
+  }, [open, habit, streak, displayName]);
 
   const handleDownload = () => {
     if (!previewUrl) return;

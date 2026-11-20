@@ -91,10 +91,10 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
     const handleQuickSettleObligation = async (item: FinancialObligationItem) => {
         if (item.type === 'emi') {
             await payMonthlyEmi(item.sourceId);
-            toast.success(`Paid ${item.title} (${formatINR(item.amount)}) (+50 XP)`);
+            toast.success(`Paid ${item.title} (${formatINR(item.amount)})`);
         } else if (item.type === 'commitment') {
             await settleCommitmentBalance(item.sourceId);
-            toast.success(`Settled ${item.title} (${formatINR(item.amount)}) (+50 XP)`);
+            toast.success(`Settled ${item.title} (${formatINR(item.amount)})`);
         } else if (item.type === 'debt') {
             await recordDebtInstallment({
                 debtId: item.sourceId,

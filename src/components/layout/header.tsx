@@ -19,7 +19,6 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  Trophy,
   Keyboard,
   Wallet
 } from 'lucide-react';
@@ -30,7 +29,6 @@ import { useSync } from '@/providers/sync-provider';
 import { SyncStatusBadge } from '@/components/sync/SyncStatusBadge';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
-import { UserStatusHUD } from '@/components/gamification/UserStatusHUD';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 
 const navItems = [
@@ -40,7 +38,6 @@ const navItems = [
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/finance', label: 'Finance', icon: Wallet },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -214,7 +211,6 @@ export function Header() {
         <div className="flex-grow-0 flex-shrink-0 flex items-center justify-end gap-1.5 lg:gap-2">
           {isAuthenticated && (
             <div className="hidden md:flex items-center gap-1.5 lg:gap-2">
-              <UserStatusHUD />
               <SyncStatusBadge />
             </div>
           )}

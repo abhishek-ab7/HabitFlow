@@ -3,14 +3,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, X, Check, Target, Compass, Play, Award } from 'lucide-react';
+import { Sparkles, X, Check, Target, Compass, Play, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/providers/auth-provider';
 import { useUserStore } from '@/lib/stores/user-store';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useTaskStore } from '@/lib/stores/task-store';
-import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { toast } from 'sonner';
 
 import type { Habit, HabitCompletion, Task } from '@/lib/types';
@@ -85,7 +84,6 @@ export function getTodayFocusItems(
 export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
   const { user } = useAuth();
   const displayName = useUserStore((s) => s.displayName);
-  const addXp = useGamificationStore((s) => s.addXp);
 
   const { habits, completions, toggle: toggleHabit } = useHabitStore(
     useShallow((s) => ({
@@ -108,13 +106,13 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
   }, [displayName, user?.email]);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const [xpClaimedToday, setXpClaimedToday] = useState(false);
+  const [dayStartedToday, setDayStartedToday] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const userId = user?.id || 'guest';
-      const claimed = localStorage.getItem(`focus_mode_xp_claimed_${userId}_${todayStr}`) === 'true';
-      setXpClaimedToday(claimed);
+      const started = localStorage.getItem(`focus_mode_started_${userId}_${todayStr}`) === 'true';
+      setDayStartedToday(started);
     }
   }, [user, todayStr]);
 
@@ -153,34 +151,29 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
 
   const handleStartDay = async () => {
     const userId = user?.id || 'guest';
-    if (xpClaimedToday) {
-      toast.error('You have already started the day and claimed your XP today!');
+    if (dayStartedToday) {
+      onClose();
       return;
     }
 
-    // Save completion flags for today
     localStorage.setItem(`focus_mode_started_${userId}_${todayStr}`, 'true');
-    localStorage.setItem(`focus_mode_xp_claimed_${userId}_${todayStr}`, 'true');
-    setXpClaimedToday(true);
-    
+    setDayStartedToday(true);
+
     try {
-      // Award 10 XP
-      await addXp(10);
-      toast.success('Day started! +10 XP awarded 🚀', {
-        icon: <Award className="w-5 h-5 text-amber-500 fill-amber-500/20" />
+      toast.success('Day started! Focus plan locked in.', {
+        icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />
       });
-      
-      // Dynamic import of canvas confetti
+
       const confetti = (await import('canvas-confetti')).default;
       confetti({
-        particleCount: 80,
-        spread: 60,
+        particleCount: 60,
+        spread: 55,
         origin: { y: 0.8 }
       });
     } catch (e) {
       console.error(e);
     }
-    
+
     onClose();
   };
 
@@ -299,8 +292,8 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
             {/* Action panel */}
             <div className="flex flex-col sm:flex-row gap-2 items-center pt-2.5 justify-between border-t border-border/50">
               <div className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
-                <Compass className="w-3 h-3 text-warning" />
-                &ldquo;Start Day&rdquo; grants you 10 XP towards levels.
+                <Compass className="w-3 h-3 text-primary" />
+                Lock in today&apos;s top priorities with calm focus.
               </div>
               <div className="flex gap-1.5 w-full sm:w-auto justify-end">
                 <Button
@@ -312,11 +305,10 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
                 </Button>
                 <Button
                   onClick={handleStartDay}
-                  disabled={xpClaimedToday}
                   className="w-full sm:w-auto font-semibold h-8 px-4 rounded-lg text-[11px]"
                 >
                   <Play className="w-3 h-3 mr-1 fill-current" />
-                  {xpClaimedToday ? 'Day Started' : 'Start Day'}
+                  {dayStartedToday ? 'Continue Day' : 'Start Day'}
                 </Button>
               </div>
             </div>

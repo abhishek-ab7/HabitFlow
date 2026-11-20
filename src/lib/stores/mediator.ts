@@ -1,7 +1,5 @@
-import { useGamificationStore } from './gamification-store';
 import { useHabitStore } from './habit-store';
 import { useTaskStore } from './task-store';
-import { useAchievementStore } from './achievement-store';
 import { toggleCompletion } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import type { Category } from '../types';
@@ -12,7 +10,7 @@ export type MediatorAction =
       payload: {
         habitId: string;
         date: string;
-        difficulty: 'easy' | 'medium' | 'hard';
+        difficulty?: 'easy' | 'medium' | 'hard';
         category?: Category;
       };
     }
@@ -21,60 +19,44 @@ export type MediatorAction =
       payload: {
         habitId: string;
         date: string;
-        difficulty: 'easy' | 'medium' | 'hard';
+        difficulty?: 'easy' | 'medium' | 'hard';
         category?: Category;
       };
     };
 
 export class CrossDomainActionMediator {
-  // Whenever a habit is completed/toggled, update completions and recalculate achievements
+  // Toggle habit completion via habit store
   public static async toggleHabitCompletion(habitId: string, date: string) {
     const habitStore = useHabitStore.getState();
     await habitStore.toggle(habitId, date);
-    
-    // Check and update achievements based on the latest habit/completions state
-    useAchievementStore.getState().calculateAchievements();
   }
 
-  // When tasks are completed, update task status, and update achievements
+  // Toggle task completion via task store
   public static async toggleTaskCompletion(taskId: string) {
     const taskStore = useTaskStore.getState();
     await taskStore.toggleTaskComplete(taskId);
-    
-    // Check and update achievements based on the latest task state
-    useAchievementStore.getState().calculateAchievements();
-  }
-
-  // When rewards are claimed, update gamification store and recalculate achievements
-  public static claimAchievementReward(achievementId: string) {
-    const achievementStore = useAchievementStore.getState();
-    achievementStore.claimReward(achievementId);
-    
-    // Refresh achievements to reflect claiming
-    achievementStore.calculateAchievements();
   }
 
   // Orchestrate multi-store updates for custom actions
   public static async dispatch(action: MediatorAction) {
     const habitStore = useHabitStore.getState();
-    const gamificationStore = useGamificationStore.getState();
-    const { habitId, date, difficulty, category } = action.payload;
-
-    const base = difficulty === 'easy' ? 10 : difficulty === 'hard' ? 30 : 20;
+    const { habitId, date } = action.payload;
 
     if (action.type === 'HABIT_COMPLETED') {
       const isAlreadyCompleted = habitStore.completions.some(
-        c => c.habitId === habitId && c.date === date && c.completed
+        (c) => c.habitId === habitId && c.date === date && c.completed
       );
 
       if (!isAlreadyCompleted) {
         const supabase = getSupabaseClient();
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         const userId = session?.user?.id || 'test-user';
 
         // Toggle in DB to ensure record exists
         const result = await toggleCompletion(habitId, date, userId);
-        
+
         // Ensure the record is set to completed
         if (!result.completed) {
           result.completed = true;
@@ -85,25 +67,23 @@ export class CrossDomainActionMediator {
         // Add to store completions state
         useHabitStore.setState({
           completions: [
-            ...habitStore.completions.filter(c => !(c.habitId === habitId && c.date === date)),
-            result
-          ]
+            ...habitStore.completions.filter(
+              (c) => !(c.habitId === habitId && c.date === date)
+            ),
+            result,
+          ],
         });
-
-        // Award XP
-        await gamificationStore.addXp(base, category);
-
-        // Recalculate achievements
-        useAchievementStore.getState().calculateAchievements();
       }
     } else if (action.type === 'HABIT_UNCOMPLETED') {
       const existingIndex = habitStore.completions.findIndex(
-        c => c.habitId === habitId && c.date === date && c.completed
+        (c) => c.habitId === habitId && c.date === date && c.completed
       );
 
       if (existingIndex !== -1) {
         const supabase = getSupabaseClient();
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         const userId = session?.user?.id || 'test-user';
 
         // Toggle in DB
@@ -118,19 +98,15 @@ export class CrossDomainActionMediator {
 
         // Remove from store completions state
         useHabitStore.setState({
-          completions: habitStore.completions.filter(c => !(c.habitId === habitId && c.date === date))
+          completions: habitStore.completions.filter(
+            (c) => !(c.habitId === habitId && c.date === date)
+          ),
         });
-
-        // Deduct XP
-        await gamificationStore.addXp(-base, category);
-
-        // Recalculate achievements
-        useAchievementStore.getState().calculateAchievements();
       }
     }
   }
 
-  // Handle FlowFinance V2 events: award XP, increment wealth stat, and auto-complete matching money habits
+  // Handle FlowFinance events: auto-complete matching money/finance habits
   public static async onFinanceEvent(event: {
     type:
       | 'EXPENSE_LOGGED'
@@ -141,17 +117,7 @@ export class CrossDomainActionMediator {
     date: string;
     amount?: number;
   }) {
-    const gamificationStore = useGamificationStore.getState();
     const habitStore = useHabitStore.getState();
-
-    const xpReward =
-      event.type === 'EMI_PAID' ||
-      event.type === 'COMMITMENT_SETTLED' ||
-      event.type === 'SIP_COMPLETED'
-        ? 50
-        : 10;
-
-    await gamificationStore.addXp(xpReward, 'finance');
 
     // Auto-complete matching daily expense/finance tracking habits for the date
     const activeHabits = habitStore.habits.filter((h) => !h.archived);
@@ -200,9 +166,5 @@ export class CrossDomainActionMediator {
         });
       }
     }
-
-    useAchievementStore.getState().calculateAchievements();
   }
 }
-
-

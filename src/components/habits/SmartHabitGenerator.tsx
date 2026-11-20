@@ -13,7 +13,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useHabitStore } from '@/lib/stores/habit-store';
-import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Category } from '@/lib/types';
@@ -39,7 +38,6 @@ export function SmartHabitGenerator({ open, onOpenChange }: SmartHabitGeneratorP
   const [recommendations, setRecommendations] = useState<SmartHabitRecommendation[]>([]);
   const [addedHabits, setAddedHabits] = useState<Record<string, boolean>>({});
   const { addHabit } = useHabitStore();
-  const { level } = useGamificationStore();
 
   const handleGenerate = async () => {
     if (!goal.trim()) {
@@ -65,7 +63,6 @@ export function SmartHabitGenerator({ open, onOpenChange }: SmartHabitGeneratorP
             },
           ],
           currentHabits: [],
-          userLevel: level,
         }),
       });
 
