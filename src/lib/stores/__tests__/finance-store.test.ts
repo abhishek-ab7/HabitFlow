@@ -556,4 +556,170 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     expect(swiggyAns).toContain('Swiggy Dinner');
     expect(new Set([foodAns, nwAns, crunchAns, sipAns, swiggyAns]).size).toBe(5);
   });
+
+  test('12. updateEmiTracker edits loan details, clamps paidMonths, auto-completes, and bumps generationCounter', async () => {
+    const store = useFinanceStore.getState();
+    const emiCat = store.categories.find((c) => c.slug === 'emis-debt-repayment')!;
+    const bankAcc = store.accounts.find((a) => a.type === 'bank')!;
+
+    const emi = await store.addEmiTracker({
+      loanName: 'Phone EMI',
+      lenderName: 'Bajaj',
+      principalAmount: 30000,
+      interestRateAnnual: 0,
+      emiAmount: 5000,
+      tenureMonths: 6,
+      paidMonths: 2,
+      startDate: `${currentMonth}-01`,
+      billingDayOfMonth: 5,
+      categoryId: emiCat.id,
+      accountId: bankAcc.id,
+      autoCreateTaskReminder: false,
+      status: 'active',
+    });
+    expect(emi.generationCounter).toBe(1);
+
+    await useFinanceStore.getState().updateEmiTracker(emi.id, {
+      loanName: 'MacBook EMI',
+      lenderName: 'HDFC Bank',
+      emiAmount: 5200,
+      paidMonths: 6,
+      billingDayOfMonth: 10,
+      notes: 'Updated terms',
+    });
+
+    const updated = useFinanceStore
+      .getState()
+      .emiTrackers.find((e) => e.id === emi.id)!;
+    expect(updated.loanName).toBe('MacBook EMI');
+    expect(updated.lenderName).toBe('HDFC Bank');
+    expect(updated.emiAmount).toBe(5200);
+    expect(updated.paidMonths).toBe(6);
+    expect(updated.billingDayOfMonth).toBe(10);
+    expect(updated.status).toBe('completed');
+    expect(updated.generationCounter).toBe(2);
+  });
+
+  test('13. updateDebtRecord recalculates remainingAmount, status, and direction color', async () => {
+    const store = useFinanceStore.getState();
+    const debt = await store.addDebtRecord({
+      personName: 'Arjun',
+      direction: 'borrowed',
+      title: 'Concert Tickets',
+      principalAmount: 3000,
+      startDate: `${currentMonth}-01`,
+      repaymentSchedule: 'lump_sum',
+      color: '#f43f5e',
+    });
+
+    await useFinanceStore.getState().recordDebtInstallment({
+      debtId: debt.id,
+      amount: 1000,
+      paymentMethod: 'upi',
+      note: 'Part 1',
+    });
+
+    await useFinanceStore.getState().updateDebtRecord(debt.id, {
+      personName: 'Arjun Verma',
+      direction: 'lent',
+      principalAmount: 2500,
+      notes: 'Edited principal',
+    });
+
+    const edited = useFinanceStore
+      .getState()
+      .debtRecords.find((d) => d.id === debt.id)!;
+    expect(edited.personName).toBe('Arjun Verma');
+    expect(edited.direction).toBe('lent');
+    expect(edited.color).toBe('#10b981');
+    expect(edited.totalRepaidAmount).toBe(1000);
+    expect(edited.remainingAmount).toBe(1500);
+    expect(edited.status).toBe('active');
+    expect(edited.generationCounter).toBe(3);
+
+    // Lowering principal to match repaid amount settles the record automatically
+    await useFinanceStore.getState().updateDebtRecord(debt.id, {
+      principalAmount: 1000,
+    });
+    const settled = useFinanceStore
+      .getState()
+      .debtRecords.find((d) => d.id === debt.id)!;
+    expect(settled.remainingAmount).toBe(0);
+    expect(settled.status).toBe('settled');
+  });
+
+  test('14. updateDebtInstallment and deleteDebtInstallment sync balances, transactions, and parent debt', async () => {
+    const store = useFinanceStore.getState();
+    const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+    await store.updateAccount(upiAcc.id, { balance: 10000 });
+
+    const debt = await store.addDebtRecord({
+      personName: 'Meera',
+      direction: 'borrowed',
+      title: 'Hotel Split',
+      principalAmount: 4000,
+      startDate: `${currentMonth}-01`,
+      repaymentSchedule: 'monthly_partial',
+      color: '#f43f5e',
+    });
+
+    const inst1 = await useFinanceStore.getState().recordDebtInstallment({
+      debtId: debt.id,
+      amount: 1000,
+      date: `${currentMonth}-05`,
+      paymentMethod: 'upi',
+      accountId: upiAcc.id,
+      note: '1st payment',
+    });
+    const inst2 = await useFinanceStore.getState().recordDebtInstallment({
+      debtId: debt.id,
+      amount: 1500,
+      date: `${currentMonth}-10`,
+      paymentMethod: 'upi',
+      accountId: upiAcc.id,
+      note: '2nd payment',
+    });
+    expect(inst1).not.toBeNull();
+    expect(inst2).not.toBeNull();
+
+    // Balance dropped by 1000 + 1500 = 2500 -> 7500
+    expect(
+      useFinanceStore.getState().accounts.find((a) => a.id === upiAcc.id)?.balance
+    ).toBe(7500);
+
+    // Edit inst1 from 1000 -> 1800 (+800 expense -> balance 6700, total repaid 3300, remaining 700)
+    await useFinanceStore.getState().updateDebtInstallment(inst1!.id, {
+      amount: 1800,
+      note: 'Adjusted 1st payment',
+    });
+
+    const afterEditDebt = useFinanceStore
+      .getState()
+      .debtRecords.find((d) => d.id === debt.id)!;
+    expect(afterEditDebt.totalRepaidAmount).toBe(3300);
+    expect(afterEditDebt.remainingAmount).toBe(700);
+    expect(
+      useFinanceStore.getState().accounts.find((a) => a.id === upiAcc.id)?.balance
+    ).toBe(6700);
+
+    const updatedInst2 = useFinanceStore
+      .getState()
+      .debtInstallments.find((i) => i.id === inst2!.id)!;
+    expect(updatedInst2.balanceAfterPayment).toBe(700);
+
+    // Delete inst2 (1500 reversed back to account -> 8200; total repaid 1800; remaining 2200)
+    await useFinanceStore.getState().deleteDebtInstallment(inst2!.id);
+    const afterDeleteDebt = useFinanceStore
+      .getState()
+      .debtRecords.find((d) => d.id === debt.id)!;
+    expect(afterDeleteDebt.totalRepaidAmount).toBe(1800);
+    expect(afterDeleteDebt.remainingAmount).toBe(2200);
+    expect(afterDeleteDebt.status).toBe('active');
+    expect(
+      useFinanceStore.getState().accounts.find((a) => a.id === upiAcc.id)?.balance
+    ).toBe(8200);
+    expect(
+      useFinanceStore.getState().debtInstallments.find((i) => i.id === inst2!.id)
+    ).toBeUndefined();
+  });
 });

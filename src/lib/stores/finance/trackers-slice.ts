@@ -24,10 +24,14 @@ export type TrackersSlice = Pick<
   | 'deleteCommitment'
   | 'settleCommitmentBalance'
   | 'addDebtRecord'
+  | 'updateDebtRecord'
   | 'recordDebtInstallment'
+  | 'updateDebtInstallment'
+  | 'deleteDebtInstallment'
   | 'topUpDebt'
   | 'deleteDebtRecord'
   | 'addEmiTracker'
+  | 'updateEmiTracker'
   | 'payMonthlyEmi'
   | 'deleteEmiTracker'
   | 'addSipPlan'
@@ -151,6 +155,58 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     return record;
   },
 
+  updateDebtRecord: async (id, data) => {
+    const existing =
+      get().debtRecords.find((d) => d.id === id) || (await db.debtRecords.get(id));
+    if (!existing) return;
+
+    const now = new Date().toISOString();
+    const nextPrincipal =
+      data.principalAmount !== undefined
+        ? Math.max(0, Number(data.principalAmount))
+        : existing.principalAmount;
+    const nextRepaid =
+      data.totalRepaidAmount !== undefined
+        ? Math.max(0, Number(data.totalRepaidAmount))
+        : existing.totalRepaidAmount;
+    const nextRemaining = Math.max(0, nextPrincipal - nextRepaid);
+
+    let nextStatus = existing.status;
+    if (data.status === 'archived') {
+      nextStatus = 'archived';
+    } else if (data.status) {
+      nextStatus = data.status;
+    } else if (existing.status !== 'archived') {
+      nextStatus = nextRemaining <= 0 ? 'settled' : 'active';
+    }
+
+    const nextDirection = data.direction ?? existing.direction;
+    const nextColor =
+      data.color ??
+      (data.direction && data.direction !== existing.direction
+        ? nextDirection === 'borrowed'
+          ? '#f43f5e'
+          : '#10b981'
+        : existing.color);
+
+    await db.debtRecords.update(id, {
+      ...data,
+      direction: nextDirection,
+      color: nextColor,
+      principalAmount: nextPrincipal,
+      totalRepaidAmount: nextRepaid,
+      remainingAmount: nextRemaining,
+      status: nextStatus,
+      isDirty: true,
+      generationCounter: (existing.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+
+    await get().loadFinanceData(existing.userId);
+    await get().recordCurrentNetWorthSnapshot();
+    notifyFinanceSync();
+  },
+
   recordDebtInstallment: async ({
     debtId,
     amount,
@@ -267,6 +323,171 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     return installment;
   },
 
+  updateDebtInstallment: async (id, data) => {
+    const existing = await db.debtInstallments.get(id);
+    if (!existing || existing.deletedAt) return;
+    const debt = await db.debtRecords.get(existing.debtId);
+    if (!debt) return;
+
+    const now = new Date().toISOString();
+    const nextAmount =
+      data.amount !== undefined ? Math.max(1, Number(data.amount)) : existing.amount;
+    const nextDate = data.date || existing.date;
+    const nextMonthKey = nextDate.slice(0, 7);
+    const amountDelta = nextAmount - existing.amount;
+
+    await db.debtInstallments.update(id, {
+      amount: nextAmount,
+      date: nextDate,
+      monthKey: nextMonthKey,
+      paymentMethod: data.paymentMethod ?? existing.paymentMethod,
+      note: data.note !== undefined ? data.note : existing.note,
+      isDirty: true,
+      generationCounter: (existing.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+
+    // Recompute chronological balances across all active installments for this debt
+    const allInsts = (
+      await db.debtInstallments.where('debtId').equals(debt.id).toArray()
+    )
+      .filter((item) => !item.deletedAt)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+
+    let runningRepaid = 0;
+    for (const item of allInsts) {
+      runningRepaid += Number(item.amount || 0);
+      const balAfter = Math.max(0, debt.principalAmount - runningRepaid);
+      if (item.balanceAfterPayment !== balAfter || item.id === id) {
+        await db.debtInstallments.update(item.id, {
+          balanceAfterPayment: balAfter,
+          isDirty: true,
+          generationCounter: (item.generationCounter || 1) + 1,
+          updatedAt: now,
+        });
+      }
+    }
+
+    const newRemaining = Math.max(0, debt.principalAmount - runningRepaid);
+    const newStatus = debt.status === 'archived' ? 'archived' : newRemaining <= 0 ? 'settled' : 'active';
+    await db.debtRecords.update(debt.id, {
+      totalRepaidAmount: runningRepaid,
+      remainingAmount: newRemaining,
+      status: newStatus,
+      isDirty: true,
+      generationCounter: (debt.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+
+    // Sync linked transaction & account balance if one was recorded
+    if (existing.transactionId) {
+      const linkedTx = await db.financeTransactions.get(existing.transactionId);
+      if (linkedTx && !linkedTx.deletedAt) {
+        await db.financeTransactions.update(linkedTx.id, {
+          amount: nextAmount,
+          date: nextDate,
+          monthKey: nextMonthKey,
+          notes:
+            data.note !== undefined
+              ? data.note || `Installment (${formatINR(nextAmount)}). Remaining: ${formatINR(newRemaining)}`
+              : linkedTx.notes,
+          isDirty: true,
+          generationCounter: (linkedTx.generationCounter || 1) + 1,
+          updatedAt: now,
+        });
+
+        if (amountDelta !== 0) {
+          const acc = await db.financeAccounts.get(linkedTx.accountId);
+          if (acc) {
+            const balanceDelta = linkedTx.type === 'income' ? amountDelta : -amountDelta;
+            await db.financeAccounts.update(acc.id, {
+              balance: acc.balance + balanceDelta,
+              isDirty: true,
+              generationCounter: (acc.generationCounter || 1) + 1,
+              updatedAt: now,
+            });
+          }
+        }
+      }
+    }
+
+    await get().loadFinanceData(debt.userId);
+    await get().recordCurrentNetWorthSnapshot(nextMonthKey);
+    notifyFinanceSync();
+  },
+
+  deleteDebtInstallment: async (id) => {
+    const existing = await db.debtInstallments.get(id);
+    if (!existing || existing.deletedAt) return;
+    const debt = await db.debtRecords.get(existing.debtId);
+    if (!debt) return;
+
+    const now = new Date().toISOString();
+    await db.debtInstallments.update(id, {
+      deletedAt: now,
+      isDirty: true,
+      generationCounter: (existing.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+
+    if (existing.transactionId) {
+      const linkedTx = await db.financeTransactions.get(existing.transactionId);
+      if (linkedTx && !linkedTx.deletedAt) {
+        const acc = await db.financeAccounts.get(linkedTx.accountId);
+        if (acc) {
+          const reverseDelta = linkedTx.type === 'income' ? -linkedTx.amount : linkedTx.amount;
+          await db.financeAccounts.update(acc.id, {
+            balance: acc.balance + reverseDelta,
+            isDirty: true,
+            generationCounter: (acc.generationCounter || 1) + 1,
+            updatedAt: now,
+          });
+        }
+        await db.financeTransactions.update(linkedTx.id, {
+          deletedAt: now,
+          isDirty: true,
+          generationCounter: (linkedTx.generationCounter || 1) + 1,
+          updatedAt: now,
+        });
+      }
+    }
+
+    const remainingInsts = (
+      await db.debtInstallments.where('debtId').equals(debt.id).toArray()
+    )
+      .filter((item) => !item.deletedAt)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+
+    let runningRepaid = 0;
+    for (const item of remainingInsts) {
+      runningRepaid += Number(item.amount || 0);
+      const balAfter = Math.max(0, debt.principalAmount - runningRepaid);
+      if (item.balanceAfterPayment !== balAfter) {
+        await db.debtInstallments.update(item.id, {
+          balanceAfterPayment: balAfter,
+          isDirty: true,
+          generationCounter: (item.generationCounter || 1) + 1,
+          updatedAt: now,
+        });
+      }
+    }
+
+    const newRemaining = Math.max(0, debt.principalAmount - runningRepaid);
+    const newStatus = debt.status === 'archived' ? 'archived' : newRemaining <= 0 ? 'settled' : 'active';
+    await db.debtRecords.update(debt.id, {
+      totalRepaidAmount: runningRepaid,
+      remainingAmount: newRemaining,
+      status: newStatus,
+      isDirty: true,
+      generationCounter: (debt.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+
+    await get().loadFinanceData(debt.userId);
+    await get().recordCurrentNetWorthSnapshot();
+    notifyFinanceSync();
+  },
+
   topUpDebt: async (debtId, additionalAmount, note) => {
     const debt = get().debtRecords.find((d) => d.id === debtId);
     if (!debt || additionalAmount <= 0) return;
@@ -280,6 +501,7 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
       remainingAmount: newRemaining,
       status: 'active',
       isDirty: true,
+      generationCounter: (debt.generationCounter || 1) + 1,
       notes: note
         ? `${debt.notes ? debt.notes + ' | ' : ''}Top-up +${formatINR(additionalAmount)}: ${note}`
         : debt.notes,
@@ -300,6 +522,7 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
       await db.debtInstallments.update(inst.id, {
         deletedAt: now,
         isDirty: true,
+        generationCounter: (inst.generationCounter || 1) + 1,
         updatedAt: now,
       });
     }
@@ -307,6 +530,7 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
       status: 'archived',
       deletedAt: now,
       isDirty: true,
+      generationCounter: (debt.generationCounter || 1) + 1,
       updatedAt: now,
     });
     await get().loadFinanceData(debt.userId);
@@ -331,6 +555,43 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     await get().recordCurrentNetWorthSnapshot();
     notifyFinanceSync();
     return emi;
+  },
+
+  updateEmiTracker: async (id, data) => {
+    const existing =
+      get().emiTrackers.find((e) => e.id === id) || (await db.emiTrackers.get(id));
+    if (!existing) return;
+
+    const now = new Date().toISOString();
+    const nextTenure =
+      data.tenureMonths !== undefined
+        ? Math.max(1, Number(data.tenureMonths))
+        : existing.tenureMonths;
+    const nextPaid =
+      data.paidMonths !== undefined
+        ? Math.min(nextTenure, Math.max(0, Number(data.paidMonths)))
+        : Math.min(nextTenure, existing.paidMonths);
+
+    let nextStatus = existing.status;
+    if (data.status) {
+      nextStatus = data.status;
+    } else if (existing.status !== 'foreclosed') {
+      nextStatus = nextPaid >= nextTenure ? 'completed' : 'active';
+    }
+
+    await db.emiTrackers.update(id, {
+      ...data,
+      tenureMonths: nextTenure,
+      paidMonths: nextPaid,
+      status: nextStatus,
+      isDirty: true,
+      generationCounter: (existing.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+
+    await get().loadFinanceData(existing.userId);
+    await get().recordCurrentNetWorthSnapshot();
+    notifyFinanceSync();
   },
 
   payMonthlyEmi: async (emiId, accountId, date) => {

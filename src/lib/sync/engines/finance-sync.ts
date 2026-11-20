@@ -668,7 +668,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         paid_months: emi.paidMonths,
         start_date: emi.startDate,
         billing_day_of_month: emi.billingDayOfMonth,
-        category_id: emi.categoryId,
+        category_id: emi.categoryId || null,
         account_id: emi.accountId || null,
         auto_create_task_reminder: emi.autoCreateTaskReminder,
         last_paid_month_key: emi.lastPaidMonthKey || null,

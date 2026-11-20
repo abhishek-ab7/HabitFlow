@@ -10,10 +10,11 @@ import {
   ArrowUpRight,
   Copy,
   Trash2,
+  Pencil,
   PlusCircle,
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
-import type { DebtDirection, DebtPaymentMethod, DebtRecord } from '@/lib/types';
+import type { DebtDirection, DebtInstallment, DebtPaymentMethod, DebtRecord, DebtRepaymentSchedule } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,25 +34,34 @@ export function FriendsDebtSection() {
   const getDebtSummary = useFinanceStore((s) => s.getDebtSummary);
   const getDebtInstallments = useFinanceStore((s) => s.getDebtInstallments);
   const addDebtRecord = useFinanceStore((s) => s.addDebtRecord);
+  const updateDebtRecord = useFinanceStore((s) => s.updateDebtRecord);
   const recordDebtInstallment = useFinanceStore((s) => s.recordDebtInstallment);
+  const updateDebtInstallment = useFinanceStore((s) => s.updateDebtInstallment);
+  const deleteDebtInstallment = useFinanceStore((s) => s.deleteDebtInstallment);
   const topUpDebt = useFinanceStore((s) => s.topUpDebt);
   const deleteDebtRecord = useFinanceStore((s) => s.deleteDebtRecord);
 
   const [filterDir, setFilterDir] = useState<'all' | DebtDirection>('all');
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
 
-  // New Friend Ledger dialog
+  // New / Edit Friend Ledger dialog
   const [isNewOpen, setIsNewOpen] = useState(false);
+  const [editingDebt, setEditingDebt] = useState<DebtRecord | null>(null);
   const [personName, setPersonName] = useState('');
   const [direction, setDirection] = useState<DebtDirection>('borrowed');
   const [title, setTitle] = useState('');
   const [principal, setPrincipal] = useState('');
   const [plannedMonthly, setPlannedMonthly] = useState('');
   const [dueDay, setDueDay] = useState('15');
+  const [repaymentSchedule, setRepaymentSchedule] = useState<DebtRepaymentSchedule>('flexible');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [notes, setNotes] = useState('');
 
-  // Installment dialog
+  // Installment dialog (Create or Edit)
   const [installmentDebt, setInstallmentDebt] = useState<DebtRecord | null>(null);
+  const [editingInstallment, setEditingInstallment] = useState<DebtInstallment | null>(null);
   const [instAmount, setInstAmount] = useState('');
+  const [instDate, setInstDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [instMethod, setInstMethod] = useState<DebtPaymentMethod>('upi');
   const [instAccountId, setInstAccountId] = useState('');
   const [instNote, setInstNote] = useState('');
@@ -77,7 +87,35 @@ export function FriendsDebtSection() {
   const toggleExpand = (id: string) =>
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const handleCreateDebt = async (e: React.FormEvent) => {
+  const openNewDebtDialog = () => {
+    setEditingDebt(null);
+    setPersonName('');
+    setDirection('borrowed');
+    setTitle('');
+    setPrincipal('');
+    setPlannedMonthly('');
+    setDueDay('15');
+    setRepaymentSchedule('flexible');
+    setStartDate(new Date().toISOString().split('T')[0]);
+    setNotes('');
+    setIsNewOpen(true);
+  };
+
+  const openEditDebtDialog = (debt: DebtRecord) => {
+    setEditingDebt(debt);
+    setPersonName(debt.personName);
+    setDirection(debt.direction);
+    setTitle(debt.title);
+    setPrincipal(String(debt.principalAmount));
+    setPlannedMonthly(debt.plannedMonthlyInstallment ? String(debt.plannedMonthlyInstallment) : '');
+    setDueDay(String(debt.dueDayOfMonth || 15));
+    setRepaymentSchedule(debt.repaymentSchedule || 'flexible');
+    setStartDate(debt.startDate || new Date().toISOString().split('T')[0]);
+    setNotes(debt.notes || '');
+    setIsNewOpen(true);
+  };
+
+  const handleSaveDebt = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(principal);
     if (!personName.trim() || isNaN(amt) || amt <= 0) {
@@ -85,38 +123,74 @@ export function FriendsDebtSection() {
       return;
     }
     const monthly = parseFloat(plannedMonthly);
-    await addDebtRecord({
-      personName: personName.trim(),
-      direction,
-      title:
-        title.trim() ||
-        (direction === 'borrowed' ? `Borrowed from ${personName.trim()}` : `Lent to ${personName.trim()}`),
-      principalAmount: amt,
-      startDate: new Date().toISOString().split('T')[0],
-      repaymentSchedule: monthly > 0 ? 'monthly_partial' : 'flexible',
-      plannedMonthlyInstallment: monthly > 0 ? monthly : undefined,
-      dueDayOfMonth: Math.min(31, Math.max(1, parseInt(dueDay, 10) || 15)),
-      color: direction === 'borrowed' ? '#f43f5e' : '#10b981',
-    });
-    toast.success(`Added ledger for ${personName.trim()}`);
+    const parsedDay = Math.min(31, Math.max(1, parseInt(dueDay, 10) || 15));
+    const resolvedTitle =
+      title.trim() ||
+      (direction === 'borrowed'
+        ? `Borrowed from ${personName.trim()}`
+        : `Lent to ${personName.trim()}`);
+
+    if (editingDebt) {
+      await updateDebtRecord(editingDebt.id, {
+        personName: personName.trim(),
+        direction,
+        title: resolvedTitle,
+        principalAmount: amt,
+        startDate: startDate || editingDebt.startDate,
+        repaymentSchedule: monthly > 0 ? 'monthly_partial' : repaymentSchedule,
+        plannedMonthlyInstallment: monthly > 0 ? monthly : undefined,
+        dueDayOfMonth: parsedDay,
+        notes: notes.trim() || undefined,
+      });
+      toast.success(`Updated ledger for ${personName.trim()}`);
+    } else {
+      await addDebtRecord({
+        personName: personName.trim(),
+        direction,
+        title: resolvedTitle,
+        principalAmount: amt,
+        startDate: startDate || new Date().toISOString().split('T')[0],
+        repaymentSchedule: monthly > 0 ? 'monthly_partial' : repaymentSchedule,
+        plannedMonthlyInstallment: monthly > 0 ? monthly : undefined,
+        dueDayOfMonth: parsedDay,
+        notes: notes.trim() || undefined,
+        color: direction === 'borrowed' ? '#f43f5e' : '#10b981',
+      });
+      toast.success(`Added ledger for ${personName.trim()}`);
+    }
+
     setIsNewOpen(false);
-    setPersonName('');
-    setTitle('');
-    setPrincipal('');
-    setPlannedMonthly('');
+    setEditingDebt(null);
   };
 
-  const handleRecordInstallment = async (e: React.FormEvent) => {
+  const handleSaveInstallment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!installmentDebt) return;
     const amt = parseFloat(instAmount);
     if (isNaN(amt) || amt <= 0) {
       toast.error('Enter a valid amount');
       return;
     }
+
+    if (editingInstallment) {
+      await updateDebtInstallment(editingInstallment.id, {
+        amount: amt,
+        date: instDate || editingInstallment.date,
+        paymentMethod: instMethod,
+        note: instNote.trim() || undefined,
+      });
+      toast.success('Updated installment log');
+      setEditingInstallment(null);
+      setInstallmentDebt(null);
+      setInstAmount('');
+      setInstNote('');
+      return;
+    }
+
+    if (!installmentDebt) return;
     await recordDebtInstallment({
       debtId: installmentDebt.id,
       amount: amt,
+      date: instDate || undefined,
       paymentMethod: instMethod,
       accountId: instAccountId || undefined,
       note: instNote.trim() || undefined,
@@ -223,7 +297,7 @@ export function FriendsDebtSection() {
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => setIsNewOpen(true)}
+          onClick={openNewDebtDialog}
           className="min-h-[40px] px-3.5 gap-1.5 text-xs rounded-xl whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
@@ -240,7 +314,7 @@ export function FriendsDebtSection() {
             type="button"
             size="sm"
             variant="secondary"
-            onClick={() => setIsNewOpen(true)}
+            onClick={openNewDebtDialog}
             className="min-h-[40px] px-4 text-xs rounded-xl"
           >
             Add Friend Ledger
@@ -322,6 +396,18 @@ export function FriendsDebtSection() {
                           {pct}% repaid
                         </p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditDebtDialog(debt);
+                        }}
+                        aria-label={`Edit ${debt.personName} ledger`}
+                        title={`Edit ${debt.personName}`}
+                        className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
                       {isOpen ? (
                         <ChevronUp className="w-4 h-4 text-muted-foreground" />
                       ) : (
@@ -345,6 +431,7 @@ export function FriendsDebtSection() {
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setEditingInstallment(null);
                           setInstallmentDebt(debt);
                           setInstAmount(
                             String(
@@ -354,6 +441,9 @@ export function FriendsDebtSection() {
                               )
                             )
                           );
+                          setInstDate(new Date().toISOString().split('T')[0]);
+                          setInstMethod('upi');
+                          setInstNote('');
                           const defAcc = accounts.find((a) => a.isDefault) || accounts[0];
                           setInstAccountId(defAcc?.id || '');
                         }}
@@ -382,9 +472,39 @@ export function FriendsDebtSection() {
                                 {inst.date} · Bal after: {formatINR(inst.balanceAfterPayment)}
                               </p>
                             </div>
-                            <span className="font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
-                              {formatINR(inst.amount)}
-                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400 mr-1">
+                                {formatINR(inst.amount)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingInstallment(inst);
+                                  setInstallmentDebt(debt);
+                                  setInstAmount(String(inst.amount));
+                                  setInstDate(inst.date);
+                                  setInstMethod(inst.paymentMethod);
+                                  setInstNote(inst.note || '');
+                                }}
+                                aria-label="Edit installment log"
+                                title="Edit installment"
+                                className="min-h-[30px] min-w-[30px] flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await deleteDebtInstallment(inst.id);
+                                  toast.success('Removed installment log');
+                                }}
+                                aria-label="Delete installment log"
+                                title="Delete installment"
+                                className="min-h-[30px] min-w-[30px] flex items-center justify-center rounded-md text-muted-foreground hover:text-rose-500 hover:bg-muted transition-colors"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -395,6 +515,16 @@ export function FriendsDebtSection() {
                     )}
 
                     <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openEditDebtDialog(debt)}
+                        className="min-h-[38px] px-3 text-xs gap-1.5 rounded-xl"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit Details
+                      </Button>
                       <Button
                         type="button"
                         size="sm"
@@ -441,19 +571,27 @@ export function FriendsDebtSection() {
         </div>
       )}
 
-      {/* Dialog: New Friend Ledger */}
-      <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
-        <DialogContent className="sm:max-w-[440px]">
+      {/* Dialog: New / Edit Friend Ledger */}
+      <Dialog
+        open={isNewOpen}
+        onOpenChange={(open) => {
+          setIsNewOpen(open);
+          if (!open) setEditingDebt(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="w-4 h-4 text-primary" />
-              New Friend Debt / IOU Ledger
+              {editingDebt ? 'Edit Friend Debt / IOU Ledger' : 'New Friend Debt / IOU Ledger'}
             </DialogTitle>
             <DialogDescription>
-              Track money borrowed from or lent to a friend with partial installment history.
+              {editingDebt
+                ? 'Update friend details, direction, principal, schedule, or notes.'
+                : 'Track money borrowed from or lent to a friend with partial installment history.'}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateDebt} className="space-y-3.5 py-2">
+          <form onSubmit={handleSaveDebt} className="space-y-3.5 py-2">
             <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted">
               <button
                 type="button"
@@ -492,7 +630,7 @@ export function FriendsDebtSection() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="d-amt">Amount (₹)</Label>
+                <Label htmlFor="d-amt">Principal Amount (₹)</Label>
                 <Input
                   id="d-amt"
                   type="number"
@@ -516,9 +654,9 @@ export function FriendsDebtSection() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="d-plan">Monthly Plan (₹, optional)</Label>
+                <Label htmlFor="d-plan">Monthly Plan (₹)</Label>
                 <Input
                   id="d-plan"
                   type="number"
@@ -541,39 +679,72 @@ export function FriendsDebtSection() {
                   className="h-11 font-mono tabular-nums"
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="d-date">Start Date</Label>
+                <Input
+                  id="d-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-11 font-mono tabular-nums text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="d-notes">Notes (optional)</Label>
+              <Input
+                id="d-notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional note or UPI ID"
+                className="h-11"
+              />
             </div>
 
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsNewOpen(false)}
+                onClick={() => {
+                  setIsNewOpen(false);
+                  setEditingDebt(null);
+                }}
               >
                 Cancel
               </Button>
-              <Button type="submit">Save Ledger</Button>
+              <Button type="submit">{editingDebt ? 'Update Ledger' : 'Save Ledger'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Record Installment */}
+      {/* Dialog: Record / Edit Installment */}
       <Dialog
-        open={!!installmentDebt}
-        onOpenChange={(open) => !open && setInstallmentDebt(null)}
+        open={!!installmentDebt || !!editingInstallment}
+        onOpenChange={(open) => {
+          if (!open) {
+            setInstallmentDebt(null);
+            setEditingInstallment(null);
+          }
+        }}
       >
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle>
-              {installmentDebt?.direction === 'borrowed'
+              {editingInstallment
+                ? `Edit Installment Log`
+                : installmentDebt?.direction === 'borrowed'
                 ? `Pay ${installmentDebt?.personName}`
                 : `Receive from ${installmentDebt?.personName}`}
             </DialogTitle>
             <DialogDescription>
-              Remaining balance: {formatINR(installmentDebt?.remainingAmount || 0)}. Logs a synced ledger entry automatically.
+              {editingInstallment
+                ? 'Adjusting amount or date automatically recalculates remaining balance and synced transaction.'
+                : `Remaining balance: ${formatINR(installmentDebt?.remainingAmount || 0)}. Logs a synced ledger entry automatically.`}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleRecordInstallment} className="space-y-3.5 py-2">
+          <form onSubmit={handleSaveInstallment} className="space-y-3.5 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="inst-amt">Amount (₹)</Label>
@@ -588,6 +759,20 @@ export function FriendsDebtSection() {
                 />
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="inst-date">Date</Label>
+                <Input
+                  id="inst-date"
+                  type="date"
+                  value={instDate}
+                  onChange={(e) => setInstDate(e.target.value)}
+                  className="h-11 font-mono tabular-nums text-xs"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className={`grid gap-3 ${editingInstallment ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              <div className="space-y-1.5">
                 <Label htmlFor="inst-method">Method</Label>
                 <select
                   id="inst-method"
@@ -601,24 +786,26 @@ export function FriendsDebtSection() {
                   <option value="offset_expense">Offset Expense</option>
                 </select>
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="inst-acc">Account</Label>
-              <select
-                id="inst-acc"
-                value={instAccountId}
-                onChange={(e) => setInstAccountId(e.target.value)}
-                className="w-full h-11 px-3 text-sm rounded-xl border border-input bg-background"
-              >
-                {accounts
-                  .filter((a) => !a.archived && !a.deletedAt)
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({formatINR(a.balance)})
-                    </option>
-                  ))}
-              </select>
+              {!editingInstallment && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="inst-acc">Account</Label>
+                  <select
+                    id="inst-acc"
+                    value={instAccountId}
+                    onChange={(e) => setInstAccountId(e.target.value)}
+                    className="w-full h-11 px-3 text-sm rounded-xl border border-input bg-background"
+                  >
+                    {accounts
+                      .filter((a) => !a.archived && !a.deletedAt)
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} ({formatINR(a.balance)})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -636,11 +823,16 @@ export function FriendsDebtSection() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setInstallmentDebt(null)}
+                onClick={() => {
+                  setInstallmentDebt(null);
+                  setEditingInstallment(null);
+                }}
               >
                 Cancel
               </Button>
-              <Button type="submit">Record Installment</Button>
+              <Button type="submit">
+                {editingInstallment ? 'Update Installment' : 'Record Installment'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

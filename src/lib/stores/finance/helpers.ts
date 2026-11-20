@@ -349,6 +349,10 @@ export interface FinanceStore {
       'id' | 'userId' | 'totalRepaidAmount' | 'remainingAmount' | 'status' | 'createdAt' | 'updatedAt'
     >
   ) => Promise<DebtRecord>;
+  updateDebtRecord: (
+    id: string,
+    data: Partial<Omit<DebtRecord, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
+  ) => Promise<void>;
   recordDebtInstallment: (params: {
     debtId: string;
     amount: number;
@@ -358,6 +362,11 @@ export interface FinanceStore {
     categoryId?: string;
     note?: string;
   }) => Promise<DebtInstallment | null>;
+  updateDebtInstallment: (
+    id: string,
+    data: Partial<Pick<DebtInstallment, 'amount' | 'date' | 'paymentMethod' | 'note'>>
+  ) => Promise<void>;
+  deleteDebtInstallment: (id: string) => Promise<void>;
   topUpDebt: (debtId: string, additionalAmount: number, note?: string) => Promise<void>;
   deleteDebtRecord: (id: string) => Promise<void>;
 
@@ -365,6 +374,10 @@ export interface FinanceStore {
   addEmiTracker: (
     data: Omit<EmiTracker, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<EmiTracker>;
+  updateEmiTracker: (
+    id: string,
+    data: Partial<Omit<EmiTracker, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
+  ) => Promise<void>;
   payMonthlyEmi: (
     emiId: string,
     accountId?: string,

@@ -31,7 +31,6 @@ import {
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -53,7 +52,6 @@ import {
   DEFAULT_COLOR_THEME,
   getColorThemeById,
 } from '@/lib/themes';
-import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
 import { SettingsHero } from '@/components/settings/SettingsHero';
 import { AvatarSelector } from '@/components/settings/AvatarSelector';
@@ -502,21 +500,24 @@ export default function SettingsPageContent() {
 
   if (!settings) {
     return (
-      <div className="w-full px-4 py-8 max-w-[1600px] mx-auto flex items-center justify-center min-h-[50vh]">
+      <div className="w-full px-4 py-8 md:px-6 max-w-6xl mx-auto flex items-center justify-center min-h-[50vh]">
         <div className="animate-pulse space-y-4 text-center">
-          <div className="w-16 h-16 rounded-full bg-muted mx-auto" />
+          <div className="w-16 h-16 rounded-2xl bg-muted mx-auto" />
           <div className="h-4 w-32 bg-muted rounded mx-auto" />
-          <span className="text-muted-foreground">Loading Profile...</span>
+          <span className="text-muted-foreground text-sm">Loading Profile...</span>
         </div>
       </div>
     );
   }
 
-  const hasDuplicates = duplicateCounts && (duplicateCounts.habits > 0 || duplicateCounts.goals > 0 || duplicateCounts.completions > 0);
+  const hasDuplicates =
+    duplicateCounts &&
+    (duplicateCounts.habits > 0 || duplicateCounts.goals > 0 || duplicateCounts.completions > 0);
+  const showDevTools = isAuthenticated && process.env.NODE_ENV === 'development';
 
   return (
-    <div className="w-full relative min-h-screen px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-8">
-      <FadeIn>
+    <div className="w-full relative min-h-screen px-4 py-6 md:px-6 md:py-8 max-w-6xl mx-auto">
+      <FadeIn className="space-y-6">
         {/* HERO */}
         <SettingsHero
           avatarId={settings.avatarId || 'avatar-1'}
@@ -526,48 +527,57 @@ export default function SettingsPageContent() {
             await setStreakShields(3);
             toast.success('Streak shields refilled to 3!');
           }}
-          className="mb-8"
         />
 
-        <BentoGrid autoRows={false} className="grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-          {/* ACCOUNT */}
-          <BentoGridItem
-            title="Account & Security"
-            icon={<User className="h-5 w-5 text-primary" />}
-            span={2}
-            className="md:col-span-2"
-            description="Manage your profile and security preferences"
-            disableHover
-          >
-            <div className="flex flex-col gap-6 mt-6 pb-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email Address</Label>
-                  <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-hover:text-foreground transition-colors">
+        {/* MAIN TWO-RAIL SETTINGS WORKSPACE */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* LEFT RAIL (Primary Identity + Appearance) */}
+          <div className="lg:col-span-8 flex flex-col gap-6 min-w-0">
+            {/* ACCOUNT & SECURITY */}
+            <section className="rounded-2xl border border-border bg-card p-6">
+              <div className="flex items-start gap-3 pb-5 border-b border-border">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                  <User className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold text-foreground tracking-tight">
+                    Account &amp; Security
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Manage your profile details and password
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-5">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Email Address
+                  </Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
                       <Mail className="h-4 w-4" />
                     </div>
-                    <div className="flex items-center h-11 w-full rounded-xl border border-border bg-muted/40 px-10 text-sm text-foreground/85 font-medium cursor-not-allowed">
+                    <div className="flex items-center h-10 w-full rounded-xl border border-border bg-muted/40 pl-9 pr-3 text-sm text-foreground/85 font-medium cursor-not-allowed">
                       <span className="truncate">{email || user?.email || 'No email linked'}</span>
-                    </div>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <div className="h-2 w-2 rounded-full bg-success" />
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Full Name</Label>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Full Name
+                  </Label>
                   <div className="flex gap-2">
-                    <div className="relative group flex-1">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
+                    <div className="relative flex-1 min-w-0">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
                         <User className="h-4 w-4" />
                       </div>
                       <Input
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
                         placeholder="Your full name"
-                        className="h-11 pl-10 rounded-xl border-border bg-background focus:bg-background transition-all focus:ring-2 focus:ring-ring/30"
+                        className="h-10 pl-9 rounded-xl border-border bg-background focus:bg-background transition-all focus:ring-2 focus:ring-ring/30"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -578,52 +588,569 @@ export default function SettingsPageContent() {
                     </div>
                     <Button
                       onClick={handleSaveDisplayName}
-                      className="h-11 px-6 rounded-xl font-medium tracking-wide"
+                      className="h-10 px-4 rounded-xl font-medium whitespace-nowrap shrink-0"
                     >
-                      <Save className="h-4 w-4 mr-2 stroke-[2.5]" />
+                      <Save className="h-4 w-4 mr-1.5" />
                       Save
                     </Button>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-6 border-t border-border mt-4">
-                <div className="text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5 text-success" />
-                    Account is secure
-                  </span>
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 mt-5 border-t border-border">
+                <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-success shrink-0" />
+                  <span>Account credentials active</span>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setIsPasswordModalOpen(true)}
-                  className="h-9 px-4 rounded-lg text-xs font-medium"
+                  className="h-9 px-3.5 rounded-lg text-xs font-medium whitespace-nowrap"
                 >
-                  <Lock className="h-3.5 w-3.5 mr-2 text-primary" />
+                  <Lock className="h-3.5 w-3.5 mr-1.5 text-primary" />
                   Change Password
                 </Button>
               </div>
-            </div>
-          </BentoGridItem>
+            </section>
 
-          {/* DATA VAULT */}
-          <BentoGridItem
-            title="Data Vault"
-            icon={<Database className="h-5 w-5 text-emerald-500" />}
-            span={1}
-            description="Manage local backups"
-            className="md:col-span-1"
-            disableHover
-          >
-            <div className="flex flex-col gap-3 mt-4">
+            {/* APPEARANCE */}
+            <section className="rounded-2xl border border-border bg-card p-6">
+              <div className="flex items-start gap-3 pb-5 border-b border-border">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                  <Palette className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold text-foreground tracking-tight">
+                    Appearance
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Customize surface brightness, theme palette, and accent color
+                  </p>
+                </div>
+              </div>
+
+              {(() => {
+                const activeMode = mounted ? theme : 'system';
+                const activeResolved = mounted ? resolvedTheme : 'light';
+                const activeColorTheme = mounted ? colorTheme : DEFAULT_COLOR_THEME;
+                const activeAccentOverride = mounted ? accentOverride : DEFAULT_ACCENT_OVERRIDE;
+                const activeThemeMeta = getColorThemeById(activeColorTheme);
+                const activeThemePreview =
+                  activeResolved === 'dark'
+                    ? activeThemeMeta.darkPreview
+                    : activeThemeMeta.lightPreview;
+                const isCustomized =
+                  mounted &&
+                  (activeColorTheme !== DEFAULT_COLOR_THEME ||
+                    activeAccentOverride !== DEFAULT_ACCENT_OVERRIDE);
+
+                return (
+                  <div className="space-y-5 pt-5">
+                    {/* 1. Surface Mode Segmented Control */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Surface Mode
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {activeMode === 'system'
+                            ? `Following OS (${activeResolved === 'dark' ? 'Dark' : 'Light'})`
+                            : activeMode === 'dark'
+                            ? 'Dark surface'
+                            : 'Light surface'}
+                        </span>
+                      </div>
+                      <div
+                        role="radiogroup"
+                        aria-label="Surface mode"
+                        className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-muted/60 border border-border/60"
+                      >
+                        {(
+                          [
+                            { value: 'light', icon: Sun, label: 'Light' },
+                            { value: 'dark', icon: Moon, label: 'Dark' },
+                            { value: 'system', icon: Monitor, label: 'System' },
+                          ] as const
+                        ).map((opt) => {
+                          const isSelected = activeMode === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={isSelected}
+                              onClick={() => setTheme(opt.value)}
+                              className={cn(
+                                'min-h-[38px] px-3 py-1.5 rounded-lg flex items-center justify-center gap-2 text-xs font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]',
+                                isSelected
+                                  ? 'bg-card text-foreground shadow-xs border border-border'
+                                  : 'text-muted-foreground hover:text-foreground border border-transparent'
+                              )}
+                            >
+                              <opt.icon className="w-3.5 h-3.5 shrink-0" />
+                              <span>{opt.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2. Theme Palette Gallery */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Theme Palette
+                        </span>
+                        <span className="text-xs font-medium text-foreground">
+                          {activeThemeMeta.name}
+                        </span>
+                      </div>
+                      <div
+                        role="radiogroup"
+                        aria-label="Theme palette"
+                        className="grid grid-cols-2 sm:grid-cols-3 gap-3"
+                      >
+                        {COLOR_THEMES.map((item) => {
+                          const isSelected = activeColorTheme === item.id;
+                          const preview =
+                            activeResolved === 'dark' ? item.darkPreview : item.lightPreview;
+
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              role="radio"
+                              aria-checked={isSelected}
+                              onClick={() => setColorTheme(item.id)}
+                              className={cn(
+                                'group relative flex flex-col text-left rounded-xl overflow-hidden border transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98]',
+                                isSelected
+                                  ? 'border-primary ring-1 ring-primary/30 shadow-xs'
+                                  : 'border-border hover:border-foreground/25'
+                              )}
+                            >
+                              <div
+                                className="w-full p-2.5 border-b"
+                                style={{
+                                  backgroundColor: preview.bg,
+                                  borderColor: preview.border,
+                                }}
+                                aria-hidden="true"
+                              >
+                                <div
+                                  className="rounded-lg p-2 space-y-2 border"
+                                  style={{
+                                    backgroundColor: preview.card,
+                                    borderColor: preview.border,
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div
+                                      className="h-1.5 w-12 rounded-sm opacity-35"
+                                      style={{
+                                        backgroundColor:
+                                          activeResolved === 'dark' ? '#e5e7eb' : '#1f2937',
+                                      }}
+                                    />
+                                    <span
+                                      className="w-2 h-2 rounded-sm shrink-0"
+                                      style={{ backgroundColor: preview.secondary }}
+                                    />
+                                  </div>
+
+                                  <div
+                                    className="h-1.5 w-full rounded-sm overflow-hidden"
+                                    style={{ backgroundColor: preview.border }}
+                                  >
+                                    <div
+                                      className="h-full w-2/3 rounded-sm"
+                                      style={{ backgroundColor: preview.primary }}
+                                    />
+                                  </div>
+
+                                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                                    <span
+                                      className="h-2.5 w-9 rounded-sm"
+                                      style={{ backgroundColor: preview.primary }}
+                                    />
+                                    <span
+                                      className="h-1.5 w-6 rounded-sm opacity-60"
+                                      style={{ backgroundColor: preview.secondary }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="p-2.5 bg-card flex items-start justify-between gap-2 flex-1">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-foreground leading-snug truncate">
+                                    {item.name}
+                                  </p>
+                                  <p className="text-[11px] text-muted-foreground leading-tight mt-0.5 line-clamp-1">
+                                    {item.tagline}
+                                  </p>
+                                </div>
+                                {isSelected && (
+                                  <span className="w-4 h-4 rounded-md bg-primary text-primary-foreground flex items-center justify-center shrink-0 mt-0.5">
+                                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 3. Accent Color Override Row */}
+                    <div className="space-y-2.5 pt-4 border-t border-border">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Accent Color Override
+                        </span>
+                        {isCustomized && (
+                          <button
+                            type="button"
+                            onClick={resetAppearance}
+                            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md px-2 py-1 hover:bg-muted/60 outline-none focus-visible:ring-2 focus-visible:ring-ring whitespace-nowrap"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Reset</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div
+                        role="radiogroup"
+                        aria-label="Accent color override"
+                        className="flex flex-wrap items-center gap-2"
+                      >
+                        {ACCENT_OVERRIDES.map((item) => {
+                          const isSelected = activeAccentOverride === item.id;
+                          const swatchColor =
+                            activeResolved === 'dark' ? item.swatchDark : item.swatchLight;
+
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              role="radio"
+                              aria-checked={isSelected}
+                              onClick={() => setAccentOverride(item.id)}
+                              title={item.label}
+                              className={cn(
+                                'min-h-[36px] pl-2 pr-3 py-1.5 rounded-lg inline-flex items-center gap-2 border text-xs font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]',
+                                isSelected
+                                  ? 'border-primary bg-primary/10 text-foreground'
+                                  : 'border-border bg-muted/30 hover:bg-muted/60 text-muted-foreground hover:text-foreground'
+                              )}
+                            >
+                              {item.id === 'theme' ? (
+                                <span
+                                  className="relative flex items-center justify-center w-3.5 h-3.5 rounded-sm overflow-hidden border border-border/80 shrink-0"
+                                  aria-hidden="true"
+                                >
+                                  <span
+                                    className="w-1/2 h-full"
+                                    style={{ backgroundColor: activeThemePreview.primary }}
+                                  />
+                                  <span
+                                    className="w-1/2 h-full"
+                                    style={{ backgroundColor: activeThemePreview.secondary }}
+                                  />
+                                </span>
+                              ) : (
+                                <span
+                                  className="relative flex items-center justify-center w-3.5 h-3.5 rounded-sm border border-black/15 dark:border-white/20 shrink-0"
+                                  style={{ backgroundColor: swatchColor }}
+                                  aria-hidden="true"
+                                >
+                                  {isSelected && (
+                                    <Check
+                                      className={cn(
+                                        'w-2.5 h-2.5 stroke-[3]',
+                                        item.id === 'ink' && activeResolved === 'dark'
+                                          ? 'text-zinc-950'
+                                          : 'text-white'
+                                      )}
+                                    />
+                                  )}
+                                </span>
+                              )}
+                              <span>{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 4. Non-interactive Theme Token Preview */}
+                    <div
+                      aria-label="Theme color preview"
+                      className="rounded-xl bg-background border border-border p-3 space-y-2 select-none pointer-events-none"
+                    >
+                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                        <span>Palette Preview</span>
+                        <span>Sample only</span>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
+                            <span className="w-3.5 h-3.5 rounded bg-success/15 text-success flex items-center justify-center shrink-0">
+                              <Check className="w-2.5 h-2.5 stroke-[2.5]" />
+                            </span>
+                            <span className="font-medium text-foreground">Streak</span>
+                            <span className="font-mono tabular-nums text-muted-foreground">5/6</span>
+                          </div>
+
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
+                            <span className="text-muted-foreground">Surface</span>
+                            <span className="font-mono font-semibold tabular-nums text-foreground">
+                              ₹420
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-medium whitespace-nowrap">
+                          <span>Primary Accent</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </section>
+          </div>
+
+          {/* RIGHT RAIL (Cloud Sync, Workspace Modules, Sensory Feedback, Data Vault) */}
+          <div className="lg:col-span-4 flex flex-col gap-6 min-w-0">
+            {/* CLOUD SYNC */}
+            {isAuthenticated && (
+              <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+                <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                      <CloudCog className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-semibold text-foreground tracking-tight">
+                        Cloud Sync
+                      </h2>
+                      <p className="text-[11px] text-muted-foreground">
+                        {isSyncing ? 'Syncing local changes...' : 'Supabase background sync'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <SyncStatusPanel />
+              </section>
+            )}
+
+            {/* WORKSPACE MODULES */}
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-center gap-2.5 pb-3 border-b border-border">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                  <Layers className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground tracking-tight">
+                    Workspace Modules
+                  </h2>
+                  <p className="text-[11px] text-muted-foreground">
+                    Configure active Life OS sections
+                  </p>
+                </div>
+              </div>
+
+              <div className="divide-y divide-border">
+                <div className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">Habit-Only Mode</p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Focused habit tracker view
+                    </p>
+                  </div>
+                  <Button
+                    variant={settings.habitOnlyMode ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => handleToggleSetting('habitOnlyMode')}
+                    className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
+                  >
+                    {settings.habitOnlyMode ? 'Active' : 'Off'}
+                  </Button>
+                </div>
+
+                <div
+                  className={cn(
+                    'flex items-center justify-between gap-3 py-3 transition-opacity',
+                    settings.habitOnlyMode && 'opacity-45 pointer-events-none'
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">Tasks Module</p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Checklists &amp; daily tasks
+                    </p>
+                  </div>
+                  <Button
+                    variant={settings.showTasks !== false ? 'default' : 'outline'}
+                    size="sm"
+                    disabled={!!settings.habitOnlyMode}
+                    onClick={() => handleToggleSetting('showTasks')}
+                    className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
+                  >
+                    {settings.showTasks !== false ? 'Enabled' : 'Hidden'}
+                  </Button>
+                </div>
+
+                <div
+                  className={cn(
+                    'flex items-center justify-between gap-3 pt-3 transition-opacity',
+                    settings.habitOnlyMode && 'opacity-45 pointer-events-none'
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      Goals &amp; Milestones
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Long-term SMART targets
+                    </p>
+                  </div>
+                  <Button
+                    variant={settings.showGoals !== false ? 'default' : 'outline'}
+                    size="sm"
+                    disabled={!!settings.habitOnlyMode}
+                    onClick={() => handleToggleSetting('showGoals')}
+                    className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
+                  >
+                    {settings.showGoals !== false ? 'Enabled' : 'Hidden'}
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            {/* SENSORY FEEDBACK */}
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-center gap-2.5 pb-3 border-b border-border">
+                <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                  <Volume2 className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground tracking-tight">
+                    Sensory Feedback
+                  </h2>
+                  <p className="text-[11px] text-muted-foreground">
+                    Audio and tactile responses
+                  </p>
+                </div>
+              </div>
+
+              <div className="divide-y divide-border">
+                <div className="flex items-center justify-between gap-3 py-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={cn(
+                        'p-1.5 rounded-lg shrink-0',
+                        settings.soundEnabled
+                          ? 'bg-primary/12 text-primary'
+                          : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {settings.soundEnabled ? (
+                        <Volume2 className="w-3.5 h-3.5" />
+                      ) : (
+                        <VolumeX className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">Sound Effects</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        Pops and completion chimes
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant={settings.soundEnabled ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={handleToggleSound}
+                    className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
+                  >
+                    {settings.soundEnabled ? 'On' : 'Off'}
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={cn(
+                        'p-1.5 rounded-lg shrink-0',
+                        settings.hapticsEnabled
+                          ? 'bg-primary/12 text-primary'
+                          : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {settings.hapticsEnabled ? (
+                        <Vibrate className="w-3.5 h-3.5" />
+                      ) : (
+                        <VibrateOff className="w-3.5 h-3.5" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">Haptics</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        Subtle vibration on tap
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant={settings.hapticsEnabled ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={handleToggleHaptics}
+                    className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
+                  >
+                    {settings.hapticsEnabled ? 'On' : 'Off'}
+                  </Button>
+                </div>
+              </div>
+            </section>
+
+            {/* DATA VAULT */}
+            <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                    <Database className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-foreground tracking-tight">
+                      Data Vault
+                    </h2>
+                    <p className="text-[11px] text-muted-foreground">
+                      Backups, exports &amp; storage
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={cn(
+                    'text-[11px] font-medium px-2 py-0.5 rounded-md whitespace-nowrap shrink-0',
+                    isStoragePersistent
+                      ? 'bg-success/12 text-success'
+                      : 'bg-warning/12 text-warning'
+                  )}
+                >
+                  {isStoragePersistent ? 'Persistent' : 'Standard'}
+                </span>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleExportData}
                   disabled={isExporting}
-                  className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/50"
+                  className="w-full justify-center gap-1.5 h-9 px-2.5 text-xs whitespace-nowrap"
                   title="Backup to JSON"
                 >
                   <Download className="h-3.5 w-3.5 shrink-0" />
@@ -635,7 +1162,7 @@ export default function SettingsPageContent() {
                   size="sm"
                   onClick={handleExportCSVData}
                   disabled={isExporting}
-                  className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-600 hover:border-emerald-500/50"
+                  className="w-full justify-center gap-1.5 h-9 px-2.5 text-xs whitespace-nowrap"
                   title="Export to CSV"
                 >
                   <Download className="h-3.5 w-3.5 shrink-0" />
@@ -653,585 +1180,152 @@ export default function SettingsPageContent() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-600 hover:border-blue-500/50"
+                  className="w-full justify-center gap-1.5 h-9 px-3 text-xs border-dashed whitespace-nowrap"
                   title="Restore from JSON"
                 >
                   <Upload className="h-3.5 w-3.5 shrink-0" />
-                  <span>Restore JSON</span>
+                  <span>Restore from JSON Backup</span>
                 </Button>
               </div>
 
               {hasDuplicates && (
-                <div className="mt-8 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20 flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-600">
-                    <ShieldAlert className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{duplicateCounts.habits + duplicateCounts.goals} duplicates found</span>
+                <div className="p-3 bg-warning/10 rounded-xl border border-warning/20 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-warning min-w-0">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">
+                      {duplicateCounts.habits + duplicateCounts.goals} duplicates found
+                    </span>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={handleCleanupDuplicates} disabled={isCleaning} className="h-7 text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 w-full">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleCleanupDuplicates}
+                    disabled={isCleaning}
+                    className="h-7 px-2.5 text-xs bg-warning/15 hover:bg-warning/25 text-warning whitespace-nowrap shrink-0"
+                  >
                     Fix Now
                   </Button>
                 </div>
               )}
+            </section>
+          </div>
+        </div>
 
-              {/* Storage Protection active badge */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border/40 mt-1">
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-semibold text-foreground truncate">Storage Protection</span>
-                  <span className="text-[10px] text-muted-foreground truncate">WebKit eviction prevention</span>
-                </div>
-                <Badge 
-                  variant="outline" 
-                  className={cn(
-                    "text-[10px] font-bold px-2 py-0.5", 
-                    isStoragePersistent 
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" 
-                      : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
-                  )}
-                >
-                  {isStoragePersistent ? "Active" : "Standard"}
-                </Badge>
+        {/* BOTTOM UTILITY ROW */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          {/* HELP & GUIDES */}
+          <section
+            className={cn(
+              'rounded-2xl border border-border bg-card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4',
+              showDevTools ? 'lg:col-span-5' : 'lg:col-span-6'
+            )}
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+                <HelpCircle className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-foreground tracking-tight">
+                  Help &amp; Guides
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Replay the guided tour or explore the platform reference.
+                </p>
               </div>
             </div>
-          </BentoGridItem>
-
-          {/* APPEARANCE */}
-          <BentoGridItem
-            title="Appearance"
-            icon={<Palette className="h-5 w-5 text-primary" />}
-            span={2}
-            className="md:col-span-2"
-            description="Customize surface brightness, theme palette, and accent color"
-            disableHover
-          >
-            {(() => {
-              const activeMode = mounted ? theme : 'system';
-              const activeResolved = mounted ? resolvedTheme : 'light';
-              const activeColorTheme = mounted ? colorTheme : DEFAULT_COLOR_THEME;
-              const activeAccentOverride = mounted ? accentOverride : DEFAULT_ACCENT_OVERRIDE;
-              const activeThemeMeta = getColorThemeById(activeColorTheme);
-              const activeThemePreview =
-                activeResolved === 'dark'
-                  ? activeThemeMeta.darkPreview
-                  : activeThemeMeta.lightPreview;
-              const isCustomized =
-                mounted &&
-                (activeColorTheme !== DEFAULT_COLOR_THEME ||
-                  activeAccentOverride !== DEFAULT_ACCENT_OVERRIDE);
-
-              return (
-                <div className="space-y-5 mt-4">
-                  {/* 1. Surface Mode Segmented Control */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        Surface Mode
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {activeMode === 'system'
-                          ? `Following OS (${activeResolved === 'dark' ? 'Dark' : 'Light'})`
-                          : activeMode === 'dark'
-                          ? 'Dark surface'
-                          : 'Light surface'}
-                      </span>
-                    </div>
-                    <div
-                      role="radiogroup"
-                      aria-label="Surface mode"
-                      className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-muted/60 border border-border/60"
-                    >
-                      {(
-                        [
-                          { value: 'light', icon: Sun, label: 'Light' },
-                          { value: 'dark', icon: Moon, label: 'Dark' },
-                          { value: 'system', icon: Monitor, label: 'System' },
-                        ] as const
-                      ).map((opt) => {
-                        const isSelected = activeMode === opt.value;
-                        return (
-                          <button
-                            key={opt.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={isSelected}
-                            onClick={() => setTheme(opt.value)}
-                            className={cn(
-                              'min-h-[40px] px-3 py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]',
-                              isSelected
-                                ? 'bg-card text-foreground shadow-xs border border-border'
-                                : 'text-muted-foreground hover:text-foreground border border-transparent'
-                            )}
-                          >
-                            <opt.icon className="w-3.5 h-3.5 shrink-0" />
-                            <span>{opt.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 2. Theme Palette Gallery (2-col mobile, 3-col desktop) */}
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        Theme Palette
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {activeThemeMeta.name}
-                      </span>
-                    </div>
-                    <div
-                      role="radiogroup"
-                      aria-label="Theme palette"
-                      className="grid grid-cols-2 md:grid-cols-3 gap-3"
-                    >
-                      {COLOR_THEMES.map((item) => {
-                        const isSelected = activeColorTheme === item.id;
-                        const preview =
-                          activeResolved === 'dark' ? item.darkPreview : item.lightPreview;
-
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={isSelected}
-                            onClick={() => setColorTheme(item.id)}
-                            className={cn(
-                              'group relative flex flex-col text-left rounded-xl overflow-hidden border transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98]',
-                              isSelected
-                                ? 'border-primary ring-1 ring-primary/30 shadow-xs'
-                                : 'border-border hover:border-foreground/25'
-                            )}
-                          >
-                            {/* Top Half: Miniature Live App Preview */}
-                            <div
-                              className="w-full p-2.5 border-b"
-                              style={{
-                                backgroundColor: preview.bg,
-                                borderColor: preview.border,
-                              }}
-                              aria-hidden="true"
-                            >
-                              <div
-                                className="rounded-lg p-2 space-y-2 border"
-                                style={{
-                                  backgroundColor: preview.card,
-                                  borderColor: preview.border,
-                                }}
-                              >
-                                {/* Mini top row: bar + secondary chart dot */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div
-                                    className="h-1.5 w-12 rounded-full opacity-35"
-                                    style={{
-                                      backgroundColor:
-                                        activeResolved === 'dark' ? '#e5e7eb' : '#1f2937',
-                                    }}
-                                  />
-                                  <span
-                                    className="w-2 h-2 rounded-full shrink-0"
-                                    style={{ backgroundColor: preview.secondary }}
-                                  />
-                                </div>
-
-                                {/* Mini progress bar */}
-                                <div
-                                  className="h-1.5 w-full rounded-full overflow-hidden"
-                                  style={{ backgroundColor: preview.border }}
-                                >
-                                  <div
-                                    className="h-full w-2/3 rounded-full"
-                                    style={{ backgroundColor: preview.primary }}
-                                  />
-                                </div>
-
-                                {/* Mini primary accent pill + subtle secondary line */}
-                                <div className="flex items-center justify-between gap-2 pt-0.5">
-                                  <span
-                                    className="h-3 w-10 rounded-md"
-                                    style={{ backgroundColor: preview.primary }}
-                                  />
-                                  <span
-                                    className="h-1.5 w-6 rounded-full opacity-60"
-                                    style={{ backgroundColor: preview.secondary }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Bottom Half: Name, Tagline & Checkmark */}
-                            <div className="p-2.5 bg-card flex items-start justify-between gap-2 flex-1">
-                              <div className="min-w-0">
-                                <p className="text-xs font-semibold text-foreground leading-snug truncate">
-                                  {item.name}
-                                </p>
-                                <p className="text-[11px] text-muted-foreground leading-tight mt-0.5 line-clamp-1">
-                                  {item.tagline}
-                                </p>
-                              </div>
-                              {isSelected && (
-                                <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 mt-0.5">
-                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 3. Optional Accent Color Override Row */}
-                  <div className="space-y-2.5 pt-1 border-t border-border/60">
-                    <div className="flex items-center justify-between gap-2 pt-3">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        Accent Color Override
-                      </span>
-                      {isCustomized && (
-                        <button
-                          type="button"
-                          onClick={resetAppearance}
-                          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md px-2 py-1 hover:bg-muted/60 outline-none focus-visible:ring-2 focus-visible:ring-ring whitespace-nowrap"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          <span>Reset</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div
-                      role="radiogroup"
-                      aria-label="Accent color override"
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      {ACCENT_OVERRIDES.map((item) => {
-                        const isSelected = activeAccentOverride === item.id;
-                        const swatchColor =
-                          activeResolved === 'dark' ? item.swatchDark : item.swatchLight;
-
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={isSelected}
-                            onClick={() => setAccentOverride(item.id)}
-                            title={item.label}
-                            className={cn(
-                              'min-h-[38px] pl-2 pr-3 py-1.5 rounded-full inline-flex items-center gap-2 border text-xs font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]',
-                              isSelected
-                                ? 'border-primary bg-accent/60 text-foreground'
-                                : 'border-border bg-muted/35 hover:bg-muted/70 text-muted-foreground hover:text-foreground'
-                            )}
-                          >
-                            {item.id === 'theme' ? (
-                              <span
-                                className="relative flex items-center justify-center w-4 h-4 rounded-full overflow-hidden border border-border/80 shrink-0"
-                                aria-hidden="true"
-                              >
-                                <span
-                                  className="w-1/2 h-full"
-                                  style={{ backgroundColor: activeThemePreview.primary }}
-                                />
-                                <span
-                                  className="w-1/2 h-full"
-                                  style={{ backgroundColor: activeThemePreview.secondary }}
-                                />
-                              </span>
-                            ) : (
-                              <span
-                                className="relative flex items-center justify-center w-4 h-4 rounded-full border border-black/15 dark:border-white/20 shrink-0"
-                                style={{ backgroundColor: swatchColor }}
-                                aria-hidden="true"
-                              >
-                                {isSelected && (
-                                  <Check
-                                    className={cn(
-                                      'w-2.5 h-2.5 stroke-[3]',
-                                      item.id === 'ink' && activeResolved === 'dark'
-                                        ? 'text-zinc-950'
-                                        : 'text-white'
-                                    )}
-                                  />
-                                )}
-                              </span>
-                            )}
-                            <span>{item.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 4. Non-interactive Theme Token Preview */}
-                  <div
-                    aria-label="Theme color preview"
-                    className="rounded-xl bg-background border border-border p-3 space-y-2 select-none pointer-events-none"
-                  >
-                    <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                      <span>Palette Preview</span>
-                      <span>Sample only</span>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
-                          <span className="w-3.5 h-3.5 rounded bg-success/15 text-success flex items-center justify-center shrink-0">
-                            <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                          </span>
-                          <span className="font-medium text-foreground">Streak</span>
-                          <span className="font-mono tabular-nums text-muted-foreground">5/6</span>
-                        </div>
-
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
-                          <span className="text-muted-foreground">Surface</span>
-                          <span className="font-mono font-semibold tabular-nums text-foreground">
-                            ₹420
-                          </span>
-                        </div>
-                      </div>
-
-                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-medium whitespace-nowrap">
-                        <span>Primary Accent</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </BentoGridItem>
-
-          {/* SENSORY FEEDBACK */}
-          <BentoGridItem
-            title="Sensory Feedback"
-            icon={<Volume2 className="h-5 w-5 text-primary" />}
-            span={1}
-            className="md:col-span-1"
-            disableHover
-          >
-            <div className="flex flex-col gap-3 mt-4">
-              <div className="flex items-center justify-between p-3 surface-subtle">
-                <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-lg", settings.soundEnabled ? "bg-primary/12 text-primary" : "bg-muted text-muted-foreground")}>
-                    {settings.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Sound Effects</span>
-                    <span className="text-[10px] text-muted-foreground">Pops and chimes</span>
-                  </div>
-                </div>
-                <Button 
-                  variant={settings.soundEnabled ? "default" : "outline"} 
-                  size="sm" 
-                  onClick={handleToggleSound}
-                  className="h-8 px-3 text-xs"
-                >
-                  {settings.soundEnabled ? "On" : "Off"}
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between p-3 surface-subtle">
-                <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-lg", settings.hapticsEnabled ? "bg-primary/12 text-primary" : "bg-muted text-muted-foreground")}>
-                    {settings.hapticsEnabled ? <Vibrate className="w-4 h-4" /> : <VibrateOff className="w-4 h-4" />}
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Haptics</span>
-                    <span className="text-[10px] text-muted-foreground">Vibrations on complete</span>
-                  </div>
-                </div>
-                <Button 
-                  variant={settings.hapticsEnabled ? "default" : "outline"} 
-                  size="sm" 
-                  onClick={handleToggleHaptics}
-                  className="h-8 px-3 text-xs"
-                >
-                  {settings.hapticsEnabled ? "On" : "Off"}
-                </Button>
-              </div>
-            </div>
-          </BentoGridItem>
-
-          {/* CLOUD SYNC */}
-          {isAuthenticated && (
-            <BentoGridItem
-              span={3}
-              title={
-                <div className="flex items-center gap-2">
-                  <span>Cloud Sync</span>
-                  {isSyncing && <span className="text-xs text-muted-foreground animate-pulse font-normal ml-2">(Syncing...)</span>}
-                </div>
-              }
-              icon={<CloudCog className="h-5 w-5 text-blue-500" />}
-              className="md:col-span-2 lg:col-span-3 self-start p-5"
-              disableHover
-            >
-              <div className="mt-1">
-                <SyncStatusPanel />
-              </div>
-            </BentoGridItem>
-          )}
-
-          {/* HELP & ACADEMY */}
-          <BentoGridItem
-            title="Help & Academy"
-            icon={<HelpCircle className="h-5 w-5 text-info" />}
-            span={1}
-            className="md:col-span-1"
-            disableHover
-          >
-            <div className="flex flex-col gap-3 mt-4">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Replay the interactive guided tour or read the detailed platform guide.
-              </p>
-              
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleReplayTour}
-                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed hover:border-primary/40 hover:bg-accent/50"
+                className="h-9 px-3 text-xs gap-1.5 whitespace-nowrap"
                 title="Restart Guided Tour"
               >
                 <RefreshCw className="h-3.5 w-3.5 shrink-0" />
-                <span>Replay Walkthrough</span>
+                <span>Replay Tour</span>
               </Button>
-
               <Button
                 variant="outline"
                 size="sm"
                 asChild
-                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed hover:border-primary/40 hover:bg-accent/50"
+                className="h-9 px-3 text-xs gap-1.5 whitespace-nowrap"
               >
-                <Link href="/tutorial" className="flex items-center justify-center gap-1.5">
+                <Link href="/tutorial">
                   <BookOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span>View Help Guides</span>
+                  <span>Help Guides</span>
                 </Link>
               </Button>
             </div>
-          </BentoGridItem>
+          </section>
 
-          {/* WORKSPACE MODULES */}
-          <BentoGridItem
-            title="Workspace Modules"
-            icon={<Layers className="h-5 w-5 text-primary" />}
-            span={1}
-            className="md:col-span-1"
-            disableHover
-          >
-            <div className="flex flex-col gap-3 mt-4">
-              <div className="flex items-center justify-between p-3 surface-subtle">
-                <div className="flex flex-col text-left">
-                  <span className="text-sm font-semibold text-foreground">Habit-Only Mode</span>
-                  <span className="text-[10px] text-muted-foreground max-w-[200px]">Focused, minimal habit tracker view</span>
-                </div>
-                <Button 
-                  variant={settings.habitOnlyMode ? "default" : "outline"} 
-                  size="sm" 
-                  onClick={() => handleToggleSetting('habitOnlyMode')}
-                  className="h-8 px-3 text-xs font-semibold"
-                >
-                  {settings.habitOnlyMode ? "Active" : "Disabled"}
-                </Button>
-              </div>
-
-              <div className={cn("flex items-center justify-between p-3 surface-subtle transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
-                <div className="flex flex-col text-left">
-                  <span className="text-sm font-semibold text-foreground">Tasks Module</span>
-                  <span className="text-[10px] text-muted-foreground">Checklists & daily tasks</span>
-                </div>
-                <Button 
-                  variant={settings.showTasks !== false ? "default" : "outline"} 
-                  size="sm" 
-                  disabled={!!settings.habitOnlyMode}
-                  onClick={() => handleToggleSetting('showTasks')}
-                  className="h-8 px-3 text-xs font-semibold"
-                >
-                  {settings.showTasks !== false ? "Enabled" : "Hidden"}
-                </Button>
-              </div>
-
-              <div className={cn("flex items-center justify-between p-3 surface-subtle transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
-                <div className="flex flex-col text-left">
-                  <span className="text-sm font-semibold text-foreground">Goals & Milestones</span>
-                  <span className="text-[10px] text-muted-foreground">Long-term SMART goal-setting</span>
-                </div>
-                <Button 
-                  variant={settings.showGoals !== false ? "default" : "outline"} 
-                  size="sm" 
-                  disabled={!!settings.habitOnlyMode}
-                  onClick={() => handleToggleSetting('showGoals')}
-                  className="h-8 px-3 text-xs font-semibold"
-                >
-                  {settings.showGoals !== false ? "Enabled" : "Hidden"}
-                </Button>
-              </div>
-            </div>
-          </BentoGridItem>
-
-          {/* DEBUG TOOLS */}
-          {isAuthenticated && process.env.NODE_ENV === 'development' && (
-            <BentoGridItem
-              title="Debug Tools"
-              icon={<RefreshCw className="h-5 w-5 text-orange-500" />}
-              span={1}
-              description="Force sync actions"
-              className="md:col-span-1"
-              disableHover
-            >
-              <div className="flex flex-col gap-3 mt-4">
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleForcePush}
-                    disabled={isForceSyncing}
-                    className="w-full justify-center gap-1.5 h-9 px-2 text-xs hover:bg-orange-500/10 hover:text-orange-600"
-                    title="Overwrite Cloud Data"
-                  >
-                    <Upload className="h-3.5 w-3.5 shrink-0" />
-                    <span>Push</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleForcePull}
-                    disabled={isForceSyncing}
-                    className="w-full justify-center gap-1.5 h-9 px-2 text-xs hover:bg-blue-500/10 hover:text-blue-600"
-                    title="Overwrite Local Data"
-                  >
-                    <Download className="h-3.5 w-3.5 shrink-0" />
-                    <span>Pull</span>
-                  </Button>
-                </div>
-                <p className="text-[10px] text-muted-foreground text-center">
-                  ⚠️ Advanced tools - use with caution
+          {/* DEBUG TOOLS (DEV ONLY) */}
+          {showDevTools && (
+            <section className="lg:col-span-3 rounded-2xl border border-border bg-card p-5 flex flex-col justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground tracking-tight">
+                  Developer Sync
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Manual cloud override actions
                 </p>
               </div>
-            </BentoGridItem>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleForcePush}
+                  disabled={isForceSyncing}
+                  className="h-9 px-2.5 text-xs gap-1.5 whitespace-nowrap"
+                  title="Overwrite Cloud Data"
+                >
+                  <Upload className="h-3.5 w-3.5 shrink-0" />
+                  <span>Push</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleForcePull}
+                  disabled={isForceSyncing}
+                  className="h-9 px-2.5 text-xs gap-1.5 whitespace-nowrap"
+                  title="Overwrite Local Data"
+                >
+                  <Download className="h-3.5 w-3.5 shrink-0" />
+                  <span>Pull</span>
+                </Button>
+              </div>
+            </section>
           )}
 
           {/* DANGER ZONE */}
-          <BentoGridItem
-            title="Danger Zone"
-            icon={<Trash2 className="h-5 w-5 text-red-500" />}
-            span={1}
-            className="border-red-500/20 bg-red-500/5 md:col-span-1"
-            disableHover
+          <section
+            className={cn(
+              'rounded-2xl border border-destructive/25 bg-destructive/5 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4',
+              showDevTools ? 'lg:col-span-4' : 'lg:col-span-6'
+            )}
           >
-            <div className="mt-4">
-              <p className="text-xs text-muted-foreground mb-4">
-                Permanently delete all local data
-              </p>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setShowClearDataDialog(true)}
-                className="w-full"
-              >
-                Reset All
-              </Button>
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-destructive/15 text-destructive shrink-0">
+                <Trash2 className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-foreground tracking-tight">
+                  Danger Zone
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Permanently clear local habits, goals, and synced workspace data.
+                </p>
+              </div>
             </div>
-          </BentoGridItem>
-        </BentoGrid>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowClearDataDialog(true)}
+              className="h-9 px-4 text-xs font-medium whitespace-nowrap shrink-0"
+            >
+              Reset All
+            </Button>
+          </section>
+        </div>
       </FadeIn>
 
       <AvatarSelector

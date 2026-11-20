@@ -40,11 +40,11 @@ export function SyncStatusPanel() {
         return labels[entity] || entity;
     };
 
-    const getStatusColor = () => {
-        if (syncError) return 'bg-red-500 shadow-red-500/50';
-        if (isSyncing) return 'bg-blue-500 shadow-blue-500/50 animate-pulse';
-        if (pendingChanges > 0) return 'bg-amber-500 shadow-amber-500/50';
-        return 'bg-emerald-500 shadow-emerald-500/50';
+    const getStatusBg = () => {
+        if (syncError) return 'bg-destructive/15 text-destructive';
+        if (isSyncing) return 'bg-info/15 text-info';
+        if (pendingChanges > 0) return 'bg-amber-500/15 text-amber-600 dark:text-amber-400';
+        return 'bg-success/15 text-success';
     };
 
     const getStatusText = () => {
@@ -55,42 +55,44 @@ export function SyncStatusPanel() {
     };
 
     return (
-        <div className="flex items-center justify-between gap-4 w-full px-1 py-1">
-            {/* Left: Status Visuals */}
-            <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 shrink-0 rounded-full shadow-[0_0_15px_rgba(0,0,0,0.2)] ${getStatusColor()} transition-all duration-500 flex items-center justify-center ring-2 ring-white/10`}>
-                    {isSyncing ? (
-                        <RefreshCw className="w-5 h-5 text-white animate-spin" />
-                    ) : syncError ? (
-                        <AlertCircle className="w-5 h-5 text-white" />
-                    ) : (
-                        <Check className="w-5 h-5 text-white" />
-                    )}
+        <div className="space-y-2 w-full">
+            <div className="flex items-center justify-between gap-3 w-full">
+                {/* Left: Status Visuals */}
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 shrink-0 rounded-xl ${getStatusBg()} flex items-center justify-center`}>
+                        {isSyncing ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : syncError ? (
+                            <AlertCircle className="w-4 h-4" />
+                        ) : (
+                            <Check className="w-4 h-4 stroke-[2.5]" />
+                        )}
+                    </div>
+                    <div className="flex flex-col text-left min-w-0">
+                        <h3 className="text-sm font-semibold text-foreground leading-tight truncate">{getStatusText()}</h3>
+                        <p className="text-xs text-muted-foreground truncate leading-tight mt-0.5">
+                            {mounted && lastSyncTime ? formatDistanceToNow(lastSyncTime, { addSuffix: true }) : 'Not synced'}
+                        </p>
+                    </div>
                 </div>
-                <div className="flex flex-col text-left">
-                    <h3 className="text-sm font-bold dark:text-white text-gray-900 leading-none mb-1">{getStatusText()}</h3>
-                    <p className="text-[10px] text-muted-foreground whitespace-nowrap leading-none">
-                        {mounted && lastSyncTime ? formatDistanceToNow(lastSyncTime, { addSuffix: true }) : 'Not synced'}
-                    </p>
-                </div>
+
+                {/* Right: Action Button */}
+                <button
+                    type="button"
+                    onClick={() => triggerSync()}
+                    disabled={isSyncing}
+                    className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3.5 h-9 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded-lg transition-colors text-xs whitespace-nowrap"
+                >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    {isSyncing ? 'Syncing' : 'Sync'}
+                </button>
             </div>
 
-            {/* Error Message (Central/Hidden if small) */}
             {syncError && (
-                <div className="hidden md:block text-red-500 text-[10px] text-center px-2">
+                <p className="text-xs text-destructive leading-snug break-words">
                     {syncError}
-                </div>
+                </p>
             )}
-
-            {/* Right: Action Button */}
-            <button
-                onClick={() => triggerSync()}
-                disabled={isSyncing}
-                className="shrink-0 flex items-center justify-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded-lg shadow-md shadow-primary/20 transition-all text-xs border border-primary/20"
-            >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                {isSyncing ? 'Syncing...' : 'Sync'}
-            </button>
         </div>
     );
 }

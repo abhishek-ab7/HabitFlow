@@ -6,11 +6,13 @@ import {
   Landmark,
   CheckCircle2,
   Trash2,
+  Pencil,
   Zap,
   Snowflake,
   TrendingDown,
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import type { EmiStatus, EmiTracker } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -107,14 +109,16 @@ export function EmisPayoffSection() {
   const categories = useFinanceStore((s) => s.categories);
 
   const addEmiTracker = useFinanceStore((s) => s.addEmiTracker);
+  const updateEmiTracker = useFinanceStore((s) => s.updateEmiTracker);
   const payMonthlyEmi = useFinanceStore((s) => s.payMonthlyEmi);
   const deleteEmiTracker = useFinanceStore((s) => s.deleteEmiTracker);
 
   const [strategy, setStrategy] = useState<'avalanche' | 'snowball'>('avalanche');
   const [extraPayment, setExtraPayment] = useState<number>(3000);
 
-  // Add EMI dialog state
+  // Add / Edit EMI dialog state
   const [isNewOpen, setIsNewOpen] = useState(false);
+  const [editingEmi, setEditingEmi] = useState<EmiTracker | null>(null);
   const [loanName, setLoanName] = useState('');
   const [lenderName, setLenderName] = useState('');
   const [principal, setPrincipal] = useState('');
@@ -123,6 +127,9 @@ export function EmisPayoffSection() {
   const [tenure, setTenure] = useState('24');
   const [paidMonths, setPaidMonths] = useState('0');
   const [billingDay, setBillingDay] = useState('5');
+  const [emiAccountId, setEmiAccountId] = useState('');
+  const [emiStatus, setEmiStatus] = useState<EmiStatus>('active');
+  const [emiNotes, setEmiNotes] = useState('');
 
   const activeEmis = useMemo(
     () => emiTrackers.filter((e) => !e.deletedAt),
@@ -218,7 +225,40 @@ export function EmisPayoffSection() {
     };
   }, [payoffItems, extraPayment, strategy]);
 
-  const handleCreateEmi = async (e: React.FormEvent) => {
+  const openNewEmiDialog = () => {
+    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
+    setEditingEmi(null);
+    setLoanName('');
+    setLenderName('');
+    setPrincipal('');
+    setApr('11');
+    setEmiAmt('');
+    setTenure('24');
+    setPaidMonths('0');
+    setBillingDay('5');
+    setEmiAccountId(defaultAcc?.id || '');
+    setEmiStatus('active');
+    setEmiNotes('');
+    setIsNewOpen(true);
+  };
+
+  const openEditEmiDialog = (emi: EmiTracker) => {
+    setEditingEmi(emi);
+    setLoanName(emi.loanName);
+    setLenderName(emi.lenderName);
+    setPrincipal(String(emi.principalAmount));
+    setApr(String(emi.interestRateAnnual));
+    setEmiAmt(String(emi.emiAmount));
+    setTenure(String(emi.tenureMonths));
+    setPaidMonths(String(emi.paidMonths));
+    setBillingDay(String(emi.billingDayOfMonth));
+    setEmiAccountId(emi.accountId || '');
+    setEmiStatus(emi.status);
+    setEmiNotes(emi.notes || '');
+    setIsNewOpen(true);
+  };
+
+  const handleSaveEmi = async (e: React.FormEvent) => {
     e.preventDefault();
     const p = parseFloat(principal);
     const emi = parseFloat(emiAmt);
@@ -228,32 +268,51 @@ export function EmisPayoffSection() {
       return;
     }
 
-    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
-    const emiCat =
-      categories.find((c) => c.slug === 'emis-debt-repayment') || categories[0];
+    const parsedPaid = Math.min(ten, Math.max(0, parseInt(paidMonths, 10) || 0));
+    const parsedApr = Math.max(0, parseFloat(apr) || 0);
+    const parsedDay = Math.min(31, Math.max(1, parseInt(billingDay, 10) || 5));
 
-    await addEmiTracker({
-      loanName: loanName.trim(),
-      lenderName: lenderName.trim() || 'Bank / NBFC',
-      principalAmount: p,
-      interestRateAnnual: Math.max(0, parseFloat(apr) || 0),
-      emiAmount: emi,
-      tenureMonths: ten,
-      paidMonths: Math.min(ten, Math.max(0, parseInt(paidMonths, 10) || 0)),
-      startDate: new Date().toISOString().split('T')[0],
-      billingDayOfMonth: Math.min(31, Math.max(1, parseInt(billingDay, 10) || 5)),
-      categoryId: emiCat?.id || '',
-      accountId: defaultAcc?.id,
-      autoCreateTaskReminder: false,
-      status: 'active',
-    });
+    if (editingEmi) {
+      await updateEmiTracker(editingEmi.id, {
+        loanName: loanName.trim(),
+        lenderName: lenderName.trim() || 'Bank / NBFC',
+        principalAmount: p,
+        interestRateAnnual: parsedApr,
+        emiAmount: emi,
+        tenureMonths: ten,
+        paidMonths: parsedPaid,
+        billingDayOfMonth: parsedDay,
+        accountId: emiAccountId || undefined,
+        status: emiStatus,
+        notes: emiNotes.trim() || undefined,
+      });
+      toast.success(`Updated EMI tracker: ${loanName.trim()}`);
+    } else {
+      const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
+      const emiCat =
+        categories.find((c) => c.slug === 'emis-debt-repayment') || categories[0];
 
-    toast.success(`Added EMI tracker: ${loanName.trim()}`);
+      await addEmiTracker({
+        loanName: loanName.trim(),
+        lenderName: lenderName.trim() || 'Bank / NBFC',
+        principalAmount: p,
+        interestRateAnnual: parsedApr,
+        emiAmount: emi,
+        tenureMonths: ten,
+        paidMonths: parsedPaid,
+        startDate: new Date().toISOString().split('T')[0],
+        billingDayOfMonth: parsedDay,
+        categoryId: emiCat?.id || '',
+        accountId: emiAccountId || defaultAcc?.id,
+        autoCreateTaskReminder: false,
+        status: parsedPaid >= ten ? 'completed' : 'active',
+        notes: emiNotes.trim() || undefined,
+      });
+      toast.success(`Added EMI tracker: ${loanName.trim()}`);
+    }
+
     setIsNewOpen(false);
-    setLoanName('');
-    setLenderName('');
-    setPrincipal('');
-    setEmiAmt('');
+    setEditingEmi(null);
   };
 
   return (
@@ -371,7 +430,7 @@ export function EmisPayoffSection() {
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => setIsNewOpen(true)}
+          onClick={openNewEmiDialog}
           className="min-h-[40px] px-3.5 gap-1.5 text-xs rounded-xl whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
@@ -388,7 +447,7 @@ export function EmisPayoffSection() {
             type="button"
             size="sm"
             variant="secondary"
-            onClick={() => setIsNewOpen(true)}
+            onClick={openNewEmiDialog}
             className="min-h-[40px] px-4 text-xs rounded-xl"
           >
             Add Loan / EMI
@@ -479,17 +538,29 @@ export function EmisPayoffSection() {
                     </Button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await deleteEmiTracker(emi.id);
-                      toast.success(`Removed ${emi.loanName}`);
-                    }}
-                    aria-label={`Delete ${emi.loanName}`}
-                    className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-rose-500 hover:bg-muted transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEditEmiDialog(emi)}
+                      aria-label={`Edit ${emi.loanName}`}
+                      title={`Edit ${emi.loanName}`}
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await deleteEmiTracker(emi.id);
+                        toast.success(`Removed ${emi.loanName}`);
+                      }}
+                      aria-label={`Delete ${emi.loanName}`}
+                      title={`Delete ${emi.loanName}`}
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg text-muted-foreground hover:text-rose-500 hover:bg-muted transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -497,16 +568,24 @@ export function EmisPayoffSection() {
         </div>
       )}
 
-      {/* Dialog: New EMI Tracker */}
-      <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
-        <DialogContent className="sm:max-w-[440px]">
+      {/* Dialog: New / Edit EMI Tracker */}
+      <Dialog
+        open={isNewOpen}
+        onOpenChange={(open) => {
+          setIsNewOpen(open);
+          if (!open) setEditingEmi(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
-            <DialogTitle>New Loan / EMI Tracker</DialogTitle>
+            <DialogTitle>{editingEmi ? 'Edit Loan / EMI Tracker' : 'New Loan / EMI Tracker'}</DialogTitle>
             <DialogDescription>
-              Track monthly EMIs and optimize payoff with Avalanche or Snowball projections.
+              {editingEmi
+                ? 'Update loan terms, paid installments, linked account, or status.'
+                : 'Track monthly EMIs and optimize payoff with Avalanche or Snowball projections.'}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateEmi} className="space-y-3.5 py-2">
+          <form onSubmit={handleSaveEmi} className="space-y-3.5 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="emi-name">Loan Name</Label>
@@ -596,28 +675,80 @@ export function EmisPayoffSection() {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="emi-day">Billing Day (1–31)</Label>
-              <Input
-                id="emi-day"
-                type="number"
-                min="1"
-                max="31"
-                value={billingDay}
-                onChange={(e) => setBillingDay(e.target.value)}
-                className="h-11 font-mono tabular-nums"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="emi-day">Billing Day (1–31)</Label>
+                <Input
+                  id="emi-day"
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={billingDay}
+                  onChange={(e) => setBillingDay(e.target.value)}
+                  className="h-11 font-mono tabular-nums"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emi-acc">Payment Account</Label>
+                <select
+                  id="emi-acc"
+                  value={emiAccountId}
+                  onChange={(e) => setEmiAccountId(e.target.value)}
+                  className="w-full h-11 px-3 text-sm rounded-xl border border-input bg-background"
+                >
+                  <option value="">Default account</option>
+                  {accounts
+                    .filter((a) => !a.archived && !a.deletedAt)
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
             </div>
+
+            {editingEmi && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="emi-status">Status</Label>
+                  <select
+                    id="emi-status"
+                    value={emiStatus}
+                    onChange={(e) => setEmiStatus(e.target.value as EmiStatus)}
+                    className="w-full h-11 px-3 text-sm rounded-xl border border-input bg-background"
+                  >
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="foreclosed">Foreclosed</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="emi-notes">Notes (optional)</Label>
+                  <Input
+                    id="emi-notes"
+                    value={emiNotes}
+                    onChange={(e) => setEmiNotes(e.target.value)}
+                    placeholder="Optional note"
+                    className="h-11"
+                  />
+                </div>
+              </div>
+            )}
 
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsNewOpen(false)}
+                onClick={() => {
+                  setIsNewOpen(false);
+                  setEditingEmi(null);
+                }}
               >
                 Cancel
               </Button>
-              <Button type="submit">Save EMI Tracker</Button>
+              <Button type="submit">{editingEmi ? 'Update EMI' : 'Save EMI Tracker'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
