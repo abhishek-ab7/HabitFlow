@@ -180,7 +180,7 @@ export function CategoryPickerSheet({
                 onClick={() => setIsCreatingCustom(true)}
                 className="flex flex-col items-center gap-2 group focus:outline-none"
               >
-                <span className="w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-sm transition-transform group-active:scale-95">
+                <span className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center shadow-sm transition-transform group-active:scale-95">
                   <Plus className="w-6 h-6" />
                 </span>
                 <span className="text-xs font-medium text-center text-foreground leading-tight">

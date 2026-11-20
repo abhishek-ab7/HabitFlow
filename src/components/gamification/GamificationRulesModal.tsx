@@ -17,9 +17,9 @@ export function GamificationRulesModal() {
 
     return (
         <Dialog open={rulesModalOpen} onOpenChange={(open) => !open && closeRules()}>
-            <DialogContent className="max-w-full sm:max-w-3xl lg:max-w-4xl bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-white/20 dark:border-white/10">
+            <DialogContent className="max-w-full sm:max-w-3xl lg:max-w-4xl bg-card border-border rounded-2xl">
                 <DialogHeader>
-                    <DialogTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600">
+                    <DialogTitle className="text-2xl font-bold tracking-tight text-foreground">
                         How to Play
                     </DialogTitle>
                     <DialogDescription>
@@ -53,25 +53,25 @@ export function GamificationRulesModal() {
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 {/* Left Column: Stats & Pledge */}
                                 <div className="space-y-6">
-                                    <div className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-xl border border-amber-100 dark:border-amber-900/50">
-                                        <h3 className="text-lg font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2 mb-2">
-                                            <Trophy className="w-5 h-5" />
+                                    <div className="surface-subtle border-amber-500/25 bg-amber-500/5 p-4">
+                                        <h3 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-2">
+                                            <Trophy className="w-5 h-5 text-amber-500" />
                                             Your Mastery Profile
                                         </h3>
-                                        <p className="text-sm text-amber-800 dark:text-amber-300">
+                                        <p className="text-sm text-muted-foreground">
                                             Track your discipline, focus, and resilience. Level up to boost these stats!
                                         </p>
                                     </div>
-                                    <div className="bg-muted/30 rounded-xl p-3 border">
+                                    <div className="surface-subtle p-3">
                                         <DisciplineRadar />
                                     </div>
                                     <AccountabilityPledge />
                                 </div>
 
                                 {/* Right Column: Journey Map */}
-                                <div className="bg-white/50 dark:bg-black/20 rounded-xl border p-4 flex flex-col">
-                                    <h3 className="text-sm font-bold pb-3 border-b flex items-center gap-2 mb-4">
-                                        <Target className="w-4 h-4 text-indigo-500" />
+                                <div className="surface-subtle p-4 flex flex-col">
+                                    <h3 className="text-sm font-bold pb-3 border-b border-border flex items-center gap-2 mb-4">
+                                        <Target className="w-4 h-4 text-invest" />
                                         Journey Map
                                     </h3>
                                     <XPJourneyMap />
@@ -80,26 +80,26 @@ export function GamificationRulesModal() {
                         </TabsContent>
 
                         <TabsContent value="gems" className="space-y-4 focus-visible:ring-0">
-                            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-xl border border-blue-100 dark:border-blue-900/50">
-                                <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2 mb-2">
-                                    <Diamond className="w-5 h-5" />
+                            <div className="surface-subtle border-sky-500/25 bg-sky-500/5 p-4">
+                                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-2">
+                                    <Diamond className="w-5 h-5 text-sky-500" />
                                     Gem Economy
                                 </h3>
-                                <p className="text-sm text-blue-800 dark:text-blue-300">
+                                <p className="text-sm text-muted-foreground">
                                     Gems are a premium currency earned by leveling up. Spend them on powerful boosters.
                                 </p>
                             </div>
 
                             <div className="grid md:grid-cols-2 gap-4">
-                                <div className="p-4 border rounded-xl bg-gradient-to-br from-white to-blue-50 dark:from-zinc-900 dark:to-blue-950/20">
+                                <div className="p-4 surface-card">
                                     <h4 className="font-semibold flex items-center gap-2 mb-2">
-                                        <Trophy className="w-4 h-4 text-yellow-500" />
+                                        <Trophy className="w-4 h-4 text-amber-500" />
                                         How to Earn
                                     </h4>
                                     <ul className="space-y-2 text-sm">
                                         <li className="flex justify-between items-center">
                                             <span>Level Up</span>
-                                            <span className="font-bold text-blue-600">+5 Gems</span>
+                                            <span className="font-bold font-mono tabular-nums text-sky-500">+5 Gems</span>
                                         </li>
                                         <li className="flex justify-between items-center text-muted-foreground">
                                             <span>Special Events</span>
@@ -108,15 +108,15 @@ export function GamificationRulesModal() {
                                     </ul>
                                 </div>
 
-                                <div className="p-4 border rounded-xl bg-gradient-to-br from-white to-purple-50 dark:from-zinc-900 dark:to-purple-950/20">
+                                <div className="p-4 surface-card">
                                     <h4 className="font-semibold flex items-center gap-2 mb-2">
-                                        <Shield className="w-4 h-4 text-indigo-500" />
+                                        <Shield className="w-4 h-4 text-invest" />
                                         Streak Store
                                     </h4>
                                     <ul className="space-y-2 text-sm">
                                         <li className="flex justify-between items-center">
                                             <span>Streak Shield</span>
-                                            <span className="font-bold text-red-500">-20 Gems</span>
+                                            <span className="font-bold font-mono tabular-nums text-destructive">-20 Gems</span>
                                         </li>
                                         <li className="text-xs text-muted-foreground mt-1">
                                             Protects your streak if you miss a day. Automatically consumed.

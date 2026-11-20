@@ -183,8 +183,8 @@ export function OverviewTab({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column on Desktop (5 cols): Safe-to-Spend Glass Hero + Category Budgets/Donut */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Safe-to-Spend Flagship Hero Card (subtle glass hero accent) */}
-          <div className="rounded-3xl border border-border bg-card/85 backdrop-blur-md shadow-sm p-5 sm:p-6 space-y-4">
+          {/* Safe-to-Spend Flagship Hero Card */}
+          <div className="surface-hero p-5 sm:p-6 space-y-4">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -866,7 +866,7 @@ export function OverviewTab({
                             {comm && (
                               <>
                                 <span aria-hidden="true">·</span>
-                                <span className="text-pink-600 dark:text-pink-400 font-medium">
+                                <span className="text-rose-600 dark:text-rose-400 font-medium">
                                   Offset: {comm.recipientName}
                                 </span>
                               </>

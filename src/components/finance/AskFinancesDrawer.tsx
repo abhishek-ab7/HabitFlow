@@ -156,8 +156,8 @@ export function AskFinancesDrawer({
           <div className="w-10 h-1.5 rounded-full bg-muted-foreground/30" />
         </div>
 
-        {/* Glass Header */}
-        <div className="px-5 py-3.5 border-b border-border bg-card/85 backdrop-blur-md flex items-center justify-between gap-3 shrink-0">
+        {/* Header */}
+        <div className="px-5 py-3.5 border-b border-border bg-card flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4" />

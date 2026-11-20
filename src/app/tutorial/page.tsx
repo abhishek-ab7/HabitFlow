@@ -38,13 +38,13 @@ interface HelpCategory {
 }
 
 const HELP_CATEGORIES: HelpCategory[] = [
-  { id: 'dashboard', title: 'Dashboard', subtitle: 'Overview & workspace', icon: LayoutDashboard, color: 'text-indigo-500 bg-indigo-500/10' },
+  { id: 'dashboard', title: 'Dashboard', subtitle: 'Overview & workspace', icon: LayoutDashboard, color: 'text-primary bg-primary/10' },
   { id: 'habits', title: 'Habits System', subtitle: 'Streaks & freeze protections', icon: CheckSquare, color: 'text-emerald-500 bg-emerald-500/10' },
   { id: 'tasks', title: 'Task Manager', subtitle: 'Priority lists & deadlines', icon: ListTodo, color: 'text-sky-500 bg-sky-500/10' },
   { id: 'goals', title: 'Goals & Milestones', subtitle: '90-day focus targets', icon: Target, color: 'text-rose-500 bg-rose-500/10' },
   { id: 'analytics', title: 'Analytics', subtitle: 'Consistency charts & trends', icon: BarChart3, color: 'text-teal-500 bg-teal-500/10' },
-  { id: 'gamification', title: 'Gamification', subtitle: 'XP, levels & rewards', icon: Trophy, color: 'text-purple-500 bg-purple-500/10' },
-  { id: 'ai-features', title: 'AI Assistant', subtitle: 'Smart coach recommendations', icon: Sparkles, color: 'text-pink-500 bg-pink-500/10' },
+  { id: 'gamification', title: 'Gamification', subtitle: 'XP, levels & rewards', icon: Trophy, color: 'text-invest bg-invest/10' },
+  { id: 'ai-features', title: 'AI Assistant', subtitle: 'Smart coach recommendations', icon: Sparkles, color: 'text-invest bg-invest/10' },
   { id: 'settings', title: 'Settings', subtitle: 'Preferences & sound tags', icon: Settings, color: 'text-slate-500 bg-slate-500/10' },
 ];
 
@@ -112,16 +112,12 @@ export default function TutorialPage() {
   }, [isDesktop, activeTab]);
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-slate-50/50 dark:bg-slate-950/20 py-8 px-4 md:px-6 lg:px-8">
-      {/* Decorative Blur Backgrounds */}
-      <div className="absolute top-0 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute bottom-10 left-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl pointer-events-none -z-10" />
-
+    <div className="min-h-[calc(100vh-4rem)] bg-background py-8 px-4 md:px-6 lg:px-8">
       <div className="max-w-[1600px] mx-auto space-y-8">
         {/* Page Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/40 pb-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/60 pb-6">
           <div className="space-y-1">
-            <div className="inline-flex items-center gap-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-500/20">
+            <div className="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-semibold border border-primary/20">
               <BookOpen className="w-3.5 h-3.5" />
               Interactive Help Center
             </div>
@@ -143,7 +139,7 @@ export default function TutorialPage() {
         {/* Outer Split Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Navigation Sidebar (3 cols) */}
-          <aside className="lg:col-span-4 space-y-3 bg-card/45 backdrop-blur-xl border border-white/10 p-4 rounded-3xl shadow-xl">
+          <aside className="lg:col-span-4 space-y-3 surface-card p-4 shadow-sm">
             <div className="px-3 pb-2 text-[10px] font-black uppercase tracking-wider text-muted-foreground/60 border-b border-border/40 mb-2">
               Help Categories
             </div>
@@ -190,7 +186,7 @@ export default function TutorialPage() {
           </aside>
 
           {/* Tutorial Content Board (8 cols) */}
-          <main className="lg:col-span-8 bg-card/30 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 md:p-8 shadow-2xl min-h-[550px] flex flex-col">
+          <main className="lg:col-span-8 surface-hero p-6 md:p-8 shadow-sm min-h-[550px] flex flex-col">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
@@ -204,7 +200,7 @@ export default function TutorialPage() {
                 {activeTab === 'dashboard' && (
                   <div className="space-y-6">
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-indigo-500">
+                      <div className="flex items-center gap-2 text-primary">
                         <LayoutDashboard className="w-6 h-6" />
                         <h2 className="text-xl font-bold tracking-tight">Dashboard Overview</h2>
                       </div>
@@ -214,9 +210,9 @@ export default function TutorialPage() {
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
-                      <Card className="border-indigo-500/10 bg-indigo-500/5">
+                      <Card className="border-primary/15 bg-primary/5">
                         <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300">
+                          <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-primary">
                             Daily Overview & Progress
                           </CardTitle>
                         </CardHeader>
@@ -225,9 +221,9 @@ export default function TutorialPage() {
                         </CardContent>
                       </Card>
 
-                      <Card className="border-indigo-500/10 bg-indigo-500/5">
+                      <Card className="border-primary/15 bg-primary/5">
                         <CardHeader className="p-4 pb-2">
-                          <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-indigo-700 dark:text-indigo-300">
+                          <CardTitle className="text-sm font-bold flex items-center gap-1.5 text-primary">
                             Quick Insights
                           </CardTitle>
                         </CardHeader>
@@ -412,7 +408,7 @@ export default function TutorialPage() {
                 {activeTab === 'gamification' && (
                   <div className="space-y-6">
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-purple-500">
+                      <div className="flex items-center gap-2 text-invest">
                         <Trophy className="w-6 h-6" />
                         <h2 className="text-xl font-bold tracking-tight">Gamification & Rankings</h2>
                       </div>
@@ -422,8 +418,8 @@ export default function TutorialPage() {
                     </div>
 
                     <div className="space-y-4">
-                      <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-2xl flex gap-3 items-center">
-                        <Trophy className="w-8 h-8 text-purple-500 shrink-0" />
+                      <div className="p-4 bg-invest/5 border border-invest/20 rounded-2xl flex gap-3 items-center">
+                        <Trophy className="w-8 h-8 text-invest shrink-0" />
                         <div className="text-xs">
                           <span className="font-bold text-foreground block">Competitive Motivation & Rankings</span>
                           <p className="text-muted-foreground leading-relaxed">
@@ -439,7 +435,7 @@ export default function TutorialPage() {
                 {activeTab === 'ai-features' && (
                   <div className="space-y-6">
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-pink-500">
+                      <div className="flex items-center gap-2 text-invest">
                         <Sparkles className="w-6 h-6" />
                         <h2 className="text-xl font-bold tracking-tight">AI Assistant & Insights</h2>
                       </div>
@@ -450,7 +446,7 @@ export default function TutorialPage() {
 
                     <div className="space-y-4">
                       <div className="p-4 bg-muted/20 border rounded-2xl flex gap-3 items-start">
-                        <Sparkles className="w-5 h-5 text-indigo-500 fill-current shrink-0 mt-0.5" />
+                        <Sparkles className="w-5 h-5 text-invest shrink-0 mt-0.5" />
                         <div className="space-y-1">
                           <h4 className="text-sm font-bold text-foreground">AI Coach Widget</h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
@@ -460,7 +456,7 @@ export default function TutorialPage() {
                       </div>
 
                       <div className="p-4 bg-muted/20 border rounded-2xl flex gap-3 items-start">
-                        <Info className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
+                        <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                         <div className="space-y-1">
                           <h4 className="text-sm font-bold text-foreground">Smart Habit & Goal Scaffolding</h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
@@ -487,9 +483,9 @@ export default function TutorialPage() {
 
                     <div className="space-y-4">
                       <div className="p-4 border rounded-2xl bg-muted/20 space-y-1.5">
-                        <h4 className="text-sm font-bold text-foreground">Theme Customization</h4>
+                        <h4 className="text-sm font-bold text-foreground">Theme & Accent Customization</h4>
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          Switch between Light, Dark, System default, or Auto themes. Custom themes synchronize gradient hues with morning, afternoon, and night timelines.
+                          Switch between Light, Dark, or System surface modes and pick a curated Accent Palette (Mint, Cobalt, Forest, or Ink) synced across devices.
                         </p>
                       </div>
 

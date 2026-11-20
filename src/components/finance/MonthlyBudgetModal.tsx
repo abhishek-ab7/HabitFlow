@@ -199,7 +199,7 @@ export function MonthlyBudgetModal({
         </div>
 
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-border bg-card/85 backdrop-blur-md flex items-center justify-between gap-2 shrink-0">
+        <div className="px-5 py-3.5 border-b border-border bg-card flex items-center justify-between gap-2 shrink-0">
           <div>
             <DialogTitle className="text-base sm:text-lg font-bold text-foreground">
               Monthly Budgets &amp; Envelopes ({formatMonthDisplay(selectedMonth)})

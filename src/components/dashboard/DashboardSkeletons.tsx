@@ -3,18 +3,9 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
-// Shimmer layout helper to give premium dark/light mode texture
-function SkeletonContainer({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`relative overflow-hidden ${className}`}>
-      {children}
-    </div>
-  );
-}
-
 export function HeroSectionSkeleton() {
   return (
-    <div className="relative overflow-hidden rounded-2xl mb-8 bg-card/30 border border-white/5 p-8 md:p-10">
+    <div className="relative overflow-hidden surface-hero mb-8 p-8 md:p-10">
       <div className="space-y-4 max-w-xl">
         <Skeleton className="h-8 w-12 rounded-lg" />
         <Skeleton className="h-10 w-[70%] rounded-xl" />
@@ -27,7 +18,7 @@ export function HeroSectionSkeleton() {
 
 export function MoodCheckInSkeleton() {
   return (
-    <div className="bg-card/30 backdrop-blur-md border border-white/5 p-6 rounded-3xl mb-6 space-y-4">
+    <div className="surface-card p-5 mb-6 space-y-4">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="space-y-2">
           <Skeleton className="h-6 w-48 rounded-lg" />
@@ -35,7 +26,7 @@ export function MoodCheckInSkeleton() {
         </div>
         <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-12 w-12 rounded-2xl shrink-0" />
+            <Skeleton key={i} className="h-11 w-11 rounded-xl shrink-0" />
           ))}
         </div>
       </div>
@@ -45,9 +36,8 @@ export function MoodCheckInSkeleton() {
 
 export function MomentumCardSkeleton() {
   return (
-    <div className="bg-card/45 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row items-center gap-6 mb-6">
-      {/* Pulse Ring Circle */}
-      <div className="relative w-[100px] h-[100px] rounded-full border-[8px] border-muted/20 flex items-center justify-center shrink-0">
+    <div className="surface-hero p-6 flex flex-col sm:flex-row items-center gap-6 mb-6">
+      <div className="relative w-[100px] h-[100px] rounded-full border-[8px] border-muted/30 flex items-center justify-center shrink-0">
         <Skeleton className="absolute inset-2 rounded-full" />
       </div>
       <div className="flex-1 space-y-3 w-full">
@@ -66,7 +56,7 @@ export function MetricCardsSkeleton() {
   return (
     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-8">
       {[1, 2, 3, 4].map((i) => (
-        <Card key={i} className="relative overflow-hidden bg-card/30 border border-white/5 h-full">
+        <Card key={i} className="relative overflow-hidden surface-card h-full">
           <CardContent className="p-6 flex items-start justify-between">
             <div className="space-y-3 flex-1">
               <Skeleton className="h-4 w-28 rounded" />
@@ -83,7 +73,7 @@ export function MetricCardsSkeleton() {
 
 export function TodayTasksSkeleton() {
   return (
-    <section className="bg-card/30 backdrop-blur-2xl rounded-3xl border border-white/5 shadow-2xl p-6 md:p-8 space-y-6">
+    <section className="surface-card p-6 md:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
@@ -96,7 +86,7 @@ export function TodayTasksSkeleton() {
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="p-4 bg-muted/30 border border-border/10 rounded-2xl flex flex-col justify-between h-[120px] space-y-2">
+          <div key={i} className="p-4 surface-subtle flex flex-col justify-between h-[120px] space-y-2">
             <div className="space-y-2">
               <Skeleton className="h-5 w-[85%] rounded" />
               <Skeleton className="h-4 w-[50%] rounded" />
@@ -114,7 +104,7 @@ export function TodayTasksSkeleton() {
 
 export function HabitOverviewSkeleton() {
   return (
-    <section className="bg-card/30 backdrop-blur-2xl rounded-3xl border border-white/5 shadow-2xl p-6 md:p-8 space-y-6">
+    <section className="surface-card p-6 md:p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
@@ -127,7 +117,7 @@ export function HabitOverviewSkeleton() {
       </div>
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="p-4 bg-muted/20 border border-border/5 rounded-2xl flex items-center justify-between">
+          <div key={i} className="p-4 surface-subtle flex items-center justify-between">
             <div className="flex items-center gap-3 flex-1">
               <Skeleton className="h-6 w-6 rounded-lg shrink-0" />
               <div className="space-y-2 flex-1">
@@ -145,7 +135,7 @@ export function HabitOverviewSkeleton() {
 
 export function FocusGoalSkeleton() {
   return (
-    <section className="bg-card/30 backdrop-blur-2xl rounded-3xl border border-white/5 shadow-2xl p-6 md:p-8 space-y-6 h-full flex flex-col justify-between">
+    <section className="surface-card p-6 md:p-8 space-y-6 h-full flex flex-col justify-between">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
@@ -158,18 +148,18 @@ export function FocusGoalSkeleton() {
           <Skeleton className="h-9 w-20 rounded-xl" />
         </div>
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-muted/20 border border-border/5 rounded-2xl gap-4">
+          <div className="flex items-center justify-between p-4 surface-subtle gap-4">
             <div className="space-y-2 flex-1">
               <Skeleton className="h-5 w-32 rounded" />
               <Skeleton className="h-3 w-48 rounded" />
             </div>
-            <div className="relative w-14 h-14 rounded-full border-4 border-muted/20 flex items-center justify-center shrink-0">
+            <div className="relative w-14 h-14 rounded-full border-4 border-muted/30 flex items-center justify-center shrink-0">
               <Skeleton className="h-10 w-10 rounded-full" />
             </div>
           </div>
         </div>
       </div>
-      <div className="pt-4 border-t border-border/10">
+      <div className="pt-4 border-t border-border/40">
         <Skeleton className="h-9 w-full rounded-xl" />
       </div>
     </section>
@@ -178,7 +168,7 @@ export function FocusGoalSkeleton() {
 
 export function AICoachSkeleton() {
   return (
-    <div className="bg-card/30 backdrop-blur-2xl rounded-3xl border border-white/5 p-6 space-y-4">
+    <div className="surface-card p-6 space-y-4">
       <div className="flex items-center gap-3">
         <Skeleton className="h-8 w-8 rounded-lg" />
         <Skeleton className="h-6 w-32 rounded" />
@@ -195,7 +185,7 @@ export function AICoachSkeleton() {
 
 export function PersonalizedQuoteSkeleton() {
   return (
-    <div className="bg-card/30 backdrop-blur-2xl rounded-3xl border border-white/5 p-6 flex items-center gap-4">
+    <div className="surface-card p-6 flex items-center gap-4">
       <Skeleton className="h-10 w-10 rounded-full shrink-0" />
       <div className="space-y-2 flex-1">
         <Skeleton className="h-4 w-full rounded" />
@@ -207,7 +197,7 @@ export function PersonalizedQuoteSkeleton() {
 
 export function QuickActionsSkeleton() {
   return (
-    <div className="bg-card/30 backdrop-blur-2xl rounded-3xl border border-white/5 p-6 space-y-4">
+    <div className="surface-card p-6 space-y-4">
       <Skeleton className="h-6 w-32 rounded-lg" />
       <div className="grid grid-cols-2 gap-3">
         <Skeleton className="h-10 rounded-xl" />
@@ -219,7 +209,7 @@ export function QuickActionsSkeleton() {
 
 export function WeeklyReviewSkeleton() {
   return (
-    <div className="bg-card/30 backdrop-blur-2xl rounded-3xl border border-white/5 p-6 space-y-4">
+    <div className="surface-card p-6 space-y-4">
       <div className="flex justify-between items-center">
         <Skeleton className="h-6 w-40 rounded-lg" />
         <Skeleton className="h-8 w-8 rounded-full" />

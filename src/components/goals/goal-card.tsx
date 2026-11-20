@@ -69,12 +69,12 @@ const PRIORITY_STYLES: Record<Priority, { color: string; label: string }> = {
 };
 
 const AREA_STYLES: Record<AreaOfLife, { bg: string; text: string; icon: string }> = {
-  career: { bg: 'bg-indigo-500/20', text: 'text-indigo-600', icon: '💼' },
-  health: { bg: 'bg-emerald-500/20', text: 'text-emerald-600', icon: '💪' },
-  relationships: { bg: 'bg-pink-500/20', text: 'text-pink-600', icon: '❤️' },
-  personal_growth: { bg: 'bg-purple-500/20', text: 'text-purple-600', icon: '🌱' },
-  finance: { bg: 'bg-sky-500/20', text: 'text-sky-600', icon: '💰' },
-  fun: { bg: 'bg-amber-500/20', text: 'text-amber-600', icon: '🎉' },
+  career: { bg: 'bg-blue-500/15', text: 'text-blue-600 dark:text-blue-400', icon: '💼' },
+  health: { bg: 'bg-emerald-500/15', text: 'text-emerald-600 dark:text-emerald-400', icon: '💪' },
+  relationships: { bg: 'bg-rose-500/15', text: 'text-rose-600 dark:text-rose-400', icon: '❤️' },
+  personal_growth: { bg: 'bg-teal-500/15', text: 'text-teal-600 dark:text-teal-400', icon: '🌱' },
+  finance: { bg: 'bg-sky-500/15', text: 'text-sky-600 dark:text-sky-400', icon: '💰' },
+  fun: { bg: 'bg-amber-500/15', text: 'text-amber-600 dark:text-amber-400', icon: '🎉' },
 };
 
 export function GoalCard({
@@ -271,7 +271,7 @@ export function GoalCard({
       >
         {/* Focus indicator */}
         {goal.isFocus && (
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-chart-4" />
+          <div className="absolute top-0 left-0 right-0 h-1 progress-gradient" />
         )}
 
         <CardHeader className="pb-2">

@@ -186,9 +186,9 @@ export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOp
                     </Button>
                 </DialogTrigger>
             )}
-            <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col bg-card/95 backdrop-blur-xl border-border/50">
+            <DialogContent className="sm:max-w-[425px] max-h-[90vh] flex flex-col bg-card border-border rounded-2xl">
                 <DialogHeader className="shrink-0">
-                    <DialogTitle className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent w-fit">
+                    <DialogTitle className="text-xl font-bold text-foreground">
                         Create Task
                     </DialogTitle>
                     <DialogDescription>
@@ -333,9 +333,9 @@ export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOp
                                     size="sm"
                                     onClick={handleGenerateSubtasks}
                                     disabled={isGenerating || !title}
-                                    className="h-7 text-xs gap-1.5 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/20 hover:border-purple-500/50"
+                                    className="h-7 text-xs gap-1.5 bg-invest/10 border-invest/25 hover:border-invest/50 text-invest"
                                 >
-                                    {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-purple-500" />}
+                                    {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-invest" />}
                                     Auto-Generate
                                 </Button>
                             )}
@@ -395,7 +395,7 @@ export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOp
                         <Button
                             type="submit"
                             disabled={loading || !title}
-                            className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-md transition-all duration-300 transform active:scale-95"
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-all duration-200 transform active:scale-95"
                         >
                             {loading ? "Creating..." : "Create Task"}
                         </Button>

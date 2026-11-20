@@ -24,7 +24,8 @@ import {
   Mail,
   BookOpen,
   HelpCircle,
-  Layers
+  Layers,
+  Check
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -43,7 +44,7 @@ import { forcePushAllHabits } from '@/lib/force-sync';
 import { getSyncEngine } from '@/lib/sync';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import type { UserSettings } from '@/lib/types';
+import type { AccentTheme, UserSettings } from '@/lib/types';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
 import { SettingsHero } from '@/components/settings/SettingsHero';
@@ -53,8 +54,20 @@ import { useUserStore } from '@/lib/stores/user-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import type { Avatar } from '@/lib/avatars';
 
+const ACCENT_PRESETS: {
+  id: AccentTheme;
+  label: string;
+  swatch: string;
+  secondarySwatch: string;
+}[] = [
+  { id: 'mint', label: 'Mint', swatch: 'bg-emerald-500', secondarySwatch: 'bg-teal-400' },
+  { id: 'cobalt', label: 'Cobalt', swatch: 'bg-blue-500', secondarySwatch: 'bg-sky-400' },
+  { id: 'forest', label: 'Forest', swatch: 'bg-green-700', secondarySwatch: 'bg-emerald-600' },
+  { id: 'ink', label: 'Ink', swatch: 'bg-zinc-900 dark:bg-zinc-100', secondarySwatch: 'bg-zinc-500' },
+];
+
 export default function SettingsPageContent() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, accent, setAccent } = useTheme();
   const { isAuthenticated, user } = useAuth();
   const { isSyncing, isStoragePersistent } = useSync();
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -102,6 +115,7 @@ export default function SettingsPageContent() {
           id: crypto.randomUUID(),
           userId: user.id,
           theme: 'system',
+          accent: 'mint',
           userName: '',
           weekStartsOn: 0,
           showMotivationalQuotes: true,
@@ -399,6 +413,7 @@ export default function SettingsPageContent() {
         id: crypto.randomUUID(),
         userId: uid,
         theme: 'system',
+        accent: 'mint',
         userName: user.user_metadata?.full_name || 'Anonymous',
         weekStartsOn: 0,
         showMotivationalQuotes: true,
@@ -496,12 +511,6 @@ export default function SettingsPageContent() {
 
   return (
     <div className="w-full relative min-h-screen px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-8">
-      {/* Visual Ambience */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-      </div>
-
       <FadeIn>
         {/* HERO */}
         <SettingsHero
@@ -517,7 +526,7 @@ export default function SettingsPageContent() {
           {/* ACCOUNT */}
           <BentoGridItem
             title="Account & Security"
-            icon={<User className="h-5 w-5 text-indigo-500" />}
+            icon={<User className="h-5 w-5 text-primary" />}
             span={2}
             className="md:col-span-2"
             description="Manage your profile and security preferences"
@@ -531,11 +540,11 @@ export default function SettingsPageContent() {
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-hover:text-foreground transition-colors">
                       <Mail className="h-4 w-4" />
                     </div>
-                    <div className="flex items-center h-11 w-full rounded-xl border border-border/50 bg-muted/30 px-10 text-sm text-foreground/80 font-medium cursor-not-allowed">
+                    <div className="flex items-center h-11 w-full rounded-xl border border-border bg-muted/40 px-10 text-sm text-foreground/85 font-medium cursor-not-allowed">
                       <span className="truncate">{email || user?.email || 'No email linked'}</span>
                     </div>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px] shadow-emerald-500/50" />
+                      <div className="h-2 w-2 rounded-full bg-success" />
                     </div>
                   </div>
                 </div>
@@ -544,14 +553,14 @@ export default function SettingsPageContent() {
                   <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Full Name</Label>
                   <div className="flex gap-2">
                     <div className="relative group flex-1">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-indigo-500 transition-colors">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors">
                         <User className="h-4 w-4" />
                       </div>
                       <Input
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
                         placeholder="Your full name"
-                        className="h-11 pl-10 rounded-xl border-border/50 bg-background/50 focus:bg-background transition-all focus:ring-2 focus:ring-indigo-500/20"
+                        className="h-11 pl-10 rounded-xl border-border bg-background focus:bg-background transition-all focus:ring-2 focus:ring-ring/30"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -562,7 +571,7 @@ export default function SettingsPageContent() {
                     </div>
                     <Button
                       onClick={handleSaveDisplayName}
-                      className="h-11 px-6 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground border border-primary/20 shadow-lg shadow-primary/25 hover:shadow-primary/50 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 font-medium tracking-wide"
+                      className="h-11 px-6 rounded-xl font-medium tracking-wide"
                     >
                       <Save className="h-4 w-4 mr-2 stroke-[2.5]" />
                       Save
@@ -571,10 +580,10 @@ export default function SettingsPageContent() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-6 border-t border-border/40 mt-4">
+              <div className="flex items-center justify-between pt-6 border-t border-border mt-4">
                 <div className="text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5 text-emerald-500" />
+                    <ShieldAlert className="w-3.5 h-3.5 text-success" />
                     Account is secure
                   </span>
                 </div>
@@ -582,9 +591,9 @@ export default function SettingsPageContent() {
                   variant="outline"
                   size="sm"
                   onClick={() => setIsPasswordModalOpen(true)}
-                  className="h-9 px-4 rounded-lg border-indigo-500/20 hover:bg-indigo-500/5 hover:text-indigo-600 hover:border-indigo-500/30 transition-all text-xs font-medium"
+                  className="h-9 px-4 rounded-lg text-xs font-medium"
                 >
-                  <Lock className="h-3.5 w-3.5 mr-2 text-indigo-500" />
+                  <Lock className="h-3.5 w-3.5 mr-2 text-primary" />
                   Change Password
                 </Button>
               </div>
@@ -701,47 +710,96 @@ export default function SettingsPageContent() {
           {/* APPEARANCE */}
           <BentoGridItem
             title="Appearance"
-            icon={<Palette className="h-5 w-5 text-purple-500" />}
+            icon={<Palette className="h-5 w-5 text-primary" />}
             span={1}
             className="md:col-span-1"
+            description="Surface mode & accent palette"
             disableHover
           >
-            <div className="grid grid-cols-4 gap-2 mt-4">
-              {[
-                { value: 'light', icon: Sun, label: 'Light' },
-                { value: 'dark', icon: Moon, label: 'Dark' },
-                { value: 'system', icon: Monitor, label: 'System' },
-                { value: 'auto', icon: CloudCog, label: 'Auto' },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setTheme(opt.value as any)}
-                  className={cn(
-                    "p-3 rounded-xl flex items-center justify-center transition-all border outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                    (mounted ? theme : 'system') === opt.value
-                      ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/25 scale-105"
-                      : "bg-background/50 hover:bg-background border-border text-muted-foreground hover:text-foreground"
-                  )}
-                  title={opt.label}
-                >
-                  <opt.icon className="w-5 h-5" />
-                </button>
-              ))}
+            <div className="space-y-4 mt-3">
+              {/* Surface Mode */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Surface Mode
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'light', icon: Sun, label: 'Light' },
+                    { value: 'dark', icon: Moon, label: 'Dark' },
+                    { value: 'system', icon: Monitor, label: 'System' },
+                  ].map((opt) => {
+                    const isSelected = (mounted ? theme : 'system') === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setTheme(opt.value as 'light' | 'dark' | 'system')}
+                        className={cn(
+                          'py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all border text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isSelected
+                            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                            : 'bg-muted/45 hover:bg-muted/75 border-border/50 text-muted-foreground hover:text-foreground'
+                        )}
+                      >
+                        <opt.icon className="w-4 h-4" />
+                        <span>{opt.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Accent Palette Picker */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Accent Palette
+                </span>
+                <div className="grid grid-cols-4 gap-2">
+                  {ACCENT_PRESETS.map((preset) => {
+                    const isSelected = (mounted ? accent : 'mint') === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setAccent(preset.id)}
+                        className={cn(
+                          'relative py-2.5 px-1.5 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all border text-[11px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isSelected
+                            ? 'border-primary bg-accent/60 text-foreground'
+                            : 'border-border/50 bg-muted/45 hover:bg-muted/75 text-muted-foreground hover:text-foreground'
+                        )}
+                        title={preset.label}
+                      >
+                        <span className="relative flex items-center justify-center w-6 h-6 rounded-full border border-border/70 overflow-hidden shadow-xs">
+                          <span className={cn('w-1/2 h-full', preset.swatch)} />
+                          <span className={cn('w-1/2 h-full', preset.secondarySwatch)} />
+                          {isSelected && (
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+                              <Check className="w-3 h-3 text-white stroke-[3]" />
+                            </span>
+                          )}
+                        </span>
+                        <span>{preset.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </BentoGridItem>
 
           {/* SENSORY FEEDBACK */}
           <BentoGridItem
             title="Sensory Feedback"
-            icon={<Volume2 className="h-5 w-5 text-pink-500" />}
+            icon={<Volume2 className="h-5 w-5 text-primary" />}
             span={1}
             className="md:col-span-1"
             disableHover
           >
             <div className="flex flex-col gap-3 mt-4">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border">
+              <div className="flex items-center justify-between p-3 surface-subtle">
                 <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-lg", settings.soundEnabled ? "bg-pink-500/10 text-pink-500" : "bg-muted text-muted-foreground")}>
+                  <div className={cn("p-2 rounded-lg", settings.soundEnabled ? "bg-primary/12 text-primary" : "bg-muted text-muted-foreground")}>
                     {settings.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                   </div>
                   <div className="flex flex-col">
@@ -753,15 +811,15 @@ export default function SettingsPageContent() {
                   variant={settings.soundEnabled ? "default" : "outline"} 
                   size="sm" 
                   onClick={handleToggleSound}
-                  className={cn("h-8 px-3 text-xs", settings.soundEnabled && "bg-pink-500 hover:bg-pink-600 text-white")}
+                  className="h-8 px-3 text-xs"
                 >
                   {settings.soundEnabled ? "On" : "Off"}
                 </Button>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border">
+              <div className="flex items-center justify-between p-3 surface-subtle">
                 <div className="flex items-center gap-3">
-                  <div className={cn("p-2 rounded-lg", settings.hapticsEnabled ? "bg-pink-500/10 text-pink-500" : "bg-muted text-muted-foreground")}>
+                  <div className={cn("p-2 rounded-lg", settings.hapticsEnabled ? "bg-primary/12 text-primary" : "bg-muted text-muted-foreground")}>
                     {settings.hapticsEnabled ? <Vibrate className="w-4 h-4" /> : <VibrateOff className="w-4 h-4" />}
                   </div>
                   <div className="flex flex-col">
@@ -773,7 +831,7 @@ export default function SettingsPageContent() {
                   variant={settings.hapticsEnabled ? "default" : "outline"} 
                   size="sm" 
                   onClick={handleToggleHaptics}
-                  className={cn("h-8 px-3 text-xs", settings.hapticsEnabled && "bg-pink-500 hover:bg-pink-600 text-white")}
+                  className="h-8 px-3 text-xs"
                 >
                   {settings.hapticsEnabled ? "On" : "Off"}
                 </Button>
@@ -784,7 +842,7 @@ export default function SettingsPageContent() {
           {/* HELP & ACADEMY */}
           <BentoGridItem
             title="Help & Academy"
-            icon={<HelpCircle className="h-5 w-5 text-indigo-500" />}
+            icon={<HelpCircle className="h-5 w-5 text-info" />}
             span={1}
             className="md:col-span-1"
             disableHover
@@ -798,7 +856,7 @@ export default function SettingsPageContent() {
                 variant="outline"
                 size="sm"
                 onClick={handleReplayTour}
-                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-indigo-500/30 hover:bg-indigo-500/10 hover:text-indigo-600 hover:border-indigo-500/50"
+                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed hover:border-primary/40 hover:bg-accent/50"
                 title="Restart Guided Tour"
               >
                 <RefreshCw className="h-3.5 w-3.5 shrink-0" />
@@ -809,7 +867,7 @@ export default function SettingsPageContent() {
                 variant="outline"
                 size="sm"
                 asChild
-                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed border-indigo-500/30 hover:bg-indigo-500/10 hover:text-indigo-600 hover:border-indigo-500/50"
+                className="w-full justify-center gap-1.5 h-9 px-2 text-xs border-dashed hover:border-primary/40 hover:bg-accent/50"
               >
                 <Link href="/tutorial" className="flex items-center justify-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 shrink-0" />
@@ -822,13 +880,13 @@ export default function SettingsPageContent() {
           {/* WORKSPACE MODULES */}
           <BentoGridItem
             title="Workspace Modules"
-            icon={<Layers className="h-5 w-5 text-indigo-500" />}
+            icon={<Layers className="h-5 w-5 text-primary" />}
             span={1}
             className="md:col-span-1"
             disableHover
           >
             <div className="flex flex-col gap-3 mt-4">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border">
+              <div className="flex items-center justify-between p-3 surface-subtle">
                 <div className="flex flex-col text-left">
                   <span className="text-sm font-semibold text-foreground">Habit-Only Mode</span>
                   <span className="text-[10px] text-muted-foreground max-w-[200px]">Focused, minimal habit tracker view</span>
@@ -837,13 +895,13 @@ export default function SettingsPageContent() {
                   variant={settings.habitOnlyMode ? "default" : "outline"} 
                   size="sm" 
                   onClick={() => handleToggleSetting('habitOnlyMode')}
-                  className={cn("h-8 px-3 text-xs font-bold", settings.habitOnlyMode && "bg-indigo-500 hover:bg-indigo-600 text-white")}
+                  className="h-8 px-3 text-xs font-semibold"
                 >
                   {settings.habitOnlyMode ? "Active" : "Disabled"}
                 </Button>
               </div>
 
-              <div className={cn("flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
+              <div className={cn("flex items-center justify-between p-3 surface-subtle transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
                 <div className="flex flex-col text-left">
                   <span className="text-sm font-semibold text-foreground">Tasks Module</span>
                   <span className="text-[10px] text-muted-foreground">Checklists & daily tasks</span>
@@ -853,13 +911,13 @@ export default function SettingsPageContent() {
                   size="sm" 
                   disabled={!!settings.habitOnlyMode}
                   onClick={() => handleToggleSetting('showTasks')}
-                  className={cn("h-8 px-3 text-xs font-bold", settings.showTasks !== false && "bg-indigo-500 hover:bg-indigo-600 text-white")}
+                  className="h-8 px-3 text-xs font-semibold"
                 >
                   {settings.showTasks !== false ? "Enabled" : "Hidden"}
                 </Button>
               </div>
 
-              <div className={cn("flex items-center justify-between p-3 rounded-xl bg-background/50 border border-border transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
+              <div className={cn("flex items-center justify-between p-3 surface-subtle transition-all", settings.habitOnlyMode && "opacity-40 pointer-events-none")}>
                 <div className="flex flex-col text-left">
                   <span className="text-sm font-semibold text-foreground">Goals & Milestones</span>
                   <span className="text-[10px] text-muted-foreground">Long-term SMART goal-setting</span>
@@ -869,7 +927,7 @@ export default function SettingsPageContent() {
                   size="sm" 
                   disabled={!!settings.habitOnlyMode}
                   onClick={() => handleToggleSetting('showGoals')}
-                  className={cn("h-8 px-3 text-xs font-bold", settings.showGoals !== false && "bg-indigo-500 hover:bg-indigo-600 text-white")}
+                  className="h-8 px-3 text-xs font-semibold"
                 >
                   {settings.showGoals !== false ? "Enabled" : "Hidden"}
                 </Button>

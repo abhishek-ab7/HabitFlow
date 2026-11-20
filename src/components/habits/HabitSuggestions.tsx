@@ -99,9 +99,9 @@ export function HabitSuggestions() {
 
   if (activeGoals.length === 0) {
     return (
-      <Card className="border-amber-500/20 bg-gradient-to-br from-amber-50/50 to-yellow-50/50 dark:from-amber-950/20 dark:to-yellow-950/20">
+      <Card className="surface-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+          <CardTitle className="flex items-center gap-2 text-invest">
             <Lightbulb className="h-5 w-5" />
             AI Suggestions
           </CardTitle>
@@ -116,9 +116,9 @@ export function HabitSuggestions() {
   }
 
   return (
-    <Card className="border-amber-500/20 bg-gradient-to-br from-amber-50/50 to-yellow-50/50 dark:from-amber-950/20 dark:to-yellow-950/20">
+    <Card className="surface-card">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+        <CardTitle className="flex items-center gap-2 text-invest">
           <Lightbulb className="h-5 w-5 fill-current" />
           AI Suggestions
         </CardTitle>
@@ -128,7 +128,7 @@ export function HabitSuggestions() {
             size="icon"
             onClick={() => fetchRecommendations()}
             disabled={loading}
-            className="h-8 w-8 text-amber-500 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+            className="h-8 w-8 text-invest hover:text-invest hover:bg-invest/10"
           >
             <RefreshCw className={cn(
               'h-4 w-4 transition-transform',
@@ -141,12 +141,12 @@ export function HabitSuggestions() {
       <CardContent className="space-y-3">
         {loading && recommendations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 space-y-3">
-            <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+            <Loader2 className="w-6 h-6 animate-spin text-invest" />
             <p className="text-sm text-muted-foreground">Analyzing your goals...</p>
           </div>
         ) : error ? (
           <div className="text-center py-4">
-            <p className="text-sm text-amber-600 dark:text-amber-400 mb-2">
+            <p className="text-sm text-destructive mb-2">
               Unable to load suggestions
             </p>
             <p className="text-xs text-muted-foreground">{error}</p>
@@ -168,7 +168,7 @@ export function HabitSuggestions() {
             <Button
               onClick={() => fetchRecommendations()}
               variant="default"
-              className="gap-2 bg-amber-600 hover:bg-amber-700"
+              className="gap-2 bg-invest hover:bg-invest/90 text-white"
             >
               <Lightbulb className="h-4 w-4" />
               Generate Suggestions
@@ -179,11 +179,11 @@ export function HabitSuggestions() {
             {recommendations.map((rec, index) => (
               <div
                 key={index}
-                className="border rounded-lg p-3 space-y-2 bg-white/50 dark:bg-gray-900/50 hover:bg-white dark:hover:bg-gray-900 transition-colors"
+                className="surface-subtle rounded-xl p-3 space-y-2 hover:border-invest/40 transition-colors"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-sm">{rec.habitName}</h4>
+                    <h4 className="font-medium text-sm text-foreground">{rec.habitName}</h4>
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                       {rec.reasoning}
                     </p>
@@ -191,7 +191,7 @@ export function HabitSuggestions() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-8 w-8 p-0 flex-shrink-0 hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-600"
+                    className="h-8 w-8 p-0 flex-shrink-0 hover:bg-primary/10 hover:text-primary"
                     onClick={() => handleAddHabit(rec)}
                   >
                     <Plus className="h-4 w-4" />
@@ -202,16 +202,16 @@ export function HabitSuggestions() {
                   <Badge variant="secondary" className="text-xs">
                     {rec.category}
                   </Badge>
-                  <Badge variant="outline" className="text-xs">
+                  <Badge variant="outline" className="text-xs font-mono tabular-nums">
                     {rec.targetDaysPerWeek}x/week
                   </Badge>
                   <Badge
                     variant={rec.difficulty === 'easy' ? 'default' : 'outline'}
                     className={cn(
-                      'text-xs',
-                      rec.difficulty === 'easy' && 'bg-green-500',
-                      rec.difficulty === 'medium' && 'bg-amber-500',
-                      rec.difficulty === 'hard' && 'bg-red-500'
+                      'text-xs border-0',
+                      rec.difficulty === 'easy' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+                      rec.difficulty === 'medium' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+                      rec.difficulty === 'hard' && 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
                     )}
                   >
                     {rec.difficulty}
@@ -219,9 +219,9 @@ export function HabitSuggestions() {
                   <Badge
                     variant={rec.expectedImpact === 'high' ? 'default' : 'outline'}
                     className={cn(
-                      'text-xs',
-                      rec.expectedImpact === 'high' && 'bg-purple-500',
-                      rec.expectedImpact === 'medium' && 'bg-blue-500'
+                      'text-xs border-0',
+                      rec.expectedImpact === 'high' && 'bg-invest/15 text-invest',
+                      rec.expectedImpact === 'medium' && 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
                     )}
                   >
                     {rec.expectedImpact} impact

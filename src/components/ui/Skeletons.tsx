@@ -6,7 +6,7 @@ export function TaskListSkeleton() {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="p-5 rounded-2xl border border-border/40 bg-card/25 space-y-4">
+        <div key={i} className="p-5 rounded-2xl border border-border bg-card space-y-4">
           <div className="flex items-start gap-4">
             {/* Checkbox circle */}
             <Skeleton className="h-6 w-6 rounded-full shrink-0" />
@@ -44,7 +44,7 @@ export function HabitListSkeleton() {
         </div>
       </div>
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="flex items-center justify-between p-3 rounded-xl border border-border/40 bg-card/15">
+        <div key={i} className="flex items-center justify-between p-3 rounded-xl border border-border bg-card">
           <div className="flex items-center gap-3">
             <Skeleton className="w-8 h-8 rounded-lg" />
             <div className="space-y-1.5">
@@ -67,7 +67,7 @@ export function GoalListSkeleton() {
   return (
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="p-6 rounded-2xl border border-border/40 bg-card/25 space-y-4">
+        <div key={i} className="p-6 rounded-2xl border border-border bg-card space-y-4">
           <div className="flex items-start justify-between">
             <div className="space-y-1.5 flex-1 mr-4">
               <Skeleton className="h-5 w-3/4 rounded" />

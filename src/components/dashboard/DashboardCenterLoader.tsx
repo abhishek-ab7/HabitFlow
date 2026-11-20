@@ -14,12 +14,12 @@ export function DashboardCenterLoader() {
         {/* Animated Gradient Ring */}
         <div className="absolute inset-0 rounded-full border-4 border-muted/20" />
         <div 
-          className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary border-r-indigo-500 animate-spin" 
+          className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary border-r-info animate-spin" 
           style={{ animationDuration: '1s' }} 
         />
 
         {/* Central Logo Box */}
-        <div className="absolute w-18 h-18 rounded-2xl bg-card border border-white/10 shadow-lg flex items-center justify-center animate-pulse">
+        <div className="absolute w-18 h-18 rounded-2xl bg-card border border-border shadow-md flex items-center justify-center animate-pulse">
           <CheckSquare className="w-9 h-9 text-primary" />
         </div>
       </div>
@@ -32,7 +32,7 @@ export function DashboardCenterLoader() {
             animate={{ rotate: 360 }}
             transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
           >
-            <Sparkles className="w-4 h-4 text-warning" />
+            <Sparkles className="w-4 h-4 text-primary" />
           </motion.span>
         </h2>
         <p className="text-sm text-muted-foreground">
@@ -41,8 +41,8 @@ export function DashboardCenterLoader() {
       </div>
 
       {/* Pulsing Progress Bar */}
-      <div className="w-56 mt-6 bg-muted/40 h-1.5 rounded-full overflow-hidden border border-border/10 relative">
-        <div className="h-full bg-gradient-to-r from-primary to-indigo-500 rounded-full animate-infinite-loading w-[50%]" />
+      <div className="w-56 mt-6 bg-muted h-1.5 rounded-full overflow-hidden border border-border/50 relative">
+        <div className="h-full progress-gradient rounded-full animate-infinite-loading w-[50%]" />
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `

@@ -61,35 +61,35 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
     label: 'Tasks',
     description: 'Priorities, Eisenhower matrix & daily checklist',
     icon: ListTodo,
-    color: 'text-indigo-500 bg-indigo-500/10',
+    color: 'text-info bg-info/10',
   },
   {
     href: '/goals',
     label: 'Goals',
     description: 'SMART goals, financial targets & roadmaps',
     icon: Target,
-    color: 'text-amber-500 bg-amber-500/10',
+    color: 'text-warning bg-warning/10',
   },
   {
     href: '/analytics',
     label: 'Analytics',
     description: 'Spending correlations, pace charts & skill trees',
     icon: BarChart3,
-    color: 'text-emerald-500 bg-emerald-500/10',
+    color: 'text-primary bg-primary/10',
   },
   {
     href: '/leaderboard',
     label: 'Leaderboard',
     description: 'Global XP rankings, streaks & level rewards',
     icon: Trophy,
-    color: 'text-purple-500 bg-purple-500/10',
+    color: 'text-invest bg-invest/10',
   },
   {
     href: '/settings',
     label: 'Settings & Profile',
     description: 'Appearance, notifications, backup & account',
     icon: User,
-    color: 'text-sky-500 bg-sky-500/10',
+    color: 'text-muted-foreground bg-muted',
   },
 ];
 
@@ -265,7 +265,7 @@ export function MobileNav() {
             title: 'New Task',
             description: 'Capture an actionable to-do with deadline & AI subtasks',
             icon: ListTodo,
-            color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20',
+            color: 'text-info bg-info/10 border-info/20',
             onClick: () => {
               setIsQuickAddOpen(false);
               setIsCreateTaskOpen(true);
@@ -278,7 +278,7 @@ export function MobileNav() {
       title: 'New Habit',
       description: 'Create a daily, flexible weekly, or interval habit',
       icon: CheckSquare,
-      color: 'text-teal-500 bg-teal-500/10 border-teal-500/20',
+      color: 'text-primary bg-primary/10 border-primary/20',
       onClick: () => {
         setIsQuickAddOpen(false);
         setIsNewHabitOpen(true);
@@ -289,7 +289,7 @@ export function MobileNav() {
       title: 'Start Focus Mode',
       description: 'Enter zen focus flow for today’s highest priority habits',
       icon: Sparkles,
-      color: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
+      color: 'text-warning bg-warning/10 border-warning/20',
       badge: 'Zen Flow',
       onClick: () => {
         setIsQuickAddOpen(false);
@@ -301,7 +301,7 @@ export function MobileNav() {
   return (
     <>
       {/* 5-Slot Bottom Navigation Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/85 backdrop-blur-2xl border-t border-border/50 pb-safe shadow-lg">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 surface-chrome border-t pb-safe shadow-lg">
         <nav className="flex items-center justify-around h-16 px-1 relative">
           {/* Slot 1: Home */}
           <Link
@@ -353,7 +353,7 @@ export function MobileNav() {
               type="button"
               onClick={() => setIsQuickAddOpen(true)}
               aria-label="Universal Quick Add"
-              className="absolute -top-3.5 w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-emerald-500 text-primary-foreground shadow-xl shadow-primary/30 flex items-center justify-center border-4 border-background active:scale-90 hover:scale-105 transition-all"
+              className="absolute -top-3.5 w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 flex items-center justify-center border-4 border-background active:scale-90 hover:scale-105 transition-all"
             >
               <Plus className="w-6 h-6 stroke-[2.5]" />
             </button>
@@ -470,7 +470,7 @@ export function MobileNav() {
                   key={action.id}
                   type="button"
                   onClick={action.onClick}
-                  className="w-full p-3 rounded-2xl border border-border/60 bg-card/60 hover:bg-muted/50 active:scale-[0.98] transition-all flex items-center gap-3.5 text-left group"
+                  className="w-full p-3 surface-subtle active:scale-[0.98] transition-all flex items-center gap-3.5 text-left group"
                 >
                   <div
                     className={cn(
@@ -545,10 +545,10 @@ export function MobileNav() {
                     router.push(item.href);
                   }}
                   className={cn(
-                    'w-full p-3 rounded-2xl border transition-all flex items-center gap-3.5 text-left group',
+                    'w-full p-3 rounded-xl border transition-all flex items-center gap-3.5 text-left group',
                     isActive
-                      ? 'border-primary/50 bg-primary/5'
-                      : 'border-border/60 bg-card/60 hover:bg-muted/50 active:scale-[0.98]'
+                      ? 'border-primary/40 bg-accent/60'
+                      : 'border-border/50 bg-muted/45 hover:bg-muted/75 active:scale-[0.98]'
                   )}
                 >
                   <div

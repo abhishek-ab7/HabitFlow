@@ -836,6 +836,7 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: Use
       id: crypto.randomUUID(),
       userId: data.userId,
       theme: data.theme || 'system',
+      accent: data.accent || 'mint',
       userName: data.userName,
       weekStartsOn: data.weekStartsOn ?? 0,
       showMotivationalQuotes: data.showMotivationalQuotes ?? true,

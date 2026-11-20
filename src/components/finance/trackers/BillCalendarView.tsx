@@ -202,7 +202,7 @@ export function BillCalendarView() {
   const renderIcon = (kind: CalendarEventItem['kind']) => {
     if (kind === 'emi') return <Landmark className="w-4 h-4 text-primary" />;
     if (kind === 'sip') return <TrendingUp className="w-4 h-4 text-violet-500" />;
-    if (kind === 'commitment') return <HeartHandshake className="w-4 h-4 text-pink-500" />;
+    if (kind === 'commitment') return <HeartHandshake className="w-4 h-4 text-rose-500" />;
     if (kind === 'credit_card') return <CreditCard className="w-4 h-4 text-rose-500" />;
     return <Repeat className="w-4 h-4 text-cyan-500" />;
   };
@@ -211,7 +211,7 @@ export function BillCalendarView() {
     if (isPaid) return 'bg-emerald-500';
     if (kind === 'emi' || kind === 'credit_card') return 'bg-rose-500';
     if (kind === 'sip') return 'bg-violet-500';
-    if (kind === 'commitment') return 'bg-pink-500';
+    if (kind === 'commitment') return 'bg-rose-500';
     return 'bg-amber-500';
   };
 

@@ -110,9 +110,9 @@ export function HabitDescriptionEditor({
           size="sm"
           onClick={generateDescription}
           disabled={loading || !habitName}
-          className="gap-1 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-300 dark:border-purple-700"
+          className="gap-1.5 bg-invest/10 border-invest/25 hover:border-invest/50 hover:bg-invest/15 text-invest"
         >
-          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-purple-500" />}
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-invest" />}
           Generate Smart Description
         </Button>
       </div>

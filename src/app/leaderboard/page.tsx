@@ -74,7 +74,7 @@ export default function LeaderboardPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-primary via-purple-600 to-pink-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
             Community Leaderboard
           </h1>
           <p className="text-muted-foreground mt-1.5">
@@ -85,7 +85,7 @@ export default function LeaderboardPage() {
           onClick={() => loadRankings()}
           disabled={isLoading}
           variant="outline"
-          className="gap-2 border-indigo-500/30 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20"
+          className="gap-2 border-border hover:bg-muted"
         >
           <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
           Refresh
@@ -126,7 +126,7 @@ export default function LeaderboardPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ type: 'spring', delay: index * 0.1 }}
                     className={cn(
-                      'flex flex-col items-center justify-end rounded-2xl border p-6 text-center shadow-xl backdrop-blur-md relative group hover:scale-[1.02] transition-all duration-300',
+                      'flex flex-col items-center justify-end rounded-2xl border p-6 text-center shadow-sm relative group hover:scale-[1.02] transition-all duration-300',
                       style.podiumClass,
                       style.height,
                       isCurrentUser && 'ring-2 ring-primary'
@@ -138,7 +138,7 @@ export default function LeaderboardPage() {
                     <div className="space-y-3 relative z-10 w-full flex flex-col items-center">
                       <div className="relative">
                         {/* Avatar */}
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl shadow-lg border-2 border-white/20">
+                        <div className="w-14 h-14 rounded-full bg-invest flex items-center justify-center text-white font-bold text-xl shadow-sm border-2 border-card">
                           {getAvatarLetter(entry.user_name)}
                         </div>
                         <Badge
@@ -179,11 +179,11 @@ export default function LeaderboardPage() {
           )}
 
           {/* Rankings List & Search */}
-          <Card className="border-indigo-500/10 bg-white/5 dark:bg-slate-900/10 backdrop-blur-md shadow-xl overflow-hidden rounded-2xl">
-            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-indigo-500/10">
+          <Card className="surface-card shadow-sm overflow-hidden">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
               <div>
                 <CardTitle className="text-lg font-bold flex items-center gap-2">
-                  <Trophy className="h-5 w-5 text-indigo-500" />
+                  <Trophy className="h-5 w-5 text-invest" />
                   Global Rankings
                 </CardTitle>
                 <CardDescription>
@@ -199,7 +199,7 @@ export default function LeaderboardPage() {
                   placeholder="Search users..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full h-9 pl-9 pr-4 rounded-xl border border-indigo-500/20 bg-slate-950/20 text-sm placeholder:text-muted-foreground focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full h-9 pl-9 pr-4 rounded-xl border border-border bg-background text-sm placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
                 />
               </div>
             </CardHeader>
@@ -208,7 +208,7 @@ export default function LeaderboardPage() {
               <div className="overflow-x-auto">
                 <div className="min-w-[600px]">
                   {/* Header Row */}
-                  <div className="flex items-center justify-between px-6 py-4 border-b border-indigo-500/10 text-muted-foreground text-xs uppercase tracking-wider font-semibold">
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-border text-muted-foreground text-xs uppercase tracking-wider font-semibold">
                     <div className="w-12">Rank</div>
                     <div className="flex-1">User</div>
                     <div className="w-20 text-center">Level</div>
@@ -221,7 +221,7 @@ export default function LeaderboardPage() {
                       No rankings match your search query.
                     </div>
                   ) : (
-                    <div className="divide-y divide-indigo-500/5">
+                    <div className="divide-y divide-border/60">
                       {filteredRankings.map((entry, index) => {
                         const rank = index + 1;
                         const isCurrentUser = user?.id === entry.user_id;
@@ -230,12 +230,12 @@ export default function LeaderboardPage() {
                           <div
                             key={entry.user_id}
                             className={cn(
-                              'flex items-center justify-between px-6 py-4 hover:bg-indigo-50/5 dark:hover:bg-indigo-950/5 transition-colors group',
+                              'flex items-center justify-between px-6 py-4 hover:bg-muted/40 transition-colors group',
                               isCurrentUser && 'bg-primary/5 border-l-4 border-primary'
                             )}
                           >
                             {/* Rank Column */}
-                            <div className="w-12 font-bold text-slate-400 group-hover:text-slate-200 transition-colors flex items-center gap-1.5">
+                            <div className="w-12 font-bold font-mono text-muted-foreground group-hover:text-foreground transition-colors flex items-center gap-1.5">
                               {rank <= 3 ? (
                                 <Medal className={cn(
                                   "w-5 h-5",
@@ -250,7 +250,7 @@ export default function LeaderboardPage() {
 
                             {/* User details */}
                             <div className="flex-1 flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-600/20 border border-indigo-500/20 flex items-center justify-center font-bold text-sm text-indigo-400 shrink-0">
+                              <div className="w-9 h-9 rounded-full bg-invest/15 border border-invest/25 flex items-center justify-center font-bold text-sm text-invest shrink-0">
                                 {getAvatarLetter(entry.user_name)}
                               </div>
                               <div className="min-w-0">
@@ -266,12 +266,12 @@ export default function LeaderboardPage() {
                             </div>
 
                             {/* Level */}
-                            <div className="w-20 text-center font-semibold text-foreground">
+                            <div className="w-20 text-center font-semibold font-mono text-foreground">
                               Lv.{entry.level}
                             </div>
 
                             {/* XP */}
-                            <div className="w-24 text-center text-muted-foreground font-medium">
+                            <div className="w-24 text-center text-muted-foreground font-medium font-mono">
                               {entry.xp} XP
                             </div>
 
@@ -281,7 +281,7 @@ export default function LeaderboardPage() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => setSelectedUser(entry)}
-                                className="h-8 rounded-xl px-2 gap-1.5 text-xs text-indigo-500 hover:bg-indigo-500/10 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                className="h-8 rounded-xl px-2 gap-1.5 text-xs text-primary hover:bg-primary/10"
                               >
                                 <Eye className="w-3.5 h-3.5" />
                                 Inspect
@@ -301,28 +301,28 @@ export default function LeaderboardPage() {
 
       {/* User Inspection Modal */}
       <Dialog open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
-        <DialogContent className="max-w-md border-slate-200/50 dark:border-indigo-500/20 bg-card text-foreground rounded-2xl shadow-2xl overflow-hidden p-6">
+        <DialogContent className="max-w-md border-border bg-card text-foreground rounded-2xl shadow-2xl overflow-hidden p-6">
           {selectedUser && (
             <>
-              <DialogHeader className="flex flex-col items-center pb-4 border-b border-border/40">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-slate-200/50 dark:border-white/10 flex items-center justify-center font-bold text-3xl text-white shadow-xl mb-3">
+              <DialogHeader className="flex flex-col items-center pb-4 border-b border-border/60">
+                <div className="w-20 h-20 rounded-full bg-invest border-2 border-border flex items-center justify-center font-bold text-3xl text-white shadow-lg mb-3">
                   {getAvatarLetter(selectedUser.user_name)}
                 </div>
                 <DialogTitle className="text-xl font-bold tracking-tight flex items-center gap-2">
                   {selectedUser.user_name || 'Anonymous'}
-                  <Badge className="bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border-0">
+                  <Badge className="bg-invest/15 text-invest border-0 font-mono">
                     Lv.{selectedUser.level}
                   </Badge>
                 </DialogTitle>
-                <p className="text-sm text-muted-foreground mt-1">Total score: {selectedUser.xp} XP</p>
+                <p className="text-sm text-muted-foreground mt-1 font-mono">Total score: {selectedUser.xp} XP</p>
               </DialogHeader>
 
               <div className="py-6 space-y-6">
                 {selectedUser.stats ? (
                   <DisciplineRadar stats={selectedUser.stats} />
                 ) : (
-                  <div className="h-[200px] flex flex-col items-center justify-center border border-border/40 rounded-2xl bg-muted/20 text-muted-foreground text-sm">
-                    <Sparkles className="w-8 h-8 text-indigo-500/40 mb-2" />
+                  <div className="h-[200px] flex flex-col items-center justify-center border border-border rounded-2xl bg-muted/20 text-muted-foreground text-sm">
+                    <Sparkles className="w-8 h-8 text-invest/50 mb-2" />
                     <span>No stats unlocked yet</span>
                   </div>
                 )}

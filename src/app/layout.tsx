@@ -52,8 +52,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f8fafc' },
-    { media: '(prefers-color-scheme: dark)', color: '#09050d' },
+    { media: '(prefers-color-scheme: light)', color: '#f8fafb' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0d0e' },
   ],
   width: 'device-width',
   initialScale: 1,
@@ -72,7 +72,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased min-h-screen bg-background`}
       >
         <Script id="extension-fetch-guard" strategy="beforeInteractive">
-          {`(function(){try{var d=Object.getOwnPropertyDescriptor(window,'fetch')||Object.getOwnPropertyDescriptor(Window.prototype,'fetch');if(d&&d.get&&!d.set&&d.configurable){var og=d.get,ov=null;Object.defineProperty(window,'fetch',{configurable:true,enumerable:d.enumerable!==false,get:function(){return ov!==null?ov:og.call(window);},set:function(v){ov=v;}});}window.addEventListener('error',function(e){if(e&&typeof e.filename==='string'&&e.filename.indexOf('chrome-extension://')===0&&typeof e.message==='string'&&e.message.indexOf('Cannot set property fetch')!==-1){e.preventDefault();}},true);}catch(_){}})();`}
+          {`(function(){try{var t=localStorage.getItem('theme')||'system';if(t==='auto')t='system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);document.documentElement.classList.toggle('light',!d);var a=localStorage.getItem('habitflow_accent');if(a&&a!=='mint'&&['cobalt','forest','ink'].indexOf(a)!==-1){document.documentElement.dataset.accent=a;}}catch(_){}try{var desc=Object.getOwnPropertyDescriptor(window,'fetch')||Object.getOwnPropertyDescriptor(Window.prototype,'fetch');if(desc&&desc.get&&!desc.set&&desc.configurable){var og=desc.get,ov=null;Object.defineProperty(window,'fetch',{configurable:true,enumerable:desc.enumerable!==false,get:function(){return ov!==null?ov:og.call(window);},set:function(v){ov=v;}});}window.addEventListener('error',function(e){if(e&&typeof e.filename==='string'&&e.filename.indexOf('chrome-extension://')===0&&typeof e.message==='string'&&e.message.indexOf('Cannot set property fetch')!==-1){e.preventDefault();}},true);}catch(_){}})();`}
         </Script>
         <ThemeProvider>
           <AuthProvider>

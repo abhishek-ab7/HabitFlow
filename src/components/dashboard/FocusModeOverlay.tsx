@@ -210,25 +210,21 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="max-w-lg w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 sm:p-6 shadow-2xl relative overflow-hidden"
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+          className="max-w-lg w-full surface-hero p-5 sm:p-6 shadow-2xl relative overflow-hidden"
         >
-          {/* Subtle glowing elements */}
-          <div className="absolute -top-10 -left-10 w-32 h-32 bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-purple-500/10 dark:bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
-
           <div className="space-y-4 relative z-10 text-center md:text-left">
             {/* Header Greeting */}
             <div className="space-y-1">
-              <div className="inline-flex items-center gap-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-semibold border border-indigo-200/50 dark:border-indigo-800/30">
-                <Sparkles className="w-2.5 h-2.5 fill-current" />
+              <div className="inline-flex items-center gap-1 bg-primary/10 text-primary px-2.5 py-0.5 rounded-full text-[10px] font-semibold border border-primary/20">
+                <Sparkles className="w-2.5 h-2.5" />
                 Focus Mode active
               </div>
-              <h1 className="text-xl md:text-2xl font-bold tracking-tight">
-                Good Morning, <span className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">{greetingName}</span> 🌅
+              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground">
+                Good Morning, <span className="text-primary">{greetingName}</span> 🌅
               </h1>
-              <p className="text-muted-foreground text-[11px] leading-normal max-w-md">
-                Here is your roadmap for today. Let's make continuous progress and start the day strong.
+              <p className="text-muted-foreground text-xs leading-normal max-w-md">
+                Here is your roadmap for today. Let&apos;s make continuous progress and start the day strong.
               </p>
             </div>
 
@@ -236,8 +232,8 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
             <div className="space-y-2 text-left">
               <div className="flex items-center justify-between border-b border-border/40 pb-1">
                 <span className="text-[11px] font-bold text-foreground flex items-center gap-1">
-                  <Target className="w-3 h-3 text-indigo-500" />
-                  Today's Focus ({focusItems.length})
+                  <Target className="w-3 h-3 text-primary" />
+                  Today&apos;s Focus ({focusItems.length})
                 </span>
                 <span className="text-[9px] font-semibold text-muted-foreground">
                   {completedCount}/{totalCount} Completed
@@ -290,34 +286,34 @@ export function FocusModeOverlay({ isOpen, onClose }: FocusModeOverlayProps) {
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-semibold">
                   <span className="text-muted-foreground">Focus Progress</span>
-                  <span className="text-indigo-600 dark:text-indigo-400">{percentage}%</span>
+                  <span className="text-primary font-mono tabular-nums">{percentage}%</span>
                 </div>
                 <Progress
                   value={percentage}
                   className="h-1.5 bg-secondary"
-                  indicatorClassName="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                  indicatorClassName="bg-primary"
                 />
               </div>
             )}
 
             {/* Action panel */}
-            <div className="flex flex-col sm:flex-row gap-2 items-center pt-2.5 justify-between border-t border-border/40">
-              <div className="text-[9px] font-medium text-muted-foreground flex items-center gap-1">
-                <Compass className="w-3 h-3 text-amber-500" />
-                "Start Day" grants you 10 XP towards levels.
+            <div className="flex flex-col sm:flex-row gap-2 items-center pt-2.5 justify-between border-t border-border/50">
+              <div className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+                <Compass className="w-3 h-3 text-warning" />
+                &ldquo;Start Day&rdquo; grants you 10 XP towards levels.
               </div>
               <div className="flex gap-1.5 w-full sm:w-auto justify-end">
                 <Button
                   variant="outline"
                   onClick={handleSkip}
-                  className="w-full sm:w-auto h-8 px-3 rounded-lg border-border/80 text-[11px]"
+                  className="w-full sm:w-auto h-8 px-3 rounded-lg text-[11px]"
                 >
                   Skip
                 </Button>
                 <Button
                   onClick={handleStartDay}
                   disabled={xpClaimedToday}
-                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold h-8 px-4 rounded-lg shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
+                  className="w-full sm:w-auto font-semibold h-8 px-4 rounded-lg text-[11px]"
                 >
                   <Play className="w-3 h-3 mr-1 fill-current" />
                   {xpClaimedToday ? 'Day Started' : 'Start Day'}

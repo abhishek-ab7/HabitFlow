@@ -167,14 +167,11 @@ export function PWAInstallPrompt() {
             transition={{ type: 'spring', stiffness: 260, damping: 25 }}
             className="fixed bottom-20 left-4 right-4 z-[999] md:bottom-6 md:right-6 md:left-auto md:w-[420px]"
           >
-            <div className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-background/95 p-5 shadow-2xl backdrop-blur-xl dark:border-purple-500/30">
-              {/* Premium Glow effect */}
-              <div className="absolute -left-16 -top-16 -z-10 h-32 w-32 rounded-full bg-purple-500/20 blur-2xl" />
-              
+            <div className="relative overflow-hidden surface-hero p-5 shadow-xl">
               <div className="flex items-start gap-4">
                 {/* Brand icon representation */}
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 text-white shadow-lg shadow-purple-500/20">
-                  <Download className="h-6 w-6" />
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary border border-primary/25">
+                  <Download className="h-5 w-5" />
                 </div>
                 
                 <div className="flex-1">
@@ -189,7 +186,7 @@ export function PWAInstallPrompt() {
                     <Button 
                       onClick={handleInstallClick} 
                       size="sm" 
-                      className="bg-purple-600 text-white font-bold hover:bg-purple-700 shadow-md shadow-purple-500/10"
+                      className="font-semibold"
                     >
                       Install App
                     </Button>
@@ -234,14 +231,12 @@ export function PWAInstallPrompt() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-purple-500/20 bg-background p-6 shadow-2xl dark:border-purple-500/30"
+              className="relative w-full max-w-md overflow-hidden surface-hero p-6 shadow-2xl"
             >
-              <div className="absolute -right-16 -top-16 -z-10 h-32 w-32 rounded-full bg-purple-500/15 blur-2xl" />
-              
               <div className="flex justify-between items-start mb-5">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-purple-500/10 rounded-xl">
-                    <Download className="h-5 w-5 text-purple-500" />
+                  <div className="p-2 bg-primary/10 rounded-xl">
+                    <Download className="h-5 w-5 text-primary" />
                   </div>
                   <h3 className="text-lg font-bold text-foreground">PWA Install Instructions</h3>
                 </div>
@@ -266,7 +261,7 @@ export function PWAInstallPrompt() {
                         1
                       </div>
                       <div className="flex-1 text-xs">
-                        Tap the <span className="font-bold inline-flex items-center gap-1">Share <Share className="h-3.5 w-3.5 inline text-purple-500" /></span> button in the Safari toolbar.
+                        Tap the <span className="font-bold inline-flex items-center gap-1">Share <Share className="h-3.5 w-3.5 inline text-primary" /></span> button in the Safari toolbar.
                       </div>
                     </div>
 
@@ -275,7 +270,7 @@ export function PWAInstallPrompt() {
                         2
                       </div>
                       <div className="flex-1 text-xs">
-                        Scroll down and select <span className="font-bold inline-flex items-center gap-1">Add to Home Screen <Plus className="h-3.5 w-3.5 inline text-purple-500 border rounded" /></span>.
+                        Scroll down and select <span className="font-bold inline-flex items-center gap-1">Add to Home Screen <Plus className="h-3.5 w-3.5 inline text-primary border rounded" /></span>.
                       </div>
                     </div>
 
@@ -284,7 +279,7 @@ export function PWAInstallPrompt() {
                         3
                       </div>
                       <div className="flex-1 text-xs">
-                        Tap <span className="font-bold text-purple-500">Add</span> in the top-right corner to complete.
+                        Tap <span className="font-bold text-primary">Add</span> in the top-right corner to complete.
                       </div>
                     </div>
                   </div>
@@ -330,7 +325,7 @@ export function PWAInstallPrompt() {
               <div className="mt-6 flex justify-end">
                 <Button 
                   onClick={() => setShowInstructions(false)}
-                  className="bg-purple-600 text-white font-bold hover:bg-purple-700"
+                  className="font-semibold"
                 >
                   Got It
                 </Button>

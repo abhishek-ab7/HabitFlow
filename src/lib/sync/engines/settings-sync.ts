@@ -19,7 +19,7 @@ export class UserSettingsSyncEngine implements ISynchronizer {
     let pushedCount = 0;
 
     for (const settings of dirtyLocalSettings) {
-      const { error } = await (this.supabase.from('user_settings') as any).upsert({
+      const basePayload = {
         user_id: userId,
         user_name: settings.userName || null,
         avatar_id: settings.avatarId || 'avatar-1',
@@ -35,9 +35,21 @@ export class UserSettingsSyncEngine implements ISynchronizer {
         dashboard_layout: settings.dashboardLayout || null,
         generation_counter: settings.generationCounter || 1,
         updated_at: new Date().toISOString()
+      };
+
+      let { error } = await (this.supabase.from('user_settings') as any).upsert({
+        ...basePayload,
+        accent: settings.accent || 'mint',
       } as any, {
         onConflict: 'user_id'
       });
+
+      if (error && (error.code === 'PGRST204' || error.message?.includes('accent'))) {
+        const retry = await (this.supabase.from('user_settings') as any).upsert(basePayload as any, {
+          onConflict: 'user_id'
+        });
+        error = retry.error;
+      }
 
       if (error) throw new Error(`[UserSettingsSyncEngine Push Failure]: ${error.message}`);
       
@@ -59,10 +71,13 @@ export class UserSettingsSyncEngine implements ISynchronizer {
       const local = await db.userSettings.where('userId').equals(userId).first();
       
       if (!local || (remoteData.generation_counter || 0) > (local.generationCounter || 0)) {
+        const validAccents = ['mint', 'cobalt', 'forest', 'ink'];
+        const remoteAccent = validAccents.includes(remoteData.accent) ? remoteData.accent : undefined;
         const localSettings = {
           id: local?.id || crypto.randomUUID(),
           userId: userId,
           theme: local?.theme || 'system',
+          accent: remoteAccent || local?.accent || 'mint',
           userName: remoteData.user_name || undefined,
           weekStartsOn: (remoteData.week_start_day ?? 0) as any,
           showMotivationalQuotes: remoteData.show_motivational_quotes ?? true,
@@ -192,7 +207,7 @@ export async function syncMoodLogsWithRetry(engine: any) {
 
 export async function pushUserSettingsToRemote(engine: any, settings: any) {
   const supabase = getSupabaseClient();
-  await (supabase.from('user_settings') as any).upsert({
+  const basePayload = {
     user_id: engine.userId,
     user_name: settings.userName || null,
     avatar_id: settings.avatarId || 'avatar-1',
@@ -208,7 +223,18 @@ export async function pushUserSettingsToRemote(engine: any, settings: any) {
     dashboard_layout: settings.dashboardLayout || null,
     generation_counter: settings.generationCounter || 1,
     updated_at: new Date().toISOString()
+  };
+
+  const { error } = await (supabase.from('user_settings') as any).upsert({
+    ...basePayload,
+    accent: settings.accent || 'mint',
   } as any, {
     onConflict: 'user_id'
   });
+
+  if (error && (error.code === 'PGRST204' || error.message?.includes('accent'))) {
+    await (supabase.from('user_settings') as any).upsert(basePayload as any, {
+      onConflict: 'user_id'
+    });
+  }
 }

@@ -79,18 +79,18 @@ export function AuthForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-indigo-950/50 dark:to-slate-900">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 landing-mesh bg-background">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md"
       >
-        <div className="bg-card border border-border rounded-2xl shadow-xl p-8">
+        <div className="surface-hero shadow-xl p-8">
           {/* Logo */}
           <div className="flex justify-center mb-6">
             <div className="flex items-center gap-2.5">
               <motion.div
-                className="relative flex h-12 w-12 min-w-[3rem] min-h-[3rem] aspect-square items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-purple-600/10 border border-purple-500/30 dark:border-purple-400/40 shadow-sm shadow-purple-500/10 shrink-0 overflow-hidden"
+                className="relative flex h-12 w-12 min-w-[3rem] min-h-[3rem] aspect-square items-center justify-center rounded-xl bg-primary/10 border border-primary/25 shadow-xs shrink-0 overflow-hidden"
                 whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0] }}
                 whileTap={{ scale: 0.95 }}
                 transition={{ type: 'tween', duration: 0.5 }}
@@ -126,17 +126,17 @@ export function AuthForm() {
                   <defs>
                     <linearGradient id="auth-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
                       <stop offset="0%" stopColor="var(--primary)" />
-                      <stop offset="100%" stopColor="#9333ea" />
+                      <stop offset="100%" stopColor="var(--info)" />
                     </linearGradient>
                     <linearGradient id="auth-logo-grad-2" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#9333ea" />
-                      <stop offset="100%" stopColor="#ec4899" />
+                      <stop offset="0%" stopColor="var(--primary)" />
+                      <stop offset="100%" stopColor="#14b8a6" />
                     </linearGradient>
                   </defs>
                 </svg>
               </motion.div>
-              <span className="font-bold text-2xl bg-gradient-to-r from-primary via-purple-600 to-pink-500 bg-clip-text text-transparent tracking-tight">
-                Habit Flow
+              <span className="font-bold text-2xl text-foreground tracking-tight">
+                Habit<span className="text-primary">Flow</span>
               </span>
             </div>
           </div>

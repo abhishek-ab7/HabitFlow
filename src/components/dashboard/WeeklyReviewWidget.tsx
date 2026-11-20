@@ -116,10 +116,10 @@ export function WeeklyReviewWidget() {
 
   return (
     <>
-      <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-50/40 via-white/50 to-purple-50/40 dark:from-indigo-950/20 dark:via-slate-900/30 dark:to-purple-950/20 backdrop-blur-md shadow-lg overflow-hidden h-full flex flex-col justify-between tour-weekly-review-widget">
+      <Card className="surface-card shadow-none overflow-hidden h-full flex flex-col justify-between tour-weekly-review-widget">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-bold flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
-            <BarChart3 className="w-5 h-5 text-indigo-500" />
+          <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+            <BarChart3 className="w-4 h-4 text-primary" />
             Weekly Summary
           </CardTitle>
         </CardHeader>
@@ -129,7 +129,7 @@ export function WeeklyReviewWidget() {
           <div className="space-y-2">
             <div className="flex justify-between items-center text-xs font-semibold text-muted-foreground">
               <span>Weekly Consistency</span>
-              <span>{stats?.weeklyCompletionRate || 0}%</span>
+              <span className="font-mono tabular-nums text-foreground">{stats?.weeklyCompletionRate || 0}%</span>
             </div>
             <div className="flex gap-1.5 justify-between">
               {last7Days.map((day) => {
@@ -143,17 +143,17 @@ export function WeeklyReviewWidget() {
                   <div key={day.dateStr} className="flex-1 flex flex-col items-center gap-1">
                     <div 
                       className={cn(
-                        "w-full h-8 rounded-md border flex items-center justify-center text-[10px] font-bold transition-all",
+                        "w-full h-8 rounded-md border flex items-center justify-center text-[10px] font-mono font-bold transition-all",
                         isDayComplete 
                           ? "bg-success/20 text-success border-success/30" 
                           : dayComps > 0 
-                          ? "bg-indigo-500/10 text-indigo-500 border-indigo-500/20"
-                          : "bg-muted/40 border-transparent text-muted-foreground/30"
+                          ? "bg-primary/12 text-primary border-primary/25"
+                          : "bg-muted/40 border-transparent text-muted-foreground/40"
                       )}
                     >
                       {dayComps}
                     </div>
-                    <span className="text-[9px] font-bold text-muted-foreground/60">{day.dayName}</span>
+                    <span className="text-[9px] font-bold text-muted-foreground/70">{day.dayName}</span>
                   </div>
                 );
               })}
@@ -162,9 +162,9 @@ export function WeeklyReviewWidget() {
 
           {/* Dynamic Sunday Review Prompt */}
           {isSunday ? (
-            <div className="bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/40 dark:border-indigo-800/20 rounded-2xl p-3 text-center space-y-2.5 animate-pulse">
-              <div className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider flex items-center justify-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 fill-current" />
+            <div className="bg-accent/50 border border-primary/25 rounded-xl p-3.5 text-center space-y-2.5">
+              <div className="text-xs font-bold text-primary uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
                 Sunday Reflection Ready
               </div>
               <p className="text-xs text-muted-foreground max-w-[220px] mx-auto leading-relaxed">
@@ -173,15 +173,15 @@ export function WeeklyReviewWidget() {
               <Button
                 size="sm"
                 onClick={handleOpenReview}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl shadow-md"
+                className="w-full font-semibold text-xs py-2 rounded-xl"
               >
                 Launch Weekly Review
                 <ChevronRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
           ) : (
-            <div className="text-center p-3 rounded-2xl bg-muted/10 border border-border/40 text-xs text-muted-foreground italic leading-relaxed">
-              Your comprehensive Weekly Review unlocks every Sunday morning! Stay consistent.
+            <div className="text-center p-3 surface-subtle text-xs text-muted-foreground leading-relaxed">
+              Your comprehensive Weekly Review unlocks every Sunday morning.
             </div>
           )}
         </CardContent>
@@ -211,17 +211,17 @@ export function WeeklyReviewWidget() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ duration: 0.4 }}
-              className="max-w-2xl w-full bg-card border border-border/80 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden"
+              transition={{ duration: 0.35 }}
+              className="max-w-2xl w-full surface-hero p-6 md:p-8 shadow-2xl relative overflow-hidden"
             >
               <div className="space-y-6">
                 {/* Header */}
                 <div className="text-center md:text-left space-y-1">
-                  <div className="inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-200/50 dark:border-indigo-800/30">
-                    <Award className="w-3.5 h-3.5 text-indigo-500" />
+                  <div className="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-semibold border border-primary/20">
+                    <Award className="w-3.5 h-3.5 text-primary" />
                     Weekly Performance Review
                   </div>
-                  <h2 className="text-3xl font-extrabold tracking-tight text-foreground">
+                  <h2 className="text-3xl font-bold tracking-tight text-foreground">
                     Your Week in Review 📊
                   </h2>
                   <p className="text-muted-foreground text-sm">
@@ -232,7 +232,7 @@ export function WeeklyReviewWidget() {
                 {/* Grid stats */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Best Habit */}
-                  <div className="p-4 rounded-2xl border bg-success/5 border-success/20 flex gap-3 items-start">
+                  <div className="p-4 rounded-xl border bg-success/5 border-success/20 flex gap-3 items-start">
                     <div className="w-9 h-9 rounded-xl bg-success/15 flex items-center justify-center text-success shrink-0">
                       <Flame className="w-5 h-5" />
                     </div>
@@ -248,7 +248,7 @@ export function WeeklyReviewWidget() {
                   </div>
 
                   {/* Worst Habit */}
-                  <div className="p-4 rounded-2xl border bg-amber-500/5 border-amber-500/20 flex gap-3 items-start">
+                  <div className="p-4 rounded-xl border bg-amber-500/5 border-amber-500/20 flex gap-3 items-start">
                     <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-500 shrink-0">
                       <AlertCircle className="w-5 h-5" />
                     </div>
@@ -264,12 +264,12 @@ export function WeeklyReviewWidget() {
                   </div>
 
                   {/* Best Day */}
-                  <div className="p-4 rounded-2xl border bg-indigo-500/5 border-indigo-500/20 flex gap-3 items-start">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-500/15 flex items-center justify-center text-indigo-500 shrink-0">
+                  <div className="p-4 rounded-xl border bg-info/5 border-info/20 flex gap-3 items-start">
+                    <div className="w-9 h-9 rounded-xl bg-info/15 flex items-center justify-center text-info shrink-0">
                       <CheckCircle2 className="w-5 h-5" />
                     </div>
                     <div className="min-w-0">
-                      <span className="text-[10px] uppercase font-bold text-indigo-500 tracking-wider block">Most Productive Day</span>
+                      <span className="text-[10px] uppercase font-bold text-info tracking-wider block">Most Productive Day</span>
                       <span className="font-bold text-sm text-foreground block">
                         {stats.bestDay ? `${stats.bestDay.dayName}s` : 'N/A'}
                       </span>
@@ -325,7 +325,7 @@ export function WeeklyReviewWidget() {
                 <div className="flex justify-end pt-2 border-t">
                   <Button
                     onClick={() => setShowFullReview(false)}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2 rounded-2xl shadow-md"
+                    className="font-semibold px-6 py-2 rounded-xl"
                   >
                     Done Reviewing
                   </Button>

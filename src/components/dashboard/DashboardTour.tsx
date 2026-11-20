@@ -477,7 +477,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
             }}
             exit={{ opacity: 0 }}
             transition={{ type: 'spring', damping: 28, stiffness: 180 }}
-            className="fixed pointer-events-none z-[1002] rounded-xl border-2 border-primary shadow-[0_0_15px_rgba(99,102,241,0.55)]"
+            className="fixed pointer-events-none z-[1002] rounded-xl border-2 border-primary ring-4 ring-primary/25"
             style={{ position: 'fixed' }}
           >
             {/* Animated pulsing outer ring */}
@@ -504,10 +504,10 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-md bg-card/90 dark:bg-slate-900/90 backdrop-blur-xl border border-border/80 dark:border-white/5 rounded-3xl p-6 md:p-8 shadow-2xl z-[1050] text-center space-y-6"
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-md surface-hero p-6 md:p-8 shadow-2xl z-[1050] text-center space-y-6"
             >
-              <div className="mx-auto w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-500">
-                <HelpCircle className="w-8 h-8 animate-pulse" />
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <HelpCircle className="w-8 h-8" />
               </div>
               
               <div className="space-y-2">
@@ -551,14 +551,14 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
               }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ type: 'spring', damping: 28, stiffness: 180 }}
-              className="w-[340px] bg-card/95 dark:bg-slate-900/95 backdrop-blur-xl border border-border/80 dark:border-white/5 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 text-left"
+              className="w-[340px] surface-hero p-5 shadow-2xl flex flex-col gap-4 text-left"
             >
               {/* Tooltip Card Connection Arrow */}
               {arrowDetails && (
                 <div
                   style={{ left: arrowDetails.left }}
                   className={cn(
-                    "absolute w-3.5 h-3.5 bg-card border-border/85 dark:border-white/5 rotate-45 z-10 transition-all duration-300",
+                    "absolute w-3.5 h-3.5 bg-card border-border rotate-45 z-10 transition-all duration-300",
                     arrowDetails.isBelow 
                       ? "bottom-full translate-y-1.5 border-t border-l" 
                       : "top-full -translate-y-1.5 border-b border-r"
@@ -578,8 +578,8 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
                   {/* Header */}
                   <div className="flex items-center justify-between pb-1 border-b border-border/40">
                     <div className="flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-indigo-500 fill-current" />
-                      <span className="text-[11px] font-black uppercase text-indigo-500 tracking-wider">
+                      <Sparkles className="w-4 h-4 text-primary" />
+                      <span className="text-[11px] font-black uppercase text-primary tracking-wider">
                         Tutorial Tour
                       </span>
                     </div>
@@ -639,9 +639,9 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
                   </div>
 
                   {/* Gamified Benefit Box */}
-                  <div className="bg-indigo-500/5 dark:bg-indigo-400/5 border border-indigo-500/10 p-3 rounded-xl flex items-start gap-2">
+                  <div className="bg-primary/5 border border-primary/15 p-3 rounded-xl flex items-start gap-2">
                     <span className="text-sm mt-0.5">💡</span>
-                    <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold leading-relaxed">
+                    <p className="text-[10px] text-primary font-semibold leading-relaxed">
                       {currentStepData.benefit}
                     </p>
                   </div>
@@ -668,7 +668,7 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
                       <Button
                         size="sm"
                         onClick={handleNext}
-                        className="h-8 rounded-lg text-xs font-bold px-4 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/25 flex items-center gap-1"
+                        className="h-8 rounded-lg text-xs font-bold px-4 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs flex items-center gap-1"
                       >
                         {currentStep === steps.length - 1 ? (
                           <>

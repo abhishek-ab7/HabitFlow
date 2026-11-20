@@ -95,8 +95,8 @@ export function AchievementsGallery() {
     streaks: 'from-orange-500 to-amber-400 text-orange-500 bg-orange-500/10 border-orange-500/20',
     tasks: 'from-blue-500 to-sky-400 text-blue-500 bg-blue-500/10 border-blue-500/20',
     journal: 'from-emerald-500 to-teal-400 text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-    mood: 'from-pink-500 to-rose-400 text-pink-500 bg-pink-500/10 border-pink-500/20',
-    general: 'from-indigo-500 to-purple-400 text-indigo-500 bg-indigo-500/10 border-indigo-500/20',
+    mood: 'from-rose-500 to-amber-400 text-rose-500 bg-rose-500/10 border-rose-500/20',
+    general: 'from-primary to-teal-500 text-primary bg-primary/10 border-primary/20',
   };
 
   return (
@@ -111,7 +111,7 @@ export function AchievementsGallery() {
             Complete milestones, unlock legendary badges, and earn rewards.
           </p>
         </div>
-        <div className="text-xs font-semibold px-3 py-1.5 rounded-full bg-indigo-500/15 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 w-fit">
+        <div className="text-xs font-semibold font-mono tabular-nums px-3 py-1.5 rounded-full bg-invest/15 border border-invest/25 text-invest w-fit">
           Unlocked: <span className="font-bold">{achievements.filter(a => a.isUnlocked).length}</span> / {achievements.length}
         </div>
       </div>
@@ -213,41 +213,41 @@ export function AchievementsGallery() {
       {/* Celebration Modal Popover */}
       <AnimatePresence>
         {activeCelebration && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <ConfettiEffect />
             <motion.div
               initial={{ scale: 0.9, opacity: 0, y: 30 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 30 }}
-              className="bg-card text-card-foreground border border-border/80 shadow-2xl rounded-3xl p-8 max-w-sm w-full text-center relative overflow-hidden flex flex-col items-center gap-6"
+              className="surface-hero p-8 max-w-sm w-full text-center relative overflow-hidden flex flex-col items-center gap-6"
             >
-              {/* Outer Glowing Circle */}
-              <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500 via-purple-500 to-pink-500 p-1 shadow-lg animate-bounce duration-1000">
+              {/* Outer Badge Ring */}
+              <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500 via-primary to-invest p-1 shadow-lg">
                 <div className="w-full h-full rounded-full bg-card flex items-center justify-center">
                   <Sparkles className="w-10 h-10 text-amber-500" />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs uppercase font-extrabold tracking-widest text-indigo-500">Achievement Unlocked!</p>
-                <h3 className="text-2xl font-black text-foreground">{activeCelebration.title}</h3>
+                <p className="text-xs uppercase font-bold tracking-widest text-invest">Achievement Unlocked!</p>
+                <h3 className="text-2xl font-bold text-foreground">{activeCelebration.title}</h3>
                 <p className="text-sm text-muted-foreground">{activeCelebration.description}</p>
               </div>
 
-              <div className="bg-muted/40 rounded-2xl p-4 border border-border/30 w-full flex items-center justify-around">
+              <div className="surface-subtle p-4 w-full flex items-center justify-around">
                 <div className="text-center">
                   <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">XP Reward</p>
-                  <p className="text-lg font-bold text-indigo-500 font-mono">+{activeCelebration.xpReward}</p>
+                  <p className="text-lg font-bold text-invest font-mono tabular-nums">+{activeCelebration.xpReward}</p>
                 </div>
-                <div className="h-8 w-px bg-border/50" />
+                <div className="h-8 w-px bg-border" />
                 <div className="text-center">
                   <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Gem Reward</p>
-                  <p className="text-lg font-bold text-amber-500 font-mono">+{activeCelebration.gemReward}</p>
+                  <p className="text-lg font-bold text-amber-500 font-mono tabular-nums">+{activeCelebration.gemReward}</p>
                 </div>
               </div>
 
               <Button
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-11 rounded-xl shadow-lg cursor-pointer"
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-11 rounded-xl shadow-sm cursor-pointer"
                 onClick={handleCloseCelebration}
               >
                 Hooray!

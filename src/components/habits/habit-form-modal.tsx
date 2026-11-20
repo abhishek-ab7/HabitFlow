@@ -40,7 +40,7 @@ const CATEGORIES: { value: Category; label: string; emoji: string }[] = [
 
 const CATEGORY_COLORS: Record<Category, string> = {
   health: 'bg-emerald-500/20 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/30',
-  work: 'bg-indigo-500/20 text-indigo-600 border-indigo-500/30 hover:bg-indigo-500/30',
+  work: 'bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/30',
   learning: 'bg-amber-500/20 text-amber-600 border-amber-500/30 hover:bg-amber-500/30',
   personal: 'bg-pink-500/20 text-pink-600 border-pink-500/30 hover:bg-pink-500/30',
   finance: 'bg-sky-500/20 text-sky-600 border-sky-500/30 hover:bg-sky-500/30',

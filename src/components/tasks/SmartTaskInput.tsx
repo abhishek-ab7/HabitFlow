@@ -126,7 +126,7 @@ export function SmartTaskInput({ onAddTask, placeholder = "Add a task... (e.g., 
                     onKeyDown={handleKeyDown}
                     placeholder={isListening ? "Listening..." : placeholder}
                     className={cn(
-                        "pr-24 pl-4 py-6 text-base shadow-sm border-indigo-200 focus-visible:ring-indigo-500",
+                        "pr-24 pl-4 py-6 text-base shadow-xs border-border focus-visible:ring-primary",
                         isListening && "ring-2 ring-red-500 border-red-500 placeholder:text-red-500 animate-pulse"
                     )}
                     disabled={isSubmitting}
@@ -141,7 +141,7 @@ export function SmartTaskInput({ onAddTask, placeholder = "Add a task... (e.g., 
                         onClick={toggleVoiceInput}
                         className={cn(
                             "h-8 w-8 text-muted-foreground transition-colors",
-                            isListening ? "text-red-500 bg-red-100 dark:bg-red-950" : "hover:text-indigo-600"
+                            isListening ? "text-red-500 bg-red-100 dark:bg-red-950" : "hover:text-primary"
                         )}
                     >
                         <Mic className={cn("w-4 h-4", isListening && "animate-bounce")} />
@@ -150,7 +150,7 @@ export function SmartTaskInput({ onAddTask, placeholder = "Add a task... (e.g., 
                     {/* Submit Button */}
                     <Button
                         size="icon"
-                        className="h-8 w-8 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full"
+                        className="h-8 w-8 bg-primary hover:bg-primary/90 text-primary-foreground rounded-full"
                         onClick={() => handleSubmit()}
                         disabled={!inputValue.trim() || isSubmitting}
                     >
@@ -168,7 +168,7 @@ export function SmartTaskInput({ onAddTask, placeholder = "Add a task... (e.g., 
                         exit={{ opacity: 0, y: -10 }}
                         className="absolute -bottom-8 left-2 z-10"
                     >
-                        <Badge variant="outline" className="bg-background/95 backdrop-blur shadow-sm border-indigo-200 text-indigo-700 flex items-center gap-1.5 px-3 py-1">
+                        <Badge variant="outline" className="bg-card shadow-sm border-primary/30 text-primary flex items-center gap-1.5 px-3 py-1">
                             <Calendar className="w-3.5 h-3.5" />
                             <span className="font-medium">Due: {format(parsedDate, 'PPP p')}</span>
                             <button

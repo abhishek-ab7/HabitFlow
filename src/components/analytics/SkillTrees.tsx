@@ -124,8 +124,8 @@ export function SkillTrees() {
         name: 'Charisma',
         ...charismaDetails,
         icon: <Users className="h-4 w-4" />,
-        color: 'text-pink-500',
-        gradient: 'from-pink-500 to-rose-400',
+        color: 'text-rose-500',
+        gradient: 'from-rose-500 to-orange-400',
         description: 'Relationships, family connections, and social habits.',
         habitsCount: habitsByCategory('relationships')
       },
@@ -159,13 +159,11 @@ export function SkillTrees() {
   }, [habits, completions, goals]);
 
   return (
-    <Card className="border border-border/60 bg-card rounded-2xl shadow-xl overflow-hidden relative">
-      <div className="absolute top-0 right-0 w-80 h-80 bg-radial-gradient from-primary/5 to-transparent blur-3xl pointer-events-none" />
-
-      <CardHeader className="pb-4 border-b border-border/40 flex flex-row items-center justify-between gap-4">
+    <Card className="surface-card overflow-hidden relative">
+      <CardHeader className="pb-4 border-b border-border/60 flex flex-row items-center justify-between gap-4">
         <div>
           <CardTitle className="text-xl font-bold flex items-center gap-2">
-            <Award className="h-5 w-5 text-primary animate-bounce" />
+            <Award className="h-5 w-5 text-primary" />
             RPG Skill Tree & Attributes
           </CardTitle>
           <p className="text-xs text-muted-foreground">
@@ -174,7 +172,7 @@ export function SkillTrees() {
         </div>
         <div className="text-right">
           <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Total Level</div>
-          <div className="text-3xl font-black text-primary">{skillStats.totalLevel}</div>
+          <div className="text-3xl font-bold font-mono tabular-nums text-primary">{skillStats.totalLevel}</div>
         </div>
       </CardHeader>
 
@@ -186,10 +184,8 @@ export function SkillTrees() {
             <motion.div
               key={attr.name}
               whileHover={{ y: -3, transition: { duration: 0.2 } }}
-              className="p-4 rounded-xl border border-border/50 bg-muted/20 flex flex-col justify-between h-[160px] relative group"
+              className="p-4 surface-subtle flex flex-col justify-between h-[160px] relative group"
             >
-              {/* Active attribute gradient highlight on hover */}
-              <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
 
               <div>
                 {/* Header */}
@@ -205,7 +201,7 @@ export function SkillTrees() {
                   </div>
                   <div className="text-right">
                     <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">Rank</span>
-                    <h5 className={cn("text-lg font-black leading-none", attr.color)}>Lvl {attr.level}</h5>
+                    <h5 className={cn("text-lg font-bold font-mono tabular-nums leading-none", attr.color)}>Lvl {attr.level}</h5>
                   </div>
                 </div>
 

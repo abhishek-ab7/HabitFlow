@@ -181,7 +181,7 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-10 h-10 rounded-xl bg-pink-500/12 text-pink-600 dark:text-pink-400 flex items-center justify-center shrink-0">
+                      <span className="w-10 h-10 rounded-xl bg-rose-500/12 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
                         <HeartHandshake className="w-5 h-5" />
                       </span>
                       <div className="min-w-0">
@@ -221,7 +221,7 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
                     <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
                       <div
                         style={{ width: `${ledger.progressPercentage}%` }}
-                        className="h-full bg-pink-500 transition-all duration-300"
+                        className="h-full bg-rose-500 transition-all duration-300"
                       />
                     </div>
                     {ledger.remainingBalance > 0 ? (

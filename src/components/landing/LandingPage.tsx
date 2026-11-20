@@ -28,14 +28,8 @@ import {
   Info,
   LayoutDashboard
 } from 'lucide-react';
-import { Plus_Jakarta_Sans } from 'next/font/google';
 import { useTheme } from '@/providers/theme-provider';
 import confetti from 'canvas-confetti';
-
-const plusJakartaSans = Plus_Jakarta_Sans({
-  subsets: ['latin'],
-  variable: '--font-plus-jakarta',
-});
 
 interface FloatingXP {
   id: string;
@@ -55,19 +49,6 @@ export function LandingPage() {
   const featuresRef = useRef<HTMLDivElement>(null);
   const simulatorRef = useRef<HTMLDivElement>(null);
   const isSimulatorInView = useInView(simulatorRef, { once: true, amount: 0.15 });
-
-  // Global Page Scroll Hooks for Parallax Backgrounds
-  const { scrollYProgress } = useScroll({
-    target: pageRef,
-    offset: ["start start", "end end"]
-  });
-
-  const scrollSpring = useSpring(scrollYProgress, { stiffness: 100, damping: 30, restDelta: 0.001 });
-
-  // Transforms for background parallax glowing blobs
-  const blob1Y = useTransform(scrollSpring, [0, 1], [0, 300]);
-  const blob2Y = useTransform(scrollSpring, [0, 1], [0, -400]);
-  const blob3Y = useTransform(scrollSpring, [0, 1], [0, 200]);
 
   // Mockup 3D Tilt and Parallax
   const { scrollYProgress: mockupScrollY } = useScroll({
@@ -475,56 +456,9 @@ export function LandingPage() {
   return (
     <div 
       ref={pageRef}
-      className={`landing-root ${plusJakartaSans.className} min-h-screen relative overflow-x-hidden flex flex-col font-sans transition-colors duration-500 ${
-        isDark ? 'text-[#ebdfe9] bg-[#09050d]' : 'text-slate-800 bg-[#f9f7fd]'
-      }`}
+      className="landing-mesh min-h-screen relative overflow-x-hidden flex flex-col font-sans text-foreground transition-colors duration-300"
     >
-      
-      {/* Premium Glassmorphic & Liquid Mesh System */}
       <style jsx global>{`
-        .landing-root {
-          background-color: ${isDark ? '#09050d' : '#f9f7fd'};
-          background-image: 
-            linear-gradient(${isDark ? 'rgba(168, 85, 247, 0.015)' : 'rgba(147, 51, 234, 0.02)'} 1px, transparent 1px),
-            linear-gradient(90deg, ${isDark ? 'rgba(168, 85, 247, 0.015)' : 'rgba(147, 51, 234, 0.02)'} 1px, transparent 1px);
-          background-size: 50px 50px;
-          background-attachment: fixed;
-        }
-
-        .liquid-blur-1 {
-          background: radial-gradient(circle, ${isDark ? 'rgba(168, 85, 247, 0.16)' : 'rgba(251, 146, 60, 0.12)'} 0%, transparent 70%);
-        }
-
-        .liquid-blur-2 {
-          background: radial-gradient(circle, ${isDark ? 'rgba(79, 70, 229, 0.14)' : 'rgba(244, 63, 94, 0.1)'} 0%, transparent 75%);
-        }
-
-        .liquid-blur-3 {
-          background: radial-gradient(circle, ${isDark ? 'rgba(236, 72, 153, 0.12)' : 'rgba(99, 102, 241, 0.08)'} 0%, transparent 60%);
-        }
-
-        .glass-panel-acrylic {
-          background: ${isDark ? 'rgba(20, 14, 28, 0.45)' : 'rgba(255, 255, 255, 0.75)'};
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(147, 51, 234, 0.08)'};
-          box-shadow: 0 10px 40px -10px ${isDark ? 'rgba(0, 0, 0, 0.3)' : 'rgba(147, 51, 234, 0.05)'};
-        }
-
-        .glass-panel-acrylic-heavy {
-          background: ${isDark ? 'rgba(22, 16, 32, 0.7)' : 'rgba(255, 255, 255, 0.9)'};
-          backdrop-filter: blur(28px);
-          -webkit-backdrop-filter: blur(28px);
-          border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(147, 51, 234, 0.12)'};
-        }
-
-        .text-neon-gradient {
-          background: linear-gradient(135deg, ${isDark ? '#f4d5ff' : '#6b21a8'}, ${isDark ? '#a855f7' : '#ec4899'}, ${isDark ? '#818cf8' : '#3b82f6'});
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-
         .perspective-container {
           perspective: 1000px;
         }
@@ -538,61 +472,52 @@ export function LandingPage() {
         }
       `}</style>
 
-      {/* Floating Animated Liquid Background Blobs */}
-      <motion.div style={{ y: blob1Y }} className="absolute top-[10%] right-[-10%] w-[500px] h-[500px] liquid-blur-1 pointer-events-none -z-10" />
-      <motion.div style={{ y: blob2Y }} className="absolute top-[40%] left-[-15%] w-[600px] h-[600px] liquid-blur-2 pointer-events-none -z-10" />
-      <motion.div style={{ y: blob3Y }} className="absolute bottom-[10%] right-[-5%] w-[450px] h-[450px] liquid-blur-3 pointer-events-none -z-10" />
-
-      {/* Premium Navigation Header */}
-      <header className="fixed top-0 w-full glass-panel-acrylic border-b z-50 transition-all duration-300">
+      {/* Navigation Header */}
+      <header className="fixed top-0 w-full surface-chrome border-b z-50 transition-all duration-300">
         <div className="max-w-7xl mx-auto flex justify-between items-center px-6 md:px-12 py-4">
           <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 shadow-md">
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/25 shadow-xs">
               <svg viewBox="0 0 32 32" className="h-6 w-6" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M 16 4 A 12 12 0 1 1 15.99 4" stroke="url(#header-logo-grad)" strokeWidth="3.5" strokeLinecap="round" />
                 <path d="M 12 16.5 L 15 19.5 L 21 12.5" stroke="url(#header-logo-grad-2)" strokeWidth="3.5" strokeLinecap="round" />
                 <defs>
                   <linearGradient id="header-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#a855f7" />
-                    <stop offset="100%" stopColor="#6366f1" />
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#14b8a6" />
                   </linearGradient>
                   <linearGradient id="header-logo-grad-2" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#6366f1" />
-                    <stop offset="100%" stopColor="#ec4899" />
+                    <stop offset="0%" stopColor="#14b8a6" />
+                    <stop offset="100%" stopColor="#0ea5e9" />
                   </linearGradient>
                 </defs>
               </svg>
             </div>
-            <span className={`text-xl md:text-2xl font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              HabitFlow
+            <span className="text-xl md:text-2xl font-black tracking-tight text-foreground">
+              Habit<span className="text-primary">Flow</span>
             </span>
           </div>
 
           <nav className="hidden md:flex items-center gap-8">
-            <a href="#showcase" className={`text-sm font-semibold transition-colors duration-200 ${isDark ? 'text-[#d1c2d2] hover:text-white' : 'text-slate-600 hover:text-purple-600'}`}>Showcase</a>
-            <a href="#simulator" className={`text-sm font-semibold transition-colors duration-200 ${isDark ? 'text-[#d1c2d2] hover:text-white' : 'text-slate-600 hover:text-purple-600'}`}>Simulator</a>
-            <a href="#focus-hub" className={`text-sm font-semibold transition-colors duration-200 ${isDark ? 'text-[#d1c2d2] hover:text-white' : 'text-slate-600 hover:text-purple-600'}`}>Focus Hub</a>
-            <a href="#features" className={`text-sm font-semibold transition-colors duration-200 ${isDark ? 'text-[#d1c2d2] hover:text-white' : 'text-slate-600 hover:text-purple-600'}`}>Deep Work</a>
+            <a href="#showcase" className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors duration-200">Showcase</a>
+            <a href="#simulator" className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors duration-200">Simulator</a>
+            <a href="#focus-hub" className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors duration-200">Focus Hub</a>
+            <a href="#features" className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors duration-200">Deep Work</a>
           </nav>
 
           <div className="flex items-center gap-3">
             <button
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              className={`p-2.5 rounded-xl border transition-all duration-300 ${
-                isDark 
-                  ? 'border-white/10 hover:bg-white/5 text-amber-400 hover:text-amber-300' 
-                  : 'border-slate-200 hover:bg-slate-100 text-indigo-600 hover:text-indigo-800'
-              }`}
+              className="p-2.5 rounded-xl border border-border bg-card hover:bg-muted transition-all duration-200 text-muted-foreground hover:text-foreground cursor-pointer"
               title="Toggle theme"
             >
-              {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              {isDark ? <Sun className="h-5 w-5 text-warning" /> : <Moon className="h-5 w-5 text-foreground" />}
             </button>
 
             <Link href="/login">
               <motion.button 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:shadow-lg hover:shadow-purple-500/25 transition-all px-6 py-2.5 rounded-xl text-white font-bold text-sm cursor-pointer"
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-all px-6 py-2.5 rounded-xl font-bold text-sm cursor-pointer"
               >
                 Sign In
               </motion.button>
@@ -603,7 +528,7 @@ export function LandingPage() {
 
       <main className="flex-grow pt-24 flex flex-col items-center">
         
-        {/* 1. Hero Zone (Extreme Asymmetric & Depth Layers) */}
+        {/* 1. Hero Zone */}
         <section className="w-full max-w-7xl px-6 md:px-12 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative min-h-[80vh]">
           
           {/* Hero Left Content Area */}
@@ -612,33 +537,29 @@ export function LandingPage() {
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-wider uppercase mb-6 shadow-sm ${
-                isDark ? 'bg-purple-950/40 text-purple-300 border border-purple-800/30' : 'bg-purple-100/80 text-purple-800 border border-purple-200'
-              }`}
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-wider uppercase mb-6 bg-primary/10 text-primary border border-primary/25"
             >
-              <Sparkles className="h-4.5 w-4.5 text-purple-500 animate-pulse" />
-              Revolutionize Your Routine
+              <Sparkles className="h-4 w-4 text-primary" />
+              Precision Life &amp; Finance OS
             </motion.div>
 
             <motion.h1 
               initial={{ opacity: 0, y: 25 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-              className={`text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.1] mb-6 ${
-                isDark ? 'text-white' : 'text-slate-900'
-              }`}
+              className="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.08] mb-6 text-foreground"
             >
               Master habits.<br />
-              Find your <span className="text-neon-gradient">Flow.</span>
+              Find your <span className="text-gradient">Flow.</span>
             </motion.h1>
 
             <motion.p 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className={`text-lg md:text-xl mb-10 max-w-xl ${isDark ? 'text-[#c6b4c8]' : 'text-slate-600'}`}
+              className="text-lg md:text-xl mb-10 max-w-xl text-muted-foreground"
             >
-              Build consistency, conquer focus goals, and level up your life with a beautifully synced, gamified habit tracker.
+              Build consistency, conquer deep work, and steer your personal finances in one calm, offline-first Life OS.
             </motion.p>
             
             <motion.div 
@@ -649,24 +570,20 @@ export function LandingPage() {
             >
               <Link href="/login?mode=signup">
                 <motion.button 
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  whileTap={{ scale: 0.96 }}
-                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:shadow-xl hover:shadow-purple-500/25 px-8 py-4 rounded-2xl text-white font-bold text-base cursor-pointer shadow-lg transition-shadow duration-300"
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-4 rounded-xl font-bold text-base cursor-pointer shadow-sm transition-all duration-200"
                 >
                   Get Started for Free
                 </motion.button>
               </Link>
               <a href="#showcase">
                 <motion.button 
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  whileTap={{ scale: 0.96 }}
-                  className={`bg-transparent border transition-all duration-300 px-8 py-4 rounded-2xl font-bold text-base flex items-center gap-2 cursor-pointer ${
-                    isDark 
-                      ? 'border-purple-500/30 text-purple-300 hover:bg-purple-500/10' 
-                      : 'border-purple-600/30 text-purple-700 hover:bg-purple-50'
-                  }`}
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="bg-card hover:bg-muted border border-border text-foreground transition-all duration-200 px-8 py-4 rounded-xl font-bold text-base flex items-center gap-2 cursor-pointer"
                 >
-                  <Play className="h-5 w-5 fill-current" />
+                  <Play className="h-5 w-5 fill-current text-primary" />
                   View Interactive Demo
                 </motion.button>
               </a>
@@ -679,37 +596,33 @@ export function LandingPage() {
               initial={{ opacity: 0, scale: 0.9, rotate: -3 }}
               animate={{ opacity: 1, scale: 1, rotate: -2 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className={`glass-panel-acrylic-heavy rounded-[2rem] p-8 w-full max-w-sm shadow-xl absolute z-20 hover:scale-[1.03] transition-transform duration-300 ${
-                isDark ? 'shadow-purple-950/20' : 'shadow-purple-100'
-              }`}
+              className="surface-hero rounded-2xl p-8 w-full max-w-sm shadow-xl absolute z-20 hover:scale-[1.02] transition-transform duration-300"
             >
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-2">
                   <div className="p-1.5 bg-orange-500/10 rounded-lg">
                     <Flame className="h-5 w-5 text-orange-500" />
                   </div>
-                  <h3 className={`text-base font-bold ${isDark ? 'text-purple-100' : 'text-slate-900'}`}>Active Streak</h3>
+                  <h3 className="text-base font-bold text-foreground">Active Streak</h3>
                 </div>
-                <span className={`text-[10px] font-extrabold tracking-wider px-3 py-1 rounded-full uppercase border ${
-                  isDark ? 'bg-purple-950/40 text-purple-300 border-purple-800/30' : 'bg-purple-50 text-purple-700 border-purple-100'
-                }`}>DAY 12</span>
+                <span className="text-[10px] font-extrabold tracking-wider px-3 py-1 rounded-full uppercase border bg-primary/10 text-primary border-primary/25 font-mono">DAY 12</span>
               </div>
               
-              <div className={`text-5xl font-black mb-4 tracking-tight flex items-baseline ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                12<span className={`text-sm font-semibold ml-1.5 ${isDark ? 'text-[#c6b4c8]' : 'text-slate-500'}`}>days in a row</span>
+              <div className="text-5xl font-black mb-4 tracking-tight flex items-baseline font-mono tabular-nums text-foreground">
+                12<span className="text-sm font-sans font-semibold ml-1.5 text-muted-foreground">days in a row</span>
               </div>
 
-              <div className="text-xs font-semibold mb-3 flex justify-between items-center text-slate-400">
+              <div className="text-xs font-semibold mb-3 flex justify-between items-center text-muted-foreground">
                 <span>Weekly Consistency</span>
-                <span className="text-purple-500 font-bold">4 / 7 days completed</span>
+                <span className="text-primary font-bold font-mono tabular-nums">4 / 7 days completed</span>
               </div>
 
               <div className="flex justify-between gap-2.5 mt-2">
                 {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-2.5 flex-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" />
+                  <div key={i} className="h-2.5 flex-1 bg-primary rounded-full" />
                 ))}
                 {[5, 6, 7].map((i) => (
-                  <div key={i} className={`h-2.5 flex-1 rounded-full ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`} />
+                  <div key={i} className="h-2.5 flex-1 rounded-full bg-muted" />
                 ))}
               </div>
             </motion.div>
@@ -717,15 +630,13 @@ export function LandingPage() {
             {/* Decorative calendar bubble peeking from behind */}
             <motion.div
               initial={{ opacity: 0, x: 40, y: -40, rotate: 6 }}
-              animate={{ opacity: 0.85, x: 20, y: -80, rotate: 8 }}
+              animate={{ opacity: 0.95, x: 20, y: -80, rotate: 8 }}
               transition={{ duration: 1, delay: 0.4 }}
-              className={`glass-panel-acrylic rounded-2xl p-4 w-48 shadow-lg absolute z-10 hidden sm:block ${
-                isDark ? 'border-white/5 bg-slate-950/30' : 'border-slate-100 bg-white/70'
-              }`}
+              className="surface-card p-4 w-48 shadow-lg absolute z-10 hidden sm:block"
             >
               <div className="flex items-center gap-2 mb-3">
-                <Calendar className="h-4.5 w-4.5 text-purple-500" />
-                <span className={`text-xs font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Habit Grid</span>
+                <Calendar className="h-4.5 w-4.5 text-primary" />
+                <span className="text-xs font-bold text-foreground">Habit Grid</span>
               </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {Array.from({ length: 15 }).map((_, i) => (
@@ -733,8 +644,8 @@ export function LandingPage() {
                     key={i} 
                     className={`aspect-square rounded ${
                       i % 3 === 0 
-                        ? 'bg-gradient-to-br from-purple-500 to-indigo-500 shadow-sm shadow-purple-500/20' 
-                        : (isDark ? 'bg-slate-800' : 'bg-slate-200')
+                        ? 'bg-primary shadow-xs' 
+                        : 'bg-muted'
                     }`} 
                   />
                 ))}
@@ -744,21 +655,19 @@ export function LandingPage() {
             {/* Mini Stat tag under the streak card */}
             <motion.div
               initial={{ opacity: 0, x: -60, y: 50, rotate: -8 }}
-              animate={{ opacity: 0.9, x: -50, y: 80, rotate: -6 }}
+              animate={{ opacity: 0.95, x: -50, y: 80, rotate: -6 }}
               transition={{ duration: 1, delay: 0.5 }}
-              className={`glass-panel-acrylic rounded-2xl p-4 w-48 shadow-lg absolute z-10 hidden sm:block ${
-                isDark ? 'border-white/5 bg-slate-950/30' : 'border-slate-100 bg-white/70'
-              }`}
+              className="surface-card p-4 w-48 shadow-lg absolute z-10 hidden sm:block"
             >
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                  <Award className="h-4.5 w-4.5 text-amber-500" />
-                  <span className={`text-xs font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Level 12</span>
+                  <Award className="h-4.5 w-4.5 text-warning" />
+                  <span className="text-xs font-bold text-foreground font-mono">Level 12</span>
                 </div>
-                <span className="text-[10px] text-amber-400 font-extrabold">+230 XP</span>
+                <span className="text-[10px] text-invest font-extrabold font-mono">+230 XP</span>
               </div>
-              <div className={`w-full h-1.5 rounded-full overflow-hidden mt-2 ${isDark ? 'bg-slate-800' : 'bg-slate-200'}`}>
-                <div className="w-[70%] h-full bg-amber-400 rounded-full" />
+              <div className="w-full h-1.5 rounded-full overflow-hidden mt-2 bg-muted">
+                <div className="w-[70%] h-full bg-invest rounded-full" />
               </div>
             </motion.div>
           </div>
@@ -771,15 +680,15 @@ export function LandingPage() {
               setIsDemoActive(!isDemoActive);
               if (!isDemoActive) setDemoStep(0);
             }}
-            className={`px-6 py-3 rounded-full text-xs font-black tracking-widest uppercase flex items-center gap-2.5 border transition-all duration-300 shadow-lg cursor-pointer ${
+            className={`px-6 py-3 rounded-full text-xs font-black tracking-widest uppercase flex items-center gap-2.5 border transition-all duration-200 shadow-sm cursor-pointer ${
               isDemoActive 
-                ? 'bg-purple-600 border-purple-500 text-white shadow-purple-500/25' 
-                : 'bg-white/10 border-white/10 text-slate-400 hover:bg-white/20 hover:text-white dark:bg-slate-900/60 dark:hover:bg-slate-900'
+                ? 'bg-primary border-primary text-primary-foreground' 
+                : 'bg-card border-border text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
             <span className="relative flex h-2.5 w-2.5">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDemoActive ? 'bg-green-400' : 'bg-slate-400'}`}></span>
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isDemoActive ? 'bg-green-500' : 'bg-slate-500'}`}></span>
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isDemoActive ? 'bg-primary-foreground' : 'bg-muted-foreground'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isDemoActive ? 'bg-primary-foreground' : 'bg-muted-foreground'}`}></span>
             </span>
             {isDemoActive ? 'Auto-Play Active (Interact to Pause)' : '▶ Resume Live Demo Loop'}
           </button>
@@ -788,11 +697,11 @@ export function LandingPage() {
         {/* 2. Interactive 3D Mockup Section (App Dashboard Showcase) */}
         <section id="showcase" ref={mockupRef} className="w-full max-w-7xl px-6 md:px-12 py-16 scroll-mt-24 perspective-container relative">
           <div className="text-center mb-16 max-w-2xl mx-auto">
-            <h2 className={`text-3xl md:text-5xl font-black mb-4 tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <h2 className="text-3xl md:text-5xl font-black mb-4 tracking-tight text-foreground">
               The Unified Flow Workspace
             </h2>
-            <p className={`text-base ${isDark ? 'text-[#c6b4c8]' : 'text-slate-600'}`}>
-              Seamlessly integrates habits, tasks, stats, and a focus timer in one unified, aesthetic, and responsive workspace.
+            <p className="text-base text-muted-foreground">
+              Seamlessly integrates habits, tasks, finances, and a focus timer in one calm, architectural workspace.
             </p>
           </div>
 
@@ -804,21 +713,17 @@ export function LandingPage() {
               opacity: mockupOpacity
             }}
             id="mock-dashboard-wrapper"
-            className={`glass-panel-acrylic-heavy rounded-[2.5rem] shadow-2xl p-6 md:p-8 flex flex-col lg:flex-row gap-6 relative border overflow-hidden min-h-[500px] ${
-              isDark ? 'border-white/10 shadow-purple-950/20' : 'border-purple-200/50 shadow-slate-200'
-            }`}
+            className="surface-hero rounded-3xl shadow-2xl p-6 md:p-8 flex flex-col lg:flex-row gap-6 relative overflow-hidden min-h-[500px]"
           >
             {/* Mock Sidebar (Left) */}
-            <div className={`w-full lg:w-56 shrink-0 flex lg:flex-col gap-4 justify-between lg:justify-start p-4 rounded-2xl border ${
-              isDark ? 'bg-purple-950/20 border-white/5' : 'bg-slate-50 border-slate-100'
-            }`}>
-              <div className="flex items-center gap-2.5 pb-0 lg:pb-6 border-b border-transparent lg:border-border/30">
-                <div className="h-7 w-7 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center">
+            <div className="w-full lg:w-56 shrink-0 flex lg:flex-col gap-4 justify-between lg:justify-start p-4 rounded-2xl border border-border bg-muted/40">
+              <div className="flex items-center gap-2.5 pb-0 lg:pb-6 border-b border-transparent lg:border-border/50">
+                <div className="h-7 w-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
                   <svg viewBox="0 0 32 32" className="h-4.5 w-4.5" fill="none">
-                    <path d="M 16 4 A 12 12 0 1 1 15.99 4" stroke="#a855f7" strokeWidth="4" />
+                    <path d="M 16 4 A 12 12 0 1 1 15.99 4" stroke="#10b981" strokeWidth="4" />
                   </svg>
                 </div>
-                <span className={`font-black text-sm ${isDark ? 'text-white' : 'text-slate-800'}`}>HabitFlow</span>
+                <span className="font-black text-sm text-foreground">HabitFlow</span>
               </div>
 
               <div className="hidden lg:flex flex-col gap-1.5 mt-4 w-full text-left">
@@ -832,8 +737,8 @@ export function LandingPage() {
                     key={idx} 
                     className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
                       item.active 
-                        ? 'bg-purple-600 text-white shadow-sm' 
-                        : (isDark ? 'text-slate-400 hover:text-white hover:bg-white/5' : 'text-slate-600 hover:text-purple-600 hover:bg-purple-50')
+                        ? 'bg-primary text-primary-foreground shadow-xs' 
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                     }`}
                   >
                     <item.icon className="h-4 w-4" />
@@ -843,12 +748,12 @@ export function LandingPage() {
               </div>
 
               <div className="flex lg:mt-auto items-center gap-3 p-1 rounded-xl">
-                <div className="h-8.5 w-8.5 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-white text-xs font-black shadow-sm">
+                <div className="h-8.5 w-8.5 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-black shadow-xs">
                   JD
                 </div>
                 <div className="hidden lg:block text-left">
-                  <p className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>John Doe</p>
-                  <p className="text-[10px] text-slate-400">Level 12 Sapling</p>
+                  <p className="text-xs font-bold text-foreground">John Doe</p>
+                  <p className="text-[10px] text-muted-foreground font-mono">Level 12 Sapling</p>
                 </div>
               </div>
             </div>
@@ -860,15 +765,13 @@ export function LandingPage() {
               <div className="md:col-span-8 flex flex-col gap-6">
                 
                 {/* Mock Habits Widget */}
-                <div className={`p-5 rounded-2xl border flex flex-col gap-4 ${
-                  isDark ? 'bg-slate-950/20 border-white/5' : 'bg-white border-slate-100 shadow-sm'
-                }`}>
+                <div className="p-5 rounded-2xl border border-border bg-card flex flex-col gap-4">
                   <div className="flex justify-between items-center">
                     <div className="text-left">
-                      <h4 className={`text-sm font-extrabold ${isDark ? 'text-white' : 'text-slate-800'}`}>Interactive Habits Loop</h4>
-                      <p className="text-[11px] text-slate-400">Click a habit to simulate checking it off</p>
+                      <h4 className="text-sm font-extrabold text-foreground">Interactive Habits Loop</h4>
+                      <p className="text-[11px] text-muted-foreground">Click a habit to simulate checking it off</p>
                     </div>
-                    <span className="text-[10px] bg-purple-500/10 text-purple-400 font-bold px-2 py-0.5 rounded-full border border-purple-500/20">Daily Loop</span>
+                    <span className="text-[10px] bg-primary/10 text-primary font-bold px-2.5 py-0.5 rounded-md border border-primary/25">Daily Loop</span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -876,10 +779,10 @@ export function LandingPage() {
                       <div
                         key={habit.id}
                         onClick={(e) => handleToggleMockHabit(e, habit.id)}
-                        className={`p-3.5 rounded-xl border flex flex-col justify-between items-start gap-3 cursor-pointer transition-all duration-300 relative overflow-hidden ${
+                        className={`p-3.5 rounded-xl border flex flex-col justify-between items-start gap-3 cursor-pointer transition-all duration-200 relative overflow-hidden ${
                           habit.done 
-                            ? 'bg-purple-500/10 border-purple-500/40 shadow-sm opacity-80' 
-                            : `border-transparent ${isDark ? 'bg-white/[0.02] hover:bg-white/[0.04] hover:border-purple-500/30' : 'bg-slate-100/50 hover:bg-slate-100 hover:border-purple-500/30'}`
+                            ? 'bg-primary/10 border-primary/40 shadow-xs' 
+                            : 'surface-subtle hover:border-primary/30'
                         }`}
                       >
                         <div className={`p-1.5 rounded-lg ${habit.color} shrink-0`}>
@@ -887,12 +790,12 @@ export function LandingPage() {
                         </div>
                         <div className="text-left">
                           <p className={`text-xs font-bold leading-tight ${
-                            habit.done ? (isDark ? 'text-purple-300' : 'text-purple-900') : (isDark ? 'text-slate-200' : 'text-slate-700')
+                            habit.done ? 'text-primary' : 'text-foreground'
                           }`}>{habit.name}</p>
-                          <p className="text-[9px] text-slate-400 mt-1">{habit.done ? 'Completed! +20XP' : 'Pending completion'}</p>
+                          <p className="text-[9px] text-muted-foreground mt-1 font-mono">{habit.done ? 'Completed! +20XP' : 'Pending completion'}</p>
                         </div>
                         <div className={`w-5 h-5 rounded-full border flex items-center justify-center absolute top-3 right-3 transition-colors ${
-                          habit.done ? 'bg-purple-600 border-purple-600 text-white' : 'border-slate-500 text-transparent'
+                          habit.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border text-transparent'
                         }`}>
                           <Check className="h-3 w-3 stroke-[3]" />
                         </div>
@@ -902,13 +805,11 @@ export function LandingPage() {
                 </div>
 
                 {/* Mock Routine Tasks Widget */}
-                <div className={`p-5 rounded-2xl border flex flex-col gap-4 ${
-                  isDark ? 'bg-slate-950/20 border-white/5' : 'bg-white border-slate-100 shadow-sm'
-                }`}>
+                <div className="p-5 rounded-2xl border border-border bg-card flex flex-col gap-4">
                   <div className="flex justify-between items-center text-left">
                     <div>
-                      <h4 className={`text-sm font-extrabold ${isDark ? 'text-white' : 'text-slate-800'}`}>Routines Checklist</h4>
-                      <p className="text-[11px] text-slate-400">Complete items below to build routine multipliers</p>
+                      <h4 className="text-sm font-extrabold text-foreground">Routines Checklist</h4>
+                      <p className="text-[11px] text-muted-foreground">Complete items below to build routine multipliers</p>
                     </div>
                   </div>
 
@@ -917,20 +818,20 @@ export function LandingPage() {
                       <div
                         key={routine.id}
                         onClick={(e) => handleToggleMockRoutine(e, routine.id)}
-                        className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all duration-300 ${
+                        className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all duration-200 ${
                           routine.done 
-                            ? 'bg-indigo-500/10 border-indigo-500/40 line-through opacity-70' 
-                            : `border-transparent ${isDark ? 'bg-white/[0.01] hover:border-indigo-500/30' : 'bg-slate-100/40 hover:border-indigo-500/30'}`
+                            ? 'bg-info/10 border-info/30 line-through opacity-75' 
+                            : 'surface-subtle hover:border-info/30'
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <ListTodo className={`h-4.5 w-4.5 ${routine.done ? 'text-slate-500' : 'text-indigo-500'}`} />
+                          <ListTodo className={`h-4.5 w-4.5 ${routine.done ? 'text-muted-foreground' : 'text-info'}`} />
                           <span className={`text-xs font-semibold ${
-                            routine.done ? (isDark ? 'text-slate-500' : 'text-slate-400') : (isDark ? 'text-slate-200' : 'text-slate-700')
+                            routine.done ? 'text-muted-foreground' : 'text-foreground'
                           }`}>{routine.name}</span>
                         </div>
                         <div className={`w-5.5 h-5.5 rounded-full border-2 flex items-center justify-center transition-all ${
-                          routine.done ? 'bg-indigo-500 border-indigo-500 text-white' : (isDark ? 'border-slate-700' : 'border-slate-300')
+                          routine.done ? 'bg-info border-info text-info-foreground' : 'border-border'
                         }`}>
                           <Check className="h-3 w-3 stroke-[3]" />
                         </div>
@@ -944,24 +845,22 @@ export function LandingPage() {
               <div className="md:col-span-4 flex flex-col gap-6">
                 
                 {/* Mock Live Productivity Stats Graph */}
-                <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 h-full ${
-                  isDark ? 'bg-slate-950/20 border-white/5' : 'bg-white border-slate-100 shadow-sm'
-                }`}>
+                <div className="p-5 rounded-2xl border border-border bg-card flex flex-col justify-between gap-4 h-full">
                   <div className="flex justify-between items-center">
-                    <span className={`text-xs font-extrabold ${isDark ? 'text-white' : 'text-slate-800'}`}>Productivity Curve</span>
+                    <span className="text-xs font-extrabold text-foreground">Productivity Curve</span>
                     
                     {/* Inline Tab Toggle */}
-                    <div className="flex bg-slate-100 dark:bg-slate-900/60 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <div className="flex bg-muted p-0.5 rounded-lg border border-border">
                       <button 
                         onClick={() => { handleManualInteraction(); setMockGraphRange('week'); }}
                         className={`text-[9px] font-bold px-2 py-1 rounded-md transition-colors cursor-pointer ${
-                          mockGraphRange === 'week' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
+                          mockGraphRange === 'week' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >Wk</button>
                       <button 
                         onClick={() => { handleManualInteraction(); setMockGraphRange('month'); }}
                         className={`text-[9px] font-bold px-2 py-1 rounded-md transition-colors cursor-pointer ${
-                          mockGraphRange === 'month' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
+                          mockGraphRange === 'month' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >Mo</button>
                     </div>
@@ -970,14 +869,14 @@ export function LandingPage() {
                   {/* SVG productivity graph with animatable drawing line */}
                   <div className="h-28 flex items-end justify-center relative mt-2">
                     <svg className="w-full h-full overflow-visible" viewBox="0 0 100 40">
-                      <line x1="0" y1="10" x2="100" y2="10" stroke={isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)"} strokeWidth="0.5" />
-                      <line x1="0" y1="20" x2="100" y2="20" stroke={isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)"} strokeWidth="0.5" />
-                      <line x1="0" y1="30" x2="100" y2="30" stroke={isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)"} strokeWidth="0.5" />
+                      <line x1="0" y1="10" x2="100" y2="10" stroke="currentColor" strokeOpacity="0.06" strokeWidth="0.5" />
+                      <line x1="0" y1="20" x2="100" y2="20" stroke="currentColor" strokeOpacity="0.06" strokeWidth="0.5" />
+                      <line x1="0" y1="30" x2="100" y2="30" stroke="currentColor" strokeOpacity="0.06" strokeWidth="0.5" />
                       
                       <motion.path 
                         key={mockGraphRange}
                         initial={{ pathLength: 0, opacity: 0 }}
-                        animate={{ pathLength: 1, opacity: 0.15 }}
+                        animate={{ pathLength: 1, opacity: 0.16 }}
                         transition={{ duration: 1 }}
                         d={mockGraphRange === 'week' 
                           ? "M 0 35 Q 20 10 40 25 T 80 15 T 100 8 L 100 40 L 0 40 Z" 
@@ -1003,21 +902,21 @@ export function LandingPage() {
 
                       <defs>
                         <linearGradient id="mock-area-grad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#a855f7" />
+                          <stop offset="0%" stopColor="#10b981" />
                           <stop offset="100%" stopColor="transparent" />
                         </linearGradient>
                         <linearGradient id="mock-line-grad" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor="#a855f7" />
-                          <stop offset="50%" stopColor="#6366f1" />
-                          <stop offset="100%" stopColor="#ec4899" />
+                          <stop offset="0%" stopColor="#10b981" />
+                          <stop offset="50%" stopColor="#14b8a6" />
+                          <stop offset="100%" stopColor="#0ea5e9" />
                         </linearGradient>
                       </defs>
                     </svg>
                   </div>
 
-                  <div className="flex justify-between items-center text-[10px] text-slate-400">
+                  <div className="flex justify-between items-center text-[10px] text-muted-foreground">
                     <span>Average focus efficiency</span>
-                    <span className="text-purple-400 font-bold">89.2%</span>
+                    <span className="text-primary font-bold font-mono tabular-nums">89.2%</span>
                   </div>
                 </div>
               </div>
@@ -1034,7 +933,7 @@ export function LandingPage() {
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.95, ease: 'easeOut' }}
                   style={{ left: `${f.x}px`, top: `${f.y}px` }}
-                  className="absolute text-[11px] font-extrabold text-purple-400 pointer-events-none drop-shadow-md z-30"
+                  className="absolute text-[11px] font-extrabold text-invest pointer-events-none drop-shadow-md z-30 font-mono"
                 >
                   {f.text}
                 </motion.div>
@@ -1047,49 +946,39 @@ export function LandingPage() {
         <section id="simulator" ref={simulatorRef} className="w-full max-w-5xl px-6 md:px-12 py-20 scroll-mt-24 relative">
           
           <div className="text-center mb-16 max-w-xl mx-auto">
-            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase mb-3 ${
-              isDark ? 'bg-purple-950/40 text-purple-300' : 'bg-purple-100 text-purple-800'
-            }`}>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase mb-3 bg-primary/10 text-primary border border-primary/20">
               Interactive Simulator
             </div>
-            <h2 className={`text-3xl md:text-5xl font-black mb-4 tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <h2 className="text-3xl md:text-5xl font-black mb-4 tracking-tight text-foreground">
               Grow Your Companion
             </h2>
-            <p className={`text-base ${isDark ? 'text-[#c6b4c8]' : 'text-slate-600'}`}>
+            <p className="text-base text-muted-foreground">
               Check off tasks, complete habits, and watch your companion evolve with real-time stats and level up notifications.
             </p>
           </div>
 
-          <div className="glass-panel-acrylic-heavy rounded-[2.5rem] p-6 md:p-8 flex flex-col md:flex-row gap-8 items-stretch relative shadow-2xl">
+          <div className="surface-hero rounded-3xl p-6 md:p-8 flex flex-col md:flex-row gap-8 items-stretch relative shadow-xl">
             
             {/* Companion Widget Column (Left) */}
             <div 
               id="companion-widget-box"
-              className={`w-full md:w-1/3 flex flex-col items-center p-6 rounded-[1.75rem] border justify-between relative overflow-hidden ${
-                isDark ? 'bg-purple-950/10 border-white/5' : 'bg-white border-slate-100 shadow-md'
-              }`}
+              className="w-full md:w-1/3 flex flex-col items-center p-6 rounded-2xl border border-border bg-muted/35 justify-between relative overflow-hidden"
             >
               <div className="w-full text-center">
-                <span className={`text-[9px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-lg ${
-                  isDark ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' : 'bg-purple-100 text-purple-700'
-                }`}>
+                <span className="text-[9px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20">
                   Interactive Widget
                 </span>
               </div>
 
               {/* Dialogue Box */}
-              <div className={`mt-4 px-3 py-2 rounded-xl text-[11px] font-semibold text-center leading-normal border shadow-sm relative min-h-[3.5rem] flex items-center justify-center w-full ${
-                isDark ? 'bg-slate-950/40 border-white/10 text-purple-200' : 'bg-purple-50 border-purple-100 text-purple-900'
-              }`}>
+              <div className="mt-4 px-3 py-2 rounded-xl text-[11px] font-semibold text-center leading-normal border border-border bg-card text-foreground shadow-xs relative min-h-[3.5rem] flex items-center justify-center w-full">
                 {companionDialogue}
-                <div className={`absolute bottom-[-6px] left-1/2 transform -translate-x-1/2 w-3.5 h-3.5 rotate-45 border-r border-b ${
-                  isDark ? 'bg-slate-900 border-white/10' : 'bg-purple-50 border-purple-100'
-                }`} />
+                <div className="absolute bottom-[-6px] left-1/2 transform -translate-x-1/2 w-3.5 h-3.5 rotate-45 border-r border-b border-border bg-card" />
               </div>
 
               {/* Companion representation with custom spring scale */}
               <div className="relative w-36 h-36 flex items-center justify-center my-4">
-                <div className="absolute inset-0 bg-purple-500/10 rounded-full blur-[24px] animate-pulse" />
+                <div className="absolute inset-0 bg-primary/10 rounded-full blur-xl animate-pulse" />
                 <AnimatePresence mode="wait">
                   <motion.span 
                     key={level}
@@ -1107,8 +996,8 @@ export function LandingPage() {
               </div>
 
               <div className="text-center w-full">
-                <h3 className={`text-base font-black mb-0.5 ${isDark ? 'text-white' : 'text-slate-800'}`}>Companion Stage</h3>
-                <p className="text-[10px] font-extrabold tracking-widest text-purple-500 uppercase">
+                <h3 className="text-base font-black mb-0.5 text-foreground">Companion Stage</h3>
+                <p className="text-[10px] font-extrabold tracking-widest text-primary uppercase font-mono">
                   {level === 1 ? 'LEVEL 1: SEEDLING' : level === 2 ? 'LEVEL 2: SAPLING' : 'LEVEL 3: FLOW TREE'}
                 </p>
               </div>
@@ -1116,12 +1005,12 @@ export function LandingPage() {
               {/* Progress HUD bar */}
               <div className="w-full mt-6">
                 <div className="flex justify-between text-[10px] font-bold tracking-wider mb-2">
-                  <span className="text-purple-500">XP PROGRESS</span>
-                  <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>{xp} / 100</span>
+                  <span className="text-invest">XP PROGRESS</span>
+                  <span className="text-muted-foreground font-mono tabular-nums">{xp} / 100</span>
                 </div>
-                <div className={`w-full h-3.5 rounded-full overflow-hidden p-0.5 ${isDark ? 'bg-slate-900 border border-white/5' : 'bg-slate-100'}`}>
+                <div className="w-full h-3.5 rounded-full overflow-hidden p-0.5 bg-muted border border-border">
                   <motion.div 
-                    className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full" 
+                    className="h-full bg-invest rounded-full" 
                     animate={{ width: `${xp}%` }}
                     transition={{ duration: 0.45, ease: "easeOut" }}
                   />
@@ -1138,7 +1027,7 @@ export function LandingPage() {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.9, ease: 'easeOut' }}
                     style={{ left: `${f.x}px`, top: `${f.y}px` }}
-                    className="absolute text-xs font-black text-amber-400 pointer-events-none drop-shadow-md z-30"
+                    className="absolute text-xs font-black text-warning pointer-events-none drop-shadow-md z-30 font-mono"
                   >
                     {f.text}
                   </motion.div>
@@ -1150,35 +1039,33 @@ export function LandingPage() {
             <div className="w-full md:w-2/3 flex flex-col gap-4 relative" id="simulator-content-box">
               
               {/* Tab Selector */}
-              <div className={`flex gap-1.5 p-1 rounded-xl border ${
-                isDark ? 'bg-slate-950/40 border-white/5' : 'bg-slate-100 border-slate-200'
-              }`}>
+              <div className="flex gap-1.5 p-1 rounded-xl border border-border bg-muted/50">
                 <button 
                   onClick={() => { handleManualInteraction(); setActiveTab('habits'); }} 
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-300 cursor-pointer ${
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
                     activeTab === 'habits' 
-                      ? 'bg-purple-600 text-white shadow-md' 
-                      : `${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`
+                      ? 'bg-primary text-primary-foreground shadow-xs' 
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   Habits Loop
                 </button>
                 <button 
                   onClick={() => { handleManualInteraction(); setActiveTab('tasks'); }} 
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-300 cursor-pointer ${
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
                     activeTab === 'tasks' 
-                      ? 'bg-purple-600 text-white shadow-md' 
-                      : `${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`
+                      ? 'bg-primary text-primary-foreground shadow-xs' 
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   Tasks Matrix
                 </button>
                 <button 
                   onClick={() => { handleManualInteraction(); setActiveTab('milestones'); }} 
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-300 cursor-pointer ${
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
                     activeTab === 'milestones' 
-                      ? 'bg-purple-600 text-white shadow-md' 
-                      : `${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`
+                      ? 'bg-primary text-primary-foreground shadow-xs' 
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   Milestones
@@ -1197,28 +1084,26 @@ export function LandingPage() {
                           key={habit.id}
                           whileHover={!isCompleted ? { y: -2 } : {}}
                           onClick={(e) => handleCompleteHabit(e, habit.id)}
-                          className={`p-4 rounded-xl flex items-center justify-between cursor-pointer transition-all duration-300 border ${
+                          className={`p-4 rounded-xl flex items-center justify-between cursor-pointer transition-all duration-200 border ${
                             isCompleted 
-                              ? 'bg-purple-500/10 border-purple-500/40 opacity-75 shadow-sm' 
-                              : `border-transparent ${isDark ? 'bg-white/[0.02] hover:border-purple-500/30' : 'bg-slate-900/[0.02] hover:border-purple-500/30'}`
+                              ? 'bg-primary/10 border-primary/40 shadow-xs' 
+                              : 'surface-subtle hover:border-primary/30'
                           }`}
                         >
                           <div className="flex items-center gap-4">
-                            <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl border ${
-                              isDark ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-200'
-                            }`}>
+                            <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl border border-border bg-card">
                               {habit.icon}
                             </div>
                             <div className="text-left">
-                              <h4 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-800'}`}>{habit.name}</h4>
-                              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{habit.desc}</p>
+                              <h4 className="font-bold text-sm text-foreground">{habit.name}</h4>
+                              <p className="text-xs text-muted-foreground">{habit.desc}</p>
                             </div>
                           </div>
                           
-                          <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                          <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
                             isCompleted 
-                              ? 'bg-purple-600 border-purple-600 text-white' 
-                              : `text-transparent ${isDark ? 'border-slate-700' : 'border-slate-300'}`
+                              ? 'bg-primary border-primary text-primary-foreground' 
+                              : 'text-transparent border-border'
                           }`}>
                             <Check className="h-3.5 w-3.5 stroke-[3.5]" />
                           </div>
@@ -1237,32 +1122,28 @@ export function LandingPage() {
                           key={task.id}
                           whileHover={!isCompleted ? { y: -2 } : {}}
                           onClick={(e) => handleCompleteTask(e, task.id)}
-                          className={`p-4 rounded-xl flex items-center justify-between cursor-pointer transition-all duration-300 border ${
+                          className={`p-4 rounded-xl flex items-center justify-between cursor-pointer transition-all duration-200 border ${
                             isCompleted 
-                              ? 'bg-indigo-500/10 border-indigo-500/40 opacity-75 line-through' 
-                              : `border-transparent ${isDark ? 'bg-white/[0.02] hover:border-indigo-500/30' : 'bg-slate-900/[0.02] hover:border-indigo-500/30'}`
+                              ? 'bg-info/10 border-info/35 opacity-75 line-through' 
+                              : 'surface-subtle hover:border-info/30'
                           }`}
                         >
                           <div className="flex items-center gap-4">
-                            <div className={`w-11 h-11 rounded-xl flex items-center justify-center border ${
-                              isDark ? 'bg-white/5 border-white/5' : 'bg-slate-100 border-slate-200'
-                            }`}>
-                              <ListTodo className="h-5 w-5 text-indigo-500" />
+                            <div className="w-11 h-11 rounded-xl flex items-center justify-center border border-border bg-card">
+                              <ListTodo className="h-5 w-5 text-info" />
                             </div>
                             <div className="text-left">
                               <h4 className={`font-bold text-sm ${
-                                isCompleted 
-                                  ? (isDark ? 'text-slate-500' : 'text-slate-400') 
-                                  : (isDark ? 'text-white' : 'text-slate-800')
+                                isCompleted ? 'text-muted-foreground' : 'text-foreground'
                               }`}>{task.name}</h4>
-                              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{task.desc}</p>
+                              <p className="text-xs text-muted-foreground">{task.desc}</p>
                             </div>
                           </div>
                           
-                          <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                          <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${
                             isCompleted 
-                              ? 'bg-indigo-500 border-indigo-500 text-white' 
-                              : `text-transparent ${isDark ? 'border-slate-700' : 'border-slate-300'}`
+                              ? 'bg-info border-info text-info-foreground' 
+                              : 'text-transparent border-border'
                           }`}>
                             <Check className="h-3.5 w-3.5 stroke-[3.5]" />
                           </div>
@@ -1277,23 +1158,23 @@ export function LandingPage() {
                     {/* Badge 1 */}
                     <div className={`p-4 rounded-xl flex items-center justify-between border ${
                       Object.keys(completedHabits).length > 0 || Object.keys(completedTasks).length > 0
-                        ? 'bg-purple-500/10 border-purple-500/30' 
-                        : `opacity-60 border-transparent ${isDark ? 'bg-white/[0.02]' : 'bg-slate-900/[0.02]'}`
+                        ? 'bg-primary/10 border-primary/30' 
+                        : 'surface-subtle opacity-60'
                     }`}>
                       <div className="flex items-center gap-4">
                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl border ${
                           Object.keys(completedHabits).length > 0 || Object.keys(completedTasks).length > 0
-                            ? 'bg-purple-500/20 border-purple-500/40 text-purple-400' 
-                            : 'bg-slate-800/40 border-slate-700 text-slate-500'
+                            ? 'bg-primary/15 border-primary/35 text-primary' 
+                            : 'bg-muted border-border text-muted-foreground'
                         }`}>
                           <Award className="h-5 w-5" />
                         </div>
                         <div>
-                          <h4 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-800'}`}>First Step</h4>
-                          <p className="text-xs text-purple-400">Complete any habit or task</p>
+                          <h4 className="font-bold text-sm text-foreground">First Step</h4>
+                          <p className="text-xs text-primary">Complete any habit or task</p>
                         </div>
                       </div>
-                      <span className="text-xs font-bold uppercase">{
+                      <span className="text-xs font-bold uppercase text-foreground">{
                         Object.keys(completedHabits).length > 0 || Object.keys(completedTasks).length > 0 ? 'Unlocked 🔓' : 'Locked 🔒'
                       }</span>
                     </div>
@@ -1301,23 +1182,23 @@ export function LandingPage() {
                     {/* Badge 2 */}
                     <div className={`p-4 rounded-xl flex items-center justify-between border ${
                       level >= 2
-                        ? 'bg-amber-500/10 border-amber-500/30' 
-                        : `opacity-60 border-transparent ${isDark ? 'bg-white/[0.02]' : 'bg-slate-900/[0.02]'}`
+                        ? 'bg-warning/10 border-warning/30' 
+                        : 'surface-subtle opacity-60'
                     }`}>
                       <div className="flex items-center gap-4">
                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl border ${
                           level >= 2
-                            ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' 
-                            : 'bg-slate-800/40 border-slate-700 text-slate-500'
+                            ? 'bg-warning/20 border-warning/40 text-warning' 
+                            : 'bg-muted border-border text-muted-foreground'
                         }`}>
                           <Sparkles className="h-5 w-5" />
                         </div>
                         <div>
-                          <h4 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-800'}`}>Evolution</h4>
-                          <p className="text-xs text-amber-400">Evolve companion to Level 2</p>
+                          <h4 className="font-bold text-sm text-foreground">Evolution</h4>
+                          <p className="text-xs text-warning">Evolve companion to Level 2</p>
                         </div>
                       </div>
-                      <span className="text-xs font-bold uppercase">{level >= 2 ? 'Unlocked 🔓' : 'Locked 🔒'}</span>
+                      <span className="text-xs font-bold uppercase text-foreground">{level >= 2 ? 'Unlocked 🔓' : 'Locked 🔒'}</span>
                     </div>
                   </div>
                 )}
@@ -1333,7 +1214,7 @@ export function LandingPage() {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.9, ease: 'easeOut' }}
                     style={{ left: `${f.x}px`, top: `${f.y}px` }}
-                    className="absolute text-sm font-extrabold text-amber-400 pointer-events-none drop-shadow-md z-30"
+                    className="absolute text-sm font-extrabold text-warning pointer-events-none drop-shadow-md z-30 font-mono"
                   >
                     {f.text}
                   </motion.div>
@@ -1348,21 +1229,21 @@ export function LandingPage() {
                   initial={{ opacity: 0, scale: 0.85 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0 }}
-                  className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/80 rounded-[2.5rem] backdrop-blur-md pointer-events-none"
+                  className="absolute inset-0 z-20 flex items-center justify-center bg-background/90 rounded-3xl backdrop-blur-md pointer-events-none"
                 >
                   <div className="text-center p-6">
                     <motion.div
                       animate={{ y: [0, -12, 0] }}
                       transition={{ repeat: Infinity, duration: 1.8 }}
                     >
-                      <h2 className="text-4xl md:text-5xl font-black text-neon-gradient flex items-center gap-2 justify-center drop-shadow-lg">
-                        <Sparkles className="h-8 w-8 text-amber-400 animate-spin-slow" />
+                      <h2 className="text-4xl md:text-5xl font-black text-gradient flex items-center gap-2 justify-center drop-shadow-lg">
+                        <Sparkles className="h-8 w-8 text-warning" />
                         LEVEL UP!
-                        <Sparkles className="h-8 w-8 text-amber-400 animate-spin-slow" />
+                        <Sparkles className="h-8 w-8 text-warning" />
                       </h2>
                     </motion.div>
-                    <p className="text-white text-lg font-bold mt-4 drop-shadow-md">Your companion evolved to Level {level}!</p>
-                    <div className="mt-6 inline-flex bg-white/10 px-4 py-1.5 rounded-full text-xs font-semibold text-purple-200">
+                    <p className="text-foreground text-lg font-bold mt-4">Your companion evolved to Level {level}!</p>
+                    <div className="mt-6 inline-flex bg-invest/15 border border-invest/30 px-4 py-1.5 rounded-full text-xs font-semibold text-invest font-mono">
                       XP Gained: {totalXP} XP Total
                     </div>
                   </div>
@@ -1375,26 +1256,22 @@ export function LandingPage() {
         {/* 4. Focus Hub Preview Section (Scroll-linked Progress Circle) */}
         <section id="focus-hub" ref={focusHubRef} className="w-full max-w-6xl px-6 md:px-12 py-24 scroll-mt-24">
           <div className="text-center mb-16 max-w-xl mx-auto">
-            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase mb-3 ${
-              isDark ? 'bg-purple-950/40 text-purple-300' : 'bg-purple-100 text-purple-800'
-            }`}>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md text-[10px] font-bold tracking-wider uppercase mb-3 bg-primary/10 text-primary border border-primary/20">
               Premium Feature Preview
             </div>
-            <h2 className={`text-3xl md:text-5xl font-black mb-4 tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <h2 className="text-3xl md:text-5xl font-black mb-4 tracking-tight text-foreground">
               Deep Work Focus Hub
             </h2>
-            <p className={`text-base ${isDark ? 'text-[#c6b4c8]' : 'text-slate-600'}`}>
+            <p className="text-base text-muted-foreground">
               Access integrated focus tools inside the app. Try the Pomodoro Focus module below, synced to scroll kinetics.
             </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             {/* Interactive Pomodoro Preview */}
-            <div className={`glass-panel-acrylic-heavy rounded-[2.25rem] p-8 flex flex-col items-center justify-center relative border transition-all duration-300 shadow-xl ${
-              isDark ? 'border-white/5' : 'bg-white border-slate-100'
-            }`}>
-              <h3 className={`text-lg font-bold mb-8 flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                <Clock className="h-5 w-5 text-purple-500 animate-pulse" />
+            <div className="surface-hero p-8 flex flex-col items-center justify-center relative shadow-md">
+              <h3 className="text-lg font-bold mb-8 flex items-center gap-2 text-foreground">
+                <Clock className="h-5 w-5 text-primary" />
                 Pomodoro Focus Timer
               </h3>
 
@@ -1405,7 +1282,8 @@ export function LandingPage() {
                     cy="50" 
                     r="44" 
                     fill="none" 
-                    stroke={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(147, 51, 234, 0.05)"} 
+                    stroke="currentColor"
+                    strokeOpacity="0.1"
                     strokeWidth="6" 
                   />
                   <motion.circle 
@@ -1425,32 +1303,30 @@ export function LandingPage() {
                   />
                   <defs>
                     <linearGradient id="pomodoro-glow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#a855f7" />
-                      <stop offset="100%" stopColor="#ec4899" />
+                      <stop offset="0%" stopColor="#10b981" />
+                      <stop offset="100%" stopColor="#14b8a6" />
                     </linearGradient>
                   </defs>
                 </svg>
 
                 <div className="flex flex-col items-center justify-center z-10">
-                  <span className={`text-3xl font-extrabold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  <span className="text-3xl font-extrabold tracking-tight text-foreground font-mono tabular-nums">
                     {formatTime(pomodoroSeconds)}
                   </span>
-                  <span className="text-[9px] font-extrabold text-purple-500 uppercase tracking-wider mt-1">Focus Session</span>
+                  <span className="text-[9px] font-extrabold text-primary uppercase tracking-wider mt-1">Focus Session</span>
                 </div>
               </div>
 
               <div className="flex gap-4">
                 <button 
                   onClick={handleToggleTimer}
-                  className="bg-purple-600 hover:bg-purple-750 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all duration-300 shadow-md shadow-purple-500/10 cursor-pointer"
+                  className="bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-bold px-6 py-2.5 rounded-xl text-sm transition-all duration-200 shadow-xs cursor-pointer"
                 >
                   {isTimerRunning ? 'Pause Session' : 'Start Focus'}
                 </button>
                 <button 
                   onClick={() => { setIsTimerRunning(false); setPomodoroSeconds(1500); }}
-                  className={`border font-bold px-6 py-2.5 rounded-xl text-sm transition-all duration-300 cursor-pointer ${
-                    isDark ? 'border-white/10 hover:bg-white/5 text-slate-300' : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                  }`}
+                  className="border border-border bg-card hover:bg-muted text-foreground font-bold px-6 py-2.5 rounded-xl text-sm transition-all duration-200 cursor-pointer"
                 >
                   Reset
                 </button>
@@ -1459,10 +1335,10 @@ export function LandingPage() {
 
             {/* Description & Features List */}
             <div className="space-y-8 text-left lg:pl-6">
-              <h3 className={`text-2xl md:text-3xl font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <h3 className="text-2xl md:text-3xl font-black tracking-tight text-foreground">
                 Focus Tools Integrated Together
               </h3>
-              <p className={`text-base ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+              <p className="text-base text-muted-foreground">
                 Tackle daily tasks, build routines, and track goals while boosting efficiency with dedicated workspace modules.
               </p>
 
@@ -1473,12 +1349,12 @@ export function LandingPage() {
                   { title: "Goal Milestones", desc: "Set radial milestones and track progress over 90 days.", icon: Target }
                 ].map((item, idx) => (
                   <div key={idx} className="flex gap-4 items-start">
-                    <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
-                      <item.icon className="h-5 w-5 text-purple-500" />
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                      <item.icon className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <h4 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-800'}`}>{item.title}</h4>
-                      <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{item.desc}</p>
+                      <h4 className="font-bold text-sm text-foreground">{item.title}</h4>
+                      <p className="text-xs text-muted-foreground">{item.desc}</p>
                     </div>
                   </div>
                 ))}
@@ -1489,76 +1365,68 @@ export function LandingPage() {
 
         {/* 5. Designed for Deep Work Section (Feature Gallery) */}
         <section id="features" ref={featuresRef} className="w-full max-w-7xl px-6 md:px-12 py-24 scroll-mt-24">
-          <h2 className={`text-3xl md:text-5xl font-black text-center mb-16 tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+          <h2 className="text-3xl md:text-5xl font-black text-center mb-16 tracking-tight text-foreground">
             Designed for Deep Work
           </h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             
             {/* Card 1: Eisenhower Matrix */}
-            <div className={`glass-panel-acrylic p-8 rounded-[2rem] hover:-translate-y-1.5 transition-all duration-500 flex flex-col h-full relative overflow-hidden border shadow-sm ${
-              isDark ? 'hover:border-purple-500/20 shadow-purple-950/5' : 'bg-white hover:border-purple-500/30'
-            }`}>
-              <div className="text-[9px] font-extrabold tracking-wider text-purple-500 bg-purple-500/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-purple-500/20">
+            <div className="surface-card p-8 hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
+              <div className="text-[9px] font-extrabold tracking-wider text-primary bg-primary/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-primary/20">
                 Prioritize
               </div>
-              <h3 className={`text-xl font-bold mb-3 text-left ${isDark ? 'text-white' : 'text-slate-900'}`}>Eisenhower Matrix</h3>
-              <p className={`text-sm mb-8 flex-grow text-left ${isDark ? 'text-[#c6b4c8]' : 'text-slate-600'}`}>
+              <h3 className="text-xl font-bold mb-3 text-left text-foreground">Eisenhower Matrix</h3>
+              <p className="text-sm mb-8 flex-grow text-left text-muted-foreground">
                 Sort tasks by urgency and importance in a sleek, distraction-free grid.
               </p>
               
               <div className="grid grid-cols-2 gap-2.5 mt-auto">
                 <motion.div 
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  className="aspect-square bg-red-500/10 border border-red-500/20 hover:border-red-500/50 rounded-xl flex flex-col items-center justify-center text-xs font-bold text-red-400 p-2 cursor-pointer transition-all duration-300 hover:shadow-lg"
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  className="aspect-square bg-destructive/10 border border-destructive/20 hover:border-destructive/50 rounded-xl flex flex-col items-center justify-center text-xs font-bold text-destructive p-2 cursor-pointer transition-all duration-200"
                 >
                   <span>DO</span>
-                  <span className="text-[9px] font-normal text-red-400/80 mt-1">Urgent & Imp.</span>
+                  <span className="text-[9px] font-normal opacity-80 mt-1">Urgent &amp; Imp.</span>
                 </motion.div>
                 <motion.div 
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  className="aspect-square bg-purple-500/10 border border-purple-500/20 hover:border-purple-500/50 rounded-xl flex flex-col items-center justify-center text-xs font-bold text-[#edb1ff] p-2 cursor-pointer transition-all duration-300 hover:shadow-lg"
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  className="aspect-square bg-primary/10 border border-primary/20 hover:border-primary/50 rounded-xl flex flex-col items-center justify-center text-xs font-bold text-primary p-2 cursor-pointer transition-all duration-200"
                 >
                   <span>DECIDE</span>
-                  <span className="text-[9px] font-normal text-[#edb1ff]/80 mt-1">Not Urg. & Imp.</span>
+                  <span className="text-[9px] font-normal opacity-80 mt-1">Not Urg. &amp; Imp.</span>
                 </motion.div>
                 <motion.div 
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  className="aspect-square bg-blue-500/10 border border-blue-500/20 hover:border-blue-500/50 rounded-xl flex flex-col items-center justify-center text-xs font-bold text-blue-400 p-2 cursor-pointer transition-all duration-300 hover:shadow-lg"
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  className="aspect-square bg-info/10 border border-info/20 hover:border-info/50 rounded-xl flex flex-col items-center justify-center text-xs font-bold text-info p-2 cursor-pointer transition-all duration-200"
                 >
                   <span>DELEGATE</span>
-                  <span className="text-[9px] font-normal text-blue-400/80 mt-1">Urgent & Not Imp.</span>
+                  <span className="text-[9px] font-normal opacity-80 mt-1">Urgent &amp; Not Imp.</span>
                 </motion.div>
                 <motion.div 
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  className={`aspect-square border rounded-xl flex flex-col items-center justify-center text-xs font-bold p-2 cursor-pointer transition-all duration-300 ${
-                    isDark 
-                      ? 'bg-white/5 border-white/10 hover:border-white/30 text-slate-300 hover:shadow-md' 
-                      : 'bg-slate-100 border-slate-200 hover:border-slate-450 text-slate-600 hover:shadow-md'
-                  }`}
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  className="aspect-square surface-subtle border rounded-xl flex flex-col items-center justify-center text-xs font-bold text-muted-foreground p-2 cursor-pointer transition-all duration-200"
                 >
                   <span>DELETE</span>
-                  <span className="text-[9px] font-normal text-slate-500 mt-1">Not Urg. & Not Imp.</span>
+                  <span className="text-[9px] font-normal opacity-75 mt-1">Not Urg. &amp; Not Imp.</span>
                 </motion.div>
               </div>
             </div>
 
             {/* Card 2: 90-Day Focus Goals */}
-            <div className={`glass-panel-acrylic p-8 rounded-[2rem] hover:-translate-y-1.5 transition-all duration-500 flex flex-col h-full relative overflow-hidden border shadow-sm ${
-              isDark ? 'hover:border-purple-500/20 shadow-purple-950/5' : 'bg-white hover:border-purple-500/30'
-            }`}>
-              <div className="text-[9px] font-extrabold tracking-wider text-pink-500 bg-pink-500/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-pink-500/20">
+            <div className="surface-card p-8 hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
+              <div className="text-[9px] font-extrabold tracking-wider text-info bg-info/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-info/20">
                 Track
               </div>
-              <h3 className={`text-xl font-bold mb-3 text-left ${isDark ? 'text-white' : 'text-slate-900'}`}>90-Day Focus Goals</h3>
-              <p className={`text-sm mb-8 flex-grow text-left ${isDark ? 'text-[#c6b4c8]' : 'text-slate-600'}`}>
+              <h3 className="text-xl font-bold mb-3 text-left text-foreground">90-Day Focus Goals</h3>
+              <p className="text-sm mb-8 flex-grow text-left text-muted-foreground">
                 Visualize long-term progress with radial rings and interactive milestones.
               </p>
               
               <div className="flex justify-center mt-auto relative h-[160px] items-center">
                 <svg className="transform -rotate-90" height="150" viewBox="0 0 160 160" width="150">
-                  <circle cx="80" cy="80" fill="none" r="70" stroke={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(147, 51, 234, 0.05)"} strokeWidth="12" />
-                  <circle cx="80" cy="80" fill="none" r="50" stroke={isDark ? "rgba(255, 255, 255, 0.05)" : "rgba(147, 51, 234, 0.05)"} strokeWidth="12" />
+                  <circle cx="80" cy="80" fill="none" r="70" stroke="currentColor" strokeOpacity="0.08" strokeWidth="12" />
+                  <circle cx="80" cy="80" fill="none" r="50" stroke="currentColor" strokeOpacity="0.08" strokeWidth="12" />
                   
                   <motion.circle 
                     cx="80" 
@@ -1590,11 +1458,11 @@ export function LandingPage() {
 
                   <defs>
                     <linearGradient id="radial-accent-outer" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#ec4899" />
-                      <stop offset="100%" stopColor="#a855f7" />
+                      <stop offset="0%" stopColor="#10b981" />
+                      <stop offset="100%" stopColor="#14b8a6" />
                     </linearGradient>
                     <linearGradient id="radial-accent-inner" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#6366f1" />
+                      <stop offset="0%" stopColor="#0ea5e9" />
                       <stop offset="100%" stopColor="#3b82f6" />
                     </linearGradient>
                   </defs>
@@ -1603,8 +1471,7 @@ export function LandingPage() {
                     cx="150"
                     cy="80"
                     r="6"
-                    className="fill-amber-400 stroke-2 cursor-pointer"
-                    style={{ stroke: isDark ? "#09050d" : "#f9f7fd" }}
+                    className="fill-warning stroke-2 stroke-card cursor-pointer"
                     initial={{ scale: 0 }}
                     whileInView={{ scale: 1 }}
                     whileHover={{ scale: 1.4 }}
@@ -1617,8 +1484,7 @@ export function LandingPage() {
                     cx="80"
                     cy="150"
                     r="6"
-                    className="fill-amber-400 stroke-2 cursor-pointer"
-                    style={{ stroke: isDark ? "#09050d" : "#f9f7fd" }}
+                    className="fill-warning stroke-2 stroke-card cursor-pointer"
                     initial={{ scale: 0 }}
                     whileInView={{ scale: 1 }}
                     whileHover={{ scale: 1.4 }}
@@ -1629,7 +1495,7 @@ export function LandingPage() {
                 </svg>
 
                 <div className="absolute inset-0 flex items-center justify-center flex-col pointer-events-none">
-                  <span className={`text-2xl font-black ${isDark ? 'text-white' : 'text-slate-800'}`}>75%</span>
+                  <span className="text-2xl font-black text-foreground font-mono tabular-nums">75%</span>
                 </div>
 
                 <AnimatePresence>
@@ -1638,7 +1504,7 @@ export function LandingPage() {
                       initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white text-[10px] px-3.5 py-1.5 rounded-lg border border-white/10 shadow-lg z-10 text-center whitespace-nowrap"
+                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-popover text-popover-foreground text-[10px] px-3.5 py-1.5 rounded-lg border border-border shadow-lg z-10 text-center whitespace-nowrap"
                     >
                       {hoveredMilestone}
                     </motion.div>
@@ -1648,27 +1514,25 @@ export function LandingPage() {
             </div>
 
             {/* Card 3: Discipline Radar */}
-            <div className={`glass-panel-acrylic p-8 rounded-[2rem] hover:-translate-y-1.5 transition-all duration-500 flex flex-col h-full relative overflow-hidden border shadow-sm ${
-              isDark ? 'hover:border-purple-500/20 shadow-purple-950/5' : 'bg-white hover:border-purple-500/30'
-            }`}>
-              <div className="text-[9px] font-extrabold tracking-wider text-amber-500 bg-amber-500/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-amber-500/20">
+            <div className="surface-card p-8 hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
+              <div className="text-[9px] font-extrabold tracking-wider text-warning bg-warning/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-warning/20">
                 Analyze
               </div>
-              <h3 className={`text-xl font-bold mb-3 text-left ${isDark ? 'text-white' : 'text-slate-900'}`}>Discipline Radar</h3>
-              <p className={`text-sm mb-8 flex-grow text-left ${isDark ? 'text-[#c6b4c8]' : 'text-slate-600'}`}>
+              <h3 className="text-xl font-bold mb-3 text-left text-foreground">Discipline Radar</h3>
+              <p className="text-sm mb-8 flex-grow text-left text-muted-foreground">
                 Identify strengths and weak categories across different habit streams instantly.
               </p>
               
               <div className="flex justify-center mt-auto h-[160px] items-center">
                 <svg className="group-hover:scale-105 transition-transform duration-500" height="150" viewBox="0 0 160 160" width="150">
-                  <polygon fill="none" points="80,10 140.6,45 140.6,115 80,150 19.4,115 19.4,45" stroke="rgba(154, 140, 155, 0.15)" strokeWidth="1" />
-                  <polygon fill="none" points="80,33.3 120.4,56.6 120.4,103.3 80,126.6 39.6,103.3 39.6,56.6" stroke="rgba(154, 140, 155, 0.15)" strokeWidth="1" />
-                  <line stroke="rgba(154, 140, 155, 0.15)" strokeWidth="1" x1="80" x2="80" y1="80" y2="10" />
-                  <line stroke="rgba(154, 140, 155, 0.15)" strokeWidth="1" x1="80" x2="140.6" y1="80" y2="45" />
+                  <polygon fill="none" points="80,10 140.6,45 140.6,115 80,150 19.4,115 19.4,45" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" />
+                  <polygon fill="none" points="80,33.3 120.4,56.6 120.4,103.3 80,126.6 39.6,103.3 39.6,56.6" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" />
+                  <line stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" x1="80" x2="80" y1="80" y2="10" />
+                  <line stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" x1="80" x2="140.6" y1="80" y2="45" />
                   
                   <motion.polygon 
-                    fill={isDark ? "rgba(168, 85, 247, 0.22)" : "rgba(147, 51, 234, 0.14)"}
-                    stroke={isDark ? "#d8b4fe" : "#8b5cf6"}
+                    fill={isDark ? "rgba(16, 185, 129, 0.22)" : "rgba(16, 185, 129, 0.14)"}
+                    stroke="#10b981"
                     strokeWidth="2"
                     points="80,30 110,60 130,100 80,130 40,90 50,50"
                     animate={{ 
@@ -1693,28 +1557,21 @@ export function LandingPage() {
 
         {/* 6. Immersive CTA Box */}
         <section className="w-full max-w-5xl px-6 md:px-12 py-24">
-          <div className={`glass-panel-acrylic-heavy border rounded-[2.5rem] p-10 md:p-16 text-center relative overflow-hidden shadow-2xl transition-all duration-300 ${
-            isDark ? 'border-purple-500/20 shadow-purple-950/20' : 'border-purple-100 shadow-purple-50'
-          }`}>
-            <div className="absolute -top-20 -right-20 w-64 h-64 bg-purple-500/10 rounded-full blur-[80px] pointer-events-none" />
-            <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-indigo-500/5 rounded-full blur-[80px] pointer-events-none" />
+          <div className="surface-hero rounded-3xl p-10 md:p-16 text-center relative overflow-hidden shadow-xl">
+            <div className="absolute -top-20 -right-20 w-64 h-64 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
             
-            <h2 className={`text-3xl md:text-5xl font-black mb-6 relative z-10 leading-tight tracking-tight ${
-              isDark ? 'text-white' : 'text-slate-900'
-            }`}>
+            <h2 className="text-3xl md:text-5xl font-black mb-6 relative z-10 leading-tight tracking-tight text-foreground">
               Start building your sanctuary.
             </h2>
-            <p className={`text-base max-w-2xl mx-auto mb-10 relative z-10 ${
-              isDark ? 'text-[#c6b4c8]' : 'text-slate-600'
-            }`}>
+            <p className="text-base max-w-2xl mx-auto mb-10 relative z-10 text-muted-foreground">
               Seamlessly synced across your devices with local IndexedDB offline storage and secure Supabase database. No friction, just focus.
             </p>
             
             <Link href="/login?mode=signup">
               <motion.button 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:shadow-xl hover:shadow-purple-500/30 px-10 py-5 rounded-2xl text-white font-bold text-lg relative z-10 cursor-pointer shadow-lg"
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground px-10 py-5 rounded-xl font-bold text-lg relative z-10 cursor-pointer shadow-sm transition-colors"
               >
                 Claim Your Free Workspace
               </motion.button>
@@ -1724,22 +1581,20 @@ export function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer className={`w-full border-t flex flex-col md:flex-row justify-between items-center px-6 md:px-12 py-12 z-10 relative transition-colors duration-500 ${
-        isDark ? 'bg-[#050308] border-white/5 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'
-      }`}>
+      <footer className="w-full border-t border-border bg-card/60 text-muted-foreground flex flex-col md:flex-row justify-between items-center px-6 md:px-12 py-12 z-10 relative transition-colors duration-300">
         <div className="flex items-center gap-2 mb-6 md:mb-0">
-          <div className="h-6 w-6 rounded bg-purple-500/15 border border-purple-500/30 flex items-center justify-center">
+          <div className="h-6 w-6 rounded bg-primary/15 border border-primary/30 flex items-center justify-center">
             <svg viewBox="0 0 32 32" className="h-4.5 w-4.5" fill="none">
-              <path d="M 16 4 A 12 12 0 1 1 15.99 4" stroke="#a855f7" strokeWidth="3" />
+              <path d="M 16 4 A 12 12 0 1 1 15.99 4" stroke="#10b981" strokeWidth="3" />
             </svg>
           </div>
-          <span className={`font-black text-lg ${isDark ? 'text-purple-300' : 'text-slate-800'}`}>HabitFlow</span>
+          <span className="font-black text-lg text-foreground">Habit<span className="text-primary">Flow</span></span>
         </div>
 
         <div className="flex gap-6 mb-6 md:mb-0 text-sm">
-          <a className="hover:text-purple-500 transition-colors" href="#">Privacy Policy</a>
-          <a className="hover:text-purple-500 transition-colors" href="#">Terms of Service</a>
-          <a className="hover:text-purple-500 transition-colors" href="#">Support</a>
+          <a className="hover:text-primary transition-colors" href="#">Privacy Policy</a>
+          <a className="hover:text-primary transition-colors" href="#">Terms of Service</a>
+          <a className="hover:text-primary transition-colors" href="#">Support</a>
         </div>
         <div className="text-xs">© 2026 HabitFlow. All rights reserved.</div>
       </footer>

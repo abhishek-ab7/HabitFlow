@@ -80,7 +80,7 @@ function Sparkline({ data }: { data: { rate: number }[] }) {
           <Line 
             type="monotone" 
             dataKey="rate" 
-            stroke="oklch(0.65 0.2 250)" 
+            stroke="var(--primary)" 
             strokeWidth={2.5} 
             dot={false} 
           />
@@ -127,7 +127,7 @@ export function InsightsCards({ insights }: InsightsCardsProps) {
   }
 
   return (
-    <Card className="border-white/10 dark:border-white/5 bg-card/50 backdrop-blur-xl">
+    <Card className="surface-card">
       <CardHeader>
         <CardTitle className="text-lg font-semibold flex items-center gap-2">
           <Lightbulb className="h-5 w-5 text-primary" />
@@ -144,11 +144,11 @@ export function InsightsCards({ insights }: InsightsCardsProps) {
             <StaggerItem>
               <motion.div
                 whileHover={{ scale: 1.005 }}
-                className="relative p-5 rounded-2xl border border-indigo-500/30 dark:border-indigo-500/20 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 shadow-[0_0_15px_-3px_rgba(99,102,241,0.15)] overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+                className="relative p-5 surface-hero border-primary/25 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
               >
                 <div className="flex-1 min-w-0 space-y-2 relative z-10">
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 font-bold uppercase tracking-wider text-[9px] border-indigo-500/30">
+                    <Badge variant="secondary" className="bg-primary/15 text-primary font-bold uppercase tracking-wider text-[9px] border border-primary/25">
                       Featured Insight
                     </Badge>
                     <span className="text-[11px] text-muted-foreground capitalize font-medium">• {insights[0].type}</span>
@@ -169,15 +169,12 @@ export function InsightsCards({ insights }: InsightsCardsProps) {
                   )}
                 </div>
 
-                <div className="flex flex-col items-center md:items-end shrink-0 gap-1.5 self-stretch md:self-auto justify-center p-3 rounded-xl bg-background/50 backdrop-blur border border-white/5">
+                <div className="flex flex-col items-center md:items-end shrink-0 gap-1.5 self-stretch md:self-auto justify-center p-3 surface-subtle">
                   <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
                     5-Day Trend
                   </span>
                   <Sparkline data={sparklineData} />
                 </div>
-                
-                {/* Visual Glow overlay */}
-                <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
               </motion.div>
             </StaggerItem>
           </StaggerContainer>
@@ -195,12 +192,12 @@ export function InsightsCards({ insights }: InsightsCardsProps) {
                   <motion.div
                     whileHover={{ scale: 1.01 }}
                     className={cn(
-                      "flex gap-3 p-4 rounded-xl border transition-all duration-200 h-full bg-card/30",
+                      "flex gap-3 p-4 surface-subtle transition-all duration-200 h-full",
                       style.border
                     )}
                   >
                     <div className={cn(
-                      "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background/40 border border-white/5",
+                      "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border",
                       style.iconColor
                     )}>
                       <IconComponent className="h-4 w-4" />

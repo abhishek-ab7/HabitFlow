@@ -628,7 +628,7 @@ export default function DashboardContent() {
   return (
     <div className="w-full px-4 py-4 sm:py-5 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-5 pb-24 md:pb-12">
       {/* LAYER 1: Unified Top Command Bar */}
-      <header className="rounded-2xl border border-border bg-card px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 tour-hero-section">
+      <header className="surface-card px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 tour-hero-section">
         {/* Left: Greeting + Date + Unboxed Level/Streak/Shields */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -712,7 +712,7 @@ export default function DashboardContent() {
         </div>
       </header>
 
-      {/* LAYER 2: Dual Flagship Hero Strip (Subtle Glass Hero Accents) */}
+      {/* LAYER 2: Dual Flagship Hero Strip */}
       <div
         className={
           bothHeroesVisible
@@ -727,7 +727,7 @@ export default function DashboardContent() {
               bothHeroesVisible
                 ? 'min-w-[90vw] sm:min-w-[520px] lg:min-w-0 snap-center lg:col-span-6'
                 : 'col-span-1'
-            } rounded-3xl border border-border/80 bg-card/85 backdrop-blur-md shadow-sm p-5 sm:p-6 flex flex-col justify-between gap-4 tour-momentum-card`}
+            } surface-hero p-5 sm:p-6 flex flex-col justify-between gap-4 tour-momentum-card`}
           >
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5">
               <ProgressRing
@@ -752,7 +752,7 @@ export default function DashboardContent() {
                     Today&apos;s Momentum
                   </h2>
                   {restingOrQuotaMetCount > 0 && (
-                    <span className="text-xs font-medium text-teal-600 dark:text-teal-400 font-mono">
+                    <span className="text-xs font-medium text-rest font-mono">
                       · {restingOrQuotaMetCount} resting
                     </span>
                   )}
@@ -812,7 +812,7 @@ export default function DashboardContent() {
                   {nextUpHabits.map((item) => (
                     <div
                       key={item.id}
-                      className="rounded-xl border border-border bg-background px-2.5 py-2 flex items-center justify-between gap-1.5"
+                      className="surface-subtle px-2.5 py-2 flex items-center justify-between gap-1.5"
                     >
                       <div className="min-w-0">
                         <p className="text-xs font-semibold text-foreground truncate">
@@ -831,7 +831,7 @@ export default function DashboardContent() {
                           }}
                           title="Mark Done"
                           aria-label={`Complete ${item.name}`}
-                          className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25 flex items-center justify-center transition-colors"
+                          className="w-8 h-8 rounded-lg bg-success/15 text-success hover:bg-success/25 flex items-center justify-center transition-colors"
                         >
                           <Check className="w-4 h-4" />
                         </button>
@@ -844,7 +844,7 @@ export default function DashboardContent() {
                             }}
                             title={`Take Rest Day (${item.restRemaining} left)`}
                             aria-label={`Rest day for ${item.name}`}
-                            className="w-8 h-8 rounded-lg bg-teal-500/15 text-teal-600 dark:text-teal-400 hover:bg-teal-500/25 flex items-center justify-center transition-colors"
+                            className="w-8 h-8 rounded-lg bg-rest/15 text-rest hover:bg-rest/25 flex items-center justify-center transition-colors"
                           >
                             <Moon className="w-3.5 h-3.5" />
                           </button>
@@ -879,7 +879,7 @@ export default function DashboardContent() {
               bothHeroesVisible
                 ? 'min-w-[90vw] sm:min-w-[520px] lg:min-w-0 snap-center lg:col-span-6'
                 : 'col-span-1'
-            } rounded-3xl border border-border/80 bg-card/85 backdrop-blur-md shadow-sm p-5 sm:p-6 flex flex-col justify-between gap-4`}
+            } surface-hero p-5 sm:p-6 flex flex-col justify-between gap-4`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1 min-w-0">
@@ -945,7 +945,7 @@ export default function DashboardContent() {
                   onClick={() => setIsAskAiOpen(true)}
                   title="Ask AI about your finances"
                   aria-label="Ask AI Finances"
-                  className="min-h-[38px] min-w-[38px] rounded-xl border border-border bg-background hover:bg-muted flex items-center justify-center text-primary transition-colors"
+                  className="min-h-[38px] min-w-[38px] rounded-xl border border-border bg-background hover:bg-muted flex items-center justify-center text-invest transition-colors"
                 >
                   <Sparkles className="w-4 h-4" />
                 </button>
@@ -998,7 +998,7 @@ export default function DashboardContent() {
                 </div>
               </div>
 
-              <div className="sm:col-span-5 rounded-xl border border-border/60 bg-background/70 px-2.5 py-1.5">
+              <div className="sm:col-span-5 rounded-xl border border-border/60 bg-muted/35 px-2.5 py-1.5">
                 <MiniBurnSparkline points={dailyPacePoints} />
               </div>
             </div>

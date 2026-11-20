@@ -67,8 +67,8 @@ export function SortableWidget({
     >
       {/* Customization Overlay */}
       {isCustomizing && (
-        <div className="absolute inset-0 bg-background/40 dark:bg-slate-950/40 backdrop-blur-[1px] border-2 border-dashed border-indigo-500/30 rounded-xl z-30 flex flex-col items-center justify-center p-4 transition-all duration-300">
-          <div className="bg-background/95 dark:bg-slate-900/95 backdrop-blur shadow-2xl rounded-2xl border border-border/80 p-3 flex items-center gap-2.5 scale-95 md:scale-100 transition-transform">
+        <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] border-2 border-dashed border-primary/35 rounded-xl z-30 flex flex-col items-center justify-center p-4 transition-all duration-300">
+          <div className="surface-card shadow-xl p-3 flex items-center gap-2.5 scale-95 md:scale-100 transition-transform">
             
             {/* Drag Handle */}
             {!pinned && (
@@ -90,7 +90,7 @@ export function SortableWidget({
                 className={cn(
                   "p-2 rounded-xl transition-colors",
                   pinned 
-                    ? "text-indigo-600 bg-indigo-50 dark:text-indigo-400 dark:bg-indigo-950/40" 
+                    ? "text-primary bg-primary/10" 
                     : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 )}
                 title={pinned ? "Unpin widget" : "Pin widget (lock location)"}
@@ -117,7 +117,7 @@ export function SortableWidget({
               <button
                 type="button"
                 onClick={onHide}
-                className="p-2 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                className="p-2 rounded-xl text-destructive hover:bg-destructive/10 transition-colors"
                 title="Hide widget"
               >
                 <EyeOff className="w-4 h-4" />
@@ -125,7 +125,7 @@ export function SortableWidget({
             )}
           </div>
           
-          <div className="absolute bottom-2 text-[10px] font-semibold text-muted-foreground/80 bg-background/80 dark:bg-slate-900/80 px-2 py-0.5 rounded-full border border-border/40">
+          <div className="absolute bottom-2 text-[10px] font-semibold text-muted-foreground bg-card px-2 py-0.5 rounded-full border border-border">
             {id.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())}
           </div>
         </div>

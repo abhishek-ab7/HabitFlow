@@ -617,7 +617,7 @@ export function GoalFormModal({
                                 className={cn(
                                   "px-2.5 py-1 rounded-md text-xs border font-medium transition-all flex items-center gap-1.5",
                                   isChecked
-                                    ? "bg-indigo-500 text-white border-indigo-600"
+                                    ? "bg-invest text-white border-invest"
                                     : "bg-background border-border/60 text-muted-foreground hover:bg-muted"
                                 )}
                               >

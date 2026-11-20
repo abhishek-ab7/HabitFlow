@@ -61,7 +61,7 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
     // Hydration safety: Don't render date-dependent logic until mounted
     if (!mounted) {
         return (
-            <section className="bg-card/30 backdrop-blur-2xl backdrop-saturate-150 rounded-3xl border border-white/10 shadow-2xl overflow-hidden h-[200px] flex items-center justify-center">
+            <section className="surface-card overflow-hidden h-[200px] flex items-center justify-center">
                 <Loader2 className="h-6 w-6 animate-spin text-primary/60" />
             </section>
         )
@@ -107,13 +107,13 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
     }
 
     if (isLoading && tasks.length === 0) return (
-        <div className="h-full min-h-[200px] flex items-center justify-center bg-card/40 backdrop-blur-xl rounded-2xl border border-white/10">
+        <div className="h-full min-h-[200px] flex items-center justify-center surface-card">
             <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
         </div>
     )
 
     return (
-        <section className="bg-card/30 backdrop-blur-2xl backdrop-saturate-150 rounded-3xl border border-white/10 shadow-2xl overflow-hidden tour-tasks-widget">
+        <section className="surface-card overflow-hidden tour-tasks-widget">
             <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
                 <div className="flex items-start sm:items-center justify-between gap-3">
                     <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
@@ -170,7 +170,7 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
                                 return (
                                     <div
                                         key={ob.id}
-                                        className="rounded-2xl border border-border/80 bg-background/60 p-3.5 flex flex-col justify-between gap-2.5"
+                                        className="surface-subtle p-3.5 flex flex-col justify-between gap-2.5"
                                     >
                                         <div className="space-y-1">
                                             <div className="flex items-center justify-between gap-2">
@@ -272,9 +272,6 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
                     </AnimatePresence>
                 </div>
             </div>
-
-            {/* Bottom Glow Effect */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
         </section>
     )
 }

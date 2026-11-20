@@ -8,31 +8,31 @@ export const colors = {
       bg: 'bg-category-health',
       text: 'text-category-health',
       border: 'border-category-health',
-      hex: '#4ade80', // Reference for charts
+      hex: '#10b981', // Reference for charts
     },
     work: {
       bg: 'bg-category-work',
       text: 'text-category-work',
       border: 'border-category-work',
-      hex: '#818cf8',
+      hex: '#3b82f6',
     },
     learning: {
       bg: 'bg-category-learning',
       text: 'text-category-learning',
       border: 'border-category-learning',
-      hex: '#fbbf24',
+      hex: '#f59e0b',
     },
     personal: {
       bg: 'bg-category-personal',
       text: 'text-category-personal',
       border: 'border-category-personal',
-      hex: '#f472b6',
+      hex: '#f43f5e',
     },
     finance: {
       bg: 'bg-category-finance',
       text: 'text-category-finance',
       border: 'border-category-finance',
-      hex: '#38bdf8',
+      hex: '#14b8a6',
     },
     relationships: {
       bg: 'bg-category-relationships',
@@ -128,9 +128,9 @@ export const shadows = {
   lg: 'shadow-lg',
   xl: 'shadow-xl',
   glow: {
-    primary: 'shadow-[0_0_20px_rgba(99,102,241,0.3)]',
-    success: 'shadow-[0_0_20px_rgba(34,197,94,0.3)]',
-    warning: 'shadow-[0_0_20px_rgba(234,179,8,0.3)]',
+    primary: 'shadow-[0_0_20px_rgba(16,185,129,0.22)]',
+    success: 'shadow-[0_0_20px_rgba(16,185,129,0.25)]',
+    warning: 'shadow-[0_0_20px_rgba(245,158,11,0.25)]',
   },
 } as const;
 
@@ -205,11 +205,11 @@ export const chartConfig = {
     'var(--chart-5)',
   ],
   categoryColors: {
-    health: '#4ade80',
-    work: '#818cf8',
-    learning: '#fbbf24',
-    personal: '#f472b6',
-    finance: '#38bdf8',
+    health: '#10b981',
+    work: '#3b82f6',
+    learning: '#f59e0b',
+    personal: '#f43f5e',
+    finance: '#14b8a6',
     relationships: '#fb923c',
   },
 } as const;
@@ -241,12 +241,7 @@ export function getTimeGreeting(): { greeting: string; emoji: string } {
   return { greeting: 'Good Night', emoji: '🌙' };
 }
 
-// Time-based gradient for hero section
+// Neutral architectural hero surface (replaces legacy pastel/indigo gradients)
 export function getTimeGradient(): string {
-  const hour = new Date().getHours();
-  if (hour < 6) return 'from-slate-900 via-indigo-950 to-slate-900'; // Night
-  if (hour < 12) return 'from-amber-50 via-orange-50 to-rose-50'; // Morning
-  if (hour < 17) return 'from-sky-50 via-blue-50 to-indigo-50'; // Afternoon
-  if (hour < 21) return 'from-orange-50 via-rose-50 to-purple-50'; // Evening
-  return 'from-slate-900 via-indigo-950 to-slate-900'; // Night
+  return 'bg-card';
 }

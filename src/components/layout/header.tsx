@@ -86,24 +86,23 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 w-full border-b surface-chrome">
       <div className="w-full flex h-16 items-center px-4 md:px-6">
         {/* Logo */}
         <div className="flex-grow-0 flex-shrink-0 flex justify-start mr-4 lg:mr-8">
           <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
             <motion.div
-              className="relative flex h-11 w-11 min-w-[2.75rem] min-h-[2.75rem] aspect-square items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-purple-600/10 border border-purple-500/30 dark:border-purple-400/40 shadow-sm shadow-purple-500/10 shrink-0 overflow-hidden"
-              whileHover={{ scale: 1.05, rotate: [0, -5, 5, 0] }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: 'tween', duration: 0.5 }}
+              className="relative flex h-10 w-10 min-w-[2.5rem] min-h-[2.5rem] aspect-square items-center justify-center rounded-xl bg-primary/10 border border-primary/25 shadow-sm shrink-0 overflow-hidden"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              transition={{ type: 'tween', duration: 0.25 }}
             >
               <svg
                 viewBox="0 0 32 32"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
               >
-                {/* Flowing circular arc representing habits loop */}
                 <motion.path
                   d="M 16 4 A 12 12 0 1 1 15.99 4"
                   stroke="url(#logo-grad)"
@@ -112,9 +111,8 @@ export function Header() {
                   strokeLinejoin="round"
                   initial={{ pathLength: 0, opacity: 0 }}
                   animate={{ pathLength: 1, opacity: 1 }}
-                  transition={{ duration: 1.2, ease: "easeOut" }}
+                  transition={{ duration: 1.0, ease: "easeOut" }}
                 />
-                {/* Completed checkmark flying out representing progression */}
                 <motion.path
                   d="M 12 16.5 L 15 19.5 L 21 12.5"
                   stroke="url(#logo-grad-2)"
@@ -123,33 +121,22 @@ export function Header() {
                   strokeLinejoin="round"
                   initial={{ pathLength: 0, opacity: 0 }}
                   animate={{ pathLength: 1, opacity: 1 }}
-                  transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
+                  transition={{ duration: 0.7, delay: 0.45, ease: "easeOut" }}
                 />
                 <defs>
                   <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stopColor="var(--primary)" />
-                    <stop offset="100%" stopColor="#9333ea" />
+                    <stop offset="100%" stopColor="oklch(0.65 0.14 175)" />
                   </linearGradient>
                   <linearGradient id="logo-grad-2" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#9333ea" />
-                    <stop offset="100%" stopColor="#ec4899" />
-                  </linearGradient>
-                  <linearGradient 
-                    id="nav-icon-grad-active" 
-                    x1="0" 
-                    y1="0" 
-                    x2="20" 
-                    y2="20" 
-                    gradientUnits="userSpaceOnUse"
-                  >
                     <stop offset="0%" stopColor="var(--primary)" />
-                    <stop offset="100%" stopColor="#d946ef" />
+                    <stop offset="100%" stopColor="var(--info)" />
                   </linearGradient>
                 </defs>
               </svg>
             </motion.div>
-            <span className="hidden font-semibold text-lg sm:inline-block bg-gradient-to-r from-primary via-purple-600 to-pink-500 bg-clip-text text-transparent whitespace-nowrap tracking-tight">
-              Habit Flow
+            <span className="hidden font-semibold text-base sm:inline-block text-foreground whitespace-nowrap tracking-tight">
+              Habit<span className="text-primary">Flow</span>
             </span>
           </Link>
         </div>
@@ -159,23 +146,16 @@ export function Header() {
           <style dangerouslySetInnerHTML={{ __html: `
             .nav-link {
               width: 2.5rem;
-              transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
-            }
-            .nav-container:hover .nav-link {
-              transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
+              transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s;
             }
             .nav-link:hover ~ .nav-link {
               transform: translateX(85px);
             }
             .nav-link svg {
-              transition: stroke 0.3s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-            }
-            .nav-link.nav-link-active svg {
-              stroke: url(#nav-icon-grad-active);
+              transition: color 0.2s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
             }
             .nav-link:hover svg {
-              stroke: url(#nav-icon-grad-active);
-              transform: scale(1.15) rotate(4deg) translateY(-0.5px);
+              transform: scale(1.1) translateY(-0.5px);
             }
           `}} />
           {visibleNavItems.map((item) => {
@@ -196,31 +176,29 @@ export function Header() {
                   className={cn(
                     'flex items-center text-sm font-medium transition-colors whitespace-nowrap',
                     isActive
-                      ? 'text-foreground'
+                      ? 'text-primary'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
                   <span className="relative flex items-center justify-center shrink-0">
-                    {/* Premium backlit glow overlay */}
-                    <span 
-                      className={cn(
-                        "absolute -inset-2.5 rounded-full bg-gradient-to-br from-primary/10 via-purple-500/5 to-pink-500/10 dark:from-primary/20 dark:via-purple-500/10 dark:to-pink-500/20 blur-sm opacity-0 transition-all duration-500 scale-75 group-hover:opacity-100 group-hover:scale-100",
-                        isActive && "opacity-100 scale-100"
-                      )}
-                    />
                     <Icon className="h-[20px] w-[20px] shrink-0 relative z-10" />
                   </span>
-                  <span className="absolute left-10 opacity-0 pointer-events-none transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-1">
+                  <span className="absolute left-10 opacity-0 pointer-events-none transition-all duration-200 ease-out group-hover:opacity-100 group-hover:translate-x-1">
                     {item.label}
                   </span>
                 </span>
-                
-                {/* Premium progress underline effect on hover */}
-                <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-gradient-to-r from-primary to-purple-600 transform scale-x-0 origin-left transition-transform duration-300 ease-out group-hover:scale-x-100" />
+
+                {/* Crisp hairline underline indicator */}
+                <span
+                  className={cn(
+                    "absolute bottom-0 left-3 right-3 h-[2px] bg-primary transform origin-left transition-transform duration-200 ease-out",
+                    isActive ? "scale-x-100" : "scale-x-0 group-hover:scale-x-100"
+                  )}
+                />
 
                 {isActive && (
                   <div
-                    className="absolute inset-0 rounded-lg bg-muted border-none outline-none"
+                    className="absolute inset-0 rounded-lg bg-accent/70 border-none outline-none"
                     style={{ zIndex: -1 }}
                   />
                 )}
@@ -322,7 +300,7 @@ export function Header() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
-          className="md:hidden border-t border-border/40 bg-background/95 backdrop-blur-xl"
+          className="md:hidden border-t surface-chrome"
         >
           <div className="container px-4 py-4 space-y-1">
             {visibleNavItems.map((item) => {

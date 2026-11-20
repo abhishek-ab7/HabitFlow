@@ -91,9 +91,9 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
   };
 
   return (
-    <Card className="border-purple-500/20 bg-gradient-to-br from-purple-50/50 to-blue-50/50 dark:from-purple-950/20 dark:to-blue-950/20">
+    <Card className="surface-card border-invest/25">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-purple-700 dark:text-purple-300">
+        <CardTitle className="flex items-center gap-2 text-invest">
           <Target className="h-5 w-5" />
           AI Milestone Generator
         </CardTitle>
@@ -120,7 +120,7 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
                 disabled={loading}
                 variant="default"
                 size="sm"
-                className="gap-1 bg-purple-600 hover:bg-purple-700"
+                className="gap-1 bg-invest hover:bg-invest/90 text-white"
               >
                 {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                 Balanced (Recommended)
@@ -172,10 +172,10 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.1 }}
                     className={cn(
-                      "border rounded-lg p-3 transition-all",
+                      "border rounded-xl p-3 transition-all",
                       selectedMilestones.has(milestone.orderIndex)
-                        ? "bg-white dark:bg-gray-900 border-purple-300 dark:border-purple-700"
-                        : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-60"
+                        ? "bg-card border-invest/50"
+                        : "bg-muted/40 border-border opacity-60"
                     )}
                   >
                     <div className="flex items-start gap-3">
@@ -184,8 +184,8 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
                         className={cn(
                           "mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
                           selectedMilestones.has(milestone.orderIndex)
-                            ? "bg-purple-600 border-purple-600"
-                            : "border-gray-300 dark:border-gray-600"
+                            ? "bg-invest border-invest"
+                            : "border-muted-foreground/40"
                         )}
                       >
                         {selectedMilestones.has(milestone.orderIndex) && (
@@ -219,7 +219,7 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
                           )}
                         </div>
 
-                        <p className="text-xs text-purple-600 dark:text-purple-400 mt-2 italic">
+                        <p className="text-xs text-invest mt-2 italic">
                           {milestone.reasoning}
                         </p>
                       </div>
@@ -234,7 +234,7 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
               <Button
                 onClick={acceptMilestones}
                 disabled={selectedMilestones.size === 0}
-                className="flex-1 bg-purple-600 hover:bg-purple-700"
+                className="flex-1 bg-invest hover:bg-invest/90 text-white"
               >
                 <Check className="h-4 w-4 mr-1" />
                 Accept {selectedMilestones.size > 0 && `(${selectedMilestones.size})`}

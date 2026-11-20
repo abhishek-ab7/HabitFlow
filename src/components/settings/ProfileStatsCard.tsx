@@ -82,15 +82,15 @@ export function ProfileStatsCard({
                         </div>
                     )}
                     <div
-                        className="flex items-center gap-2 text-xs text-muted-foreground mt-1 cursor-pointer hover:text-indigo-500 transition-colors"
+                        className="flex items-center gap-2 text-xs text-muted-foreground mt-1 cursor-pointer hover:text-invest transition-colors"
                         onClick={() => openRules('levels')}
                     >
-                        <div className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded-full text-indigo-600 dark:text-indigo-400 font-semibold">
+                        <div className="flex items-center gap-1 bg-invest/10 px-2 py-0.5 rounded-full text-invest font-semibold">
                             <Trophy className="w-3 h-3" />
                             <span>Level {level}</span>
                         </div>
                         <span>•</span>
-                        <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-1 font-mono tabular-nums">
                             {xp} / {xpRequired} XP
                         </span>
                     </div>
@@ -119,7 +119,7 @@ export function ProfileStatsCard({
             <div className="flex-1 flex flex-col justify-center py-4">
                 <div className="grid grid-cols-2 gap-3">
                     <div
-                        className="bg-indigo-50/50 dark:bg-indigo-900/10 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/20 cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 transition-colors"
+                        className="bg-invest/5 p-3 rounded-xl border border-invest/20 cursor-pointer hover:bg-invest/10 transition-colors"
                         onClick={() => openRules('levels')}
                     >
                         <div className="flex items-center gap-2 mb-1">
@@ -146,10 +146,10 @@ export function ProfileStatsCard({
             <div className="mt-auto space-y-2 cursor-pointer pt-4 border-t border-border/40" onClick={() => openRules('xp')}>
                 <div className="flex justify-between text-xs font-medium">
                     <span className="text-muted-foreground">Progress to Level {level + 1}</span>
-                    <span className="text-indigo-600 dark:text-indigo-400">{Math.round(progress)}%</span>
+                    <span className="text-invest font-mono tabular-nums">{Math.round(progress)}%</span>
                 </div>
-                <Progress value={progress} className="h-2.5 bg-secondary" indicatorClassName="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
-                <p className="text-[10px] text-muted-foreground text-right w-full font-medium">
+                <Progress value={progress} className="h-2.5 bg-secondary" indicatorClassName="bg-invest" />
+                <p className="text-[10px] text-muted-foreground text-right w-full font-medium font-mono tabular-nums">
                     {xpRequired - xp} XP to level up
                 </p>
             </div>

@@ -22,7 +22,7 @@ import {
 
 const CATEGORY_COLORS: Record<Category, string> = {
     health: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
-    work: 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-400',
+    work: 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
     learning: 'bg-amber-500/20 text-amber-600 dark:text-amber-400',
     personal: 'bg-pink-500/20 text-pink-600 dark:text-pink-400',
     finance: 'bg-sky-500/20 text-sky-600 dark:text-sky-400',

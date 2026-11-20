@@ -400,7 +400,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   return (
     <div className="space-y-6">
       {/* 1. True Net Worth Hero Card + 6-Month Net Worth Trajectory Chart */}
-      <section className="rounded-3xl border border-border bg-card/85 backdrop-blur-md shadow-sm p-5 sm:p-6 space-y-5">
+      <section className="surface-hero p-5 sm:p-6 space-y-5">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
           <div className="lg:col-span-6 space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">

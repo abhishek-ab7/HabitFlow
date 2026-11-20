@@ -119,7 +119,7 @@ export function MoodCheckIn({ compact = false }: MoodCheckInProps) {
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-4 sm:p-5 rounded-2xl border border-border bg-card"
+      className="p-4 sm:p-5 surface-card"
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>

@@ -818,7 +818,7 @@ export function AddTransactionModal({
         </div>
 
         {/* Header with 4-Type Switcher */}
-        <div className="px-4 pt-2 pb-3 border-b border-border/60 bg-card/85 backdrop-blur-md flex items-center justify-between gap-2 shrink-0">
+        <div className="px-4 pt-2 pb-3 border-b border-border/60 bg-card flex items-center justify-between gap-2 shrink-0">
           <DialogTitle className="sr-only">
             {editingTransaction ? 'Edit Transaction' : 'Quick Add Transaction'}
           </DialogTitle>
@@ -1316,7 +1316,7 @@ export function AddTransactionModal({
                     }}
                     className={`min-h-[38px] px-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
                       isSplitEnabled
-                        ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                        ? 'border-sky-500 bg-sky-500/10 text-sky-600 dark:text-sky-400'
                         : 'border-border bg-card text-muted-foreground hover:text-foreground'
                     }`}
                   >
@@ -1437,7 +1437,7 @@ export function AddTransactionModal({
 
                 {/* Friend Split Drawer */}
                 {isSplitEnabled && (
-                  <div className="rounded-xl border border-indigo-500/30 bg-card p-3 space-y-2.5">
+                  <div className="rounded-xl border border-sky-500/30 bg-card p-3 space-y-2.5">
                     <div className="grid grid-cols-12 gap-2">
                       <div className="col-span-7">
                         <Input
@@ -1477,7 +1477,7 @@ export function AddTransactionModal({
                         )}
                       </strong>{' '}
                       · Friends Ledger adds{' '}
-                      <strong className="text-indigo-600 dark:text-indigo-400">
+                      <strong className="text-sky-600 dark:text-sky-400">
                         {formatINR(
                           parseFloat(splitFriendShareStr) ||
                             Math.round(numericAmount / 2)

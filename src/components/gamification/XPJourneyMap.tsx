@@ -25,9 +25,9 @@ export function XPJourneyMap() {
     return (
         <div className="relative py-8 pl-4 pr-2">
             {/* Connecting Line - Dashed Gradient */}
-            <div className="absolute left-[27px] top-8 bottom-8 w-[2px] bg-gradient-to-b from-indigo-500/0 via-indigo-500/50 to-indigo-500/0">
-                <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px]" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)' }}>
-                    <div className="h-full w-full border-l-2 border-dashed border-indigo-500/30" />
+            <div className="absolute left-[27px] top-8 bottom-8 w-[2px] bg-gradient-to-b from-invest/0 via-invest/50 to-invest/0">
+                <div className="absolute inset-0 bg-background/50" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)' }}>
+                    <div className="h-full w-full border-l-2 border-dashed border-invest/30" />
                 </div>
             </div>
 
@@ -57,17 +57,17 @@ function LevelNode({ level, status, isRef }: { level: number, status: 'completed
         >
             {/* Circle Node */}
             <div className={cn(
-                "relative z-10 w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shadow-xl border-4 transition-all duration-300",
-                isCompleted ? "bg-gradient-to-br from-indigo-600 to-violet-600 border-indigo-200/50 text-white" : "",
-                isCurrent ? "bg-background border-indigo-500 text-indigo-500 scale-110 shadow-indigo-500/40 ring-4 ring-indigo-500/10" : "",
-                status === 'locked' ? "bg-muted border-white/10 text-muted-foreground" : ""
+                "relative z-10 w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold font-mono tabular-nums shadow-sm border-4 transition-all duration-300",
+                isCompleted ? "bg-invest border-invest/30 text-white" : "",
+                isCurrent ? "bg-background border-invest text-invest scale-110 ring-4 ring-invest/15" : "",
+                status === 'locked' ? "bg-muted border-border text-muted-foreground" : ""
             )}>
                 {isCompleted ? <Check className="w-5 h-5" /> : status === 'locked' ? <Lock className="w-4 h-4" /> : level}
 
                 {/* Current Level Pulse Effect */}
                 {isCurrent && (
                     <>
-                        <span className="absolute inset-0 rounded-full bg-indigo-500 animate-ping opacity-20" />
+                        <span className="absolute inset-0 rounded-full bg-invest animate-ping opacity-20" />
                         <motion.div
                             className="absolute -top-1 -right-1"
                             animate={{ rotate: 360 }}
@@ -82,15 +82,15 @@ function LevelNode({ level, status, isRef }: { level: number, status: 'completed
             {/* Content Card */}
             <div className={cn(
                 "flex-1 p-4 rounded-xl border transition-all duration-300",
-                isCurrent ? "bg-gradient-to-r from-indigo-500/10 to-purple-500/5 border-indigo-500/30 shadow-lg shadow-indigo-500/10 backdrop-blur-sm" : "bg-card/50 border-white/5 hover:bg-card/80",
+                isCurrent ? "bg-invest/10 border-invest/35 shadow-sm" : "surface-subtle",
                 isCompleted ? "opacity-80" : ""
             )}>
                 <div className="flex justify-between items-center mb-1">
-                    <h4 className={cn("font-bold", isCurrent ? "text-indigo-600 dark:text-indigo-400" : "text-foreground/80")}>
+                    <h4 className={cn("font-bold font-mono tabular-nums", isCurrent ? "text-invest" : "text-foreground/80")}>
                         Level {level}
                     </h4>
                     {isCurrent && (
-                        <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-bold text-indigo-500 uppercase tracking-wide">
+                        <span className="px-2 py-0.5 rounded-full bg-invest/10 border border-invest/25 text-[10px] font-bold text-invest uppercase tracking-wide">
                             Current
                         </span>
                     )}
@@ -103,7 +103,7 @@ function LevelNode({ level, status, isRef }: { level: number, status: 'completed
                 {/* Rewards Preview */}
                 <div className="flex flex-wrap gap-2 mt-3">
                     <RewardBadge icon={<Star className="w-3 h-3 text-amber-500" />} text="Title" active={isCompleted || isCurrent} />
-                    {level % 5 === 0 && <RewardBadge icon={<Trophy className="w-3 h-3 text-indigo-500" />} text="Rare Badge" active={isCompleted || isCurrent} />}
+                    {level % 5 === 0 && <RewardBadge icon={<Trophy className="w-3 h-3 text-invest" />} text="Rare Badge" active={isCompleted || isCurrent} />}
                 </div>
             </div>
         </motion.div>

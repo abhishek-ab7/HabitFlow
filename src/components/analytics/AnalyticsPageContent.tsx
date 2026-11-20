@@ -700,11 +700,11 @@ export default function AnalyticsPageContent() {
 
             {/* Life OS Behavioral Correlations: Mood & Habits × Spending */}
             <FadeIn delay={0.55}>
-              <Card className="border-border/60 shadow-sm overflow-hidden bg-gradient-to-br from-card via-card to-muted/20">
+              <Card className="surface-card overflow-hidden">
                 <CardHeader className="pb-3 border-b border-border/40">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                      <div className="p-2 rounded-xl bg-invest/10 text-invest border border-invest/20">
                         <Brain className="h-5 w-5" />
                       </div>
                       <div>
@@ -712,7 +712,7 @@ export default function AnalyticsPageContent() {
                           <CardTitle className="text-base font-bold">
                             Life OS Behavioral Correlations: Mood, Habits & Spending
                           </CardTitle>
-                          <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/10 text-violet-600 dark:text-violet-300 border border-violet-500/20">
+                          <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-invest/10 text-invest border border-invest/20">
                             Cross-Domain Sync
                           </span>
                         </div>
@@ -736,7 +736,7 @@ export default function AnalyticsPageContent() {
                     <>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Correlation 1: Mood vs Impulse Spending */}
-                        <div className="p-3.5 rounded-xl border border-border/50 bg-background/50 space-y-2.5">
+                        <div className="p-3.5 surface-subtle space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               Mood × Food & Shopping
@@ -783,7 +783,7 @@ export default function AnalyticsPageContent() {
                         </div>
 
                         {/* Correlation 2: Habit Consistency vs Daily Outflow */}
-                        <div className="p-3.5 rounded-xl border border-border/50 bg-background/50 space-y-2.5">
+                        <div className="p-3.5 surface-subtle space-y-2.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               Habit Streaks × Outflow
@@ -830,7 +830,7 @@ export default function AnalyticsPageContent() {
                         </div>
 
                         {/* Correlation 3: Life OS Coping Index */}
-                        <div className="p-3.5 rounded-xl border border-border/50 bg-background/50 space-y-2.5 flex flex-col justify-between">
+                        <div className="p-3.5 surface-subtle space-y-2.5 flex flex-col justify-between">
                           <div>
                             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1">
                               Emotional Coping Index
@@ -854,8 +854,8 @@ export default function AnalyticsPageContent() {
                       </div>
 
                       {/* AI Behavioral Takeaway Bar */}
-                      <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/20 flex items-start gap-2.5">
-                        <Sparkles className="h-4 w-4 text-violet-500 shrink-0 mt-0.5" />
+                      <div className="p-3 rounded-xl bg-invest/5 border border-invest/20 flex items-start gap-2.5">
+                        <Sparkles className="h-4 w-4 text-invest shrink-0 mt-0.5" />
                         <div className="text-xs leading-relaxed text-muted-foreground">
                           <span className="font-semibold text-foreground">Life OS Behavioral Insight: </span>
                           {behavioralCorrelations.impulseDiffPct > 15 ? (
@@ -973,7 +973,7 @@ export default function AnalyticsPageContent() {
                       <span className="text-xs text-muted-foreground font-medium">{day.dayName}</span>
                       <div 
                         className={cn(
-                          "w-12 h-12 rounded-xl flex items-center justify-center border text-2xl shadow-sm bg-card/60 transition-all",
+                          "w-12 h-12 rounded-xl flex items-center justify-center border text-2xl shadow-sm bg-card transition-all",
                           mood === 'happy' && "bg-amber-500/15 border-amber-500/30 text-amber-500",
                           mood === 'calm' && "bg-emerald-500/15 border-emerald-500/30 text-emerald-500",
                           mood === 'neutral' && "bg-slate-500/15 border-slate-500/30 text-slate-500",
@@ -1003,7 +1003,7 @@ export default function AnalyticsPageContent() {
               <div className="space-y-3">
                 {habits.filter(h => !h.archived).map((habit) => {
                   return (
-                    <div key={habit.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border bg-card/45 hover:bg-card/60 transition-colors gap-3 sm:gap-0">
+                    <div key={habit.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 surface-subtle hover:bg-muted/40 transition-colors gap-3 sm:gap-0">
                       <div className="flex items-center gap-2 min-w-0">
                         {habit.icon && <span className="text-lg">{habit.icon}</span>}
                         <div className="min-w-0">

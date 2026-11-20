@@ -39,7 +39,7 @@ export function UserStatusHUD() {
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <motion.div
-                            className="flex items-center gap-1.5 px-2 py-1 bg-indigo-500/10 dark:bg-indigo-400/10 rounded-full border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-semibold text-xs min-w-[32px] justify-center cursor-pointer hover:bg-indigo-500/20 transition-colors"
+                            className="flex items-center gap-1.5 px-2.5 py-1 bg-invest/10 rounded-full border border-invest/25 text-invest font-semibold text-xs font-mono tabular-nums min-w-[32px] justify-center cursor-pointer hover:bg-invest/20 transition-colors"
                             whileHover={{ scale: 1.05 }}
                             onClick={() => openRules('levels')}
                         >
@@ -64,26 +64,24 @@ export function UserStatusHUD() {
                         <motion.div
                             animate={pulse ? {
                                 boxShadow: [
-                                    '0 0 0 rgba(99,102,241,0)',
-                                    '0 0 12px rgba(99,102,241,0.6)',
-                                    '0 0 0 rgba(99,102,241,0)'
+                                    '0 0 0 rgba(139,92,246,0)',
+                                    '0 0 12px rgba(139,92,246,0.5)',
+                                    '0 0 0 rgba(139,92,246,0)'
                                 ]
                             } : {}}
                             transition={{ duration: 1 }}
-                            className="block w-24 md:w-48 h-4 bg-muted/80 rounded-full overflow-hidden relative border border-border/40 cursor-pointer hover:opacity-90 transition-all shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]"
+                            className="block w-24 md:w-48 h-4 bg-muted rounded-full overflow-hidden relative border border-border cursor-pointer hover:opacity-90 transition-all"
                             onClick={() => openRules('xp')}
                         >
                             <motion.div
-                                className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                                className="h-full bg-invest"
                                 initial={{ width: 0 }}
                                 animate={{ width: `${progress}%` }}
                                 transition={{ type: 'spring', damping: 20 }}
                             />
-                            {/* Shimmer Overlay */}
-                            <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.15)_50%,transparent_75%)] bg-[length:200%_100%] animate-[shimmer_3s_infinite] pointer-events-none" />
                             
                             {/* XP Text Indicator */}
-                            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold font-mono tracking-wider text-indigo-950 dark:text-indigo-50 mix-blend-difference">
+                            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold font-mono tabular-nums tracking-wider text-white mix-blend-difference">
                                 {xp} / {level * 100} XP
                             </div>
                         </motion.div>

@@ -898,7 +898,7 @@ export function ActivityTab({
                                 </span>
                               )}
                               {tx.splitGroupId && (
-                                <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 shrink-0">
+                                <span className="text-[11px] font-semibold text-primary shrink-0">
                                   · Split
                                 </span>
                               )}
@@ -919,7 +919,7 @@ export function ActivityTab({
                               {comm && (
                                 <>
                                   <span aria-hidden="true">·</span>
-                                  <span className="text-pink-600 dark:text-pink-400 font-medium">
+                                  <span className="text-rose-600 dark:text-rose-400 font-medium">
                                     Offset: {comm.recipientName}
                                   </span>
                                 </>
@@ -994,7 +994,7 @@ export function ActivityTab({
           showCloseButton={false}
           className="p-0 gap-0 overflow-hidden max-w-lg w-full rounded-2xl border-border bg-background"
         >
-          <div className="px-5 py-4 border-b border-border bg-card/85 backdrop-blur-md flex items-center justify-between gap-3">
+          <div className="px-5 py-4 border-b border-border bg-card flex items-center justify-between gap-3">
             <div>
               <DialogTitle className="text-base font-bold text-foreground">
                 Monthly Financial Report · {selectedMonth}

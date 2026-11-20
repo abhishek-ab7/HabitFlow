@@ -23,12 +23,12 @@ interface ShareCardModalProps {
 
 const CATEGORY_COLORS: Record<string, { primary: string; secondary: string; glow: string }> = {
   health: { primary: '#10b981', secondary: '#059669', glow: 'rgba(16, 185, 129, 0.4)' },
-  work: { primary: '#6366f1', secondary: '#4f46e5', glow: 'rgba(99, 102, 241, 0.4)' },
+  work: { primary: '#3b82f6', secondary: '#2563eb', glow: 'rgba(59, 130, 246, 0.35)' },
   learning: { primary: '#f59e0b', secondary: '#d97706', glow: 'rgba(245, 158, 11, 0.4)' },
   personal: { primary: '#ec4899', secondary: '#db2777', glow: 'rgba(236, 72, 153, 0.4)' },
   finance: { primary: '#0ea5e9', secondary: '#0284c7', glow: 'rgba(14, 165, 233, 0.4)' },
   relationships: { primary: '#f97316', secondary: '#ea580c', glow: 'rgba(249, 115, 22, 0.4)' },
-  default: { primary: '#a855f7', secondary: '#9333ea', glow: 'rgba(168, 85, 247, 0.4)' },
+  default: { primary: '#10b981', secondary: '#059669', glow: 'rgba(16, 185, 129, 0.35)' },
 };
 
 export function ShareCardModal({ open, onOpenChange, habit, streak }: ShareCardModalProps) {
@@ -187,7 +187,7 @@ export function ShareCardModal({ open, onOpenChange, habit, streak }: ShareCardM
       <DialogContent className="sm:max-w-md max-h-[92vh] overflow-y-auto flex flex-col items-center">
         <DialogHeader className="w-full text-center">
           <DialogTitle className="flex items-center justify-center gap-2">
-            <Share2 className="h-5 w-5 text-indigo-500" />
+            <Share2 className="h-5 w-5 text-primary" />
             <span>Share Achievement</span>
           </DialogTitle>
         </DialogHeader>
@@ -228,7 +228,7 @@ export function ShareCardModal({ open, onOpenChange, habit, streak }: ShareCardM
               <Button
                 onClick={handleDownload}
                 disabled={!previewUrl}
-                className="flex-1 gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                className="flex-1 gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
               >
                 <Download className="h-4 w-4" />
                 Download PNG

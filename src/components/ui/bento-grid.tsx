@@ -44,16 +44,14 @@ export const BentoGridItem = ({
 }: BentoGridItemProps) => {
     return (
         <motion.div
-            whileHover={disableHover ? undefined : { y: -5, scale: 1.01 }}
-            initial={{ opacity: 0, y: 20 }}
+            whileHover={disableHover ? undefined : { y: -2 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClick}
             className={cn(
-                'rounded-3xl group/bento transition duration-200 shadow-input dark:shadow-none p-6 row-span-1',
-                // Premium Glass Styles
-                'bg-white/40 dark:bg-black/20 backdrop-blur-xl border border-white/20 dark:border-white/10',
-                !disableHover && 'hover:shadow-2xl hover:bg-white/50 dark:hover:bg-black/30',
+                'surface-card group/bento transition-all duration-200 p-6 row-span-1 shadow-xs',
+                !disableHover && 'hover:border-primary/30 hover:shadow-md',
                 onClick && 'cursor-pointer',
                 span === 2 && 'md:col-span-2',
                 span === 3 && 'md:col-span-3',
@@ -61,15 +59,15 @@ export const BentoGridItem = ({
             )}
         >
             {header}
-            <div className={cn("transition duration-200 h-full flex flex-col", !disableHover && "group-hover/bento:translate-x-2")}>
+            <div className="h-full flex flex-col">
                 {(icon || title) && (
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-3 mb-1.5">
                         {icon}
-                        {title && <div className="font-bold text-neutral-800 dark:text-neutral-100 text-lg">{title}</div>}
+                        {title && <div className="font-semibold text-foreground text-base tracking-tight">{title}</div>}
                     </div>
                 )}
                 {description && (
-                    <div className="font-sans font-normal text-neutral-600 text-sm dark:text-neutral-400 mb-2">
+                    <div className="font-sans font-normal text-muted-foreground text-sm mb-2">
                         {description}
                     </div>
                 )}

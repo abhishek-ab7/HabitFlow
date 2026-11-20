@@ -21,9 +21,9 @@ export function AvatarSelector({
 }: AvatarSelectorProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-2xl bg-white/90 dark:bg-black/90 backdrop-blur-2xl border-white/20">
+            <DialogContent className="sm:max-w-2xl bg-card border-border rounded-2xl">
                 <DialogHeader>
-                    <DialogTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-500">
+                    <DialogTitle className="text-2xl font-bold tracking-tight text-foreground">
                         Choose Your Avatar
                     </DialogTitle>
                 </DialogHeader>

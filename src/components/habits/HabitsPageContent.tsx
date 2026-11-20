@@ -196,7 +196,7 @@ export default function HabitsPageContent() {
               <Button
                 onClick={() => setShowSmartGenerator(true)}
                 variant="outline"
-                className="gap-2 border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20"
+                className="gap-2 border-invest/30 text-invest hover:bg-invest/10"
               >
                 <Sparkles className="h-4 w-4 fill-current" />
                 AI Generator
@@ -206,7 +206,7 @@ export default function HabitsPageContent() {
               <Button
                 onClick={() => setShowAIAssist(true)}
                 variant="outline"
-                className="gap-2 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20"
+                className="gap-2 border-primary/30 text-primary hover:bg-primary/10"
               >
                 <Brain className="h-4 w-4" />
                 AI Assist
@@ -376,7 +376,7 @@ export default function HabitsPageContent() {
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-border/80">
                   <div className="flex items-center gap-2">
-                    <Brain className="h-5 w-5 text-emerald-500" />
+                    <Brain className="h-5 w-5 text-invest" />
                     <h2 className="text-lg font-semibold tracking-tight">AI Assistant</h2>
                   </div>
                   <Button

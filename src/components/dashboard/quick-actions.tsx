@@ -20,7 +20,7 @@ export function QuickActions({
     <FadeIn delay={0.4}>
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 md:relative md:bottom-auto md:left-auto md:translate-x-0 md:mt-8">
         <motion.div
-          className="flex items-center gap-2 p-2 rounded-2xl bg-card/80 backdrop-blur-xl border shadow-lg"
+          className="flex items-center gap-2 p-2 surface-card shadow-lg"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.5, type: 'spring', stiffness: 400, damping: 25 }}

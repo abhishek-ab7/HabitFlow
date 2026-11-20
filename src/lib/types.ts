@@ -250,10 +250,13 @@ export interface DashboardWidgetConfig {
   pinned?: boolean;
 }
 
+export type AccentTheme = 'mint' | 'cobalt' | 'forest' | 'ink';
+
 export interface UserSettings {
   id: string;
   userId: string; // Added for data isolation
   theme: 'light' | 'dark' | 'system';
+  accent?: AccentTheme;
   userName?: string;
   weekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sunday, 1 = Monday, etc.
   showMotivationalQuotes: boolean;

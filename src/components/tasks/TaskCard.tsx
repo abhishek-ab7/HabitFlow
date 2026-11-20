@@ -213,11 +213,10 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                     transition: { duration: 0.2 }
                 }}
                 className={cn(
-                    "group relative rounded-2xl border transition-all duration-300",
+                    "group relative rounded-2xl border transition-all duration-200",
                     compact ? "p-3" : "p-5",
-                    "bg-card/40 backdrop-blur-xl backdrop-saturate-150",
-                    "border-white/10 dark:border-white/5 shadow-sm",
-                    "hover:bg-card/60 hover:border-primary/30",
+                    "bg-card border-border shadow-xs",
+                    "hover:border-primary/35",
                     task.status === 'done' && "opacity-60 grayscale-[0.3]"
                 )}
             >
@@ -306,7 +305,7 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                             <TooltipTrigger asChild>
                                                 <Badge 
                                                     variant="outline" 
-                                                    className="flex items-center gap-1 border-purple-500/50 bg-purple-500/10 text-purple-700 dark:text-purple-300 text-[8px] px-1.5 py-0.5"
+                                                    className="flex items-center gap-1 border-invest/35 bg-invest/10 text-invest text-[8px] px-1.5 py-0.5"
                                                 >
                                                     <Sparkles className="h-2.5 w-2.5" />
                                                     AI: {aiPriority.suggestedPriority.charAt(0).toUpperCase()}
@@ -436,7 +435,7 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                     variant="ghost"
                                     onClick={getAIPriority}
                                     disabled={loadingPriority}
-                                    className="h-6 px-2 text-[10px] gap-1 text-purple-600 hover:text-purple-700 hover:bg-purple-100 dark:hover:bg-purple-900/30"
+                                    className="h-6 px-2 text-[10px] gap-1 text-invest hover:text-invest hover:bg-invest/10"
                                 >
                                     <Sparkles className="h-3 w-3" />
                                     {loadingPriority ? 'Analyzing...' : 'AI Priority'}

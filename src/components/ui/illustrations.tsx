@@ -217,7 +217,7 @@ export function EmptyGoalsIllustration() {
   return (
     <div className="relative w-48 h-48 mx-auto flex items-center justify-center">
       {/* Background glow node */}
-      <div className="absolute inset-4 bg-gradient-to-tr from-sky-500/10 to-indigo-500/20 rounded-full blur-2xl animate-pulse duration-4000" />
+      <div className="absolute inset-4 bg-gradient-to-tr from-emerald-500/15 to-teal-500/15 rounded-full blur-2xl" />
       
       <svg
         width="100%"
@@ -233,12 +233,12 @@ export function EmptyGoalsIllustration() {
             <stop offset="100%" stopColor="#ffffff" stopOpacity="0.02" />
           </linearGradient>
           <linearGradient id="mountainGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#6366f1" stopOpacity="0.05" />
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#14b8a6" stopOpacity="0.05" />
           </linearGradient>
           <linearGradient id="flagGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3b82f6" />
-            <stop offset="100%" stopColor="#4f46e5" />
+            <stop offset="0%" stopColor="#10b981" />
+            <stop offset="100%" stopColor="#0d9488" />
           </linearGradient>
         </defs>
 
@@ -268,29 +268,29 @@ export function EmptyGoalsIllustration() {
         `}</style>
 
         {/* Orbitals */}
-        <circle cx="100" cy="100" r="80" stroke="#3b82f6" strokeWidth="1" strokeOpacity="0.1" />
+        <circle cx="100" cy="100" r="80" stroke="#10b981" strokeWidth="1" strokeOpacity="0.12" />
 
         {/* Dotted path leading up the mountain */}
-        <path d="M 50 150 C 65 120, 85 90, 100 65" stroke="#3b82f6" strokeWidth="2" strokeOpacity="0.4" strokeDasharray="4 4" />
+        <path d="M 50 150 C 65 120, 85 90, 100 65" stroke="#10b981" strokeWidth="2" strokeOpacity="0.4" strokeDasharray="4 4" />
 
         {/* Mountains & Goal Flag */}
         <g className="goal-mountain-group">
-          {/* Glassmorphic Mountain backdrop 1 */}
-          <path d="M 25 150 L 75 75 L 125 150 Z" fill="url(#mountainGrad)" stroke="#3b82f6" strokeOpacity="0.25" strokeWidth="1.5" />
+          {/* Mountain backdrop 1 */}
+          <path d="M 25 150 L 75 75 L 125 150 Z" fill="url(#mountainGrad)" stroke="#10b981" strokeOpacity="0.25" strokeWidth="1.5" />
           
-          {/* Glassmorphic Mountain foreground 2 (higher peak) */}
-          <path d="M 60 150 L 110 55 L 165 150 Z" fill="url(#mountainGrad)" stroke="#6366f1" strokeOpacity="0.3" strokeWidth="1.5" />
+          {/* Mountain foreground 2 (higher peak) */}
+          <path d="M 60 150 L 110 55 L 165 150 Z" fill="url(#mountainGrad)" stroke="#14b8a6" strokeOpacity="0.3" strokeWidth="1.5" />
 
           {/* Goal Flag on top of the peak (110, 55) */}
-          <line x1="110" y1="55" x2="110" y2="35" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" />
+          <line x1="110" y1="55" x2="110" y2="35" stroke="#10b981" strokeWidth="2" strokeLinecap="round" />
           <path d="M 110 35 L 132 43 L 110 50 Z" fill="url(#flagGrad)" />
         </g>
 
         {/* Shiny target milestone stars */}
-        <g className="star-active-1 text-sky-400">
+        <g className="star-active-1 text-emerald-400">
           <path d="M 100 38 L 102 43 L 107 43 L 103 46 L 105 51 L 100 48 L 95 51 L 97 46 L 93 43 L 98 43 Z" fill="currentColor" />
         </g>
-        <g className="star-active-2 text-indigo-400">
+        <g className="star-active-2 text-teal-400">
           <path d="M 55 88 L 57 93 L 62 93 L 58 96 L 60 101 L 55 98 L 50 101 L 52 96 L 48 93 L 53 93 Z" fill="currentColor" opacity="0.75" />
         </g>
         <g className="star-active-3 text-sky-400">
