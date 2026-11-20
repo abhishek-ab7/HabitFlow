@@ -25,7 +25,9 @@ import {
   BookOpen,
   HelpCircle,
   Layers,
-  Check
+  Check,
+  RotateCcw,
+  Plus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -44,7 +46,14 @@ import { forcePushAllHabits } from '@/lib/force-sync';
 import { getSyncEngine } from '@/lib/sync';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import type { AccentTheme, UserSettings } from '@/lib/types';
+import type { UserSettings } from '@/lib/types';
+import {
+  ACCENT_OVERRIDES,
+  COLOR_THEMES,
+  DEFAULT_ACCENT_OVERRIDE,
+  DEFAULT_COLOR_THEME,
+  getColorThemeById,
+} from '@/lib/themes';
 import { BentoGrid, BentoGridItem } from '@/components/ui/bento-grid';
 import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
 import { SettingsHero } from '@/components/settings/SettingsHero';
@@ -54,20 +63,17 @@ import { useUserStore } from '@/lib/stores/user-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import type { Avatar } from '@/lib/avatars';
 
-const ACCENT_PRESETS: {
-  id: AccentTheme;
-  label: string;
-  swatch: string;
-  secondarySwatch: string;
-}[] = [
-  { id: 'mint', label: 'Mint', swatch: 'bg-emerald-500', secondarySwatch: 'bg-teal-400' },
-  { id: 'cobalt', label: 'Cobalt', swatch: 'bg-blue-500', secondarySwatch: 'bg-sky-400' },
-  { id: 'forest', label: 'Forest', swatch: 'bg-green-700', secondarySwatch: 'bg-emerald-600' },
-  { id: 'ink', label: 'Ink', swatch: 'bg-zinc-900 dark:bg-zinc-100', secondarySwatch: 'bg-zinc-500' },
-];
-
 export default function SettingsPageContent() {
-  const { theme, setTheme, accent, setAccent } = useTheme();
+  const {
+    theme,
+    setTheme,
+    resolvedTheme,
+    colorTheme,
+    setColorTheme,
+    accentOverride,
+    setAccentOverride,
+    resetAppearance,
+  } = useTheme();
   const { isAuthenticated, user } = useAuth();
   const { isSyncing, isStoragePersistent } = useSync();
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -687,105 +693,306 @@ export default function SettingsPageContent() {
             </div>
           </BentoGridItem>
 
-          {/* CLOUD SYNC */}
-          {isAuthenticated && (
-            <BentoGridItem
-              span={2}
-              title={
-                <div className="flex items-center gap-2">
-                  <span>Cloud Sync</span>
-                  {isSyncing && <span className="text-xs text-muted-foreground animate-pulse font-normal ml-2">(Syncing...)</span>}
-                </div>
-              }
-              icon={<CloudCog className="h-5 w-5 text-blue-500" />}
-              className="md:col-span-2 lg:col-span-2"
-              disableHover
-            >
-              <div className="mt-2">
-                <SyncStatusPanel />
-              </div>
-            </BentoGridItem>
-          )}
-
           {/* APPEARANCE */}
           <BentoGridItem
             title="Appearance"
             icon={<Palette className="h-5 w-5 text-primary" />}
-            span={1}
-            className="md:col-span-1"
-            description="Surface mode & accent palette"
+            span={2}
+            className="md:col-span-2"
+            description="Customize surface brightness, theme palette, and accent color"
             disableHover
           >
-            <div className="space-y-4 mt-3">
-              {/* Surface Mode */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Surface Mode
-                </span>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'light', icon: Sun, label: 'Light' },
-                    { value: 'dark', icon: Moon, label: 'Dark' },
-                    { value: 'system', icon: Monitor, label: 'System' },
-                  ].map((opt) => {
-                    const isSelected = (mounted ? theme : 'system') === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setTheme(opt.value as 'light' | 'dark' | 'system')}
-                        className={cn(
-                          'py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all border text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          isSelected
-                            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                            : 'bg-muted/45 hover:bg-muted/75 border-border/50 text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        <opt.icon className="w-4 h-4" />
-                        <span>{opt.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            {(() => {
+              const activeMode = mounted ? theme : 'system';
+              const activeResolved = mounted ? resolvedTheme : 'light';
+              const activeColorTheme = mounted ? colorTheme : DEFAULT_COLOR_THEME;
+              const activeAccentOverride = mounted ? accentOverride : DEFAULT_ACCENT_OVERRIDE;
+              const activeThemeMeta = getColorThemeById(activeColorTheme);
+              const activeThemePreview =
+                activeResolved === 'dark'
+                  ? activeThemeMeta.darkPreview
+                  : activeThemeMeta.lightPreview;
+              const isCustomized =
+                mounted &&
+                (activeColorTheme !== DEFAULT_COLOR_THEME ||
+                  activeAccentOverride !== DEFAULT_ACCENT_OVERRIDE);
 
-              {/* Accent Palette Picker */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Accent Palette
-                </span>
-                <div className="grid grid-cols-4 gap-2">
-                  {ACCENT_PRESETS.map((preset) => {
-                    const isSelected = (mounted ? accent : 'mint') === preset.id;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => setAccent(preset.id)}
-                        className={cn(
-                          'relative py-2.5 px-1.5 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all border text-[11px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                          isSelected
-                            ? 'border-primary bg-accent/60 text-foreground'
-                            : 'border-border/50 bg-muted/45 hover:bg-muted/75 text-muted-foreground hover:text-foreground'
-                        )}
-                        title={preset.label}
-                      >
-                        <span className="relative flex items-center justify-center w-6 h-6 rounded-full border border-border/70 overflow-hidden shadow-xs">
-                          <span className={cn('w-1/2 h-full', preset.swatch)} />
-                          <span className={cn('w-1/2 h-full', preset.secondarySwatch)} />
-                          {isSelected && (
-                            <span className="absolute inset-0 flex items-center justify-center bg-black/25">
-                              <Check className="w-3 h-3 text-white stroke-[3]" />
-                            </span>
-                          )}
+              return (
+                <div className="space-y-5 mt-4">
+                  {/* 1. Surface Mode Segmented Control */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Surface Mode
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {activeMode === 'system'
+                          ? `Following OS (${activeResolved === 'dark' ? 'Dark' : 'Light'})`
+                          : activeMode === 'dark'
+                          ? 'Dark surface'
+                          : 'Light surface'}
+                      </span>
+                    </div>
+                    <div
+                      role="radiogroup"
+                      aria-label="Surface mode"
+                      className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-muted/60 border border-border/60"
+                    >
+                      {(
+                        [
+                          { value: 'light', icon: Sun, label: 'Light' },
+                          { value: 'dark', icon: Moon, label: 'Dark' },
+                          { value: 'system', icon: Monitor, label: 'System' },
+                        ] as const
+                      ).map((opt) => {
+                        const isSelected = activeMode === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => setTheme(opt.value)}
+                            className={cn(
+                              'min-h-[40px] px-3 py-2 rounded-lg flex items-center justify-center gap-2 text-xs font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]',
+                              isSelected
+                                ? 'bg-card text-foreground shadow-xs border border-border'
+                                : 'text-muted-foreground hover:text-foreground border border-transparent'
+                            )}
+                          >
+                            <opt.icon className="w-3.5 h-3.5 shrink-0" />
+                            <span>{opt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 2. Theme Palette Gallery (2-col mobile, 3-col desktop) */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Theme Palette
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {activeThemeMeta.name}
+                      </span>
+                    </div>
+                    <div
+                      role="radiogroup"
+                      aria-label="Theme palette"
+                      className="grid grid-cols-2 md:grid-cols-3 gap-3"
+                    >
+                      {COLOR_THEMES.map((item) => {
+                        const isSelected = activeColorTheme === item.id;
+                        const preview =
+                          activeResolved === 'dark' ? item.darkPreview : item.lightPreview;
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => setColorTheme(item.id)}
+                            className={cn(
+                              'group relative flex flex-col text-left rounded-xl overflow-hidden border transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98]',
+                              isSelected
+                                ? 'border-primary ring-1 ring-primary/30 shadow-xs'
+                                : 'border-border hover:border-foreground/25'
+                            )}
+                          >
+                            {/* Top Half: Miniature Live App Preview */}
+                            <div
+                              className="w-full p-2.5 border-b"
+                              style={{
+                                backgroundColor: preview.bg,
+                                borderColor: preview.border,
+                              }}
+                              aria-hidden="true"
+                            >
+                              <div
+                                className="rounded-lg p-2 space-y-2 border"
+                                style={{
+                                  backgroundColor: preview.card,
+                                  borderColor: preview.border,
+                                }}
+                              >
+                                {/* Mini top row: bar + secondary chart dot */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div
+                                    className="h-1.5 w-12 rounded-full opacity-35"
+                                    style={{
+                                      backgroundColor:
+                                        activeResolved === 'dark' ? '#e5e7eb' : '#1f2937',
+                                    }}
+                                  />
+                                  <span
+                                    className="w-2 h-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: preview.secondary }}
+                                  />
+                                </div>
+
+                                {/* Mini progress bar */}
+                                <div
+                                  className="h-1.5 w-full rounded-full overflow-hidden"
+                                  style={{ backgroundColor: preview.border }}
+                                >
+                                  <div
+                                    className="h-full w-2/3 rounded-full"
+                                    style={{ backgroundColor: preview.primary }}
+                                  />
+                                </div>
+
+                                {/* Mini primary accent pill + subtle secondary line */}
+                                <div className="flex items-center justify-between gap-2 pt-0.5">
+                                  <span
+                                    className="h-3 w-10 rounded-md"
+                                    style={{ backgroundColor: preview.primary }}
+                                  />
+                                  <span
+                                    className="h-1.5 w-6 rounded-full opacity-60"
+                                    style={{ backgroundColor: preview.secondary }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bottom Half: Name, Tagline & Checkmark */}
+                            <div className="p-2.5 bg-card flex items-start justify-between gap-2 flex-1">
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-foreground leading-snug truncate">
+                                  {item.name}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground leading-tight mt-0.5 line-clamp-1">
+                                  {item.tagline}
+                                </p>
+                              </div>
+                              {isSelected && (
+                                <span className="w-4 h-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 mt-0.5">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 3. Optional Accent Color Override Row */}
+                  <div className="space-y-2.5 pt-1 border-t border-border/60">
+                    <div className="flex items-center justify-between gap-2 pt-3">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Accent Color Override
+                      </span>
+                      {isCustomized && (
+                        <button
+                          type="button"
+                          onClick={resetAppearance}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors rounded-md px-2 py-1 hover:bg-muted/60 outline-none focus-visible:ring-2 focus-visible:ring-ring whitespace-nowrap"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>Reset</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div
+                      role="radiogroup"
+                      aria-label="Accent color override"
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      {ACCENT_OVERRIDES.map((item) => {
+                        const isSelected = activeAccentOverride === item.id;
+                        const swatchColor =
+                          activeResolved === 'dark' ? item.swatchDark : item.swatchLight;
+
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => setAccentOverride(item.id)}
+                            title={item.label}
+                            className={cn(
+                              'min-h-[38px] pl-2 pr-3 py-1.5 rounded-full inline-flex items-center gap-2 border text-xs font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]',
+                              isSelected
+                                ? 'border-primary bg-accent/60 text-foreground'
+                                : 'border-border bg-muted/35 hover:bg-muted/70 text-muted-foreground hover:text-foreground'
+                            )}
+                          >
+                            {item.id === 'theme' ? (
+                              <span
+                                className="relative flex items-center justify-center w-4 h-4 rounded-full overflow-hidden border border-border/80 shrink-0"
+                                aria-hidden="true"
+                              >
+                                <span
+                                  className="w-1/2 h-full"
+                                  style={{ backgroundColor: activeThemePreview.primary }}
+                                />
+                                <span
+                                  className="w-1/2 h-full"
+                                  style={{ backgroundColor: activeThemePreview.secondary }}
+                                />
+                              </span>
+                            ) : (
+                              <span
+                                className="relative flex items-center justify-center w-4 h-4 rounded-full border border-black/15 dark:border-white/20 shrink-0"
+                                style={{ backgroundColor: swatchColor }}
+                                aria-hidden="true"
+                              >
+                                {isSelected && (
+                                  <Check
+                                    className={cn(
+                                      'w-2.5 h-2.5 stroke-[3]',
+                                      item.id === 'ink' && activeResolved === 'dark'
+                                        ? 'text-zinc-950'
+                                        : 'text-white'
+                                    )}
+                                  />
+                                )}
+                              </span>
+                            )}
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 4. Live Mini Preview Strip */}
+                  <div
+                    aria-label="Live theme preview"
+                    className="rounded-xl bg-background border border-border p-3 flex flex-wrap items-center justify-between gap-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-card border border-border text-xs">
+                        <span className="w-4 h-4 rounded-md bg-success/15 text-success flex items-center justify-center shrink-0">
+                          <Check className="w-3 h-3 stroke-[2.5]" />
                         </span>
-                        <span>{preset.label}</span>
-                      </button>
-                    );
-                  })}
+                        <span className="font-medium text-foreground">Gym</span>
+                        <span aria-hidden="true" className="text-muted-foreground">·</span>
+                        <span className="font-mono tabular-nums text-muted-foreground">5/6 wk</span>
+                      </div>
+
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs">
+                        <span className="text-muted-foreground">Safe today:</span>
+                        <span className="font-mono font-semibold tabular-nums text-foreground">
+                          ₹420
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium shadow-xs select-none whitespace-nowrap">
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Entry</span>
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
           </BentoGridItem>
 
           {/* SENSORY FEEDBACK */}
@@ -838,6 +1045,26 @@ export default function SettingsPageContent() {
               </div>
             </div>
           </BentoGridItem>
+
+          {/* CLOUD SYNC */}
+          {isAuthenticated && (
+            <BentoGridItem
+              span={2}
+              title={
+                <div className="flex items-center gap-2">
+                  <span>Cloud Sync</span>
+                  {isSyncing && <span className="text-xs text-muted-foreground animate-pulse font-normal ml-2">(Syncing...)</span>}
+                </div>
+              }
+              icon={<CloudCog className="h-5 w-5 text-blue-500" />}
+              className="md:col-span-2 lg:col-span-2"
+              disableHover
+            >
+              <div className="mt-2">
+                <SyncStatusPanel />
+              </div>
+            </BentoGridItem>
+          )}
 
           {/* HELP & ACADEMY */}
           <BentoGridItem

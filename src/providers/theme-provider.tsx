@@ -2,97 +2,135 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { AccentTheme } from '@/lib/types';
-import { getSupabaseClient } from '@/lib/supabase/client';
-import { getSettings, updateSettings } from '@/lib/db';
-import { getSyncEngine } from '@/lib/sync';
+import {
+  ACCENT_OVERRIDE_STORAGE_KEY,
+  COLOR_THEME_STORAGE_KEY,
+  DEFAULT_ACCENT_OVERRIDE,
+  DEFAULT_COLOR_THEME,
+  LEGACY_ACCENT_STORAGE_KEY,
+  getColorThemeById,
+  isValidAccentOverride,
+  isValidColorTheme,
+  type AccentOverrideId,
+  type ColorThemeId,
+} from '@/lib/themes';
 
 export type Theme = 'light' | 'dark' | 'system';
+export type { ColorThemeId, AccentOverrideId };
 
-const VALID_THEMES: Theme[] = ['light', 'dark', 'system'];
-const VALID_ACCENTS: AccentTheme[] = ['mint', 'cobalt', 'forest', 'ink'];
-const ACCENT_STORAGE_KEY = 'habitflow_accent';
+const VALID_THEMES: readonly Theme[] = ['light', 'dark', 'system'];
+const LEGACY_ACCENTS: readonly AccentTheme[] = ['mint', 'cobalt', 'forest', 'ink'];
 
 interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   resolvedTheme: 'light' | 'dark';
+  colorTheme: ColorThemeId;
+  setColorTheme: (colorTheme: ColorThemeId) => void;
+  accentOverride: AccentOverrideId;
+  setAccentOverride: (accent: AccentOverrideId) => void;
+  resetAppearance: () => void;
+  /** Backward-compatible alias mapped cleanly to accentOverride */
   accent: AccentTheme;
+  /** Backward-compatible alias mapped cleanly to setAccentOverride */
   setAccent: (accent: AccentTheme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-function applyAccentToDom(accent: AccentTheme) {
+function safeStorageGet(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeStorageSet(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage quota or private-mode restrictions
+  }
+}
+
+function applyColorThemeToDom(colorTheme: ColorThemeId): void {
   const root = window.document.documentElement;
-  if (accent === 'mint') {
-    delete root.dataset.accent;
+  if (colorTheme === DEFAULT_COLOR_THEME) {
+    root.removeAttribute('data-theme');
   } else {
-    root.dataset.accent = accent;
+    root.setAttribute('data-theme', colorTheme);
+  }
+}
+
+function applyAccentOverrideToDom(accentOverride: AccentOverrideId): void {
+  const root = window.document.documentElement;
+  if (accentOverride === DEFAULT_ACCENT_OVERRIDE) {
+    root.removeAttribute('data-accent');
+  } else {
+    root.setAttribute('data-accent', accentOverride);
+  }
+}
+
+function updateThemeColorMeta(colorTheme: ColorThemeId, resolved: 'light' | 'dark'): void {
+  const definition = getColorThemeById(colorTheme);
+  const nextColor = resolved === 'dark' ? definition.themeColorDark : definition.themeColorLight;
+  const metas = window.document.querySelectorAll('meta[name="theme-color"]');
+
+  if (metas.length > 0) {
+    metas.forEach((meta) => {
+      meta.setAttribute('content', nextColor);
+    });
+  } else {
+    const meta = window.document.createElement('meta');
+    meta.name = 'theme-color';
+    meta.content = nextColor;
+    window.document.head.appendChild(meta);
   }
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('system');
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
-  const [accent, setAccentState] = useState<AccentTheme>('mint');
+  const [colorTheme, setColorThemeState] = useState<ColorThemeId>(DEFAULT_COLOR_THEME);
+  const [accentOverride, setAccentOverrideState] = useState<AccentOverrideId>(DEFAULT_ACCENT_OVERRIDE);
   const [mounted, setMounted] = useState(false);
 
-  // Hydrate theme & accent from localStorage immediately on client mount
+  // Hydrate brightness, colorTheme, and accentOverride from localStorage on client mount
   useEffect(() => {
-    const rawTheme = localStorage.getItem('theme');
+    const rawTheme = safeStorageGet('theme');
     if (rawTheme === 'auto') {
-      // Gracefully migrate retired clock-based auto mode to system preference
-      localStorage.setItem('theme', 'system');
+      safeStorageSet('theme', 'system');
       setThemeState('system');
     } else if (rawTheme && VALID_THEMES.includes(rawTheme as Theme)) {
       setThemeState(rawTheme as Theme);
     }
 
-    const storedAccent = localStorage.getItem(ACCENT_STORAGE_KEY) as AccentTheme | null;
-    if (storedAccent && VALID_ACCENTS.includes(storedAccent)) {
-      setAccentState(storedAccent);
-      applyAccentToDom(storedAccent);
+    const rawColorTheme = safeStorageGet(COLOR_THEME_STORAGE_KEY);
+    const initialColorTheme: ColorThemeId = isValidColorTheme(rawColorTheme)
+      ? rawColorTheme
+      : DEFAULT_COLOR_THEME;
+    setColorThemeState(initialColorTheme);
+    applyColorThemeToDom(initialColorTheme);
+
+    const rawAccentOverride = safeStorageGet(ACCENT_OVERRIDE_STORAGE_KEY);
+    let initialAccentOverride: AccentOverrideId = DEFAULT_ACCENT_OVERRIDE;
+
+    if (isValidAccentOverride(rawAccentOverride)) {
+      initialAccentOverride = rawAccentOverride;
     } else {
-      applyAccentToDom('mint');
+      // Seamlessly migrate legacy habitflow_accent preference if present
+      const legacyAccent = safeStorageGet(LEGACY_ACCENT_STORAGE_KEY);
+      if (legacyAccent && legacyAccent !== 'mint' && isValidAccentOverride(legacyAccent)) {
+        initialAccentOverride = legacyAccent;
+        safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, initialAccentOverride);
+      }
     }
 
+    setAccentOverrideState(initialAccentOverride);
+    applyAccentOverrideToDom(initialAccentOverride);
     setMounted(true);
   }, []);
-
-  // Reconcile persisted UserSettings accent for signed-in users
-  useEffect(() => {
-    if (!mounted) return;
-    let active = true;
-
-    const hydrateSyncedAccent = async () => {
-      try {
-        const supabase = getSupabaseClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user || !active) return;
-
-        const settings = await getSettings(session.user.id);
-        if (!active) return;
-
-        const localStored = localStorage.getItem(ACCENT_STORAGE_KEY) as AccentTheme | null;
-        if (settings?.accent && VALID_ACCENTS.includes(settings.accent)) {
-          if (!localStored) {
-            setAccentState(settings.accent);
-            localStorage.setItem(ACCENT_STORAGE_KEY, settings.accent);
-            applyAccentToDom(settings.accent);
-          }
-        } else if (localStored && VALID_ACCENTS.includes(localStored)) {
-          await updateSettings({ userId: session.user.id, accent: localStored, isDirty: true });
-        }
-      } catch {
-        // Offline or guest mode safely uses localStorage accent
-      }
-    };
-
-    hydrateSyncedAccent();
-    return () => {
-      active = false;
-    };
-  }, [mounted]);
 
   // Apply light/dark surface classes and listen to OS preference
   useEffect(() => {
@@ -112,64 +150,94 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
       const handleChange = (e: MediaQueryListEvent) => applySurface(e.matches);
       mediaQuery.addEventListener('change', handleChange);
-      localStorage.setItem('theme', 'system');
+      safeStorageSet('theme', 'system');
       return () => mediaQuery.removeEventListener('change', handleChange);
-    } else {
-      applySurface(theme === 'dark');
-      localStorage.setItem('theme', theme);
     }
+
+    applySurface(theme === 'dark');
+    safeStorageSet('theme', theme);
   }, [theme, mounted]);
 
-  // Apply accent preset attribute
+  // Apply colorTheme attribute and keep mobile browser theme-color meta synced
   useEffect(() => {
     if (!mounted) return;
-    applyAccentToDom(accent);
-    localStorage.setItem(ACCENT_STORAGE_KEY, accent);
-  }, [accent, mounted]);
+    applyColorThemeToDom(colorTheme);
+    safeStorageSet(COLOR_THEME_STORAGE_KEY, colorTheme);
+    updateThemeColorMeta(colorTheme, resolvedTheme);
+  }, [colorTheme, resolvedTheme, mounted]);
+
+  // Apply accentOverride attribute
+  useEffect(() => {
+    if (!mounted) return;
+    applyAccentOverrideToDom(accentOverride);
+    safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, accentOverride);
+  }, [accentOverride, mounted]);
 
   const setTheme = useCallback((nextTheme: Theme) => {
+    if (!VALID_THEMES.includes(nextTheme)) return;
     setThemeState(nextTheme);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('theme', nextTheme);
+      safeStorageSet('theme', nextTheme);
     }
   }, []);
 
-  const setAccent = useCallback((nextAccent: AccentTheme) => {
-    if (!VALID_ACCENTS.includes(nextAccent)) return;
-    setAccentState(nextAccent);
+  const setColorTheme = useCallback((nextColorTheme: ColorThemeId) => {
+    if (!isValidColorTheme(nextColorTheme)) return;
+    setColorThemeState(nextColorTheme);
     if (typeof window !== 'undefined') {
-      localStorage.setItem(ACCENT_STORAGE_KEY, nextAccent);
-      applyAccentToDom(nextAccent);
+      safeStorageSet(COLOR_THEME_STORAGE_KEY, nextColorTheme);
+      applyColorThemeToDom(nextColorTheme);
     }
-
-    // Persist asynchronously to UserSettings (Dexie + Supabase sync)
-    void (async () => {
-      try {
-        const supabase = getSupabaseClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) return;
-
-        const existing = await getSettings(session.user.id);
-        const nextCounter = (existing?.generationCounter || 0) + 1;
-        await updateSettings({
-          userId: session.user.id,
-          accent: nextAccent,
-          generationCounter: nextCounter,
-          isDirty: true,
-        });
-
-        const updated = await getSettings(session.user.id);
-        if (updated) {
-          await getSyncEngine().pushUserSettings(updated);
-        }
-      } catch {
-        // Saved locally; background sync will reconcile when online
-      }
-    })();
   }, []);
+
+  const setAccentOverride = useCallback((nextAccent: AccentOverrideId) => {
+    if (!isValidAccentOverride(nextAccent)) return;
+    setAccentOverrideState(nextAccent);
+    if (typeof window !== 'undefined') {
+      safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, nextAccent);
+      applyAccentOverrideToDom(nextAccent);
+    }
+  }, []);
+
+  const resetAppearance = useCallback(() => {
+    setColorThemeState(DEFAULT_COLOR_THEME);
+    setAccentOverrideState(DEFAULT_ACCENT_OVERRIDE);
+    if (typeof window !== 'undefined') {
+      safeStorageSet(COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME);
+      safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, DEFAULT_ACCENT_OVERRIDE);
+      applyColorThemeToDom(DEFAULT_COLOR_THEME);
+      applyAccentOverrideToDom(DEFAULT_ACCENT_OVERRIDE);
+    }
+  }, []);
+
+  // Backward-compatible AccentTheme mapping
+  const accent: AccentTheme = LEGACY_ACCENTS.includes(accentOverride as AccentTheme)
+    ? (accentOverride as AccentTheme)
+    : 'mint';
+
+  const setAccent = useCallback(
+    (nextAccent: AccentTheme) => {
+      if (!LEGACY_ACCENTS.includes(nextAccent)) return;
+      setAccentOverride(nextAccent);
+    },
+    [setAccentOverride]
+  );
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme, accent, setAccent }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        setTheme,
+        resolvedTheme,
+        colorTheme,
+        setColorTheme,
+        accentOverride,
+        setAccentOverride,
+        resetAppearance,
+        accent,
+        setAccent,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );
