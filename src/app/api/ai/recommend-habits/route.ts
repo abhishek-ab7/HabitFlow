@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json() as HabitRecommendationInput;
-    const { goals, currentHabits, categoryPerformance, userLevel } = body;
+    const { goals, currentHabits } = body;
 
     if (!goals || goals.length === 0) {
       return NextResponse.json({

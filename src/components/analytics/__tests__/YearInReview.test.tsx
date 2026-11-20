@@ -90,14 +90,16 @@ describe('YearInReview', () => {
   test('can navigate slides using indicators and clicks share', async () => {
     render(<YearInReview />);
 
-    // Click Next slide 4 times to reach summary slide
+    // Click Next slide 3 times to reach Personal Consistency slide
     const nextBtn = screen.getByTitle('Next slide');
     fireEvent.click(nextBtn); // slide 2
     fireEvent.click(nextBtn); // slide 3
-    fireEvent.click(nextBtn); // slide 4
-    fireEvent.click(nextBtn); // slide 5 (summary)
+    fireEvent.click(nextBtn); // slide 4 (consistency)
+    expect(screen.getByText('Personal Consistency')).toBeInTheDocument();
 
+    fireEvent.click(nextBtn); // slide 5 (summary)
     expect(screen.getByText('Your 2026 Habit Scorecard')).toBeInTheDocument();
+    expect(screen.getByText('Tasks & Goals Completed:')).toBeInTheDocument();
 
     const shareBtn = screen.getByText('Share Stats');
     expect(shareBtn).toBeInTheDocument();

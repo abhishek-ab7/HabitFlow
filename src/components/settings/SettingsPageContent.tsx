@@ -96,7 +96,7 @@ export default function SettingsPageContent() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   const { displayName, email, setDisplayName, saveDisplayNameToServer, loadUser } = useUserStore();
-  const { xp, level, gems, streakShield, loadGamification } = useGamificationStore();
+  const { streakShield, loadGamification, setStreakShields } = useGamificationStore();
 
   const handleReplayTour = () => {
     localStorage.removeItem('habitflow_dashboard_tutorial_completed');
@@ -111,7 +111,7 @@ export default function SettingsPageContent() {
       if (!user?.id) return;
 
       loadUser(); // Load user profile store
-      loadGamification(); // Load live XP/level from DB
+      loadGamification(); // Load settings & streak shields from DB
 
       let s = await getSettings(user.id);
 
@@ -521,10 +521,12 @@ export default function SettingsPageContent() {
         {/* HERO */}
         <SettingsHero
           avatarId={settings.avatarId || 'avatar-1'}
-          level={level}
-          xp={xp}
           streakShield={streakShield}
           onAvatarClick={() => setShowAvatarSelector(true)}
+          onRefillShields={async () => {
+            await setStreakShields(3);
+            toast.success('Streak shields refilled to 3!');
+          }}
           className="mb-8"
         />
 

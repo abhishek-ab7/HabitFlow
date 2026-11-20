@@ -12,16 +12,6 @@ export class DashboardPage {
     await this.page.waitForURL('**/dashboard');
   }
 
-  async getLevelText() {
-    const text = await this.page.locator('text=/Lv\\.\\d+/').innerText();
-    return text;
-  }
-
-  async getXPText() {
-    const text = await this.page.locator('text=/\\d+\\s*/\\s*\\d+\\s*XP/').first().innerText();
-    return text;
-  }
-
   async expectWidgets() {
     // Check if the main widgets load successfully
     const tasksWidget = this.page.locator('.tour-tasks-widget');

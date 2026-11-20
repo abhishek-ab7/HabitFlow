@@ -38,8 +38,7 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
             areaOfLife: goal.areaOfLife
           },
           userContext: {
-            timelinePreference,
-            userLevel: 5 // TODO: Get from user store
+            timelinePreference
           }
         })
       });

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CrossDomainActionMediator } from '../mediator';
 import { useHabitStore } from '../habit-store';
-import { useGamificationStore } from '../gamification-store';
 import { toggleCompletion } from '../../db';
 
 vi.mock('../../db', () => ({
@@ -17,17 +16,15 @@ vi.mock('../../db', () => ({
 
 describe('CrossDomainActionMediator', () => {
   beforeEach(() => {
+    useHabitStore.setState({ completions: [] });
     vi.clearAllMocks();
   });
 
   /**
    * Test Suite 1 - Test A: HABIT_COMPLETED action dispatch
-   * Verify that:
-   * 1. The habit completion row is added in habit-store.
-   * 2. XP is correctly incremented in gamification-store based on the difficulty payload.
+   * Verify that the habit completion row is added in habit-store.
    */
-  it('should add a completion row in habit-store and award XP in gamification-store for HABIT_COMPLETED', async () => {
-    // Arrange
+  it('should add a completion row in habit-store for HABIT_COMPLETED', async () => {
     const habitId = 'habit-1';
     const date = '2026-06-02';
     const mockCompletion = {
@@ -42,40 +39,29 @@ describe('CrossDomainActionMediator', () => {
 
     vi.mocked(toggleCompletion).mockResolvedValue(mockCompletion);
 
-    // Initial state
     expect(useHabitStore.getState().completions).toHaveLength(0);
-    expect(useGamificationStore.getState().totalXp).toBe(0);
 
-    // Act
     await CrossDomainActionMediator.dispatch({
       type: 'HABIT_COMPLETED',
       payload: {
         habitId,
         date,
-        difficulty: 'hard', // should award 30 XP
+        difficulty: 'hard',
         category: 'work',
       },
     });
 
-    // Assert
-    // 1. Check completion row added in habit-store
     const completions = useHabitStore.getState().completions;
     expect(completions).toHaveLength(1);
     expect(completions[0]).toEqual(mockCompletion);
     expect(toggleCompletion).toHaveBeenCalledWith(habitId, date, 'test-user');
-
-    // 2. Check XP incremented in gamification-store
-    expect(useGamificationStore.getState().totalXp).toBe(30);
   });
 
   /**
    * Test Suite 1 - Test B: HABIT_UNCOMPLETED action dispatch
-   * Verify that:
-   * 1. The completion row is removed from habit-store.
-   * 2. XP is deducted in gamification-store.
+   * Verify that the completion row is removed from habit-store.
    */
-  it('should remove the completion row in habit-store and deduct XP in gamification-store for HABIT_UNCOMPLETED', async () => {
-    // Arrange
+  it('should remove the completion row in habit-store for HABIT_UNCOMPLETED', async () => {
     const habitId = 'habit-1';
     const date = '2026-06-02';
     const mockCompletion = {
@@ -88,14 +74,8 @@ describe('CrossDomainActionMediator', () => {
       updatedAt: new Date().toISOString(),
     };
 
-    // Set initial store state
     useHabitStore.setState({
       completions: [mockCompletion],
-    });
-    useGamificationStore.setState({
-      totalXp: 100,
-      xp: 0,
-      level: 1,
     });
 
     const mockUncompletion = {
@@ -104,24 +84,18 @@ describe('CrossDomainActionMediator', () => {
     };
     vi.mocked(toggleCompletion).mockResolvedValue(mockUncompletion);
 
-    // Act
     await CrossDomainActionMediator.dispatch({
       type: 'HABIT_UNCOMPLETED',
       payload: {
         habitId,
         date,
-        difficulty: 'easy', // should deduct 10 XP
+        difficulty: 'easy',
         category: 'health',
       },
     });
 
-    // Assert
-    // 1. Check completion row removed in habit-store
     const completions = useHabitStore.getState().completions;
     expect(completions).toHaveLength(0);
     expect(toggleCompletion).toHaveBeenCalledWith(habitId, date, 'test-user');
-
-    // 2. Check XP deducted in gamification-store
-    expect(useGamificationStore.getState().totalXp).toBe(90);
   });
 });

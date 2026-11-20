@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTaskStore } from '../task-store';
-import { useGamificationStore, XP_PER_TASK } from '../gamification-store';
 import type { Task, TaskFormData } from '../../types';
 
 // Mock dependencies
@@ -28,16 +27,6 @@ vi.mock('../../sync', () => ({
   }))
 }));
 
-// Mock gamification store
-vi.mock('../gamification-store', () => {
-    const addXpMock = vi.fn();
-    return {
-        XP_PER_TASK: 10,
-        useGamificationStore: {
-            getState: () => ({ addXp: addXpMock })
-        }
-    };
-});
 
 describe('task-store', () => {
   beforeEach(() => {
@@ -107,27 +96,22 @@ describe('task-store', () => {
     expect(state.tasks[0].id).toBe('t2');
   });
 
-  it('toggleTaskComplete toggles status and awards XP', async () => {
+  it('toggleTaskComplete toggles status cleanly', async () => {
     useTaskStore.setState({ 
       tasks: [
         { id: 't1', userId: 'u1', title: 'T1', status: 'todo' } as Task
       ]
     });
     
-    const addXpMock = useGamificationStore.getState().addXp;
     const { toggleTaskComplete } = useTaskStore.getState();
     
-    // Complete task -> Should add XP
+    // Complete task
     await toggleTaskComplete('t1');
     expect(useTaskStore.getState().tasks[0].status).toBe('done');
-    expect(addXpMock).toHaveBeenCalledWith(XP_PER_TASK);
     
-    vi.clearAllMocks();
-    
-    // Uncomplete task -> Should subtract XP
+    // Uncomplete task
     await toggleTaskComplete('t1');
     expect(useTaskStore.getState().tasks[0].status).toBe('todo');
-    expect(addXpMock).toHaveBeenCalledWith(-XP_PER_TASK);
   });
 
   it('getActiveTasks and getCompletedTasks filter correctly', () => {

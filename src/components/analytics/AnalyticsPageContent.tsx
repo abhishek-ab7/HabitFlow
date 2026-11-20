@@ -10,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { TimeRangeTabs } from '@/components/analytics';
-import { AchievementsGallery } from '@/components/analytics/AchievementsGallery';
 import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore, useFinanceStore, formatINR } from '@/lib/stores';
 import {
   calculateDailyStats,
@@ -48,11 +47,6 @@ const HeatmapCalendar = dynamic(
 const InsightsCards = dynamic(
   () => import('@/components/analytics').then(m => ({ default: m.InsightsCards })),
   { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
-);
-
-const SkillTrees = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.SkillTrees })),
-  { loading: () => <Skeleton className="h-96 w-full rounded-xl" />, ssr: false }
 );
 
 const PredictiveAnalytics = dynamic(
@@ -114,7 +108,7 @@ export default function AnalyticsPageContent() {
   }, [completions]);
 
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
-  const [activeView, setActiveView] = useState<'analytics' | 'weekly-review' | 'rpg-skills' | 'predictive' | 'wrapped'>('analytics');
+  const [activeView, setActiveView] = useState<'analytics' | 'weekly-review' | 'predictive' | 'wrapped'>('analytics');
 
   // Load data on mount
   useEffect(() => {
@@ -373,8 +367,8 @@ export default function AnalyticsPageContent() {
         description: `With ${avgCompletionRate.toFixed(0)}% completion rate, you're crushing your habits!`,
         icon: 'star',
         priority: 2,
-        actionLabel: 'Check Leaderboard',
-        actionHref: '/leaderboard',
+        actionLabel: 'View Habits',
+        actionHref: '/habits',
       });
     } else if (avgCompletionRate < 50 && habits.length > 0) {
       result.push({
@@ -530,16 +524,6 @@ export default function AnalyticsPageContent() {
                 )}
               >
                 Analytics
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('rpg-skills')}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
-                  activeView === 'rpg-skills' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                RPG Skills
               </button>
               <button
                 type="button"
@@ -885,10 +869,6 @@ export default function AnalyticsPageContent() {
             <HeatmapCalendar data={analyticsData.heatmapData} weeks={52} />
           </FadeIn>
         </>
-      ) : activeView === 'rpg-skills' ? (
-        <FadeIn className="space-y-6">
-          <SkillTrees />
-        </FadeIn>
       ) : activeView === 'predictive' ? (
         <FadeIn className="space-y-6">
           <PredictiveAnalytics />
@@ -1088,11 +1068,6 @@ export default function AnalyticsPageContent() {
           </Card>
         </FadeIn>
       )}
-
-      {/* Achievements Gallery */}
-      <FadeIn delay={0.7} className="pt-8 border-t border-border/40">
-        <AchievementsGallery />
-      </FadeIn>
     </div>
   );
 }

@@ -26,14 +26,6 @@ vi.mock('@/components/pwa', () => ({
   PWAInstallPrompt: () => <div data-testid="pwa-install-prompt" />,
 }));
 
-vi.mock('@/components/gamification/LevelUpModal', () => ({
-  LevelUpModal: () => <div data-testid="level-up-modal" />,
-}));
-
-vi.mock('@/components/gamification/GamificationRulesModal', () => ({
-  GamificationRulesModal: () => <div data-testid="gamification-rules-modal" />,
-}));
-
 vi.mock('@/components/ui/sonner', () => ({
   Toaster: () => <div data-testid="toaster" />,
 }));

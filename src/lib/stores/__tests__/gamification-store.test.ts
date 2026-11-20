@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useGamificationStore, SHIELD_COST, GEMS_PER_LEVEL } from '../gamification-store';
-import * as db from '../../db'; // Actually, the path in gamification-store is '../db'
+import { useGamificationStore } from '../gamification-store';
+import * as db from '../../db';
 import * as supabaseClient from '../../supabase/client';
 import * as sync from '../../sync';
 
@@ -26,136 +26,47 @@ vi.mock('../../sync', () => ({
     }))
 }));
 
-describe('gamification-store', () => {
+describe('gamification-store (personal settings & streak shields)', () => {
     beforeEach(() => {
-        // Reset store state before each test
         useGamificationStore.setState({
-            totalXp: 0,
-            xp: 0,
-            level: 1,
-            gems: 0,
             streakShield: 0,
-            showLevelUp: false,
-            stats: {
-                vitality: 1,
-                intelligence: 1,
-                discipline: 1,
-                charisma: 1,
-                wealth: 1,
-                creativity: 1,
-            }
+            isLoading: false,
+            settings: null,
         });
         vi.clearAllMocks();
     });
 
-    it('Initial state has xp=0, level=1, gems=0', () => {
+    it('Initial state has streakShield=0 and settings=null', () => {
         const state = useGamificationStore.getState();
-        expect(state.xp).toBe(0);
-        expect(state.level).toBe(1);
-        expect(state.gems).toBe(0);
+        expect(state.streakShield).toBe(0);
+        expect(state.settings).toBeNull();
     });
 
-    it('addXp increments XP correctly', async () => {
-        const { addXp } = useGamificationStore.getState();
-        const result = await addXp(50);
-        
-        expect(result.leveledUp).toBe(false);
-        expect(result.newLevel).toBe(1);
-        
+    it('loadGamification loads settings and streakShield for authenticated session', async () => {
+        const mockSettings = {
+            id: 's1',
+            userId: 'u1',
+            streakShield: 2,
+            theme: 'dark',
+            weekStartsOn: 1,
+            defaultCategory: 'health',
+        } as any;
+
+        vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue({
+            auth: {
+                getSession: vi.fn().mockResolvedValue({
+                    data: { session: { user: { id: 'u1' } } }
+                })
+            }
+        } as any);
+        vi.mocked(db.getSettings).mockResolvedValue(mockSettings);
+
+        await useGamificationStore.getState().loadGamification();
+
         const state = useGamificationStore.getState();
-        expect(state.xp).toBe(50);
-        expect(state.level).toBe(1);
-    });
-
-    it('addXp triggers level-up at threshold and awards gems', async () => {
-        const { addXp } = useGamificationStore.getState();
-        
-        // Level 1 requires 100 XP to level up
-        const result = await addXp(100);
-        
-        expect(result.leveledUp).toBe(true);
-        expect(result.newLevel).toBe(2);
-        
-        const state = useGamificationStore.getState();
-        expect(state.xp).toBe(0);
-        expect(state.level).toBe(2);
-        expect(state.gems).toBe(GEMS_PER_LEVEL);
-        expect(state.showLevelUp).toBe(true);
-    });
-
-    it('addXp carries over excess XP after level-up', async () => {
-        const { addXp } = useGamificationStore.getState();
-        
-        // Level 1 requires 100 XP. We add 150.
-        // Should reach Level 2 with 50 XP carrying over.
-        await addXp(150);
-        
-        const state = useGamificationStore.getState();
-        expect(state.xp).toBe(50);
-        expect(state.level).toBe(2);
-    });
-
-    it('spendGems deducts correctly', async () => {
-        useGamificationStore.setState({ gems: 10 });
-        const { spendGems } = useGamificationStore.getState();
-        
-        const success = await spendGems(5);
-        expect(success).toBe(true);
-        
-        const state = useGamificationStore.getState();
-        expect(state.gems).toBe(5);
-    });
-
-    it('spendGems fails if insufficient gems', async () => {
-        useGamificationStore.setState({ gems: 2 });
-        const { spendGems } = useGamificationStore.getState();
-        
-        const success = await spendGems(5);
-        expect(success).toBe(false);
-        
-        const state = useGamificationStore.getState();
-        expect(state.gems).toBe(2);
-    });
-
-    it('buyShield costs SHIELD_COST gems and increments shields', async () => {
-        useGamificationStore.setState({ gems: SHIELD_COST + 5, streakShield: 0 });
-        const { buyShield } = useGamificationStore.getState();
-        
-        const success = await buyShield();
-        expect(success).toBe(true);
-        
-        const state = useGamificationStore.getState();
-        expect(state.gems).toBe(5);
-        expect(state.streakShield).toBe(1);
-    });
-
-    it('buyShield fails if insufficient gems', async () => {
-        useGamificationStore.setState({ gems: SHIELD_COST - 1, streakShield: 0 });
-        const { buyShield } = useGamificationStore.getState();
-        
-        const success = await buyShield();
-        expect(success).toBe(false);
-        
-        const state = useGamificationStore.getState();
-        expect(state.gems).toBe(SHIELD_COST - 1); // Unchanged
-        expect(state.streakShield).toBe(0); // Unchanged
-    });
-
-    it('getBufferProgress returns 0-100 range', () => {
-        // Level 1: requires 100 XP
-        useGamificationStore.setState({ level: 1, xp: 50 });
-        let progress = useGamificationStore.getState().getBufferProgress();
-        expect(progress).toBe(50); // 50%
-
-        // Level 2: requires 200 XP
-        useGamificationStore.setState({ level: 2, xp: 50 });
-        progress = useGamificationStore.getState().getBufferProgress();
-        expect(progress).toBe(25); // 50 / 200 = 25%
-
-        // Cap at 100% just in case (though should've leveled up)
-        useGamificationStore.setState({ level: 2, xp: 250 });
-        progress = useGamificationStore.getState().getBufferProgress();
-        expect(progress).toBe(100); 
+        expect(state.streakShield).toBe(2);
+        expect(state.settings).toEqual(mockSettings);
+        expect(state.isLoading).toBe(false);
     });
 
     it('useShield decrements streakShield and returns true if shields > 0', async () => {
@@ -180,37 +91,63 @@ describe('gamification-store', () => {
         expect(state.streakShield).toBe(0);
     });
 
-    it('negative XP reverts stats and XP correctly', async () => {
-        // Set state to Level 2 with some XP and stats
-        useGamificationStore.setState({
-            totalXp: 150,
-            xp: 50,
-            level: 2,
-            gems: 5,
-            stats: {
-                vitality: 1,
-                intelligence: 1,
-                discipline: 10,
-                charisma: 1,
-                wealth: 1,
-                creativity: 1,
+    it('setStreakShields updates and persists sanitized shield count', async () => {
+        const pushUserSettings = vi.fn();
+        vi.mocked(sync.getSyncEngine).mockReturnValue({ pushUserSettings } as any);
+        vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue({
+            auth: {
+                getSession: vi.fn().mockResolvedValue({
+                    data: { session: { user: { id: 'u1' } } }
+                })
             }
+        } as any);
+        vi.mocked(db.getSettings).mockResolvedValue({
+            userId: 'u1',
+            streakShield: 3,
+        } as any);
+
+        useGamificationStore.setState({
+            streakShield: 0,
+            settings: { id: 's1', userId: 'u1', streakShield: 0 } as any,
         });
 
-        const { addXp } = useGamificationStore.getState();
-        
-        // Subtract 60 XP
-        // New cumulative XP = 90 (Level 1, 90 XP)
-        await addXp(-60, 'health');
+        await useGamificationStore.getState().setStreakShields(3);
 
         const state = useGamificationStore.getState();
-        expect(state.totalXp).toBe(90);
-        expect(state.level).toBe(1);
-        expect(state.xp).toBe(90);
-        
-        // Stats: amount was -60, so statPoints = Math.max(1, Math.floor(60/10)) = 6.
-        // Discipline: 10 - 6 = 4. Vitality: 1 - 6 = -5 -> capped at 1.
-        expect(state.stats.discipline).toBe(4);
-        expect(state.stats.vitality).toBe(1);
+        expect(state.streakShield).toBe(3);
+        expect(state.settings?.streakShield).toBe(3);
+        expect(db.updateSettings).toHaveBeenCalledWith({ userId: 'u1', streakShield: 3 });
+        expect(pushUserSettings).toHaveBeenCalled();
+    });
+
+    it('updateUserSettings merges partial workspace settings and persists them', async () => {
+        useGamificationStore.setState({
+            settings: {
+                id: 's1',
+                userId: 'u1',
+                showTasks: true,
+                habitOnlyMode: false,
+            } as any,
+        });
+
+        vi.mocked(supabaseClient.getSupabaseClient).mockReturnValue({
+            auth: {
+                getSession: vi.fn().mockResolvedValue({
+                    data: { session: { user: { id: 'u1' } } }
+                })
+            }
+        } as any);
+        vi.mocked(db.getSettings).mockResolvedValue({
+            id: 's1',
+            userId: 'u1',
+            showTasks: true,
+            habitOnlyMode: true,
+        } as any);
+
+        await useGamificationStore.getState().updateUserSettings({ habitOnlyMode: true });
+
+        const state = useGamificationStore.getState();
+        expect(state.settings?.habitOnlyMode).toBe(true);
+        expect(db.updateSettings).toHaveBeenCalledWith({ userId: 'u1', habitOnlyMode: true });
     });
 });

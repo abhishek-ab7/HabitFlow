@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { format, subDays } from 'date-fns'
 import { useHabitStore } from '../habit-store'
 import { getArchivedHabits, freezeCompletion, unfreezeCompletion } from '../../db'
-import { useGamificationStore } from '../gamification-store'
 
 // Mock dependencies
 vi.mock('../../db', () => ({
@@ -35,17 +34,14 @@ vi.mock('../../sync', () => ({
     })),
 }))
 
-const mockAddXp = vi.fn()
 const mockUseShield = vi.fn()
 
 vi.mock('../gamification-store', () => ({
     useGamificationStore: {
         getState: vi.fn(() => ({
-            addXp: mockAddXp,
             useShield: mockUseShield,
         })),
     },
-    XP_PER_HABIT: 10,
 }))
 
 describe('HabitStore', () => {
@@ -179,7 +175,7 @@ describe('HabitStore', () => {
         mockUseShield.mockResolvedValue(false);
 
         await expect(useHabitStore.getState().freezeHabit(habitId, date)).rejects.toThrow(
-            "No free weekly freezes or purchased streak shields left! Buy a shield in Settings."
+            "NO_SHIELDS_LEFT"
         );
         expect(freezeCompletion).not.toHaveBeenCalled();
     });

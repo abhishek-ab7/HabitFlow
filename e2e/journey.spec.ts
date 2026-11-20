@@ -55,7 +55,7 @@ test.describe('Complete User Journey Flow', () => {
     }
   });
 
-  test('walks through habits, tasks, goals, analytics, and gamification', async ({ page }) => {
+  test('walks through habits, tasks, goals, and analytics', async ({ page }) => {
     // 1. Visit Login Page
     await page.goto('/login');
     await expect(page).toHaveTitle(/Habit Flow/);
@@ -84,11 +84,7 @@ test.describe('Complete User Journey Flow', () => {
 
     // Wait for the dashboard and demo data to populate and load
     await page.waitForTimeout(3000);
-
-    // 5. Verify Gamification (XP / Level indicator exists in header)
-    const levelIndicator = page.locator('text=/Lv\\.\\d+/');
-    await expect(levelIndicator).toBeVisible();
-    console.log('3. Gamification Level indicator verified!');
+    console.log('3. Dashboard & demo data verified!');
 
     // 6. Test Habits Section
     await page.goto('/habits');

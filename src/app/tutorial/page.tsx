@@ -8,7 +8,6 @@ import {
   ListTodo, 
   Target, 
   BarChart3, 
-  Trophy, 
   Sparkles, 
   Settings, 
   Flame, 
@@ -43,7 +42,6 @@ const HELP_CATEGORIES: HelpCategory[] = [
   { id: 'tasks', title: 'Task Manager', subtitle: 'Priority lists & deadlines', icon: ListTodo, color: 'text-sky-500 bg-sky-500/10' },
   { id: 'goals', title: 'Goals & Milestones', subtitle: '90-day focus targets', icon: Target, color: 'text-rose-500 bg-rose-500/10' },
   { id: 'analytics', title: 'Analytics', subtitle: 'Consistency charts & trends', icon: BarChart3, color: 'text-teal-500 bg-teal-500/10' },
-  { id: 'gamification', title: 'Gamification', subtitle: 'XP, levels & rewards', icon: Trophy, color: 'text-invest bg-invest/10' },
   { id: 'ai-features', title: 'AI Assistant', subtitle: 'Smart coach recommendations', icon: Sparkles, color: 'text-invest bg-invest/10' },
   { id: 'settings', title: 'Settings', subtitle: 'Preferences & sound tags', icon: Settings, color: 'text-slate-500 bg-slate-500/10' },
 ];
@@ -125,7 +123,7 @@ export default function TutorialPage() {
               HabitFlow Academy 🎓
             </h1>
             <p className="text-muted-foreground text-sm max-w-xl leading-relaxed">
-              Master the mechanics of habit loops, milestone targeting, priority planning, and gamification hacks to maximize your potential.
+              Master the mechanics of habit loops, milestone targeting, priority planning, and streak protection to maximize your consistency.
             </p>
           </div>
           <Button asChild className="rounded-xl shadow-lg shadow-primary/20">
@@ -217,7 +215,7 @@ export default function TutorialPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground leading-relaxed">
-                          View your live daily momentum velocity, status level progression, and gamified XP tallies to check how consistent you are today.
+                          View your live daily momentum velocity, active streaks, and habit completions to check how consistent you are today.
                         </CardContent>
                       </Card>
 
@@ -266,7 +264,7 @@ export default function TutorialPage() {
                             Maintaining Streaks
                           </h4>
                           <p className="text-xs text-muted-foreground leading-relaxed">
-                            Log completions on consecutive days to build up your **Streak Count**. High streaks award bonus XP, gems, and profile achievements.
+                            Log completions on consecutive days to build up your **Streak Count** and reinforce lasting daily consistency.
                           </p>
                         </div>
 
@@ -277,7 +275,7 @@ export default function TutorialPage() {
                           </h4>
                           <div className="text-xs text-muted-foreground space-y-2 leading-relaxed">
                             <p>
-                              <strong>How it works:</strong> You get **one free weekly freeze** per habit. For subsequent misses within the same week, the system consumes a **Streak Shield** purchased in Settings.
+                              <strong>How it works:</strong> You get **one free weekly freeze** per habit. For subsequent misses within the same week, the system consumes a **Streak Shield** refilled in Settings.
                             </p>
                             <p>
                               <strong>When to use:</strong> Use freezes when you are sick, travelling, or taking a planned rest day.
@@ -323,7 +321,7 @@ export default function TutorialPage() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 pt-0 text-xs text-muted-foreground leading-relaxed">
-                          Quickly add one-off items with target deadlines. Mark completed items directly to collect XP rewards and clear milestones.
+                          Quickly add one-off items with target deadlines. Mark completed items directly to stay on top of priorities and clear milestones.
                         </CardContent>
                       </Card>
 
@@ -404,34 +402,7 @@ export default function TutorialPage() {
                   </div>
                 )}
 
-                {/* 7. GAMIFICATION & LEADERBOARD */}
-                {activeTab === 'gamification' && (
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-invest">
-                        <Trophy className="w-6 h-6" />
-                        <h2 className="text-xl font-bold tracking-tight">Gamification & Rankings</h2>
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        Complete challenges, earn experience points (XP), collect gems, and climb up the leaderboard ranks.
-                      </p>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="p-4 bg-invest/5 border border-invest/20 rounded-2xl flex gap-3 items-center">
-                        <Trophy className="w-8 h-8 text-invest shrink-0" />
-                        <div className="text-xs">
-                          <span className="font-bold text-foreground block">Competitive Motivation & Rankings</span>
-                          <p className="text-muted-foreground leading-relaxed">
-                            Earn weekly XP to climb the ranks on peer league tables, fostering accountability and fun.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 8. AI ASSISTANT */}
+                {/* 7. AI ASSISTANT */}
                 {activeTab === 'ai-features' && (
                   <div className="space-y-6">
                     <div className="space-y-2">

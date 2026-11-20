@@ -31,11 +31,12 @@ import {
 import { useTheme } from '@/providers/theme-provider';
 import confetti from 'canvas-confetti';
 
-interface FloatingXP {
+interface FloatingFeedback {
   id: string;
   x: number;
   y: number;
   text: string;
+  source: 'mock' | 'widget' | 'simulator';
 }
 
 export function LandingPage() {
@@ -70,24 +71,25 @@ export function LandingPage() {
   const pomodoroScrollOffset = useTransform(focusSpringY, [0.1, 0.6], [276.4, 0]);
 
   // Component states
-  const [xp, setXp] = useState(0);
-  const [level, setLevel] = useState(1);
+  const [momentum, setMomentum] = useState(0);
+  const [flowStage, setFlowStage] = useState<1 | 2 | 3>(1);
   const [completedHabits, setCompletedHabits] = useState<Record<string, boolean>>({});
   const [completedTasks, setCompletedTasks] = useState<Record<string, boolean>>({});
-  const [floatingXPs, setFloatingXPs] = useState<FloatingXP[]>([]);
-  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [floatingFeedbacks, setFloatingFeedbacks] = useState<FloatingFeedback[]>([]);
+  const [showFlowComplete, setShowFlowComplete] = useState(false);
   const [activeTab, setActiveTab] = useState<'habits' | 'tasks' | 'milestones'>('habits');
   const [hoveredMilestone, setHoveredMilestone] = useState<string | null>(null);
 
-  // Companion state
-  const [companionDialogue, setCompanionDialogue] = useState<string>('Click me to level up! 🌱');
+  // Focus tracker state
+  const [companionDialogue, setCompanionDialogue] = useState<string>('Check off daily habits to build flow.');
 
   // Pomodoro mock timer
   const [pomodoroSeconds, setPomodoroSeconds] = useState(1500); // 25:00
   const [isTimerRunning, setIsTimerRunning] = useState(false);
 
-  // Stats tab data
-  const totalXP = xp + (level > 1 ? 100 : 0);
+  const completedTotal =
+    Object.values(completedHabits).filter(Boolean).length +
+    Object.values(completedTasks).filter(Boolean).length;
 
   // Mock Dashboard Interactive State
   const [mockHabits, setMockHabits] = useState([
@@ -121,48 +123,43 @@ export function LandingPage() {
     { id: 'task3', name: 'Prepare release documentation', desc: 'Work · Low' },
   ];
 
-  // Deterministic Level & XP progression system based purely on simulator habits & tasks completion counts
+  // Deterministic consistency momentum system based on simulator habits & tasks completion counts
   useEffect(() => {
     const habitsDone = Object.values(completedHabits).filter(Boolean).length;
     const tasksDone = Object.values(completedTasks).filter(Boolean).length;
+    const overallPct = Math.round(((habitsDone + tasksDone) / 6) * 100);
+    setMomentum(overallPct);
 
     if (habitsDone < 3) {
-      setLevel(1);
-      setXp(Math.round((habitsDone / 3) * 100));
+      setFlowStage(1);
     } else if (habitsDone === 3 && tasksDone < 3) {
-      if (level === 1) {
-        // Trigger Level 2 Sapling Celebration!
-        setLevel(2);
-        setXp(0);
-        setCompanionDialogue('Wow, I evolved to a Sapling! 🌿');
-        setShowLevelUp(true);
+      if (flowStage === 1) {
+        setFlowStage(2);
+        setCompanionDialogue('Daily habits locked in! 🌿');
+        setShowFlowComplete(true);
         confetti({
-          particleCount: 150,
-          spread: 80,
+          particleCount: 100,
+          spread: 70,
           origin: { y: 0.6 }
         });
       } else {
-        setLevel(2);
-        setXp(Math.round((tasksDone / 3) * 100));
+        setFlowStage(2);
       }
     } else if (habitsDone === 3 && tasksDone === 3) {
-      if (level === 2) {
-        // Trigger Level 3 Flow Tree Celebration!
-        setLevel(3);
-        setXp(100);
-        setCompanionDialogue('I am a mighty Flow Tree now! 🌳');
-        setShowLevelUp(true);
+      if (flowStage === 2) {
+        setFlowStage(3);
+        setCompanionDialogue('100% daily flow achieved! 🌳');
+        setShowFlowComplete(true);
         confetti({
-          particleCount: 150,
+          particleCount: 130,
           spread: 80,
           origin: { y: 0.6 }
         });
-      } else if (level === 1) {
-        setLevel(3);
-        setXp(100);
+      } else if (flowStage === 1) {
+        setFlowStage(3);
       }
     }
-  }, [completedHabits, completedTasks, level]);
+  }, [completedHabits, completedTasks, flowStage]);
 
   // Pomodoro timer logic
   useEffect(() => {
@@ -184,23 +181,31 @@ export function LandingPage() {
     return () => clearInterval(timer);
   }, [isTimerRunning, pomodoroSeconds]);
 
-  const triggerXpParticle = (clientX: number, clientY: number, label: string, offsetElementId: string, isRelative = false) => {
+  const triggerFeedbackParticle = (
+    clientX: number,
+    clientY: number,
+    label: string,
+    offsetElementId: string,
+    source: FloatingFeedback['source'],
+    isRelative = false
+  ) => {
     const listElement = document.getElementById(offsetElementId);
     const listRect = listElement?.getBoundingClientRect();
     
     if (listRect) {
       const x = isRelative ? clientX : clientX - listRect.left;
       const y = isRelative ? clientY : clientY - listRect.top;
-      const newFloatingXP: FloatingXP = {
+      const newFeedback: FloatingFeedback = {
         id: Math.random().toString(),
         x,
         y,
         text: label,
+        source,
       };
-      setFloatingXPs((prev) => [...prev, newFloatingXP]);
+      setFloatingFeedbacks((prev) => [...prev, newFeedback]);
 
       setTimeout(() => {
-        setFloatingXPs((prev) => prev.filter((item) => item.id !== newFloatingXP.id));
+        setFloatingFeedbacks((prev) => prev.filter((item) => item.id !== newFeedback.id));
       }, 950);
     }
   };
@@ -211,7 +216,7 @@ export function LandingPage() {
     setCompletedHabits((prev) => ({ ...prev, [habitId]: true }));
     
     if (e) {
-      triggerXpParticle(e.clientX, e.clientY, '+35 XP', 'simulator-content-box');
+      triggerFeedbackParticle(e.clientX, e.clientY, 'Habit ✓', 'simulator-content-box', 'simulator');
       confetti({
         particleCount: 30,
         angle: 60,
@@ -220,7 +225,7 @@ export function LandingPage() {
       });
     } else {
       const relativeY = habitId === 'meditation' ? 60 : habitId === 'read' ? 120 : 180;
-      triggerXpParticle(320, relativeY, '+35 XP', 'simulator-content-box', true);
+      triggerFeedbackParticle(320, relativeY, 'Habit ✓', 'simulator-content-box', 'simulator', true);
       confetti({
         particleCount: 20,
         angle: 60,
@@ -236,7 +241,7 @@ export function LandingPage() {
     setCompletedTasks((prev) => ({ ...prev, [taskId]: true }));
     
     if (e) {
-      triggerXpParticle(e.clientX, e.clientY, '+15 XP', 'simulator-content-box');
+      triggerFeedbackParticle(e.clientX, e.clientY, 'Task ✓', 'simulator-content-box', 'simulator');
       confetti({
         particleCount: 20,
         angle: 120,
@@ -245,7 +250,7 @@ export function LandingPage() {
       });
     } else {
       const relativeY = taskId === 'task1' ? 60 : taskId === 'task2' ? 120 : 180;
-      triggerXpParticle(320, relativeY, '+15 XP', 'simulator-content-box', true);
+      triggerFeedbackParticle(320, relativeY, 'Task ✓', 'simulator-content-box', 'simulator', true);
       confetti({
         particleCount: 15,
         angle: 120,
@@ -271,7 +276,7 @@ export function LandingPage() {
     const dialoguePool = [
       'Consistency overrides motivation! ⚡',
       'Focusing is a habit, keep going! 🚀',
-      'Grow with me daily! 🌱',
+      'Small daily wins compound over time. 🌱',
       'You are doing amazing! 🎯',
       'Stay hydrated and take breaks! 💧',
       'One step at a time! ✨'
@@ -280,14 +285,14 @@ export function LandingPage() {
     setCompanionDialogue(dialoguePool[randomIndex]);
 
     if (e) {
-      triggerXpParticle(e.clientX, e.clientY, '+5 XP', 'companion-widget-box');
+      triggerFeedbackParticle(e.clientX, e.clientY, 'In Flow ✨', 'companion-widget-box', 'widget');
       confetti({
         particleCount: 15,
         spread: 40,
         origin: { x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight }
       });
     } else {
-      triggerXpParticle(72, 100, '+5 XP', 'companion-widget-box', true);
+      triggerFeedbackParticle(72, 100, 'In Flow ✨', 'companion-widget-box', 'widget', true);
       confetti({
         particleCount: 10,
         spread: 30,
@@ -303,11 +308,11 @@ export function LandingPage() {
         if (h.id === habitId) {
           if (!h.done) {
             if (e) {
-              triggerXpParticle(e.clientX, e.clientY, '+20 XP', 'mock-dashboard-wrapper');
+              triggerFeedbackParticle(e.clientX, e.clientY, 'Done ✓', 'mock-dashboard-wrapper', 'mock');
               confetti({ particleCount: 15, spread: 30, origin: { x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight } });
             } else {
               const relativeX = habitId === 'h1' ? 120 : habitId === 'h2' ? 240 : 360;
-              triggerXpParticle(relativeX, 145, '+20 XP', 'mock-dashboard-wrapper', true);
+              triggerFeedbackParticle(relativeX, 145, 'Done ✓', 'mock-dashboard-wrapper', 'mock', true);
               confetti({ particleCount: 10, spread: 25, origin: { x: 0.7, y: 0.45 } });
             }
           }
@@ -325,10 +330,10 @@ export function LandingPage() {
         if (r.id === routineId) {
           if (!r.done) {
             if (e) {
-              triggerXpParticle(e.clientX, e.clientY, '+10 XP', 'mock-dashboard-wrapper');
+              triggerFeedbackParticle(e.clientX, e.clientY, 'Checked ✓', 'mock-dashboard-wrapper', 'mock');
             } else {
               const relativeY = routineId === 'r1' ? 275 : 325;
-              triggerXpParticle(350, relativeY, '+10 XP', 'mock-dashboard-wrapper', true);
+              triggerFeedbackParticle(350, relativeY, 'Checked ✓', 'mock-dashboard-wrapper', 'mock', true);
             }
           }
           return { ...r, done: !r.done };
@@ -339,11 +344,11 @@ export function LandingPage() {
   };
 
   useEffect(() => {
-    if (showLevelUp) {
-      const timer = setTimeout(() => setShowLevelUp(false), 2800);
+    if (showFlowComplete) {
+      const timer = setTimeout(() => setShowFlowComplete(false), 2600);
       return () => clearTimeout(timer);
     }
-  }, [showLevelUp]);
+  }, [showFlowComplete]);
 
   // Autoplay loop timer (triggers every 0.9s) - only starts when scrolled into view
   useEffect(() => {
@@ -376,9 +381,9 @@ export function LandingPage() {
         setCompletedHabits({});
         setCompletedTasks({});
         setActiveTab('habits');
-        setLevel(1);
-        setXp(0);
-        setCompanionDialogue('Watch me evolve as habits complete! 🌿');
+        setFlowStage(1);
+        setMomentum(0);
+        setCompanionDialogue('Check off daily habits to build flow. 🌿');
         break;
 
       case 1:
@@ -657,17 +662,17 @@ export function LandingPage() {
               initial={{ opacity: 0, x: -60, y: 50, rotate: -8 }}
               animate={{ opacity: 0.95, x: -50, y: 80, rotate: -6 }}
               transition={{ duration: 1, delay: 0.5 }}
-              className="surface-card p-4 w-48 shadow-lg absolute z-10 hidden sm:block"
+              className="surface-card p-4 w-52 shadow-lg absolute z-10 hidden sm:block"
             >
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                  <Award className="h-4.5 w-4.5 text-warning" />
-                  <span className="text-xs font-bold text-foreground font-mono">Level 12</span>
+                  <Shield className="h-4.5 w-4.5 text-info" />
+                  <span className="text-xs font-bold text-foreground">Safe-to-Spend</span>
                 </div>
-                <span className="text-[10px] text-invest font-extrabold font-mono">+230 XP</span>
+                <span className="text-[10px] text-primary font-extrabold font-mono tabular-nums">₹1,840/day</span>
               </div>
               <div className="w-full h-1.5 rounded-full overflow-hidden mt-2 bg-muted">
-                <div className="w-[70%] h-full bg-invest rounded-full" />
+                <div className="w-[70%] h-full bg-primary rounded-full" />
               </div>
             </motion.div>
           </div>
@@ -753,7 +758,7 @@ export function LandingPage() {
                 </div>
                 <div className="hidden lg:block text-left">
                   <p className="text-xs font-bold text-foreground">John Doe</p>
-                  <p className="text-[10px] text-muted-foreground font-mono">Level 12 Sapling</p>
+                  <p className="text-[10px] text-muted-foreground font-mono">Personal Workspace</p>
                 </div>
               </div>
             </div>
@@ -792,7 +797,7 @@ export function LandingPage() {
                           <p className={`text-xs font-bold leading-tight ${
                             habit.done ? 'text-primary' : 'text-foreground'
                           }`}>{habit.name}</p>
-                          <p className="text-[9px] text-muted-foreground mt-1 font-mono">{habit.done ? 'Completed! +20XP' : 'Pending completion'}</p>
+                          <p className="text-[9px] text-muted-foreground mt-1 font-mono">{habit.done ? 'Completed today ✓' : 'Pending completion'}</p>
                         </div>
                         <div className={`w-5 h-5 rounded-full border flex items-center justify-center absolute top-3 right-3 transition-colors ${
                           habit.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border text-transparent'
@@ -923,17 +928,17 @@ export function LandingPage() {
 
             </div>
 
-            {/* Simulated floating interactive particles */}
+            {/* Simulated floating interactive feedback */}
             <AnimatePresence>
-              {floatingXPs.filter(f => f.text.includes('XP') && !f.text.includes('+35') && !f.text.includes('+15')).map((f) => (
+              {floatingFeedbacks.filter(f => f.source === 'mock').map((f) => (
                 <motion.div
                   key={f.id}
                   initial={{ opacity: 1, y: f.y, scale: 0.8 }}
-                  animate={{ opacity: 0, y: f.y - 50, scale: 1.25 }}
+                  animate={{ opacity: 0, y: f.y - 50, scale: 1.15 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.95, ease: 'easeOut' }}
                   style={{ left: `${f.x}px`, top: `${f.y}px` }}
-                  className="absolute text-[11px] font-extrabold text-invest pointer-events-none drop-shadow-md z-30 font-mono"
+                  className="absolute text-[11px] font-extrabold text-primary pointer-events-none drop-shadow-md z-30 font-mono"
                 >
                   {f.text}
                 </motion.div>
@@ -942,7 +947,7 @@ export function LandingPage() {
           </motion.div>
         </section>
 
-        {/* 3. Interactive Companion Simulator Section */}
+        {/* 3. Interactive Consistency Simulator Section */}
         <section id="simulator" ref={simulatorRef} className="w-full max-w-5xl px-6 md:px-12 py-20 scroll-mt-24 relative">
           
           <div className="text-center mb-16 max-w-xl mx-auto">
@@ -950,10 +955,10 @@ export function LandingPage() {
               Interactive Simulator
             </div>
             <h2 className="text-3xl md:text-5xl font-black mb-4 tracking-tight text-foreground">
-              Grow Your Companion
+              Build Daily Momentum
             </h2>
             <p className="text-base text-muted-foreground">
-              Check off tasks, complete habits, and watch your companion evolve with real-time stats and level up notifications.
+              Check off tasks, complete habits, and watch your daily consistency rate climb in real time.
             </p>
           </div>
 
@@ -976,12 +981,12 @@ export function LandingPage() {
                 <div className="absolute bottom-[-6px] left-1/2 transform -translate-x-1/2 w-3.5 h-3.5 rotate-45 border-r border-b border-border bg-card" />
               </div>
 
-              {/* Companion representation with custom spring scale */}
+              {/* Momentum symbol with custom spring scale */}
               <div className="relative w-36 h-36 flex items-center justify-center my-4">
                 <div className="absolute inset-0 bg-primary/10 rounded-full blur-xl animate-pulse" />
                 <AnimatePresence mode="wait">
                   <motion.span 
-                    key={level}
+                    key={flowStage}
                     initial={{ scale: 0.2, rotate: -35 }}
                     animate={{ scale: 1, rotate: 0 }}
                     transition={{ type: 'spring', stiffness: 220, damping: 11 }}
@@ -990,28 +995,28 @@ export function LandingPage() {
                     whileTap={{ scale: 0.9 }}
                     onClick={() => handleCompanionClick(null)}
                   >
-                    {level === 1 ? '🌱' : level === 2 ? '🌿' : '🌳'}
+                    {flowStage === 1 ? '🌱' : flowStage === 2 ? '🌿' : '🌳'}
                   </motion.span>
                 </AnimatePresence>
               </div>
 
               <div className="text-center w-full">
-                <h3 className="text-base font-black mb-0.5 text-foreground">Companion Stage</h3>
+                <h3 className="text-base font-black mb-0.5 text-foreground">Daily Flow State</h3>
                 <p className="text-[10px] font-extrabold tracking-widest text-primary uppercase font-mono">
-                  {level === 1 ? 'LEVEL 1: SEEDLING' : level === 2 ? 'LEVEL 2: SAPLING' : 'LEVEL 3: FLOW TREE'}
+                  {flowStage === 1 ? 'BUILDING MOMENTUM' : flowStage === 2 ? 'HABITS LOCKED IN' : 'FULL DAY COMPLETE'}
                 </p>
               </div>
 
               {/* Progress HUD bar */}
               <div className="w-full mt-6">
                 <div className="flex justify-between text-[10px] font-bold tracking-wider mb-2">
-                  <span className="text-invest">XP PROGRESS</span>
-                  <span className="text-muted-foreground font-mono tabular-nums">{xp} / 100</span>
+                  <span className="text-primary">DAILY COMPLETION</span>
+                  <span className="text-muted-foreground font-mono tabular-nums">{momentum}%</span>
                 </div>
                 <div className="w-full h-3.5 rounded-full overflow-hidden p-0.5 bg-muted border border-border">
                   <motion.div 
-                    className="h-full bg-invest rounded-full" 
-                    animate={{ width: `${xp}%` }}
+                    className="h-full bg-primary rounded-full" 
+                    animate={{ width: `${momentum}%` }}
                     transition={{ duration: 0.45, ease: "easeOut" }}
                   />
                 </div>
@@ -1019,15 +1024,15 @@ export function LandingPage() {
 
               {/* Particle indicator tracker */}
               <AnimatePresence>
-                {floatingXPs.filter(f => f.text.includes('+5 XP')).map((f) => (
+                {floatingFeedbacks.filter(f => f.source === 'widget').map((f) => (
                   <motion.div
                     key={f.id}
                     initial={{ opacity: 1, y: f.y, scale: 0.8 }}
-                    animate={{ opacity: 0, y: f.y - 40, scale: 1.2 }}
+                    animate={{ opacity: 0, y: f.y - 40, scale: 1.15 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.9, ease: 'easeOut' }}
                     style={{ left: `${f.x}px`, top: `${f.y}px` }}
-                    className="absolute text-xs font-black text-warning pointer-events-none drop-shadow-md z-30 font-mono"
+                    className="absolute text-xs font-black text-primary pointer-events-none drop-shadow-md z-30 font-mono"
                   >
                     {f.text}
                   </motion.div>
@@ -1181,40 +1186,40 @@ export function LandingPage() {
 
                     {/* Badge 2 */}
                     <div className={`p-4 rounded-xl flex items-center justify-between border ${
-                      level >= 2
+                      flowStage >= 2
                         ? 'bg-warning/10 border-warning/30' 
                         : 'surface-subtle opacity-60'
                     }`}>
                       <div className="flex items-center gap-4">
                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xl border ${
-                          level >= 2
+                          flowStage >= 2
                             ? 'bg-warning/20 border-warning/40 text-warning' 
                             : 'bg-muted border-border text-muted-foreground'
                         }`}>
                           <Sparkles className="h-5 w-5" />
                         </div>
                         <div>
-                          <h4 className="font-bold text-sm text-foreground">Evolution</h4>
-                          <p className="text-xs text-warning">Evolve companion to Level 2</p>
+                          <h4 className="font-bold text-sm text-foreground">Habits Locked In</h4>
+                          <p className="text-xs text-warning">Complete all 3 daily habits</p>
                         </div>
                       </div>
-                      <span className="text-xs font-bold uppercase text-foreground">{level >= 2 ? 'Unlocked 🔓' : 'Locked 🔒'}</span>
+                      <span className="text-xs font-bold uppercase text-foreground">{flowStage >= 2 ? 'Unlocked 🔓' : 'Locked 🔒'}</span>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Floating +XP particles for list completions */}
+              {/* Floating feedback particles for list completions */}
               <AnimatePresence>
-                {floatingXPs.filter(f => f.text.includes('+35') || f.text.includes('+15')).map((f) => (
+                {floatingFeedbacks.filter(f => f.source === 'simulator').map((f) => (
                   <motion.div
                     key={f.id}
                     initial={{ opacity: 1, y: f.y, scale: 0.8 }}
-                    animate={{ opacity: 0, y: f.y - 45, scale: 1.25 }}
+                    animate={{ opacity: 0, y: f.y - 45, scale: 1.2 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.9, ease: 'easeOut' }}
                     style={{ left: `${f.x}px`, top: `${f.y}px` }}
-                    className="absolute text-sm font-extrabold text-warning pointer-events-none drop-shadow-md z-30 font-mono"
+                    className="absolute text-sm font-extrabold text-primary pointer-events-none drop-shadow-md z-30 font-mono"
                   >
                     {f.text}
                   </motion.div>
@@ -1222,9 +1227,9 @@ export function LandingPage() {
               </AnimatePresence>
             </div>
             
-            {/* Level up popup overlay */}
+            {/* Flow milestone celebration overlay */}
             <AnimatePresence>
-              {showLevelUp && (
+              {showFlowComplete && (
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.85 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -1233,18 +1238,22 @@ export function LandingPage() {
                 >
                   <div className="text-center p-6">
                     <motion.div
-                      animate={{ y: [0, -12, 0] }}
+                      animate={{ y: [0, -10, 0] }}
                       transition={{ repeat: Infinity, duration: 1.8 }}
                     >
                       <h2 className="text-4xl md:text-5xl font-black text-gradient flex items-center gap-2 justify-center drop-shadow-lg">
-                        <Sparkles className="h-8 w-8 text-warning" />
-                        LEVEL UP!
-                        <Sparkles className="h-8 w-8 text-warning" />
+                        <Sparkles className="h-8 w-8 text-primary" />
+                        {flowStage === 3 ? 'FULL DAY FLOW!' : 'HABITS COMPLETE!'}
+                        <Sparkles className="h-8 w-8 text-primary" />
                       </h2>
                     </motion.div>
-                    <p className="text-foreground text-lg font-bold mt-4">Your companion evolved to Level {level}!</p>
-                    <div className="mt-6 inline-flex bg-invest/15 border border-invest/30 px-4 py-1.5 rounded-full text-xs font-semibold text-invest font-mono">
-                      XP Gained: {totalXP} XP Total
+                    <p className="text-foreground text-lg font-bold mt-4">
+                      {flowStage === 3
+                        ? 'All daily habits and tasks checked off.'
+                        : 'You locked in every habit on your daily checklist.'}
+                    </p>
+                    <div className="mt-6 inline-flex bg-primary/15 border border-primary/30 px-4 py-1.5 rounded-full text-xs font-semibold text-primary font-mono">
+                      {completedTotal} / 6 Daily Actions Completed ({momentum}%)
                     </div>
                   </div>
                 </motion.div>
@@ -1476,7 +1485,7 @@ export function LandingPage() {
                     whileInView={{ scale: 1 }}
                     whileHover={{ scale: 1.4 }}
                     transition={{ delay: 1 }}
-                    onMouseEnter={() => setHoveredMilestone("Day 30 Achieved: Seedling Evolved")}
+                    onMouseEnter={() => setHoveredMilestone("Day 30 Achieved: Consistent Rhythm")}
                     onMouseLeave={() => setHoveredMilestone(null)}
                   />
 
@@ -1489,7 +1498,7 @@ export function LandingPage() {
                     whileInView={{ scale: 1 }}
                     whileHover={{ scale: 1.4 }}
                     transition={{ delay: 1.2 }}
-                    onMouseEnter={() => setHoveredMilestone("Day 60 Achieved: Flow Master Status")}
+                    onMouseEnter={() => setHoveredMilestone("Day 60 Achieved: Deep Focus Habit")}
                     onMouseLeave={() => setHoveredMilestone(null)}
                   />
                 </svg>
@@ -1513,12 +1522,12 @@ export function LandingPage() {
               </div>
             </div>
 
-            {/* Card 3: Discipline Radar */}
+            {/* Card 3: Balance Matrix */}
             <div className="surface-card p-8 hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
               <div className="text-[9px] font-extrabold tracking-wider text-warning bg-warning/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-warning/20">
                 Analyze
               </div>
-              <h3 className="text-xl font-bold mb-3 text-left text-foreground">Discipline Radar</h3>
+              <h3 className="text-xl font-bold mb-3 text-left text-foreground">Category Balance</h3>
               <p className="text-sm mb-8 flex-grow text-left text-muted-foreground">
                 Identify strengths and weak categories across different habit streams instantly.
               </p>

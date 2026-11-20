@@ -1,32 +1,28 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Shield, Sparkles } from 'lucide-react';
+import { Shield, Sparkles, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getAvatarById } from '@/lib/avatars';
-import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { useUserStore } from '@/lib/stores/user-store';
 
 interface SettingsHeroProps {
     avatarId: string;
-    level: number;
-    xp: number;
     streakShield: number;
     onAvatarClick: () => void;
+    onRefillShields?: () => void;
     className?: string;
 }
 
 export function SettingsHero({
     avatarId,
-    level,
-    xp,
     streakShield,
     onAvatarClick,
+    onRefillShields,
     className,
 }: SettingsHeroProps) {
     const { displayName } = useUserStore();
-    const nextLevelXp = level * 100;
-    const progress = Math.min((xp / nextLevelXp) * 100, 100);
     const currentAvatar = getAvatarById(avatarId);
 
     return (
@@ -57,38 +53,35 @@ export function SettingsHero({
                 </div>
 
                 {/* Info Section */}
-                <div className="flex-1 text-center md:text-left space-y-3.5 w-full">
-                    <div className="space-y-1">
-                        <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
-                            {displayName || 'Your Name'}
-                        </h2>
-                        <p className="text-muted-foreground flex items-center justify-center md:justify-start gap-2 text-sm font-medium font-mono tabular-nums">
-                            <span className="inline-flex items-center gap-1 rounded-full bg-invest/15 px-3 py-0.5 text-invest font-semibold">
-                                Level {level}
-                            </span>
-                            <span>•</span>
-                            <span>{xp} XP / {nextLevelXp} XP</span>
-                        </p>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="space-y-1.5 max-w-md mx-auto md:mx-0">
-                        <div className="flex justify-between text-xs font-medium text-muted-foreground font-mono tabular-nums">
-                            <span>Progress to Lvl {level + 1}</span>
-                            <span>{Math.round(progress)}%</span>
-                        </div>
-                        <Progress value={progress} className="h-2.5 bg-muted" />
-                    </div>
+                <div className="flex-1 text-center md:text-left space-y-2 w-full">
+                    <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+                        {displayName || 'Your Name'}
+                    </h2>
+                    <p className="text-muted-foreground text-sm font-medium max-w-md mx-auto md:mx-0">
+                        Personal Life &amp; Finance Workspace — manage your preferences, backups, and streak protection.
+                    </p>
                 </div>
 
-                {/* Stats Section (Desktop) */}
+                {/* Streak Shields Section */}
                 <div className="flex gap-4 md:border-l border-border md:pl-8">
-                    <div className="flex flex-col items-center p-4 surface-subtle min-w-[96px]">
-                        <div className={cn('p-2.5 rounded-full mb-2', streakShield > 0 ? 'bg-info/15 text-info' : 'bg-muted text-muted-foreground')}>
+                    <div className="flex flex-col items-center p-4 surface-subtle min-w-[128px] gap-1.5">
+                        <div className={cn('p-2.5 rounded-full', streakShield > 0 ? 'bg-info/15 text-info' : 'bg-muted text-muted-foreground')}>
                             <Shield className="h-5 w-5" />
                         </div>
                         <span className="text-2xl font-bold font-mono tabular-nums text-foreground">{streakShield}</span>
-                        <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Shields</span>
+                        <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Streak Shields</span>
+                        {onRefillShields && streakShield < 3 && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={onRefillShields}
+                                className="mt-1 h-7 px-2.5 text-[11px] font-semibold gap-1"
+                            >
+                                <RefreshCw className="h-3 w-3" />
+                                Refill (3)
+                            </Button>
+                        )}
                     </div>
                 </div>
             </div>
