@@ -499,8 +499,11 @@ export interface FinanceAccount {
   type: FinanceAccountType;
   balance: number;
   creditLimit?: number; // For credit_card accounts
-  statementDay?: number; // 1-31
-  dueDay?: number; // 1-31
+  statementDay?: number; // 1-31 (backward-compatible alias for billingDay)
+  billingDay?: number; // 1-31 (statement generation day of month)
+  dueDay?: number; // 1-31 (payment due day of month)
+  gracePeriodDays?: number;
+  lastStatementCheckedAt?: string;
   includeInNetWorth?: boolean;
   currency: string;
   color: string;
@@ -537,6 +540,70 @@ export interface FinanceCategory {
   isDirty?: boolean;
 }
 
+export interface CreditCardConfig {
+  creditLimit?: number;              // Total sanctioned limit (e.g., 100000)
+  billingDay?: number;               // Day of month bill generates (1..31), e.g., 21 for Slice, 15 for Axis
+  statementDay?: number;             // Backward-compatible alias for billingDay
+  dueDay?: number;                   // Day of month bill is due (1..31), e.g., 5 for Slice, 2 for Axis
+  gracePeriodDays?: number;          // Optional fallback if user specifies "15 days after bill" instead of fixed dueDay
+  lastStatementCheckedAt?: string;   // ISO date string for lazy rollover tracking
+}
+
+export type StatementStatus = 'unbilled' | 'billed' | 'partial' | 'paid' | 'overdue';
+
+export interface CreditCardStatement {
+  id: string;                        // Deterministic or UUID (e.g., `${accountId}_${cycleKey}`)
+  userId?: string;
+  accountId: string;                 // FK -> credit card account.id
+  cycleKey: string;                  // Canonical YYYY-MM of statement generation month, e.g., "2026-11"
+  periodStart: string;               // Inclusive ISO date "YYYY-MM-DD" (e.g., "2026-10-22")
+  periodEnd: string;                 // Inclusive ISO date "YYYY-MM-DD" (statement generation date, e.g., "2026-11-21")
+  dueDate: string;                   // ISO date "YYYY-MM-DD" (e.g., "2026-12-05")
+
+  // Financial Amounts
+  calculatedAmount: number;          // Auto-summed from transactions (expenses - refunds/credits) in this cycle
+  manualAdjustment: number;          // Difference when user overrides/reconciles statement (default 0)
+  totalDue: number;                  // Math.max(0, calculatedAmount + manualAdjustment + carriedForwardAmount)
+  carriedForwardAmount: number;      // Optional unpaid principal carried from previous overdue statement (default 0)
+  paidAmount: number;                // Sum of bill payment transfers applied to this statement
+  remainingDue: number;              // Math.max(0, totalDue - paidAmount)
+
+  status: StatementStatus;           // Computed: unbilled | billed | partial | paid | overdue
+  paidAt?: string | null;            // ISO timestamp when fully paid
+  notes?: string;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;         // Soft-delete for HabitFlow sync engine
+}
+
+export interface CreditCardCycleSummary {
+  accountId: string;
+  creditLimit: number;
+  billedDueTotal: number;            // Sum of remainingDue across all billed/partial/overdue statements
+  currentBilledStatement: CreditCardStatement | null; // Most recent unpaid billed statement (e.g., ₹22,000 due Dec 5)
+  billedStatement?: CreditCardStatement | null;       // Alias for currentBilledStatement
+  overdueStatements: CreditCardStatement[];
+  unbilledCycle: {
+    cycleKey: string;
+    periodStart: string;
+    periodEnd: string;               // Next bill generation date (e.g., Dec 21)
+    dueDate: string;                 // Next bill due date (e.g., Jan 5)
+    amount: number;                  // Current unbilled spends (e.g., ₹20,000)
+    transactionCount: number;
+    daysUntilGeneration: number;
+  };
+  unbilledSpend?: number;            // Alias for unbilledCycle.amount
+  totalOutstanding: number;          // billedDueTotal + Math.max(0, unbilledCycle.amount)
+  totalUtilized?: number;            // Alias for totalOutstanding
+  availableCredit: number;           // Math.max(0, creditLimit - totalOutstanding)
+  availableLimit?: number;           // Alias for availableCredit
+  utilizationPercent: number;        // creditLimit > 0 ? (totalOutstanding / creditLimit) * 100 : 0
+  nextDueDate: string | null;        // Nearest unpaid due date (e.g., "2026-12-05")
+  daysUntilDue: number | null;       // Negative if overdue
+}
+
 export type CommitmentContributionType = 'direct_payment' | 'offset_expense';
 
 export interface FinanceTransaction {
@@ -566,6 +633,10 @@ export interface FinanceTransaction {
   linkedDebtInstallmentId?: string | null;
   linkedEmiId?: string | null;
   linkedSipId?: string | null;
+  // Credit card cycle metadata & bill payment linking
+  statementCycleKey?: string | null;
+  paidStatementId?: string | null;
+  isCreditCardPayment?: boolean;
   deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -947,6 +1018,9 @@ export interface FinanceTransactionFormData {
   linkedDebtId?: string | null;
   linkedEmiId?: string | null;
   linkedSipId?: string | null;
+  statementCycleKey?: string | null;
+  paidStatementId?: string | null;
+  isCreditCardPayment?: boolean;
 }
 
 export interface FinanceFilterState {

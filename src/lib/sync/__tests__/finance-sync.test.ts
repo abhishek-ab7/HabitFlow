@@ -66,6 +66,7 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     await db.debtRecords.clear();
     await db.debtInstallments.clear();
     await db.emiTrackers.clear();
+    if (db.creditCardStatements) await db.creditCardStatements.clear();
   });
 
   test('1. Pushes dirty transactions to Supabase and marks isDirty: false in Dexie', async () => {
@@ -555,5 +556,38 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     const tx = await db.financeTransactions.get('tx-dup-test');
     expect(tx?.accountId).toBe('acc-dup-2');
     expect(tx?.categoryId).toBe('cat-dup-2');
+  });
+
+  test('11. Pushes dirty credit card statements and marks isDirty: false in Dexie', async () => {
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+
+    await db.creditCardStatements.add({
+      id: 'stmt-1',
+      userId,
+      accountId: 'acc-card-1',
+      cycleKey: '2026-11',
+      periodStart: '2026-10-22',
+      periodEnd: '2026-11-21',
+      dueDate: '2026-12-05',
+      calculatedAmount: 22000,
+      manualAdjustment: 0,
+      totalDue: 22000,
+      carriedForwardAmount: 0,
+      paidAmount: 0,
+      remainingDue: 22000,
+      status: 'billed',
+      isDirty: true,
+      generationCounter: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(result.pushed).toBeGreaterThanOrEqual(1);
+
+    const localStmt = await db.creditCardStatements.get('stmt-1');
+    expect(localStmt?.isDirty).toBe(false);
   });
 });

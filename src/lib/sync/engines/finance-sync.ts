@@ -199,6 +199,7 @@ export class FinanceSyncEngine implements ISynchronizer {
       ...(db.financeCategorizationRules ? [db.financeCategorizationRules] : []),
       ...(db.financeRecurringBills ? [db.financeRecurringBills] : []),
       ...(db.financeNetWorthSnapshots ? [db.financeNetWorthSnapshots] : []),
+      ...(db.creditCardStatements ? [db.creditCardStatements] : []),
     ];
 
     let count = 0;
@@ -341,8 +342,11 @@ export class FinanceSyncEngine implements ISynchronizer {
         type: acc.type,
         balance: Number(acc.balance || 0),
         credit_limit: acc.creditLimit !== undefined ? Number(acc.creditLimit) : null,
-        statement_day: acc.statementDay ?? null,
+        billing_day: acc.billingDay ?? acc.statementDay ?? null,
+        statement_day: acc.statementDay ?? acc.billingDay ?? null,
         due_day: acc.dueDay ?? null,
+        grace_period_days: acc.gracePeriodDays ?? null,
+        last_statement_checked_at: acc.lastStatementCheckedAt ?? null,
         include_in_net_worth: acc.includeInNetWorth !== false,
         currency: acc.currency || 'INR',
         color: acc.color || '#10b981',
@@ -394,9 +398,12 @@ export class FinanceSyncEngine implements ISynchronizer {
               name: r.name,
               type: r.type,
               balance: Number(r.balance || 0),
-              creditLimit: r.credit_limit ?? local?.creditLimit,
-              statementDay: r.statement_day ?? local?.statementDay,
+              creditLimit: r.credit_limit !== null && r.credit_limit !== undefined ? Number(r.credit_limit) : local?.creditLimit,
+              billingDay: r.billing_day ?? r.statement_day ?? local?.billingDay,
+              statementDay: r.statement_day ?? r.billing_day ?? local?.statementDay,
               dueDay: r.due_day ?? local?.dueDay,
+              gracePeriodDays: r.grace_period_days ?? local?.gracePeriodDays,
+              lastStatementCheckedAt: r.last_statement_checked_at ?? local?.lastStatementCheckedAt,
               includeInNetWorth: r.include_in_net_worth ?? local?.includeInNetWorth ?? true,
               currency: r.currency || 'INR',
               color: r.color || '#10b981',
@@ -812,6 +819,9 @@ export class FinanceSyncEngine implements ISynchronizer {
         linked_debt_installment_id: tx.linkedDebtInstallmentId || null,
         linked_emi_id: tx.linkedEmiId || null,
         linked_sip_id: tx.linkedSipId || null,
+        statement_cycle_key: tx.statementCycleKey ?? null,
+        paid_statement_id: tx.paidStatementId ?? null,
+        is_credit_card_payment: !!tx.isCreditCardPayment,
         deleted_at: tx.deletedAt || null,
         generation_counter: tx.generationCounter || 1,
         created_at: tx.createdAt || new Date().toISOString(),
@@ -888,6 +898,9 @@ export class FinanceSyncEngine implements ISynchronizer {
               linkedDebtInstallmentId: r.linked_debt_installment_id || null,
               linkedEmiId: r.linked_emi_id || null,
               linkedSipId: r.linked_sip_id ?? local?.linkedSipId ?? null,
+              statementCycleKey: r.statement_cycle_key ?? local?.statementCycleKey ?? null,
+              paidStatementId: r.paid_statement_id ?? local?.paidStatementId ?? null,
+              isCreditCardPayment: r.is_credit_card_payment ?? local?.isCreditCardPayment ?? false,
               deletedAt: r.deleted_at || null,
               generationCounter: r.generation_counter || 1,
               createdAt: r.created_at || r.updated_at || new Date().toISOString(),
@@ -1274,6 +1287,112 @@ export class FinanceSyncEngine implements ISynchronizer {
                   generationCounter: r.generation_counter || 1,
                   createdAt: r.created_at || r.updated_at || new Date().toISOString(),
                   updatedAt: r.updated_at || new Date().toISOString(),
+                  isDirty: false,
+                });
+                pulled++;
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    // 13. Sync Dirty Credit Card Statements -> Remote
+    try {
+      if (db.creditCardStatements && !missingRemoteFinanceTables.has('credit_card_statements')) {
+        const dirtyStatements = await db.creditCardStatements
+          .where('userId')
+          .equals(userId)
+          .filter((s) => s.isDirty !== false)
+          .toArray();
+
+        for (const s of dirtyStatements) {
+          if (s.deletedAt) {
+            const { error } = await (supabase.from('credit_card_statements') as any)
+              .delete()
+              .eq('id', s.id)
+              .eq('user_id', userId);
+            if (!error) {
+              await db.creditCardStatements.delete(s.id);
+              pushed++;
+            }
+            continue;
+          }
+
+          const payload = {
+            id: s.id,
+            user_id: userId,
+            account_id: s.accountId,
+            cycle_key: s.cycleKey,
+            period_start: s.periodStart,
+            period_end: s.periodEnd,
+            due_date: s.dueDate,
+            calculated_amount: Number(s.calculatedAmount || 0),
+            manual_adjustment: Number(s.manualAdjustment || 0),
+            total_due: Number(s.totalDue || 0),
+            carried_forward_amount: Number(s.carriedForwardAmount || 0),
+            paid_amount: Number(s.paidAmount || 0),
+            remaining_due: Number(s.remainingDue || 0),
+            status: s.status || 'billed',
+            paid_at: s.paidAt || null,
+            notes: s.notes || null,
+            generation_counter: s.generationCounter || 1,
+            created_at: s.createdAt || new Date().toISOString(),
+            updated_at: s.updatedAt || new Date().toISOString(),
+            deleted_at: s.deletedAt || null,
+          };
+          const { error } = await (supabase.from('credit_card_statements') as any).upsert(
+            payload,
+            { onConflict: 'user_id,account_id,cycle_key' }
+          );
+          if (error) {
+            if (isMissingRelationError(error)) {
+              missingRemoteFinanceTables.add('credit_card_statements');
+              logger.info('[FinanceSyncEngine] Skipping unmigrated table credit_card_statements for this session.');
+              break;
+            } else {
+              logger.error('[FinanceSyncEngine] CreditCardStatement upsert failed:', error);
+              hasError = true;
+            }
+          } else {
+            await db.creditCardStatements.update(s.id, { isDirty: false });
+            pushed++;
+          }
+        }
+
+        if (!missingRemoteFinanceTables.has('credit_card_statements')) {
+          const { data: remoteStmts, error: pullStmtError } = await (supabase.from('credit_card_statements') as any)
+            .select('*')
+            .eq('user_id', userId);
+          if (pullStmtError && isMissingRelationError(pullStmtError)) {
+            missingRemoteFinanceTables.add('credit_card_statements');
+          } else if (Array.isArray(remoteStmts)) {
+            for (const r of remoteStmts) {
+              const local = await db.creditCardStatements.get(r.id);
+              if (this.shouldApplyRemote(local, r)) {
+                await db.creditCardStatements.put({
+                  id: r.id,
+                  userId: r.user_id,
+                  accountId: r.account_id,
+                  cycleKey: r.cycle_key,
+                  periodStart: r.period_start,
+                  periodEnd: r.period_end,
+                  dueDate: r.due_date,
+                  calculatedAmount: Number(r.calculated_amount || 0),
+                  manualAdjustment: Number(r.manual_adjustment || 0),
+                  totalDue: Number(r.total_due || 0),
+                  carriedForwardAmount: Number(r.carried_forward_amount || 0),
+                  paidAmount: Number(r.paid_amount || 0),
+                  remainingDue: Number(r.remaining_due || 0),
+                  status: r.status as any,
+                  paidAt: r.paid_at || null,
+                  notes: r.notes || undefined,
+                  generationCounter: r.generation_counter || 1,
+                  createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+                  updatedAt: r.updated_at || new Date().toISOString(),
+                  deletedAt: r.deleted_at || null,
                   isDirty: false,
                 });
                 pulled++;

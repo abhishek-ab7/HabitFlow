@@ -14,13 +14,16 @@ import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type { FinancialObligationItem } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
+import { PayCreditCardModal } from '@/components/finance/credit-cards/PayCreditCardModal';
 import { CategoryIcon } from '@/components/finance/CategoryIcon';
+import type { FinanceAccount } from '@/lib/types';
 import { toast } from 'sonner';
 
 export function FinanceOverviewWidget() {
   const router = useRouter();
   const isLoading = useFinanceStore((s) => s.isLoading);
   const categories = useFinanceStore((s) => s.categories);
+  const accounts = useFinanceStore((s) => s.accounts);
   const transactions = useFinanceStore((s) => s.transactions);
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
@@ -35,6 +38,8 @@ export function FinanceOverviewWidget() {
   const settleCommitmentBalance = useFinanceStore((s) => s.settleCommitmentBalance);
 
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [payingCardAccount, setPayingCardAccount] = useState<FinanceAccount | null>(null);
+  const [payingCardAmount, setPayingCardAmount] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (categories.length === 0) {
@@ -308,7 +313,23 @@ export function FinanceOverviewWidget() {
                         · {formatINR(item.amount)}
                       </p>
                     </div>
-                    {item.type !== 'credit_card' && item.type !== 'debt' ? (
+                    {item.type === 'credit_card' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const card = accounts.find((a) => a.id === item.sourceId);
+                          if (card) {
+                            setPayingCardAccount(card);
+                            setPayingCardAmount(item.amount);
+                          } else {
+                            router.push('/finance?tab=accounts');
+                          }
+                        }}
+                        className="min-h-[32px] px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold shrink-0 transition-colors"
+                      >
+                        Pay
+                      </button>
+                    ) : item.type !== 'debt' ? (
                       <button
                         type="button"
                         onClick={() => handleQuickPay(item)}
@@ -350,6 +371,20 @@ export function FinanceOverviewWidget() {
         open={isQuickAddOpen}
         onOpenChange={setIsQuickAddOpen}
       />
+
+      {payingCardAccount && (
+        <PayCreditCardModal
+          open={!!payingCardAccount}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPayingCardAccount(null);
+              setPayingCardAmount(undefined);
+            }
+          }}
+          card={payingCardAccount}
+          defaultAmount={payingCardAmount}
+        />
+      )}
     </section>
   );
 }

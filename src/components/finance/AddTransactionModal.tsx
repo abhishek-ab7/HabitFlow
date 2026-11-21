@@ -33,7 +33,9 @@ import {
   Loader2,
   Send,
   Star,
+  CreditCard,
 } from 'lucide-react';
+import { resolveTransactionCycle, getCycleWindowForMonth } from '@/lib/finance/credit-card-cycles';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
 import { SmsImportModal } from './SmsImportModal';
@@ -1267,6 +1269,29 @@ export function AddTransactionModal({
                   );
                 })}
               </div>
+
+              {/* Credit Card Cycle Preview */}
+              {(() => {
+                const selectedAcc = activeAccounts.find((a) => a.id === accountId);
+                if (selectedAcc?.type === 'credit_card') {
+                  const bDay = selectedAcc.billingDay ?? selectedAcc.statementDay ?? 1;
+                  const dDay = selectedAcc.dueDay ?? 20;
+                  const txDate = date || new Date().toISOString().slice(0, 10);
+                  const cycleKey = resolveTransactionCycle(txDate, bDay, dDay);
+                  const [y, m] = cycleKey.split('-').map(Number);
+                  const cycleWin = getCycleWindowForMonth(bDay, dDay, y, m - 1, selectedAcc.gracePeriodDays);
+                  return (
+                    <div className="mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
+                      <CreditCard className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                      <span>
+                        Bill Cycle: <strong className="text-zinc-100">{cycleWin.periodEnd}</strong> · Due on{' '}
+                        <strong className="text-amber-400">{cycleWin.dueDate}</strong>
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             {/* Interactive Tags Picker */}

@@ -920,4 +920,129 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     expect(friendSplit!.remainingAmount).toBe(400);
     expect(friendSplit!.bucketType).toBe('everyday_split');
   });
+
+  test('19. Multi-Card Credit Card Billing Cycle — Reconcile Statement & Dual-Bucket Summary', async () => {
+    const store = useFinanceStore.getState();
+    const foodCat = store.categories.find((c) => c.slug === 'food-dining')!;
+
+    // 1. Create a Slice credit card account
+    const sliceCard = await store.addAccount({
+      name: 'Slice SuperCard',
+      type: 'credit_card',
+      balance: 0,
+      creditLimit: 100000,
+      billingDay: 21,
+      dueDay: 5,
+      currency: 'INR',
+      color: '#f43f5e',
+      icon: 'CreditCard',
+      isDefault: false,
+      archived: false,
+    });
+
+    // 2. Reconcile opening Nov 21 bill to ₹22,000
+    const stmt = await store.reconcileCreditCardStatement({
+      cardAccountId: sliceCard.id,
+      cycleKey: '2026-11',
+      actualStatementAmount: 22000,
+      note: 'Nov 21 Statement',
+    });
+    expect(stmt.totalDue).toBe(22000);
+    expect(stmt.remainingDue).toBe(22000);
+    expect(stmt.dueDate).toBe('2026-12-05');
+
+    // 3. Log a new spend in the unbilled cycle (Nov 23)
+    await store.addTransaction({
+      title: 'Zomato Group Order',
+      amount: 20000,
+      type: 'expense',
+      categoryId: foodCat.id,
+      accountId: sliceCard.id,
+      date: '2026-11-23',
+    });
+
+    // 4. Compute summary on Nov 25
+    const summary = store.getCreditCardSummary(sliceCard.id, '2026-11-25');
+    expect(summary).not.toBeNull();
+    expect(summary!.billedDueTotal).toBe(22000);
+    expect(summary!.unbilledCycle.amount).toBe(20000);
+    expect(summary!.totalOutstanding).toBe(42000);
+    expect(summary!.availableCredit).toBe(58000);
+    expect(summary!.utilizationPercent).toBe(42);
+    expect(summary!.nextDueDate).toBe('2026-12-05');
+  });
+
+  test('20. Multi-Card Credit Card Bill Payment — Waterfall Allocation & Bank Balance Deduction', async () => {
+    const store = useFinanceStore.getState();
+    const bankAcc = store.accounts.find((a) => a.type === 'bank')!;
+    const foodCat = store.categories.find((c) => c.slug === 'food-dining')!;
+
+    // 1. Create a Slice card and set bank balance to ₹50,000
+    const sliceCard = await store.addAccount({
+      name: 'Slice SuperCard',
+      type: 'credit_card',
+      balance: 0,
+      creditLimit: 100000,
+      billingDay: 21,
+      dueDay: 5,
+      currency: 'INR',
+      color: '#f43f5e',
+      icon: 'CreditCard',
+      isDefault: false,
+      archived: false,
+    });
+    await store.updateAccount(bankAcc.id, { balance: 50000 });
+
+    // 2. Reconcile opening Nov 21 bill to ₹22,000
+    await store.reconcileCreditCardStatement({
+      cardAccountId: sliceCard.id,
+      cycleKey: '2026-11',
+      actualStatementAmount: 22000,
+    });
+
+    // 3. Log ₹20,000 unbilled spend on Nov 23
+    await store.addTransaction({
+      title: 'Zomato Group Order',
+      amount: 20000,
+      type: 'expense',
+      categoryId: foodCat.id,
+      accountId: sliceCard.id,
+      date: '2026-11-23',
+    });
+
+    // 4. Pay ₹10,000 towards the Slice bill from bank account
+    const payTx1 = await store.payCreditCardBill({
+      cardAccountId: sliceCard.id,
+      fromAccountId: bankAcc.id,
+      amount: 10000,
+      date: '2026-11-26',
+    });
+
+    expect(payTx1.isCreditCardPayment).toBe(true);
+    expect(payTx1.type).toBe('transfer');
+
+    // Bank account reduced from ₹50,000 to ₹40,000
+    const bankAfterPay1 = useFinanceStore.getState().accounts.find((a) => a.id === bankAcc.id)!;
+    expect(bankAfterPay1.balance).toBe(40000);
+
+    // Billed statement remaining due is now ₹12,000 (status: partial)
+    const summary1 = useFinanceStore.getState().getCreditCardSummary(sliceCard.id, '2026-11-26')!;
+    expect(summary1.billedDueTotal).toBe(12000);
+    expect(summary1.currentBilledStatement?.status).toBe('partial');
+    expect(summary1.totalOutstanding).toBe(32000); // 12000 + 20000
+
+    // 5. Pay remaining ₹12,000 to clear the bill
+    await store.payCreditCardBill({
+      cardAccountId: sliceCard.id,
+      fromAccountId: bankAcc.id,
+      amount: 12000,
+      date: '2026-11-27',
+    });
+
+    const summary2 = useFinanceStore.getState().getCreditCardSummary(sliceCard.id, '2026-11-27')!;
+    expect(summary2.billedDueTotal).toBe(0);
+    expect(summary2.currentBilledStatement).toBeNull(); // No unpaid billed statement remaining
+    expect(summary2.totalOutstanding).toBe(20000); // Only unbilled spends remain
+    expect(summary2.availableCredit).toBe(80000);
+  });
 });

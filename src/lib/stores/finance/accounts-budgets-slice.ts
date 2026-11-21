@@ -1,11 +1,21 @@
 import { db } from '@/lib/db';
 import type {
+  CreditCardCycleSummary,
+  CreditCardStatement,
   FinanceAccount,
   FinanceBudget,
   FinanceCategorizationRule,
   FinanceCategory,
   FinanceNetWorthSnapshot,
+  FinanceTransaction,
 } from '@/lib/types';
+import {
+  computeCreditCardSummary,
+  getCycleWindowForMonth,
+  resolveTransactionCycle,
+  allocatePaymentToStatements,
+  resolveCardBillingConfig,
+} from '@/lib/finance/credit-card-cycles';
 import {
   getCurrentMonthKey,
   notifyFinanceSync,
@@ -24,6 +34,11 @@ export type AccountsBudgetsSlice = Pick<
   | 'updateAccount'
   | 'setDefaultAccount'
   | 'deleteAccount'
+  | 'syncCardStatements'
+  | 'payCreditCardBill'
+  | 'reconcileCreditCardStatement'
+  | 'moveTransactionToCycle'
+  | 'getCreditCardSummary'
   | 'reconcileAccountBalance'
   | 'recordCurrentNetWorthSnapshot'
   | 'addCategory'
@@ -190,6 +205,241 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
     });
     await get().loadFinanceData(existing.userId);
     await get().recordCurrentNetWorthSnapshot();
+    notifyFinanceSync();
+  },
+
+  getCreditCardSummary: (accountId, referenceDate) => {
+    const account = get().accounts.find((a) => a.id === accountId);
+    if (!account || account.type !== 'credit_card') return null;
+    return computeCreditCardSummary({
+      account,
+      transactions: get().transactions,
+      persistedStatements: get().creditCardStatements,
+      referenceDate,
+    });
+  },
+
+  syncCardStatements: async (accountId?: string) => {
+    const cards = accountId
+      ? get().accounts.filter((a) => a.id === accountId && a.type === 'credit_card')
+      : get().accounts.filter((a) => a.type === 'credit_card' && !a.archived && !a.deletedAt);
+
+    if (cards.length === 0) return;
+    const now = new Date().toISOString();
+    const todayIso = now.slice(0, 10);
+
+    for (const card of cards) {
+      const summary = computeCreditCardSummary({
+        account: card,
+        transactions: get().transactions,
+        persistedStatements: get().creditCardStatements,
+        referenceDate: todayIso,
+      });
+
+      if (summary.currentBilledStatement) {
+        const stmt = summary.currentBilledStatement;
+        const existing = await db.creditCardStatements.get(stmt.id);
+        if (existing) {
+          await db.creditCardStatements.update(stmt.id, {
+            calculatedAmount: stmt.calculatedAmount,
+            totalDue: stmt.totalDue,
+            remainingDue: stmt.remainingDue,
+            status: stmt.status,
+            dueDate: stmt.dueDate,
+            updatedAt: now,
+            isDirty: true,
+          });
+        } else {
+          await db.creditCardStatements.put({
+            ...stmt,
+            userId: card.userId,
+            isDirty: true,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    }
+
+    if (cards[0]?.userId) {
+      const updatedStmts = await db.creditCardStatements
+        .where('userId')
+        .equals(cards[0].userId)
+        .filter((s) => !s.deletedAt)
+        .toArray();
+      _set({ creditCardStatements: updatedStmts });
+    }
+  },
+
+  payCreditCardBill: async (params) => {
+    const { cardAccountId, fromAccountId, amount, date, statementId, note } = params;
+    const card = get().accounts.find((a) => a.id === cardAccountId);
+    const bank = get().accounts.find((a) => a.id === fromAccountId);
+    if (!card || !bank) {
+      throw new Error('Card or Bank account not found');
+    }
+
+    const payAmount = Math.max(0, Number(amount));
+    if (payAmount <= 0) {
+      throw new Error('Payment amount must be greater than zero');
+    }
+
+    const txDate = date || new Date().toISOString().slice(0, 10);
+    const now = new Date().toISOString();
+
+    const billsCategory =
+      get().categories.find((c) => c.slug === 'utilities-bills') ||
+      get().categories[0];
+
+    // 1. Add transfer transaction from Bank -> Credit Card with isCreditCardPayment: true
+    const tx = await get().addTransaction({
+      title: `${card.name} Bill Payment`,
+      amount: payAmount,
+      type: 'transfer',
+      categoryId: billsCategory?.id || 'default',
+      accountId: fromAccountId,
+      toAccountId: cardAccountId,
+      date: txDate,
+      notes: note || `Payment toward ${card.name}`,
+      tags: ['credit-card-payment'],
+      statementCycleKey: null,
+      paidStatementId: statementId || null,
+      isCreditCardPayment: true,
+    } as any);
+
+    // 2. Waterfall allocate payment across statements in Dexie
+    const currentStatements = await db.creditCardStatements
+      .where('accountId')
+      .equals(cardAccountId)
+      .filter((s) => !s.deletedAt)
+      .toArray();
+
+    if (currentStatements.length > 0) {
+      const { updatedStatements } = allocatePaymentToStatements(
+        currentStatements,
+        payAmount,
+        statementId
+      );
+
+      for (const updated of updatedStatements) {
+        await db.creditCardStatements.update(updated.id, {
+          paidAmount: updated.paidAmount,
+          remainingDue: updated.remainingDue,
+          status: updated.status,
+          paidAt: updated.paidAt,
+          updatedAt: now,
+          isDirty: true,
+        });
+      }
+    }
+
+    // 3. Re-sync statements & refresh store
+    await get().syncCardStatements(cardAccountId);
+    notifyFinanceSync();
+    return tx;
+  },
+
+  reconcileCreditCardStatement: async (params) => {
+    const { cardAccountId, cycleKey, actualStatementAmount, note } = params;
+    const card = get().accounts.find((a) => a.id === cardAccountId);
+    if (!card) {
+      throw new Error('Card account not found');
+    }
+
+    const now = new Date().toISOString();
+    const userId = card.userId;
+    const { billingDay, dueDay, gracePeriodDays } = resolveCardBillingConfig(card);
+
+    const [cYear, cMonth] = cycleKey.split('-').map(Number);
+    const window = getCycleWindowForMonth(billingDay, dueDay, cYear, cMonth - 1, gracePeriodDays);
+
+    const cardTxs = get().transactions.filter(
+      (t) => t.accountId === cardAccountId && !t.deletedAt && !t.isCreditCardPayment && t.type !== 'transfer'
+    );
+    let calculatedAmount = 0;
+    for (const tx of cardTxs) {
+      const txCycle = resolveTransactionCycle(tx.date, billingDay, dueDay, tx.statementCycleKey);
+      if (txCycle === cycleKey) {
+        if (tx.type === 'expense') calculatedAmount += tx.amount;
+        else if (tx.type === 'income' || tx.type === 'investment') calculatedAmount -= tx.amount;
+      }
+    }
+
+    const actual = Math.max(0, Number(actualStatementAmount));
+    const manualAdjustment = actual - calculatedAmount;
+
+    const existing = await db.creditCardStatements
+      .where('accountId')
+      .equals(cardAccountId)
+      .filter((s) => s.cycleKey === cycleKey && !s.deletedAt)
+      .first();
+
+    let statement: CreditCardStatement;
+    if (existing) {
+      const totalDue = Math.max(0, calculatedAmount + manualAdjustment + (existing.carriedForwardAmount || 0));
+      const remainingDue = Math.max(0, totalDue - existing.paidAmount);
+      let status = existing.status;
+      if (remainingDue === 0 && totalDue > 0) status = 'paid';
+      else if (existing.paidAmount > 0) status = 'partial';
+      else status = 'billed';
+
+      statement = {
+        ...existing,
+        calculatedAmount,
+        manualAdjustment,
+        totalDue,
+        remainingDue,
+        status,
+        notes: note || existing.notes,
+        updatedAt: now,
+        isDirty: true,
+      };
+      await db.creditCardStatements.put(statement);
+    } else {
+      statement = {
+        id: `${cardAccountId}_${cycleKey}`,
+        userId,
+        accountId: cardAccountId,
+        cycleKey,
+        periodStart: window.periodStart,
+        periodEnd: window.periodEnd,
+        dueDate: window.dueDate,
+        calculatedAmount,
+        manualAdjustment,
+        totalDue: actual,
+        carriedForwardAmount: 0,
+        paidAmount: 0,
+        remainingDue: actual,
+        status: 'billed',
+        notes: note,
+        isDirty: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.creditCardStatements.put(statement);
+    }
+
+    await get().loadFinanceData(userId);
+    notifyFinanceSync();
+    return statement;
+  },
+
+  moveTransactionToCycle: async (transactionId: string, targetCycleKey: string | null) => {
+    const tx = get().transactions.find((t) => t.id === transactionId);
+    if (!tx) return;
+    const now = new Date().toISOString();
+
+    await db.financeTransactions.update(transactionId, {
+      statementCycleKey: targetCycleKey,
+      updatedAt: now,
+      isDirty: true,
+    });
+
+    const account = get().accounts.find((a) => a.id === tx.accountId);
+    if (account?.userId) {
+      await get().loadFinanceData(account.userId);
+      await get().syncCardStatements(account.id);
+    }
     notifyFinanceSync();
   },
 

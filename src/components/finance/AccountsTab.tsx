@@ -44,6 +44,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { CategoryIcon } from './CategoryIcon';
+import { CreditCardItem } from './credit-cards/CreditCardItem';
+import { getCycleWindowForMonth } from '@/lib/finance/credit-card-cycles';
 import { toast } from 'sonner';
 
 interface AccountsTabProps {
@@ -171,7 +173,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
     setAccType(acc.type);
     setAccCreditLimit(String(acc.creditLimit || 100000));
     setAccDueDay(String(acc.dueDay || 15));
-    setAccBillingDay(String(acc.statementDay || 1));
+    setAccBillingDay(String(acc.billingDay ?? acc.statementDay ?? 1));
     setAccIsDefault(Boolean(acc.isDefault));
   };
 
@@ -230,6 +232,10 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
         accType === 'credit_card'
           ? parseFloat(accCreditLimit) || 100000
           : undefined,
+      billingDay:
+        accType === 'credit_card'
+          ? Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1))
+          : undefined,
       statementDay:
         accType === 'credit_card'
           ? Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1))
@@ -273,6 +279,10 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       creditLimit:
         accType === 'credit_card'
           ? parseFloat(accCreditLimit) || 100000
+          : undefined,
+      billingDay:
+        accType === 'credit_card'
+          ? Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1))
           : undefined,
       statementDay:
         accType === 'credit_card'
@@ -684,139 +694,18 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                 Add a Credit Card account to track credit utilization %, statement close day, and bill due countdown.
               </div>
             ) : (
-              <div className="space-y-3">
-                {creditCards.map((card) => {
-                  const used =
-                    card.balance < 0 ? Math.abs(card.balance) : card.balance;
-                  const limit = card.creditLimit || 100000;
-                  const available = Math.max(0, limit - used);
-                  const utilPct = Math.min(100, Math.round((used / limit) * 100));
-                  const daysToDue = getDaysUntilDueDay(card.dueDay);
-
-                  return (
-                    <div
-                      key={card.id}
-                      className="rounded-2xl border border-border bg-card p-4 space-y-3"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEditAccount(card)}
-                          className="flex items-center gap-3 min-w-0 text-left"
-                        >
-                          <span className="w-10 h-10 rounded-xl bg-rose-500/12 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-                            <CreditCard className="w-5 h-5" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-foreground truncate flex items-center gap-1.5">
-                              <span className="truncate">{card.name}</span>
-                              {card.isDefault && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/12 text-primary text-[10px] font-semibold shrink-0">
-                                  <Star className="w-2.5 h-2.5 fill-primary" />
-                                  Default
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-xs text-muted-foreground font-mono tabular-nums">
-                              Limit {formatINR(limit)}
-                              {card.statementDay
-                                ? ` · Closes Day ${card.statementDay}`
-                                : ''}
-                              {card.dueDay ? ` · Due Day ${card.dueDay}` : ''}
-                            </p>
-                          </div>
-                        </button>
-
-                        <div className="text-right font-mono tabular-nums shrink-0">
-                          <span className="text-sm font-bold text-rose-600 dark:text-rose-400 block">
-                            {formatINR(used)} due
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {utilPct}% used · Avail {formatINR(available)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                          <div
-                            style={{ width: `${utilPct}%` }}
-                            className={`h-full rounded-full transition-all ${
-                              utilPct > 50
-                                ? 'bg-rose-500'
-                                : utilPct > 30
-                                ? 'bg-amber-500'
-                                : 'bg-emerald-500'
-                            }`}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                          <span>
-                            {utilPct > 30
-                              ? 'Tip: Keep utilization under 30% for optimal credit score'
-                              : 'Healthy utilization (<30%)'}
-                          </span>
-                          {daysToDue !== null && (
-                            <span
-                              className={`font-mono tabular-nums font-semibold ${
-                                daysToDue <= 5
-                                  ? 'text-amber-600 dark:text-amber-400'
-                                  : 'text-muted-foreground'
-                              }`}
-                            >
-                              {daysToDue === 0
-                                ? 'Due today'
-                                : `Due in ${daysToDue}d`}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2">
-                        {!card.isDefault && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              await setDefaultAccount(card.id);
-                              toast.success(`${card.name} set as default payment method`);
-                            }}
-                            className="h-8 px-2.5 text-xs rounded-lg gap-1"
-                          >
-                            <Star className="w-3 h-3" />
-                            <span>Set Default</span>
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openReconcileDialog(card)}
-                          className="h-8 px-2.5 text-xs rounded-lg gap-1"
-                        >
-                          <Scale className="w-3.5 h-3.5" />
-                          <span>Reconcile</span>
-                        </Button>
-                        {used > 0 && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => {
-                              setPayingCard(card);
-                              setPayCardAmount(String(used));
-                              setPayCardFromAccId(assetAccounts[0]?.id || '');
-                            }}
-                            className="h-8 px-3 text-xs rounded-lg gap-1.5"
-                          >
-                            <ArrowRightLeft className="w-3.5 h-3.5" />
-                            <span>Pay Card Bill</span>
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="space-y-4">
+                {creditCards.map((card) => (
+                  <CreditCardItem
+                    key={card.id}
+                    card={card}
+                    onEdit={openEditAccount}
+                    onSetDefault={async (cardId) => {
+                      await setDefaultAccount(cardId);
+                      toast.success(`${card.name} set as default payment method`);
+                    }}
+                  />
+                ))}
               </div>
             )}
           </section>
@@ -1264,6 +1153,18 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                     className="h-10 font-mono tabular-nums text-xs"
                   />
                 </div>
+                {(() => {
+                  const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
+                  const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
+                  const now = new Date();
+                  const win = getCycleWindowForMonth(bDay, dDay, now.getFullYear(), now.getMonth());
+                  return (
+                    <div className="col-span-3 text-[11px] text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 p-2 rounded-lg">
+                      Next bill generates on <strong>{win.periodEnd}</strong> · Due on{' '}
+                      <strong className="text-amber-400">{win.dueDate}</strong>
+                    </div>
+                  );
+                })()}
               </div>
             )}
             <label className="flex items-center gap-2.5 pt-1 cursor-pointer select-none">
@@ -1400,6 +1301,18 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                     className="h-10 font-mono tabular-nums text-xs"
                   />
                 </div>
+                {(() => {
+                  const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
+                  const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
+                  const now = new Date();
+                  const win = getCycleWindowForMonth(bDay, dDay, now.getFullYear(), now.getMonth());
+                  return (
+                    <div className="col-span-3 text-[11px] text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 p-2 rounded-lg">
+                      Next bill generates on <strong>{win.periodEnd}</strong> · Due on{' '}
+                      <strong className="text-amber-400">{win.dueDate}</strong>
+                    </div>
+                  );
+                })()}
               </div>
             )}
             <label className="flex items-center gap-2.5 pt-1 cursor-pointer select-none">

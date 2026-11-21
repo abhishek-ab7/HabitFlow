@@ -29,6 +29,8 @@ import type {
   DailyPacePoint,
   MonthlyFinanceSummary,
   FinancialObligationItem,
+  CreditCardStatement,
+  CreditCardCycleSummary,
 } from '@/lib/types';
 
 export function getCurrentMonthKey(date: Date = new Date()): string {
@@ -289,6 +291,7 @@ export interface FinanceStore {
   categorizationRules: FinanceCategorizationRule[];
   recurringBills: FinanceRecurringBill[];
   netWorthSnapshots: FinanceNetWorthSnapshot[];
+  creditCardStatements: CreditCardStatement[];
   selectedMonth: string; // YYYY-MM
   filters: FinanceFilterState;
   isLoading: boolean;
@@ -448,6 +451,30 @@ export interface FinanceStore {
   updateAccount: (id: string, data: Partial<FinanceAccount>) => Promise<void>;
   setDefaultAccount: (accountId: string) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
+  // Credit Card Statements & Multi-Card Engine
+  syncCardStatements: (accountId?: string) => Promise<void>;
+  payCreditCardBill: (params: {
+    cardAccountId: string;
+    fromAccountId: string;
+    amount: number;
+    date?: string;
+    statementId?: string;
+    note?: string;
+  }) => Promise<FinanceTransaction>;
+  reconcileCreditCardStatement: (params: {
+    cardAccountId: string;
+    cycleKey: string;
+    actualStatementAmount: number;
+    note?: string;
+  }) => Promise<CreditCardStatement>;
+  moveTransactionToCycle: (
+    transactionId: string,
+    targetCycleKey: string | null
+  ) => Promise<void>;
+  getCreditCardSummary: (
+    accountId: string,
+    referenceDate?: string
+  ) => CreditCardCycleSummary | null;
   reconcileAccountBalance: (
     accountId: string,
     actualBalance: number,

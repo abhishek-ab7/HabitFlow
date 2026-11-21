@@ -1,5 +1,6 @@
 import { buildCashFlowForecast } from '@/lib/finance/forecast';
 import { detectSpendingAnomalies } from '@/lib/finance/anomalies';
+import { daysBetween } from '@/lib/finance/credit-card-cycles';
 import type {
   CategorySpendItem,
   CommitmentLedgerSummary,
@@ -823,29 +824,35 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       }
     }
 
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
     for (const acc of get().accounts) {
       if (
         acc.type !== 'credit_card' ||
         acc.archived ||
-        acc.deletedAt ||
-        Math.abs(acc.balance) <= 0
+        acc.deletedAt
       )
         continue;
-      const dueDay = acc.dueDay || 5;
-      const daysUntilDue = dueDay - currentDay;
-      if (daysUntilDue <= withinDays) {
-        obligations.push({
-          id: `cc-${acc.id}`,
-          sourceId: acc.id,
-          type: 'credit_card',
-          title: `${acc.name} Bill Due`,
-          subtitle: `Credit card statement balance`,
-          amount: Math.abs(acc.balance),
-          dueDate: makeDueDateStr(dueDay),
-          daysUntilDue,
-          isOverdue: daysUntilDue < 0,
-          status: 'pending',
-        });
+
+      const summary = get().getCreditCardSummary(acc.id);
+      const billedStmt = summary?.billedStatement || summary?.currentBilledStatement;
+      if (billedStmt && billedStmt.remainingDue > 0) {
+        const stmt = billedStmt;
+        const daysUntilDue = daysBetween(todayStr, stmt.dueDate);
+        if (daysUntilDue <= withinDays) {
+          obligations.push({
+            id: `cc-${acc.id}-${stmt.id}`,
+            sourceId: acc.id,
+            type: 'credit_card',
+            title: `${acc.name} Bill Due`,
+            subtitle: `Statement ${stmt.periodStart} to ${stmt.periodEnd}`,
+            amount: stmt.remainingDue,
+            dueDate: stmt.dueDate,
+            daysUntilDue,
+            isOverdue: daysUntilDue < 0,
+            status: 'pending',
+          });
+        }
       }
     }
 
@@ -1028,6 +1035,7 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       emiTrackers: state.emiTrackers,
       sipPlans: state.sipPlans,
       commitments: state.commitments,
+      creditCardStatements: state.creditCardStatements,
       horizonDays,
       includeDiscretionaryBurn,
     });

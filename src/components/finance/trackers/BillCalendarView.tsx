@@ -13,10 +13,13 @@ import {
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { PayCreditCardModal } from '../credit-cards/PayCreditCardModal';
+import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
 
 interface CalendarEventItem {
   id: string;
   sourceId: string;
+  statementId?: string;
   day: number;
   kind: 'bill' | 'emi' | 'sip' | 'commitment' | 'credit_card';
   title: string;
@@ -34,12 +37,16 @@ export function BillCalendarView() {
   const recurringBills = useFinanceStore((s) => s.recurringBills);
   const emiTrackers = useFinanceStore((s) => s.emiTrackers);
   const sipPlans = useFinanceStore((s) => s.sipPlans);
+  const creditCardStatements = useFinanceStore((s) => s.creditCardStatements);
   const getAllCommitmentLedgers = useFinanceStore((s) => s.getAllCommitmentLedgers);
 
   const payRecurringBill = useFinanceStore((s) => s.payRecurringBill);
   const payMonthlyEmi = useFinanceStore((s) => s.payMonthlyEmi);
   const payMonthlySip = useFinanceStore((s) => s.payMonthlySip);
   const settleCommitmentBalance = useFinanceStore((s) => s.settleCommitmentBalance);
+
+  const [payingCardAccount, setPayingCardAccount] = useState<FinanceAccount | null>(null);
+  const [payingCardStatement, setPayingCardStatement] = useState<CreditCardStatement | null>(null);
 
   const [yearNum, monthNum] = selectedMonth.split('-').map((n) => parseInt(n, 10));
   const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
@@ -137,10 +144,35 @@ export function BillCalendarView() {
       });
     }
 
+    // Credit card statement dues falling in this month
+    const processedCardIds = new Set<string>();
+    for (const stmt of creditCardStatements) {
+      if (stmt.deletedAt) continue;
+      if (stmt.dueDate.startsWith(selectedMonth)) {
+        const card = accounts.find((a) => a.id === stmt.accountId && !a.deletedAt && !a.archived);
+        if (!card) continue;
+        processedCardIds.add(card.id);
+        const dueDayNum = parseInt(stmt.dueDate.slice(8, 10), 10);
+        pushEvent(dueDayNum, {
+          id: `card-stmt-${stmt.id}`,
+          sourceId: card.id,
+          statementId: stmt.id,
+          day: dueDayNum,
+          kind: 'credit_card',
+          title: `${card.name} Due`,
+          subtitle: `Statement (${stmt.periodStart} – ${stmt.periodEnd})`,
+          amount: stmt.remainingDue > 0 ? stmt.remainingDue : stmt.totalDue,
+          isPaid: stmt.status === 'paid' || stmt.remainingDue <= 0,
+        });
+      }
+    }
+
+    // Fallback for credit cards without generated statement in this month
     for (const acc of accounts) {
       if (acc.type !== 'credit_card' || acc.deletedAt || acc.archived || !acc.dueDay) {
         continue;
       }
+      if (processedCardIds.has(acc.id)) continue;
       const dueAmt = acc.balance < 0 ? Math.abs(acc.balance) : acc.balance;
       if (dueAmt <= 0) continue;
       pushEvent(acc.dueDay, {
@@ -161,6 +193,7 @@ export function BillCalendarView() {
     emiTrackers,
     sipPlans,
     commitmentLedgers,
+    creditCardStatements,
     accounts,
     transactions,
     selectedMonth,
@@ -391,9 +424,24 @@ export function BillCalendarView() {
                       Settled for {selectedMonth}
                     </span>
                   ) : ev.kind === 'credit_card' ? (
-                    <span className="text-[11px] text-muted-foreground">
-                      Pay card in Accounts tab
-                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        const card = accounts.find((a) => a.id === ev.sourceId);
+                        if (card) {
+                          const stmt = ev.statementId
+                            ? creditCardStatements.find((s) => s.id === ev.statementId)
+                            : null;
+                          setPayingCardAccount(card);
+                          setPayingCardStatement(stmt || null);
+                        }
+                      }}
+                      className="h-8 px-3 text-xs rounded-lg gap-1 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Pay {formatINR(ev.amount)}</span>
+                    </Button>
                   ) : (
                     <Button
                       type="button"
@@ -417,6 +465,21 @@ export function BillCalendarView() {
           </div>
         )}
       </div>
+
+      {payingCardAccount && (
+        <PayCreditCardModal
+          open={!!payingCardAccount}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPayingCardAccount(null);
+              setPayingCardStatement(null);
+            }
+          }}
+          card={payingCardAccount}
+          statement={payingCardStatement}
+          defaultAmount={payingCardStatement?.remainingDue || undefined}
+        />
+      )}
     </div>
   );
 }

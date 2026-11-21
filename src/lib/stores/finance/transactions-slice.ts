@@ -58,6 +58,9 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
       linkedDebtInstallmentId: null,
       linkedEmiId: data.linkedEmiId || null,
       linkedSipId: data.linkedSipId || null,
+      statementCycleKey: data.statementCycleKey || null,
+      paidStatementId: data.paidStatementId || null,
+      isCreditCardPayment: data.isCreditCardPayment ?? false,
       merchantName: data.merchantName?.trim(),
       rawMerchant: data.rawMerchant?.trim(),
       needsReview: data.needsReview ?? false,
@@ -129,6 +132,10 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     await db.financeTransactions.add(tx);
     await get().loadFinanceData(userId);
     await get().recordCurrentNetWorthSnapshot(monthKey);
+    const toAcc = data.type === 'transfer' && data.toAccountId ? get().accounts.find((a) => a.id === data.toAccountId) : null;
+    if (account?.type === 'credit_card' || toAcc?.type === 'credit_card') {
+      await get().syncCardStatements(account?.type === 'credit_card' ? account.id : toAcc?.id);
+    }
     notifyFinanceSync();
 
     if (tx.type === 'expense') {
@@ -239,6 +246,10 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     await db.financeTransactions.update(id, updatedFields);
     await get().loadFinanceData(userId);
     await get().recordCurrentNetWorthSnapshot(updatedDate.slice(0, 7));
+    const affectedAcc = get().accounts.find((a) => a.id === (data.accountId || existing.accountId));
+    if (affectedAcc?.type === 'credit_card') {
+      await get().syncCardStatements(affectedAcc.id);
+    }
     notifyFinanceSync();
 
     const updatedType = data.type || existing.type;
@@ -335,6 +346,9 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     await db.financeTransactions.update(id, { deletedAt: now, isDirty: true, updatedAt: now });
     await get().loadFinanceData(userId);
     await get().recordCurrentNetWorthSnapshot();
+    if (account?.type === 'credit_card') {
+      await get().syncCardStatements(account.id);
+    }
     notifyFinanceSync();
   },
 

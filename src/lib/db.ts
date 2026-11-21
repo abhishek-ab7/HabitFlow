@@ -24,6 +24,7 @@ import type {
   FinanceCategorizationRule,
   FinanceRecurringBill,
   FinanceNetWorthSnapshot,
+  CreditCardStatement,
 } from './types';
 
 // Domain Type Aliases to resolve Primitive Obsession
@@ -55,6 +56,7 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   financeCategorizationRules: EntityTable<FinanceCategorizationRule, 'id'>;
   financeRecurringBills: EntityTable<FinanceRecurringBill, 'id'>;
   financeNetWorthSnapshots: EntityTable<FinanceNetWorthSnapshot, 'id'>;
+  creditCardStatements: EntityTable<CreditCardStatement, 'id'>;
 };
 
 // Schema version 5 - Added HabitRoutines junction table for many-to-many
@@ -332,6 +334,11 @@ db.version(14).stores({
   }
 });
 
+// Schema version 15 - Multi-Card Credit Card Billing Cycles & Dual-Bucket Statements
+db.version(15).stores({
+  creditCardStatements: 'id, userId, accountId, cycleKey, [accountId+cycleKey], status, dueDate, updatedAt, deletedAt',
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 
@@ -340,7 +347,7 @@ const syncTables = [
   'financeBudgets', 'monthlyCommitments', 'debtRecords',
   'debtInstallments', 'emiTrackers',
   'financeSipPlans', 'financeCategorizationRules', 'financeRecurringBills',
-  'financeNetWorthSnapshots'
+  'financeNetWorthSnapshots', 'creditCardStatements'
 ];
 
 syncTables.forEach(tableName => {

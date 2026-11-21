@@ -1,5 +1,6 @@
 import type {
   CashFlowForecastPoint,
+  CreditCardStatement,
   EmiTracker,
   FinanceAccount,
   FinanceBudget,
@@ -17,6 +18,7 @@ export interface CashFlowForecastInput {
   emiTrackers: EmiTracker[];
   sipPlans: FinanceSipPlan[];
   commitments: MonthlyCommitment[];
+  creditCardStatements?: CreditCardStatement[];
   horizonDays: 30 | 60 | 90;
   includeDiscretionaryBurn?: boolean;
 }
@@ -64,6 +66,7 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
     emiTrackers,
     sipPlans,
     commitments,
+    creditCardStatements,
     horizonDays,
     includeDiscretionaryBurn = true,
   } = input;
@@ -204,6 +207,18 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
         if (dom === dueDay) {
           scheduledOutflow += Number(comm.monthlyTargetAmount || 0);
           events.push(`Commitment: ${comm.title}`);
+        }
+      }
+
+      // Credit Card Statements Due
+      if (creditCardStatements && creditCardStatements.length > 0) {
+        for (const stmt of creditCardStatements) {
+          if (stmt.deletedAt || stmt.status === 'paid' || stmt.remainingDue <= 0) continue;
+          if (stmt.dueDate === dateStr) {
+            const card = accounts.find((a) => a.id === stmt.accountId);
+            scheduledOutflow += Number(stmt.remainingDue);
+            events.push(`Credit Card: ${card?.name || 'Card'} Bill`);
+          }
         }
       }
 

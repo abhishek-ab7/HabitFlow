@@ -42,6 +42,7 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
   categorizationRules: [],
   recurringBills: [],
   netWorthSnapshots: [],
+  creditCardStatements: [],
   selectedMonth: getCurrentMonthKey(),
   filters: INITIAL_FILTERS,
   isLoading: true,
@@ -184,6 +185,9 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
       db.financeNetWorthSnapshots
         ? db.financeNetWorthSnapshots.where('userId').equals(userId).delete()
         : Promise.resolve(),
+      db.creditCardStatements
+        ? db.creditCardStatements.where('userId').equals(userId).delete()
+        : Promise.resolve(),
     ]);
 
     const userAccounts = await db.financeAccounts.where('userId').equals(userId).toArray();
@@ -302,6 +306,7 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
         categorizationRules,
         recurringBills,
         netWorthSnapshots,
+        creditCardStatements,
       ] = await Promise.all([
         db.financeCategories
           .where('userId')
@@ -373,6 +378,13 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
               .filter((s) => !s.deletedAt)
               .sortBy('monthKey')
           : Promise.resolve([]),
+        db.creditCardStatements
+          ? db.creditCardStatements
+              .where('userId')
+              .equals(userId)
+              .filter((s) => !s.deletedAt)
+              .toArray()
+          : Promise.resolve([]),
       ]);
 
       const uniqueCategories: FinanceCategory[] = [];
@@ -412,6 +424,7 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
         categorizationRules,
         recurringBills,
         netWorthSnapshots,
+        creditCardStatements,
         isLoading: false,
       });
     } catch (error) {
