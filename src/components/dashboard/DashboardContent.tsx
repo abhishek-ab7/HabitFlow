@@ -15,7 +15,6 @@ import {
   Flame,
   Shield,
   MessageSquareText,
-  Crosshair,
   AlertCircle,
 } from 'lucide-react';
 import { useHabitStore } from '@/lib/stores/habit-store';
@@ -45,7 +44,6 @@ import {
 import OnboardingWizard from '@/components/dashboard/OnboardingWizard';
 import DashboardTour from '@/components/dashboard/DashboardTour';
 import { MoodCheckIn } from '@/components/dashboard/MoodCheckIn';
-import { FocusModeOverlay } from '@/components/dashboard/FocusModeOverlay';
 import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
 import { SmsImportModal } from '@/components/finance/SmsImportModal';
 import { AskFinancesDrawer } from '@/components/finance/AskFinancesDrawer';
@@ -147,7 +145,6 @@ export default function DashboardContent() {
   const loadDashboardLayout = useUIStore((s) => s.loadDashboardLayout);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showTour, setShowTour] = useState(false);
-  const [isFocusOpen, setIsFocusOpen] = useState(false);
   const [workspaceLens, setWorkspaceLens] = useState<WorkspaceLens>('all');
   const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
@@ -314,19 +311,6 @@ export default function DashboardContent() {
       }
     }
   }, [showOnboarding, isLoading, isEmpty]);
-
-  useEffect(() => {
-    if (!showOnboarding && !showTour && !isEmpty && !authLoading) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const userId = user?.id || 'guest';
-      const started = localStorage.getItem(
-        `focus_mode_started_${userId}_${todayStr}`
-      );
-      if (started !== 'true') {
-        setIsFocusOpen(true);
-      }
-    }
-  }, [showOnboarding, showTour, isEmpty, authLoading, user?.id]);
 
   useEffect(() => {
     if ((habits.length > 0 || goals.length > 0) && showOnboarding) {
@@ -690,19 +674,9 @@ export default function DashboardContent() {
           </div>
         )}
 
-        {/* Right: Compact Inline 5-Mood Strip + Focus Mode */}
+        {/* Right: Compact Inline 5-Mood Strip */}
         <div className="flex items-center justify-between sm:justify-end gap-2.5 shrink-0">
           <MoodCheckIn compact />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsFocusOpen(true)}
-            className="min-h-[38px] px-3 rounded-xl gap-1.5 text-xs font-semibold whitespace-nowrap"
-          >
-            <Crosshair className="w-3.5 h-3.5 text-primary" />
-            <span>Focus</span>
-          </Button>
         </div>
       </header>
 
@@ -1069,10 +1043,6 @@ export default function DashboardContent() {
       <AskFinancesDrawer
         open={isAskAiOpen}
         onOpenChange={setIsAskAiOpen}
-      />
-      <FocusModeOverlay
-        isOpen={isFocusOpen}
-        onClose={() => setIsFocusOpen(false)}
       />
       {showTour && <DashboardTour onClose={() => setShowTour(false)} />}
     </div>

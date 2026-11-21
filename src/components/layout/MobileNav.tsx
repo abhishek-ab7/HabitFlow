@@ -31,7 +31,6 @@ import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
 import { SmsImportModal } from '@/components/finance/SmsImportModal';
 import { HabitFormModal } from '@/components/habits/habit-form-modal';
 import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
-import { FocusModeOverlay } from '@/components/dashboard/FocusModeOverlay';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { toast } from 'sonner';
@@ -100,7 +99,6 @@ export function MobileNav() {
   const [isSmsImportOpen, setIsSmsImportOpen] = useState(false);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [isNewHabitOpen, setIsNewHabitOpen] = useState(false);
-  const [isFocusOverlayOpen, setIsFocusOverlayOpen] = useState(false);
 
   const { addHabit } = useHabitStore();
   const settings = useGamificationStore((s) => s.settings);
@@ -273,18 +271,6 @@ export function MobileNav() {
       onClick: () => {
         setIsQuickAddOpen(false);
         setIsNewHabitOpen(true);
-      },
-    },
-    {
-      id: 'focus',
-      title: 'Start Focus Mode',
-      description: 'Enter zen focus flow for today’s highest priority habits',
-      icon: Sparkles,
-      color: 'text-warning bg-warning/10 border-warning/20',
-      badge: 'Zen Flow',
-      onClick: () => {
-        setIsQuickAddOpen(false);
-        setIsFocusOverlayOpen(true);
       },
     },
   ];
@@ -602,11 +588,6 @@ export function MobileNav() {
           toast.success('Habit created!');
           setIsNewHabitOpen(false);
         }}
-      />
-
-      <FocusModeOverlay
-        isOpen={isFocusOverlayOpen}
-        onClose={() => setIsFocusOverlayOpen(false)}
       />
     </>
   );

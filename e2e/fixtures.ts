@@ -107,23 +107,14 @@ export const test = base.extend<{
     });
 
     await page.goto('/login');
-    await page.evaluate(({ userId }) => {
-      const todayStr = new Date().toISOString().split('T')[0];
+    await page.evaluate(() => {
       localStorage.setItem('habitflow_onboarded', 'true');
       localStorage.setItem('habitflow_dashboard_tutorial_completed', 'true');
-      localStorage.setItem(`focus_mode_started_${userId}_${todayStr}`, 'true');
-      localStorage.setItem(`focus_mode_started_guest_${todayStr}`, 'true');
-    }, { userId });
+    });
     await page.getByPlaceholder('Email address').fill(email);
     await page.getByPlaceholder('Password').fill(password);
     await page.locator('form button[type="submit"]').click();
     await page.waitForURL('**/dashboard');
-
-    // Dismiss focus mode overlay if visible
-    const focusOverlayCloseButton = page.locator('button:has-text("Close")');
-    if (await focusOverlayCloseButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await focusOverlayCloseButton.click();
-    }
 
     // 3. Seed IndexedDB with initial active habit and 100 XP
     await page.evaluate(async ({ userId }) => {
