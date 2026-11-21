@@ -5,6 +5,7 @@ import type {
   CommitmentLedgerSummary,
   DailyPacePoint,
   FinancialObligationItem,
+  FriendLedgerGroup,
 } from '@/lib/types';
 import {
   formatINR,
@@ -23,6 +24,7 @@ export type AnalyticsSlice = Pick<
   | 'getCommitmentLedger'
   | 'getAllCommitmentLedgers'
   | 'getMonthlySummary'
+  | 'getFriendLedgerGroups'
   | 'getDebtSummary'
   | 'getDebtInstallments'
   | 'getUpcomingFinancialObligations'
@@ -537,6 +539,104 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
     };
   },
 
+  getFriendLedgerGroups: () => {
+    const records = get().debtRecords.filter((d) => !d.deletedAt && d.status !== 'archived');
+    const groupMap = new Map<
+      string,
+      {
+        friendKey: string;
+        friendName: string;
+        contactInfo?: string;
+        records: typeof records;
+      }
+    >();
+
+    for (const record of records) {
+      const trimmed = record.personName.trim();
+      const key = trimmed.toLowerCase();
+      if (!key) continue;
+
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          friendKey: key,
+          friendName: trimmed,
+          contactInfo: record.contactInfo,
+          records: [],
+        });
+      }
+      const g = groupMap.get(key)!;
+      g.records.push(record);
+      if (trimmed !== trimmed.toLowerCase() && g.friendName === g.friendName.toLowerCase()) {
+        g.friendName = trimmed;
+      }
+      if (!g.contactInfo && record.contactInfo) {
+        g.contactInfo = record.contactInfo;
+      }
+    }
+
+    const groups: FriendLedgerGroup[] = [];
+
+    for (const item of groupMap.values()) {
+      const everydayRecords = item.records.filter((d) => d.bucketType === 'everyday_split');
+      const longTermLoans = item.records.filter((d) => d.bucketType !== 'everyday_split');
+
+      const everydayBorrowedRemaining = everydayRecords
+        .filter((d) => d.direction === 'borrowed' && d.status === 'active')
+        .reduce((sum, d) => sum + d.remainingAmount, 0);
+      const everydayLentRemaining = everydayRecords
+        .filter((d) => d.direction === 'lent' && d.status === 'active')
+        .reduce((sum, d) => sum + d.remainingAmount, 0);
+      const everydayNet = everydayLentRemaining - everydayBorrowedRemaining;
+
+      const longTermBorrowedRemaining = longTermLoans
+        .filter((d) => d.direction === 'borrowed' && d.status === 'active')
+        .reduce((sum, d) => sum + d.remainingAmount, 0);
+      const longTermLentRemaining = longTermLoans
+        .filter((d) => d.direction === 'lent' && d.status === 'active')
+        .reduce((sum, d) => sum + d.remainingAmount, 0);
+      const longTermNetPosition = longTermLentRemaining - longTermBorrowedRemaining;
+
+      const activeLoansBorrowed = longTermLoans.filter(
+        (d) => d.direction === 'borrowed' && d.status === 'active' && d.remainingAmount > 0
+      );
+      const activeLoansLent = longTermLoans.filter(
+        (d) => d.direction === 'lent' && d.status === 'active' && d.remainingAmount > 0
+      );
+
+      const canOffsetAgainstLoan =
+        (everydayNet > 0 && activeLoansBorrowed.length > 0) ||
+        (everydayNet < 0 && activeLoansLent.length > 0);
+
+      const hasActiveEntries =
+        everydayRecords.some((d) => d.status === 'active') ||
+        longTermLoans.some((d) => d.status === 'active');
+
+      groups.push({
+        friendKey: item.friendKey,
+        friendName: item.friendName,
+        contactInfo: item.contactInfo,
+        everydayRecords,
+        everydayBorrowedRemaining,
+        everydayLentRemaining,
+        everydayNet,
+        longTermLoans,
+        longTermBorrowedRemaining,
+        longTermLentRemaining,
+        longTermNetPosition,
+        canOffsetAgainstLoan,
+        hasActiveEntries,
+      });
+    }
+
+    return groups.sort((a, b) => {
+      if (a.hasActiveEntries && !b.hasActiveEntries) return -1;
+      if (!a.hasActiveEntries && b.hasActiveEntries) return 1;
+      const totalA = Math.abs(a.everydayNet) + a.longTermBorrowedRemaining + a.longTermLentRemaining;
+      const totalB = Math.abs(b.everydayNet) + b.longTermBorrowedRemaining + b.longTermLentRemaining;
+      return totalB - totalA;
+    });
+  },
+
   getDebtSummary: () => {
     const activeBorrowed = get().debtRecords.filter(
       (d) => d.direction === 'borrowed' && d.status === 'active' && !d.deletedAt
@@ -554,6 +654,19 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       0
     );
 
+    // Isolated Bucket Breakdowns
+    const everydayBorrowed = activeBorrowed.filter((d) => d.bucketType === 'everyday_split');
+    const everydayLent = activeLent.filter((d) => d.bucketType === 'everyday_split');
+    const everydayBorrowedRemaining = everydayBorrowed.reduce((sum, d) => sum + d.remainingAmount, 0);
+    const everydayLentRemaining = everydayLent.reduce((sum, d) => sum + d.remainingAmount, 0);
+    const everydayNetPosition = everydayLentRemaining - everydayBorrowedRemaining;
+
+    const longTermBorrowed = activeBorrowed.filter((d) => d.bucketType !== 'everyday_split');
+    const longTermLent = activeLent.filter((d) => d.bucketType !== 'everyday_split');
+    const longTermBorrowedRemaining = longTermBorrowed.reduce((sum, d) => sum + d.remainingAmount, 0);
+    const longTermLentRemaining = longTermLent.reduce((sum, d) => sum + d.remainingAmount, 0);
+    const longTermNetPosition = longTermLentRemaining - longTermBorrowedRemaining;
+
     return {
       totalBorrowedRemaining,
       totalLentRemaining,
@@ -561,6 +674,12 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       plannedInstallmentsThisMonth,
       activeBorrowedCount: activeBorrowed.length,
       activeLentCount: activeLent.length,
+      everydayBorrowedRemaining,
+      everydayLentRemaining,
+      everydayNetPosition,
+      longTermBorrowedRemaining,
+      longTermLentRemaining,
+      longTermNetPosition,
     };
   },
 

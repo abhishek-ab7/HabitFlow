@@ -681,6 +681,7 @@ export interface CommitmentLedgerSummary {
 export type DebtDirection = 'borrowed' | 'lent';
 export type DebtRepaymentSchedule = 'monthly_partial' | 'lump_sum' | 'flexible';
 export type DebtStatus = 'active' | 'settled' | 'archived';
+export type DebtBucketType = 'everyday_split' | 'long_term_loan';
 
 export interface DebtRecord {
   id: string;
@@ -698,6 +699,12 @@ export interface DebtRecord {
   plannedMonthlyInstallment?: number;
   dueDayOfMonth?: number;
   status: DebtStatus;
+  bucketType?: DebtBucketType;
+  isEmi?: boolean;
+  emiAmount?: number;
+  emiDueDay?: number;
+  totalInstallments?: number;
+  paidInstallments?: number;
   notes?: string;
   color: string;
   deletedAt?: string | null;
@@ -705,6 +712,37 @@ export interface DebtRecord {
   updatedAt: string;
   generationCounter?: number;
   isDirty?: boolean;
+}
+
+export interface FriendLedgerGroup {
+  friendKey: string;
+  friendName: string;
+  contactInfo?: string;
+  everydayRecords: DebtRecord[];
+  everydayBorrowedRemaining: number;
+  everydayLentRemaining: number;
+  everydayNet: number; // positive = friend owes user; negative = user owes friend
+  longTermLoans: DebtRecord[];
+  longTermBorrowedRemaining: number;
+  longTermLentRemaining: number;
+  longTermNetPosition: number; // positive = net lent, negative = net borrowed
+  canOffsetAgainstLoan: boolean;
+  hasActiveEntries: boolean;
+}
+
+export interface DebtSummaryBreakdown {
+  totalBorrowedRemaining: number;
+  totalLentRemaining: number;
+  netPosition: number;
+  plannedInstallmentsThisMonth: number;
+  activeBorrowedCount: number;
+  activeLentCount: number;
+  everydayBorrowedRemaining: number;
+  everydayLentRemaining: number;
+  everydayNetPosition: number;
+  longTermBorrowedRemaining: number;
+  longTermLentRemaining: number;
+  longTermNetPosition: number;
 }
 
 export type DebtPaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'offset_expense';

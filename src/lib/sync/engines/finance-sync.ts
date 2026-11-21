@@ -518,6 +518,12 @@ export class FinanceSyncEngine implements ISynchronizer {
         planned_monthly_installment: debt.plannedMonthlyInstallment || null,
         due_day_of_month: debt.dueDayOfMonth || null,
         status: debt.deletedAt ? 'archived' : debt.status,
+        bucket_type: debt.bucketType || 'long_term_loan',
+        is_emi: !!debt.isEmi,
+        emi_amount: debt.emiAmount ?? null,
+        emi_due_day: debt.emiDueDay ?? null,
+        total_installments: debt.totalInstallments ?? null,
+        paid_installments: debt.paidInstallments ?? 0,
         notes: debt.notes || null,
         color: debt.color,
         deleted_at: debt.deletedAt || null,
@@ -525,7 +531,25 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: debt.createdAt,
         updated_at: debt.updatedAt,
       };
-      const { error } = await (supabase.from('debt_records') as any).upsert(payload);
+      let { error } = await (supabase.from('debt_records') as any).upsert(payload);
+      if (
+        error &&
+        (error.code === '42703' ||
+          error.message?.includes('bucket_type') ||
+          error.message?.includes('is_emi'))
+      ) {
+        const {
+          bucket_type,
+          is_emi,
+          emi_amount,
+          emi_due_day,
+          total_installments,
+          paid_installments,
+          ...fallbackPayload
+        } = payload;
+        const res = await (supabase.from('debt_records') as any).upsert(fallbackPayload);
+        error = res.error;
+      }
       if (!error) {
         await db.debtRecords.update(debt.id, { isDirty: false });
         pushed++;
@@ -563,6 +587,12 @@ export class FinanceSyncEngine implements ISynchronizer {
                 : undefined,
               dueDayOfMonth: r.due_day_of_month ? Number(r.due_day_of_month) : undefined,
               status: r.status || 'active',
+              bucketType: (r.bucket_type as any) || 'long_term_loan',
+              isEmi: r.is_emi ?? false,
+              emiAmount: r.emi_amount ? Number(r.emi_amount) : undefined,
+              emiDueDay: r.emi_due_day ? Number(r.emi_due_day) : undefined,
+              totalInstallments: r.total_installments ? Number(r.total_installments) : undefined,
+              paidInstallments: r.paid_installments ? Number(r.paid_installments) : 0,
               notes: r.notes || undefined,
               color: r.color || '#3b82f6',
               deletedAt: r.deleted_at || null,

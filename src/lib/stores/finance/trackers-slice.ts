@@ -30,6 +30,8 @@ export type TrackersSlice = Pick<
   | 'deleteDebtInstallment'
   | 'topUpDebt'
   | 'deleteDebtRecord'
+  | 'settleEverydayTab'
+  | 'offsetSplitAgainstLoan'
   | 'addEmiTracker'
   | 'updateEmiTracker'
   | 'payMonthlyEmi'
@@ -138,6 +140,9 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     const now = new Date().toISOString();
     const record: DebtRecord = {
       ...data,
+      bucketType: data.bucketType || 'long_term_loan',
+      isEmi: !!data.isEmi,
+      paidInstallments: data.paidInstallments || 0,
       id: crypto.randomUUID(),
       userId,
       totalRepaidAmount: 0,
@@ -298,10 +303,14 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     };
 
     await db.debtInstallments.add(installment);
+    const newPaidInstallments = debt.isEmi
+      ? (debt.paidInstallments || 0) + 1
+      : debt.paidInstallments;
     await db.debtRecords.update(debt.id, {
       totalRepaidAmount: newRepaid,
       remainingAmount: newRemaining,
       status: newStatus,
+      paidInstallments: newPaidInstallments,
       isDirty: true,
       updatedAt: now,
     });
@@ -536,6 +545,190 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     await get().loadFinanceData(debt.userId);
     await get().recordCurrentNetWorthSnapshot();
     notifyFinanceSync();
+  },
+
+  settleEverydayTab: async (normalizedFriendName, options) => {
+    const userId = await resolveCurrentUserId(undefined, get().currentUserId);
+    const key = normalizedFriendName.trim().toLowerCase();
+    const activeSplits = get().debtRecords.filter(
+      (d) =>
+        !d.deletedAt &&
+        d.status === 'active' &&
+        d.bucketType === 'everyday_split' &&
+        d.personName.trim().toLowerCase() === key
+    );
+
+    if (activeSplits.length === 0) return null;
+
+    const lentTotal = activeSplits
+      .filter((d) => d.direction === 'lent')
+      .reduce((sum, d) => sum + d.remainingAmount, 0);
+    const borrowedTotal = activeSplits
+      .filter((d) => d.direction === 'borrowed')
+      .reduce((sum, d) => sum + d.remainingAmount, 0);
+    const net = lentTotal - borrowedTotal;
+
+    const now = new Date().toISOString();
+    const txDate = options.date || now.split('T')[0];
+    const monthKey = txDate.slice(0, 7);
+
+    // Mark all active everyday splits for this friend as settled
+    for (const split of activeSplits) {
+      await db.debtRecords.update(split.id, {
+        remainingAmount: 0,
+        totalRepaidAmount: split.principalAmount,
+        status: 'settled',
+        isDirty: true,
+        generationCounter: (split.generationCounter || 1) + 1,
+        updatedAt: now,
+      });
+    }
+
+    let tx: FinanceTransaction | null = null;
+    const absNet = Math.abs(net);
+
+    if (absNet > 0) {
+      const selectedAccount =
+        (options.accountId && get().accounts.find((a) => a.id === options.accountId)) ||
+        get().accounts.find((a) => a.isDefault) ||
+        get().accounts[0];
+
+      const debtCat =
+        get().categories.find((c) => c.slug === 'emis-debt-repayment') ||
+        get().categories[0];
+
+      if (selectedAccount && debtCat) {
+        const txType = net > 0 ? 'income' : 'expense';
+        const friendDisplayName = activeSplits[0].personName;
+        const transactionId = crypto.randomUUID();
+
+        tx = {
+          id: transactionId,
+          userId,
+          title: `Settled Everyday Tab with ${friendDisplayName}`,
+          amount: absNet,
+          type: txType,
+          categoryId: debtCat.id,
+          subcategory: 'Everyday Split Settlement',
+          accountId: selectedAccount.id,
+          date: txDate,
+          monthKey,
+          notes:
+            options.note ||
+            `Settled everyday split tab via ${options.paymentMethod.toUpperCase()} (${formatINR(absNet)})`,
+          tags: ['tab-settlement', key],
+          isRecurring: false,
+          isDirty: true,
+          generationCounter: 1,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        await db.financeTransactions.add(tx);
+
+        const balanceDelta = txType === 'income' ? absNet : -absNet;
+        await db.financeAccounts.update(selectedAccount.id, {
+          balance: selectedAccount.balance + balanceDelta,
+          isDirty: true,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await get().loadFinanceData(userId);
+    await get().recordCurrentNetWorthSnapshot(monthKey);
+    notifyFinanceSync();
+
+    return tx;
+  },
+
+  offsetSplitAgainstLoan: async (friendKey, loanId, amount) => {
+    if (amount <= 0) return false;
+    const targetLoan = get().debtRecords.find((d) => d.id === loanId);
+    if (!targetLoan || targetLoan.remainingAmount < amount) return false;
+
+    const key = friendKey.trim().toLowerCase();
+    const activeSplits = get().debtRecords.filter(
+      (d) =>
+        !d.deletedAt &&
+        d.status === 'active' &&
+        d.bucketType === 'everyday_split' &&
+        d.personName.trim().toLowerCase() === key
+    );
+
+    const requiredSplitDirection = targetLoan.direction === 'borrowed' ? 'lent' : 'borrowed';
+    const eligibleSplits = activeSplits.filter((d) => d.direction === requiredSplitDirection);
+
+    const totalEligible = eligibleSplits.reduce((sum, d) => sum + d.remainingAmount, 0);
+    if (totalEligible < amount) return false;
+
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
+    const monthKey = today.slice(0, 7);
+
+    // 1. Record offset_expense installment on target loan
+    const installmentId = crypto.randomUUID();
+    const newLoanRepaid = targetLoan.totalRepaidAmount + amount;
+    const newLoanRemaining = Math.max(0, targetLoan.principalAmount - newLoanRepaid);
+    const newLoanStatus = newLoanRemaining <= 0 ? 'settled' : 'active';
+    const newPaidInstallments = targetLoan.isEmi
+      ? (targetLoan.paidInstallments || 0) + 1
+      : targetLoan.paidInstallments;
+
+    const installment: DebtInstallment = {
+      id: installmentId,
+      userId: targetLoan.userId,
+      debtId: targetLoan.id,
+      amount,
+      date: today,
+      monthKey,
+      paymentMethod: 'offset_expense',
+      transactionId: null,
+      note: `Offset ${formatINR(amount)} against everyday tab split`,
+      balanceAfterPayment: newLoanRemaining,
+      isDirty: true,
+      generationCounter: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await db.debtInstallments.add(installment);
+    await db.debtRecords.update(targetLoan.id, {
+      totalRepaidAmount: newLoanRepaid,
+      remainingAmount: newLoanRemaining,
+      status: newLoanStatus,
+      paidInstallments: newPaidInstallments,
+      isDirty: true,
+      generationCounter: (targetLoan.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+
+    // 2. Coordinated reduction of eligible everyday splits
+    let remainingToAbsorb = amount;
+    for (const split of eligibleSplits) {
+      if (remainingToAbsorb <= 0) break;
+      const absorb = Math.min(split.remainingAmount, remainingToAbsorb);
+      const nextRemaining = split.remainingAmount - absorb;
+      const nextRepaid = split.totalRepaidAmount + absorb;
+      const nextStatus = nextRemaining <= 0 ? 'settled' : 'active';
+
+      await db.debtRecords.update(split.id, {
+        remainingAmount: nextRemaining,
+        totalRepaidAmount: nextRepaid,
+        status: nextStatus,
+        isDirty: true,
+        generationCounter: (split.generationCounter || 1) + 1,
+        updatedAt: now,
+      });
+
+      remainingToAbsorb -= absorb;
+    }
+
+    await get().loadFinanceData(targetLoan.userId);
+    await get().recordCurrentNetWorthSnapshot(monthKey);
+    notifyFinanceSync();
+
+    return true;
   },
 
   addEmiTracker: async (data) => {

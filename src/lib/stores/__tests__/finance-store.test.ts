@@ -722,4 +722,202 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
       useFinanceStore.getState().debtInstallments.find((i) => i.id === inst2!.id)
     ).toBeUndefined();
   });
+
+  test('15. getFriendLedgerGroups keeps Everyday Splits and Long-Term Loans isolated per friend', async () => {
+    const store = useFinanceStore.getState();
+
+    // Friend Rahul: Loan of 10,000 borrowed (I owe him), and Everyday split of 400 lent (he owes me)
+    await store.addDebtRecord({
+      personName: 'Rahul',
+      direction: 'borrowed',
+      title: 'Laptop Loan',
+      principalAmount: 10000,
+      bucketType: 'long_term_loan',
+      isEmi: true,
+      emiAmount: 2000,
+      startDate: `${currentMonth}-01`,
+      repaymentSchedule: 'monthly_partial',
+      color: '#f43f5e',
+    });
+
+    await store.addDebtRecord({
+      personName: 'rahul ', // Test normalized name grouping
+      direction: 'lent',
+      title: 'Dinner at Social',
+      principalAmount: 400,
+      bucketType: 'everyday_split',
+      startDate: `${currentMonth}-02`,
+      repaymentSchedule: 'flexible',
+      color: '#10b981',
+    });
+
+    const groups = store.getFriendLedgerGroups();
+    expect(groups.length).toBe(1);
+
+    const rahul = groups[0];
+    expect(rahul.friendKey).toBe('rahul');
+    expect(rahul.friendName).toBe('Rahul');
+
+    // Everyday tab net: +400 (Rahul owes user)
+    expect(rahul.everydayNet).toBe(400);
+    expect(rahul.everydayLentRemaining).toBe(400);
+    expect(rahul.everydayBorrowedRemaining).toBe(0);
+
+    // Long-term loan remains untouched at 10,000 borrowed (user owes Rahul)
+    expect(rahul.longTermBorrowedRemaining).toBe(10000);
+    expect(rahul.longTermLentRemaining).toBe(0);
+    expect(rahul.longTermLoans.length).toBe(1);
+    expect(rahul.longTermLoans[0].title).toBe('Laptop Loan');
+    expect(rahul.longTermLoans[0].remainingAmount).toBe(10000);
+
+    // Opposite directions -> canOffsetAgainstLoan is true
+    expect(rahul.canOffsetAgainstLoan).toBe(true);
+
+    // Debt summary isolated breakdown
+    const summary = store.getDebtSummary();
+    expect(summary.everydayNetPosition).toBe(400);
+    expect(summary.longTermNetPosition).toBe(-10000);
+    expect(summary.netPosition).toBe(-9600);
+  });
+
+  test('16. settleEverydayTab settles mixed everyday entries and logs a single net transaction', async () => {
+    const store = useFinanceStore.getState();
+    const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+    await store.updateAccount(upiAcc.id, { balance: 5000 });
+
+    // Split 1: Rahul owes user 600
+    await store.addDebtRecord({
+      personName: 'Rahul',
+      direction: 'lent',
+      title: 'Lunch Split',
+      principalAmount: 600,
+      bucketType: 'everyday_split',
+      startDate: `${currentMonth}-01`,
+      repaymentSchedule: 'flexible',
+      color: '#10b981',
+    });
+
+    // Split 2: User owes Rahul 200
+    await store.addDebtRecord({
+      personName: 'Rahul',
+      direction: 'borrowed',
+      title: 'Cab Share',
+      principalAmount: 200,
+      bucketType: 'everyday_split',
+      startDate: `${currentMonth}-02`,
+      repaymentSchedule: 'flexible',
+      color: '#f43f5e',
+    });
+
+    const groupsBefore = store.getFriendLedgerGroups();
+    expect(groupsBefore[0].everydayNet).toBe(400); // 600 - 200 = 400 net owed to user
+
+    // Settle tab
+    const tx = await store.settleEverydayTab('rahul', {
+      accountId: upiAcc.id,
+      paymentMethod: 'upi',
+      note: 'Settled over UPI',
+    });
+
+    expect(tx).not.toBeNull();
+    expect(tx!.amount).toBe(400);
+    expect(tx!.type).toBe('income'); // User was owed 400 net -> income
+
+    // Account balance increased by 400 (5000 -> 5400)
+    const updatedAcc = useFinanceStore.getState().accounts.find((a) => a.id === upiAcc.id)!;
+    expect(updatedAcc.balance).toBe(5400);
+
+    // All everyday records for Rahul marked settled
+    const activeDebts = useFinanceStore.getState().debtRecords.filter(
+      (d) => d.personName.toLowerCase() === 'rahul' && d.status === 'active'
+    );
+    expect(activeDebts.length).toBe(0);
+
+    const groupsAfter = useFinanceStore.getState().getFriendLedgerGroups();
+    expect(groupsAfter[0].everydayNet).toBe(0);
+  });
+
+  test('17. offsetSplitAgainstLoan coordinates debt reduction without moving bank cash', async () => {
+    const store = useFinanceStore.getState();
+    const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+    await store.updateAccount(upiAcc.id, { balance: 5000 });
+
+    const loan = await store.addDebtRecord({
+      personName: 'Rahul',
+      direction: 'borrowed',
+      title: 'Bike Loan',
+      principalAmount: 5000,
+      bucketType: 'long_term_loan',
+      isEmi: true,
+      paidInstallments: 0,
+      startDate: `${currentMonth}-01`,
+      repaymentSchedule: 'monthly_partial',
+      color: '#f43f5e',
+    });
+
+    await store.addDebtRecord({
+      personName: 'Rahul',
+      direction: 'lent',
+      title: 'Groceries Split',
+      principalAmount: 1000,
+      bucketType: 'everyday_split',
+      startDate: `${currentMonth}-03`,
+      repaymentSchedule: 'flexible',
+      color: '#10b981',
+    });
+
+    // Offset ₹1000 everyday split against loan
+    const success = await store.offsetSplitAgainstLoan('rahul', loan.id, 1000);
+    expect(success).toBe(true);
+
+    // Bank account remains exactly 5000 (no duplicate cash movement)
+    expect(useFinanceStore.getState().accounts.find((a) => a.id === upiAcc.id)!.balance).toBe(5000);
+
+    // Loan reduced to 4000, paid installments incremented to 1
+    const updatedLoan = useFinanceStore.getState().debtRecords.find((d) => d.id === loan.id)!;
+    expect(updatedLoan.remainingAmount).toBe(4000);
+    expect(updatedLoan.totalRepaidAmount).toBe(1000);
+    expect(updatedLoan.paidInstallments).toBe(1);
+
+    // Installment recorded with offset_expense and null transactionId
+    const installments = useFinanceStore.getState().getDebtInstallments(loan.id);
+    expect(installments.length).toBe(1);
+    expect(installments[0].paymentMethod).toBe('offset_expense');
+    expect(installments[0].transactionId).toBeNull();
+
+    // Everyday split reduced to 0 and settled
+    const everydaySplit = useFinanceStore.getState().debtRecords.find(
+      (d) => d.bucketType === 'everyday_split' && d.personName === 'Rahul'
+    )!;
+    expect(everydaySplit.remainingAmount).toBe(0);
+    expect(everydaySplit.status).toBe('settled');
+  });
+
+  test('18. splitTransactionWithFriend defaults to everyday_split', async () => {
+    const store = useFinanceStore.getState();
+    const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
+    const foodCat = store.categories.find((c) => c.slug === 'food-dining')!;
+    await store.updateAccount(upiAcc.id, { balance: 2000 });
+
+    await store.splitTransactionWithFriend({
+      txData: {
+        title: 'Dinner at Bawarchi',
+        amount: 800,
+        type: 'expense',
+        categoryId: foodCat.id,
+        accountId: upiAcc.id,
+        date: `${currentMonth}-05`,
+      },
+      friendName: 'Amit',
+      friendShareAmount: 400,
+    });
+
+    // Created a new everyday split
+    const friendSplit = useFinanceStore.getState().debtRecords.find(
+      (d) => d.personName.toLowerCase() === 'amit' && d.bucketType === 'everyday_split'
+    );
+    expect(friendSplit).toBeDefined();
+    expect(friendSplit!.remainingAmount).toBe(400);
+    expect(friendSplit!.bucketType).toBe('everyday_split');
+  });
 });

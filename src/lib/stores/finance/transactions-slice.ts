@@ -416,27 +416,39 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     } else {
       debtRecord = get().debtRecords.find(
         (d) =>
+          d.bucketType === 'everyday_split' &&
           d.direction === 'lent' &&
           d.status === 'active' &&
-          d.personName.toLowerCase() === friendName.trim().toLowerCase()
+          d.personName.trim().toLowerCase() === friendName.trim().toLowerCase()
       );
     }
 
     if (debtRecord && friendPortion > 0) {
-      await get().topUpDebt(
-        debtRecord.id,
-        friendPortion,
-        `Split: ${txData.title} (${txData.date})`
-      );
+      if (debtRecord.direction === 'borrowed') {
+        await get().recordDebtInstallment({
+          debtId: debtRecord.id,
+          amount: friendPortion,
+          date: txData.date,
+          paymentMethod: 'offset_expense',
+          note: `Repayment via split: ${txData.title}`,
+        });
+      } else {
+        await get().topUpDebt(
+          debtRecord.id,
+          friendPortion,
+          `Split: ${txData.title} (${txData.date})`
+        );
+      }
       debtRecord = get().debtRecords.find((d) => d.id === debtRecord!.id);
     } else if (friendPortion > 0) {
       debtRecord = await get().addDebtRecord({
         personName: friendName.trim(),
         direction: 'lent',
-        title: `Split: ${txData.title}`,
+        title: `Everyday Split: ${txData.title}`,
         principalAmount: friendPortion,
         startDate: txData.date,
         repaymentSchedule: 'flexible',
+        bucketType: 'everyday_split',
         color: '#10b981',
         notes: `Created from split expense "${txData.title}" on ${txData.date}`,
       });
@@ -444,10 +456,11 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
       debtRecord = await get().addDebtRecord({
         personName: friendName.trim(),
         direction: 'lent',
-        title: `Split: ${txData.title}`,
+        title: `Everyday Split: ${txData.title}`,
         principalAmount: 0,
         startDate: txData.date,
         repaymentSchedule: 'flexible',
+        bucketType: 'everyday_split',
         color: '#10b981',
       });
     }

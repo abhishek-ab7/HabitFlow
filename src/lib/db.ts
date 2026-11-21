@@ -316,6 +316,22 @@ db.version(13).stores({
   financeNetWorthSnapshots: 'id, userId, monthKey, [userId+monthKey], updatedAt',
 });
 
+// Schema version 14 - Per-Friend Isolated Ledgers: Everyday Splits vs. Long-Term Loans / EMIs
+db.version(14).stores({
+  debtRecords: 'id, userId, direction, status, bucketType, updatedAt',
+}).upgrade(async (tx) => {
+  const debts = await tx.table('debtRecords').toArray();
+  for (const d of debts) {
+    if (!d.bucketType) {
+      await tx.table('debtRecords').update(d.id, {
+        bucketType: 'long_term_loan',
+        isEmi: d.isEmi ?? false,
+        paidInstallments: d.paidInstallments ?? 0,
+      });
+    }
+  }
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 

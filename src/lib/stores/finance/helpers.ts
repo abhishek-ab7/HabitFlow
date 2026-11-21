@@ -22,6 +22,8 @@ import type {
   DebtRecord,
   DebtInstallment,
   DebtPaymentMethod,
+  FriendLedgerGroup,
+  DebtSummaryBreakdown,
   EmiTracker,
   NetWorthSummary,
   DailyPacePoint,
@@ -369,6 +371,20 @@ export interface FinanceStore {
   deleteDebtInstallment: (id: string) => Promise<void>;
   topUpDebt: (debtId: string, additionalAmount: number, note?: string) => Promise<void>;
   deleteDebtRecord: (id: string) => Promise<void>;
+  settleEverydayTab: (
+    normalizedFriendName: string,
+    options: {
+      accountId?: string;
+      paymentMethod: DebtPaymentMethod;
+      date?: string;
+      note?: string;
+    }
+  ) => Promise<FinanceTransaction | null>;
+  offsetSplitAgainstLoan: (
+    friendKey: string,
+    loanId: string,
+    amount: number
+  ) => Promise<boolean>;
 
   // EMI Amortization Tracker
   addEmiTracker: (
@@ -477,14 +493,8 @@ export interface FinanceStore {
   getDailySpendingPace: (monthKey?: string) => DailyPacePoint[];
   getCommitmentLedger: (commitmentId: string, monthKey?: string) => CommitmentLedgerSummary | null;
   getAllCommitmentLedgers: (monthKey?: string) => CommitmentLedgerSummary[];
-  getDebtSummary: () => {
-    totalBorrowedRemaining: number;
-    totalLentRemaining: number;
-    netPosition: number;
-    plannedInstallmentsThisMonth: number;
-    activeBorrowedCount: number;
-    activeLentCount: number;
-  };
+  getFriendLedgerGroups: () => FriendLedgerGroup[];
+  getDebtSummary: () => DebtSummaryBreakdown;
   getDebtInstallments: (debtId: string) => DebtInstallment[];
   getUpcomingFinancialObligations: (withinDays?: number) => FinancialObligationItem[];
   getFilteredTransactions: (monthKey?: string) => FinanceTransaction[];

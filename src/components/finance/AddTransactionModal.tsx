@@ -1713,7 +1713,7 @@ export function AddTransactionModal({
                         <option value="none">None</option>
                         {activeDebts.map((d) => (
                           <option key={d.id} value={d.id}>
-                            {d.personName} ({d.direction === 'borrowed' ? 'I owe' : 'Owes me'})
+                            {d.personName} - {d.title} [{d.bucketType === 'everyday_split' ? 'Everyday' : 'Loan'}] ({d.direction === 'borrowed' ? 'I owe' : 'Owes me'})
                           </option>
                         ))}
                       </select>
