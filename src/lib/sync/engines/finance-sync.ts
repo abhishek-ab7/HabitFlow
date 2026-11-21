@@ -11,21 +11,24 @@ const missingRemoteFinanceColumns = new Map<string, Set<string>>();
 function isMissingRelationError(err: any): boolean {
   if (!err) return false;
   const code = String(err.code || '');
-  const msg = String(err.message || '');
+  const msg = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`;
   return (
     code === 'PGRST205' ||
     code === '42P01' ||
     msg.includes('Could not find the table') ||
+    msg.includes('in the schema cache') ||
     msg.includes('does not exist') ||
-    Number(err.status) === 404
+    Number(err.status) === 404 ||
+    Number(err.statusCode) === 404
   );
 }
 
 function getMissingColumnName(err: any): string | null {
   if (!err) return null;
-  const msg = `${err.message || ''} ${err.details || ''}`;
+  const msg = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`;
   const m =
     msg.match(/Could not find the ['"]([a-z0-9_]+)['"] column/i) ||
+    msg.match(/column\s+["']?([a-z0-9_]+)["']?\s+(?:of|does not exist)/i) ||
     msg.match(/column\s+["']?([a-z0-9_]+)["']?\s+does not exist/i);
   return m ? m[1] : null;
 }
@@ -45,6 +48,43 @@ function recordMissingColumn(table: string, col: string) {
     missingRemoteFinanceColumns.set(table, set);
   }
   set.add(col);
+  logger.info(`[FinanceSyncEngine] Detected missing remote column '${col}' on table '${table}'. Stripping for subsequent upserts.`);
+}
+
+async function upsertWithColumnFallback(
+  supabase: any,
+  table: string,
+  payload: Record<string, any>,
+  options?: { onConflict?: string }
+): Promise<{ error: any }> {
+  let currentPayload = stripKnownMissingColumns(table, payload);
+  let result = options?.onConflict
+    ? await (supabase.from(table) as any).upsert(currentPayload, options)
+    : await (supabase.from(table) as any).upsert(currentPayload);
+  let error = result.error;
+  let attempts = 0;
+  while (
+    error &&
+    attempts < 8 &&
+    ((error as any).code === 'PGRST204' ||
+      (error as any).code === '42703' ||
+      String(error.message || '').includes('Could not find') ||
+      String(error.message || '').includes('does not exist'))
+  ) {
+    const missingCol = getMissingColumnName(error);
+    if (missingCol && Object.prototype.hasOwnProperty.call(currentPayload, missingCol)) {
+      recordMissingColumn(table, missingCol);
+      currentPayload = stripKnownMissingColumns(table, currentPayload);
+      attempts++;
+      result = options?.onConflict
+        ? await (supabase.from(table) as any).upsert(currentPayload, options)
+        : await (supabase.from(table) as any).upsert(currentPayload);
+      error = result.error;
+    } else {
+      break;
+    }
+  }
+  return { error };
 }
 
 /**
@@ -264,7 +304,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: cat.createdAt || new Date().toISOString(),
         updated_at: cat.updatedAt || new Date().toISOString(),
       };
-      const { error } = await (supabase.from('finance_categories') as any).upsert(payload);
+      const { error } = await upsertWithColumnFallback(supabase, 'finance_categories', payload);
       if (!error) {
         await db.financeCategories.update(cat.id, { isDirty: false });
         pushed++;
@@ -358,7 +398,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: acc.createdAt || new Date().toISOString(),
         updated_at: acc.updatedAt || new Date().toISOString(),
       };
-      const { error } = await (supabase.from('finance_accounts') as any).upsert(payload);
+      const { error } = await upsertWithColumnFallback(supabase, 'finance_accounts', payload);
       if (!error) {
         await db.financeAccounts.update(acc.id, { isDirty: false });
         pushed++;
@@ -452,7 +492,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: comm.createdAt || new Date().toISOString(),
         updated_at: comm.updatedAt || new Date().toISOString(),
       };
-      const { error } = await (supabase.from('monthly_commitments') as any).upsert(payload);
+      const { error } = await upsertWithColumnFallback(supabase, 'monthly_commitments', payload);
       if (!error) {
         await db.monthlyCommitments.update(comm.id, { isDirty: false });
         pushed++;
@@ -538,25 +578,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: debt.createdAt,
         updated_at: debt.updatedAt,
       };
-      let { error } = await (supabase.from('debt_records') as any).upsert(payload);
-      if (
-        error &&
-        (error.code === '42703' ||
-          error.message?.includes('bucket_type') ||
-          error.message?.includes('is_emi'))
-      ) {
-        const {
-          bucket_type,
-          is_emi,
-          emi_amount,
-          emi_due_day,
-          total_installments,
-          paid_installments,
-          ...fallbackPayload
-        } = payload;
-        const res = await (supabase.from('debt_records') as any).upsert(fallbackPayload);
-        error = res.error;
-      }
+      const { error } = await upsertWithColumnFallback(supabase, 'debt_records', payload);
       if (!error) {
         await db.debtRecords.update(debt.id, { isDirty: false });
         pushed++;
@@ -640,7 +662,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: inst.createdAt,
         updated_at: inst.updatedAt,
       };
-      const { error } = await (supabase.from('debt_installments') as any).upsert(payload);
+      const { error } = await upsertWithColumnFallback(supabase, 'debt_installments', payload);
       if (!error) {
         await db.debtInstallments.update(inst.id, { isDirty: false });
         pushed++;
@@ -716,7 +738,7 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: emi.createdAt,
         updated_at: emi.updatedAt,
       };
-      const { error } = await (supabase.from('emi_trackers') as any).upsert(payload);
+      const { error } = await upsertWithColumnFallback(supabase, 'emi_trackers', payload);
       if (!error) {
         await db.emiTrackers.update(emi.id, { isDirty: false });
         pushed++;
@@ -827,21 +849,10 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: tx.createdAt || new Date().toISOString(),
         updated_at: tx.updatedAt || new Date().toISOString(),
       };
-      const filteredTxPayload = stripKnownMissingColumns('finance_transactions', payload);
-      let { error } = await (supabase.from('finance_transactions') as any).upsert(filteredTxPayload);
-      if (error && (error as any).code === 'PGRST204') {
-        const missingCol = getMissingColumnName(error);
-        if (missingCol) {
-          recordMissingColumn('finance_transactions', missingCol);
-          const retryCol = await (supabase.from('finance_transactions') as any).upsert(
-            stripKnownMissingColumns('finance_transactions', payload)
-          );
-          error = retryCol.error;
-        }
-      }
+      let { error } = await upsertWithColumnFallback(supabase, 'finance_transactions', payload);
       if (error && (error as any).code === '23503') {
         logger.warn('[FinanceSyncEngine] Foreign key 23503 violation on transaction upsert, retrying with unlinked references:', error);
-        const unlinkedPayload = stripKnownMissingColumns('finance_transactions', {
+        const unlinkedPayload = {
           ...payload,
           linked_commitment_id: null,
           commitment_contribution_type: null,
@@ -849,8 +860,8 @@ export class FinanceSyncEngine implements ISynchronizer {
           linked_debt_installment_id: null,
           linked_emi_id: null,
           linked_sip_id: null,
-        });
-        const retryResult = await (supabase.from('finance_transactions') as any).upsert(unlinkedPayload);
+        };
+        const retryResult = await upsertWithColumnFallback(supabase, 'finance_transactions', unlinkedPayload);
         error = retryResult.error;
       }
       if (!error) {
@@ -954,18 +965,9 @@ export class FinanceSyncEngine implements ISynchronizer {
         created_at: budget.createdAt,
         updated_at: budget.updatedAt,
       };
-      const filteredBudgetPayload = stripKnownMissingColumns('finance_budgets', payload);
-      let { error } = await (supabase.from('finance_budgets') as any)
-        .upsert(filteredBudgetPayload, { onConflict: 'user_id,month_key' });
-      if (error && (error as any).code === 'PGRST204') {
-        const missingCol = getMissingColumnName(error);
-        if (missingCol) {
-          recordMissingColumn('finance_budgets', missingCol);
-          const retryBudget = await (supabase.from('finance_budgets') as any)
-            .upsert(stripKnownMissingColumns('finance_budgets', payload), { onConflict: 'user_id,month_key' });
-          error = retryBudget.error;
-        }
-      }
+      const { error } = await upsertWithColumnFallback(supabase, 'finance_budgets', payload, {
+        onConflict: 'user_id,month_key',
+      });
       if (!error) {
         await db.financeBudgets.update(budget.id, { isDirty: false });
         pushed++;
@@ -1029,7 +1031,7 @@ export class FinanceSyncEngine implements ISynchronizer {
           .filter((s) => s.isDirty !== false)
           .toArray();
         for (const sip of dirtySips) {
-          const { error } = await (supabase.from('finance_sip_plans') as any).upsert({
+          const { error } = await upsertWithColumnFallback(supabase, 'finance_sip_plans', {
             id: sip.id,
             user_id: userId,
             name: sip.name,
@@ -1105,7 +1107,7 @@ export class FinanceSyncEngine implements ISynchronizer {
           .filter((r) => r.isDirty !== false)
           .toArray();
         for (const rule of dirtyRules) {
-          const { error } = await (supabase.from('finance_categorization_rules') as any).upsert({
+          const { error } = await upsertWithColumnFallback(supabase, 'finance_categorization_rules', {
             id: rule.id,
             user_id: userId,
             match_pattern: rule.matchPattern,
@@ -1159,7 +1161,7 @@ export class FinanceSyncEngine implements ISynchronizer {
           .filter((b) => b.isDirty !== false)
           .toArray();
         for (const bill of dirtyBills) {
-          const { error } = await (supabase.from('finance_recurring_bills') as any).upsert({
+          const { error } = await upsertWithColumnFallback(supabase, 'finance_recurring_bills', {
             id: bill.id,
             user_id: userId,
             name: bill.name,
@@ -1226,7 +1228,9 @@ export class FinanceSyncEngine implements ISynchronizer {
           .toArray();
         for (const snap of dirtySnapshots) {
           if (missingRemoteFinanceTables.has('finance_net_worth_snapshots')) break;
-          const { error } = await (supabase.from('finance_net_worth_snapshots') as any).upsert(
+          const { error } = await upsertWithColumnFallback(
+            supabase,
+            'finance_net_worth_snapshots',
             {
               id: snap.id,
               user_id: userId,
@@ -1314,7 +1318,12 @@ export class FinanceSyncEngine implements ISynchronizer {
               .delete()
               .eq('id', s.id)
               .eq('user_id', userId);
-            if (!error) {
+            if (error) {
+              if (isMissingRelationError(error)) {
+                missingRemoteFinanceTables.add('credit_card_statements');
+                break;
+              }
+            } else {
               await db.creditCardStatements.delete(s.id);
               pushed++;
             }
@@ -1343,7 +1352,9 @@ export class FinanceSyncEngine implements ISynchronizer {
             updated_at: s.updatedAt || new Date().toISOString(),
             deleted_at: s.deletedAt || null,
           };
-          const { error } = await (supabase.from('credit_card_statements') as any).upsert(
+          const { error } = await upsertWithColumnFallback(
+            supabase,
+            'credit_card_statements',
             payload,
             { onConflict: 'user_id,account_id,cycle_key' }
           );

@@ -590,4 +590,54 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     const localStmt = await db.creditCardStatements.get('stmt-1');
     expect(localStmt?.isDirty).toBe(false);
   });
+
+  test('12. Gracefully falls back when finance_accounts has missing billing_day column (PGRST204)', async () => {
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+
+    let attempts = 0;
+    customTableHandlers['finance_accounts'] = {
+      upsert: vi.fn(async (payload: any) => {
+        attempts++;
+        if (payload.billing_day !== undefined) {
+          return {
+            error: {
+              code: 'PGRST204',
+              message: "Could not find the 'billing_day' column of 'finance_accounts' in the schema cache",
+            },
+          };
+        }
+        return { error: null };
+      }),
+      delete: mockDelete,
+      select: mockSelect,
+    };
+
+    await db.financeAccounts.add({
+      id: 'acc-slice-1',
+      userId,
+      name: 'Slice Card',
+      type: 'credit_card',
+      balance: -22000,
+      creditLimit: 100000,
+      billingDay: 21,
+      dueDay: 5,
+      currency: 'INR',
+      color: '#6366f1',
+      icon: 'CreditCard',
+      isDefault: false,
+      archived: false,
+      isDirty: true,
+      generationCounter: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(attempts).toBe(2); // First failed with PGRST204, second succeeded without billing_day
+
+    const localAcc = await db.financeAccounts.get('acc-slice-1');
+    expect(localAcc?.isDirty).toBe(false);
+  });
 });
