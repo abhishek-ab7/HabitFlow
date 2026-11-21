@@ -1159,9 +1159,9 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                   const now = new Date();
                   const win = getCycleWindowForMonth(bDay, dDay, now.getFullYear(), now.getMonth());
                   return (
-                    <div className="col-span-3 text-[11px] text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 p-2 rounded-lg">
-                      Next bill generates on <strong>{win.periodEnd}</strong> · Due on{' '}
-                      <strong className="text-amber-400">{win.dueDate}</strong>
+                    <div className="col-span-3 text-[11px] text-primary bg-primary/10 border border-primary/20 p-2.5 rounded-xl">
+                      Next bill generates on <strong className="text-foreground">{win.periodEnd}</strong> · Due on{' '}
+                      <strong className="text-amber-600 dark:text-amber-400">{win.dueDate}</strong>
                     </div>
                   );
                 })()}
@@ -1307,9 +1307,9 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                   const now = new Date();
                   const win = getCycleWindowForMonth(bDay, dDay, now.getFullYear(), now.getMonth());
                   return (
-                    <div className="col-span-3 text-[11px] text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 p-2 rounded-lg">
-                      Next bill generates on <strong>{win.periodEnd}</strong> · Due on{' '}
-                      <strong className="text-amber-400">{win.dueDate}</strong>
+                    <div className="col-span-3 text-[11px] text-primary bg-primary/10 border border-primary/20 p-2.5 rounded-xl">
+                      Next bill generates on <strong className="text-foreground">{win.periodEnd}</strong> · Due on{' '}
+                      <strong className="text-amber-600 dark:text-amber-400">{win.dueDate}</strong>
                     </div>
                   );
                 })()}

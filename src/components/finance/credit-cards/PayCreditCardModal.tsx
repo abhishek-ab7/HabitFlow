@@ -105,7 +105,7 @@ export function PayCreditCardModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto bg-card border border-border text-card-foreground shadow-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <span className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">

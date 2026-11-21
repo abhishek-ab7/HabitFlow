@@ -1281,11 +1281,11 @@ export function AddTransactionModal({
                   const [y, m] = cycleKey.split('-').map(Number);
                   const cycleWin = getCycleWindowForMonth(bDay, dDay, y, m - 1, selectedAcc.gracePeriodDays);
                   return (
-                    <div className="mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
-                      <CreditCard className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                    <div className="mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 text-xs text-primary">
+                      <CreditCard className="w-3.5 h-3.5 shrink-0 text-primary" />
                       <span>
-                        Bill Cycle: <strong className="text-zinc-100">{cycleWin.periodEnd}</strong> · Due on{' '}
-                        <strong className="text-amber-400">{cycleWin.dueDate}</strong>
+                        Bill Cycle: <strong className="text-foreground">{cycleWin.periodEnd}</strong> · Due on{' '}
+                        <strong className="text-amber-600 dark:text-amber-400">{cycleWin.dueDate}</strong>
                       </span>
                     </div>
                   );
