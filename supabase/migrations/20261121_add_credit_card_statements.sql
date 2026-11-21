@@ -17,7 +17,7 @@ ALTER TABLE finance_transactions ADD COLUMN IF NOT EXISTS is_credit_card_payment
 CREATE TABLE IF NOT EXISTS credit_card_statements (
   id text PRIMARY KEY,
   user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  account_id text REFERENCES finance_accounts(id) ON DELETE CASCADE NOT NULL,
+  account_id uuid REFERENCES finance_accounts(id) ON DELETE CASCADE NOT NULL,
   cycle_key text NOT NULL,
   period_start date NOT NULL,
   period_end date NOT NULL,
