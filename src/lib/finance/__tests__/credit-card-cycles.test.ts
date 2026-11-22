@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  getLocalIsoDate,
+  formatOrdinal,
+  formatShortDate,
   getValidDateInMonth,
   addDays,
   daysBetween,
@@ -505,6 +508,281 @@ describe('Credit Card Cycle Engine (credit-card-cycles.ts)', () => {
       expect(updatedStatements[0].remainingDue).toBe(0);
       expect(updatedStatements[1].remainingDue).toBe(0);
       expect(unallocatedAmount).toBe(5000); // 5000 credit surplus
+    });
+  });
+
+  describe('10. Edge-Case Hardening & Formatting Helpers', () => {
+    const account = createMockAccount({
+      id: 'acc-slice-1',
+      creditLimit: 100000,
+      billingDay: 21,
+      dueDay: 5,
+    });
+
+    it('getLocalIsoDate returns local calendar YYYY-MM-DD even just after local midnight', () => {
+      const localMidnight = new Date(2026, 10, 21, 0, 15, 0); // Nov 21 00:15 local
+      expect(getLocalIsoDate(localMidnight)).toBe('2026-11-21');
+    });
+
+    it('formatOrdinal formats 1st, 2nd, 3rd, 11th-13th, 21st, 22nd, 31st accurately', () => {
+      expect(formatOrdinal(1)).toBe('1st');
+      expect(formatOrdinal(2)).toBe('2nd');
+      expect(formatOrdinal(3)).toBe('3rd');
+      expect(formatOrdinal(4)).toBe('4th');
+      expect(formatOrdinal(11)).toBe('11th');
+      expect(formatOrdinal(12)).toBe('12th');
+      expect(formatOrdinal(13)).toBe('13th');
+      expect(formatOrdinal(21)).toBe('21st');
+      expect(formatOrdinal(22)).toBe('22nd');
+      expect(formatOrdinal(23)).toBe('23rd');
+      expect(formatOrdinal(31)).toBe('31st');
+    });
+
+    it('formatShortDate formats plain and timestamped ISO dates into compact labels', () => {
+      expect(formatShortDate('2026-12-05')).toBe('5 Dec');
+      expect(formatShortDate('2026-11-21T10:15:00.000Z')).toBe('21 Nov');
+    });
+
+    it('normalizes full ISO timestamp strings on billing day so spends stay in the closing cycle', () => {
+      expect(resolveTransactionCycle('2026-11-21T10:15:00.000Z', 21, 5)).toBe('2026-11');
+
+      const txs = [
+        createMockTransaction({ id: 'tx-ts', amount: 1500, date: '2026-11-21T23:59:59.000Z' }),
+      ];
+      const summary = computeCreditCardSummary({
+        account,
+        transactions: txs,
+        referenceDate: '2026-11-25T08:00:00.000Z',
+      });
+
+      expect(summary.currentBilledStatement?.cycleKey).toBe('2026-11');
+      expect(summary.billedDueTotal).toBe(1500);
+      expect(summary.unbilledCycle.amount).toBe(0);
+    });
+
+    it('treats investment transactions on a credit card as card spend while only income reduces spend', () => {
+      const txs = [
+        createMockTransaction({ id: 'tx-exp', type: 'expense', amount: 1000, date: '2026-11-10' }),
+        createMockTransaction({ id: 'tx-inv', type: 'investment', amount: 2500, date: '2026-11-12' }),
+        createMockTransaction({ id: 'tx-inc', type: 'income', amount: 500, date: '2026-11-15' }),
+        createMockTransaction({ id: 'tx-unb-inv', type: 'investment', amount: 3000, date: '2026-11-24' }),
+      ];
+
+      const summary = computeCreditCardSummary({
+        account,
+        transactions: txs,
+        referenceDate: '2026-11-25',
+      });
+
+      // Billed = 1000 + 2500 - 500 = 3000
+      expect(summary.billedDueTotal).toBe(3000);
+      // Unbilled = 3000
+      expect(summary.unbilledCycle.amount).toBe(3000);
+    });
+
+    it('eliminates floating-point paise drift so exact fractional bill settles cleanly to paid', () => {
+      const txs = [
+        createMockTransaction({ id: 'tx-f1', amount: 100.1, date: '2026-11-10' }),
+        createMockTransaction({ id: 'tx-f2', amount: 200.2, date: '2026-11-12' }),
+        createMockTransaction({
+          id: 'tx-pay-f',
+          type: 'transfer',
+          accountId: 'acc-bank-1',
+          toAccountId: 'acc-slice-1',
+          isCreditCardPayment: true,
+          amount: 300.3,
+          date: '2026-11-25',
+        }),
+      ];
+
+      const summary = computeCreditCardSummary({
+        account,
+        transactions: txs,
+        referenceDate: '2026-11-26',
+      });
+
+      expect(summary.billedDueTotal).toBe(0);
+      expect(summary.currentBilledStatement).toBeNull();
+    });
+
+    it('sorts explicitly linked bill payments before unlinked waterfall payments regardless of array order', () => {
+      const octTx = createMockTransaction({ id: 'tx-oct', amount: 5000, date: '2026-10-10' });
+      const novTx = createMockTransaction({ id: 'tx-nov', amount: 8000, date: '2026-11-10' });
+
+      // Put an unlinked payment FIRST in raw array, then a linked payment targeting 2026-11 SECOND
+      const unlinkedPay = createMockTransaction({
+        id: 'pay-unlinked',
+        type: 'transfer',
+        accountId: 'acc-bank-1',
+        toAccountId: 'acc-slice-1',
+        isCreditCardPayment: true,
+        amount: 5000,
+        date: '2026-11-24',
+      });
+      const linkedPayNov = createMockTransaction({
+        id: 'pay-linked-nov',
+        type: 'transfer',
+        accountId: 'acc-bank-1',
+        toAccountId: 'acc-slice-1',
+        isCreditCardPayment: true,
+        paidStatementId: 'acc-slice-1_2026-11',
+        amount: 8000,
+        date: '2026-11-25',
+      });
+
+      const summary = computeCreditCardSummary({
+        account,
+        transactions: [octTx, novTx, unlinkedPay, linkedPayNov],
+        referenceDate: '2026-11-26',
+      });
+
+      // Linked payment settles 2026-11 (8k); unlinked payment waterfalls to 2026-10 (5k) -> both settled
+      expect(summary.billedDueTotal).toBe(0);
+      expect(summary.currentBilledStatement).toBeNull();
+    });
+
+    it('preserves manual paidAmount on older statements even after logging a linked payment on a newer statement', () => {
+      const persistedStatements: CreditCardStatement[] = [
+        {
+          id: 'acc-slice-1_2026-10',
+          userId: 'user-1',
+          accountId: 'acc-slice-1',
+          cycleKey: '2026-10',
+          periodStart: '2026-09-22',
+          periodEnd: '2026-10-21',
+          dueDate: '2026-11-05',
+          calculatedAmount: 10000,
+          manualAdjustment: 0,
+          totalDue: 10000,
+          carriedForwardAmount: 0,
+          paidAmount: 10000, // Manually settled historically without a transfer tx
+          remainingDue: 0,
+          status: 'paid',
+          createdAt: '2026-10-21T00:00:00.000Z',
+          updatedAt: '2026-11-01T00:00:00.000Z',
+        },
+        {
+          id: 'acc-slice-1_2026-11',
+          userId: 'user-1',
+          accountId: 'acc-slice-1',
+          cycleKey: '2026-11',
+          periodStart: '2026-10-22',
+          periodEnd: '2026-11-21',
+          dueDate: '2026-12-05',
+          calculatedAmount: 22000,
+          manualAdjustment: 0,
+          totalDue: 22000,
+          carriedForwardAmount: 0,
+          paidAmount: 0,
+          remainingDue: 22000,
+          status: 'billed',
+          createdAt: '2026-11-21T00:00:00.000Z',
+          updatedAt: '2026-11-21T00:00:00.000Z',
+        },
+      ];
+
+      const novSpends = createMockTransaction({ id: 'tx-nov', amount: 22000, date: '2026-11-15' });
+      const novPayment = createMockTransaction({
+        id: 'pay-nov',
+        type: 'transfer',
+        accountId: 'acc-bank-1',
+        toAccountId: 'acc-slice-1',
+        isCreditCardPayment: true,
+        paidStatementId: 'acc-slice-1_2026-11',
+        amount: 22000,
+        date: '2026-11-25',
+      });
+
+      const summary = computeCreditCardSummary({
+        account,
+        transactions: [novSpends, novPayment],
+        persistedStatements,
+        referenceDate: '2026-11-26',
+      });
+
+      // October stays paid (not wiped to Overdue ₹10,000); November is paid -> billedDueTotal = 0
+      expect(summary.overdueStatements.length).toBe(0);
+      expect(summary.billedDueTotal).toBe(0);
+      expect(summary.currentBilledStatement).toBeNull();
+    });
+
+    it('only applies excess overpayment against unbilled spends when payment date is within the active unbilled cycle', () => {
+      const octSpend = createMockTransaction({ id: 'tx-oct', amount: 5000, date: '2026-10-10' });
+      const decUnbilledSpend = createMockTransaction({ id: 'tx-dec', amount: 10000, date: '2026-11-24' });
+      // Historical overpayment made on Nov 02 (before active unbilled cycle Nov 22 – Dec 21)
+      const oldOverpay = createMockTransaction({
+        id: 'pay-old-over',
+        type: 'transfer',
+        accountId: 'acc-bank-1',
+        toAccountId: 'acc-slice-1',
+        isCreditCardPayment: true,
+        amount: 7000, // 2000 excess over 5000 Oct spend
+        date: '2026-11-02',
+      });
+
+      const summary = computeCreditCardSummary({
+        account,
+        transactions: [octSpend, decUnbilledSpend, oldOverpay],
+        referenceDate: '2026-11-25',
+      });
+
+      expect(summary.billedDueTotal).toBe(0);
+      // Historical excess does NOT reduce the Dec unbilled cycle
+      expect(summary.unbilledCycle.amount).toBe(10000);
+    });
+
+    it('prevents double-counting carriedForwardAmount while an earlier billed statement remains unpaid', () => {
+      const octSpend = createMockTransaction({ id: 'tx-oct', amount: 5000, date: '2026-10-10' });
+      const novSpend = createMockTransaction({ id: 'tx-nov', amount: 3000, date: '2026-11-10' });
+
+      const persistedStatements: CreditCardStatement[] = [
+        {
+          id: 'acc-slice-1_2026-10',
+          userId: 'user-1',
+          accountId: 'acc-slice-1',
+          cycleKey: '2026-10',
+          periodStart: '2026-09-22',
+          periodEnd: '2026-10-21',
+          dueDate: '2026-11-05',
+          calculatedAmount: 5000,
+          manualAdjustment: 0,
+          totalDue: 5000,
+          carriedForwardAmount: 0,
+          paidAmount: 0,
+          remainingDue: 5000,
+          status: 'overdue',
+          createdAt: '2026-10-21T00:00:00.000Z',
+          updatedAt: '2026-10-21T00:00:00.000Z',
+        },
+        {
+          id: 'acc-slice-1_2026-11',
+          userId: 'user-1',
+          accountId: 'acc-slice-1',
+          cycleKey: '2026-11',
+          periodStart: '2026-10-22',
+          periodEnd: '2026-11-21',
+          dueDate: '2026-12-05',
+          calculatedAmount: 3000,
+          manualAdjustment: 0,
+          totalDue: 8000,
+          carriedForwardAmount: 5000, // Carried forward from Oct
+          paidAmount: 0,
+          remainingDue: 8000,
+          status: 'billed',
+          createdAt: '2026-11-21T00:00:00.000Z',
+          updatedAt: '2026-11-21T00:00:00.000Z',
+        },
+      ];
+
+      const summary = computeCreditCardSummary({
+        account,
+        transactions: [octSpend, novSpend],
+        persistedStatements,
+        referenceDate: '2026-11-25',
+      });
+
+      // Because 2026-10 (5000) is still open, 2026-11 should not also add carriedForwardAmount (5000)
+      expect(summary.billedDueTotal).toBe(8000);
     });
   });
 });

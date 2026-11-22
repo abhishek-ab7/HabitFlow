@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { formatINR } from '@/lib/stores/finance/helpers';
 import { useFinanceStore } from '@/lib/stores/finance-store';
 import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { Landmark, ArrowRight, ShieldCheck, Calendar, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -53,7 +54,7 @@ export function PayCreditCardModal({
 
   const [fromAccountId, setFromAccountId] = useState(defaultBank?.id || '');
   const [amount, setAmount] = useState(String(suggestedAmount || ''));
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => getLocalIsoDate());
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -63,7 +64,7 @@ export function PayCreditCardModal({
         setFromAccountId(defaultBank.id);
       }
       setAmount(String(suggestedAmount > 0 ? suggestedAmount : ''));
-      setDate(new Date().toISOString().slice(0, 10));
+      setDate(getLocalIsoDate());
       setNote('');
     }
   }, [open, suggestedAmount, defaultBank]);

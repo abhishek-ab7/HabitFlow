@@ -662,6 +662,7 @@ export interface Database {
           person_name: string;
           contact_info: string | null;
           direction: string;
+          bucket_type: string;
           title: string;
           principal_amount: number;
           total_repaid_amount: number;
@@ -671,6 +672,11 @@ export interface Database {
           repayment_schedule: string;
           planned_monthly_installment: number | null;
           due_day_of_month: number | null;
+          is_emi: boolean;
+          emi_amount: number | null;
+          emi_due_day: number | null;
+          total_installments: number | null;
+          paid_installments: number;
           status: string;
           notes: string | null;
           color: string;
@@ -684,6 +690,7 @@ export interface Database {
           person_name: string;
           contact_info?: string | null;
           direction: string;
+          bucket_type?: string;
           title: string;
           principal_amount: number;
           total_repaid_amount?: number;
@@ -693,6 +700,11 @@ export interface Database {
           repayment_schedule?: string;
           planned_monthly_installment?: number | null;
           due_day_of_month?: number | null;
+          is_emi?: boolean;
+          emi_amount?: number | null;
+          emi_due_day?: number | null;
+          total_installments?: number | null;
+          paid_installments?: number;
           status?: string;
           notes?: string | null;
           color?: string;
@@ -706,6 +718,7 @@ export interface Database {
           person_name?: string;
           contact_info?: string | null;
           direction?: string;
+          bucket_type?: string;
           title?: string;
           principal_amount?: number;
           total_repaid_amount?: number;
@@ -715,6 +728,11 @@ export interface Database {
           repayment_schedule?: string;
           planned_monthly_installment?: number | null;
           due_day_of_month?: number | null;
+          is_emi?: boolean;
+          emi_amount?: number | null;
+          emi_due_day?: number | null;
+          total_installments?: number | null;
+          paid_installments?: number;
           status?: string;
           notes?: string | null;
           color?: string;

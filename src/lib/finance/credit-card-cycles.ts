@@ -13,11 +13,70 @@ export interface CreditCardCycleWindow {
   dueDate: string;      // YYYY-MM-DD (e.g. "2026-12-05")
 }
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 /**
- * Parses YYYY-MM-DD safely into integer parts.
+ * Returns local calendar date as YYYY-MM-DD (avoids UTC midnight shift e.g. IST +05:30).
+ */
+export function getLocalIsoDate(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Normalizes YYYY-MM-DD or full ISO timestamp strings to YYYY-MM-DD.
+ */
+export function normalizeIsoDate(isoDate: string): string {
+  return (isoDate || '').trim().slice(0, 10);
+}
+
+/**
+ * Rounds currency amounts cleanly to 2 decimal places (paise precision) and normalizes -0 to 0.
+ */
+export function roundCurrency(value: number): number {
+  const rounded = Math.round((Number(value) || 0) * 100) / 100;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+/**
+ * Formats day numbers with proper English ordinal suffixes (1st, 2nd, 3rd, 11th, 21st).
+ */
+export function formatOrdinal(day: number): string {
+  const n = Math.trunc(day);
+  const mod100 = Math.abs(n) % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (Math.abs(n) % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+/**
+ * Formats YYYY-MM-DD (or ISO timestamp) into compact "5 Dec" / "21 Oct" without timezone drift.
+ */
+export function formatShortDate(isoDate: string): string {
+  const normalized = normalizeIsoDate(isoDate);
+  if (!normalized || normalized.length < 10) return isoDate || '';
+  const { month, day } = parseIsoDate(normalized);
+  const monthLabel = SHORT_MONTHS[month - 1];
+  if (!monthLabel || Number.isNaN(day)) return normalized;
+  return `${day} ${monthLabel}`;
+}
+
+/**
+ * Parses YYYY-MM-DD (or timestamped ISO string) safely into integer parts.
  */
 export function parseIsoDate(isoDate: string): { year: number; month: number; day: number } {
-  const parts = isoDate.split('-');
+  const normalized = normalizeIsoDate(isoDate);
+  const parts = normalized.split('-');
   const year = parseInt(parts[0], 10);
   const month = parseInt(parts[1], 10); // 1-indexed (1..12)
   const day = parseInt(parts[2], 10);
@@ -144,10 +203,10 @@ export function getCycleWindowForMonth(
  *
  * Core Rule:
  * 1. If manualOverrideCycleKey is specified on the transaction, return it.
- * 2. Parse txDate into (y, monthIndex).
+ * 2. Normalize txDate to YYYY-MM-DD and parse into (y, monthIndex).
  * 3. Find thisMonthEnd = getValidDateInMonth(y, monthIndex, billingDay).
- * 4. If txDate <= thisMonthEnd -> belongs to (y, monthIndex) cycle.
- * 5. If txDate > thisMonthEnd -> belongs to next month's (y, monthIndex + 1) cycle.
+ * 4. If normalizedDate <= thisMonthEnd -> belongs to (y, monthIndex) cycle.
+ * 5. If normalizedDate > thisMonthEnd -> belongs to next month's (y, monthIndex + 1) cycle.
  */
 export function resolveTransactionCycle(
   txDate: string,
@@ -159,11 +218,12 @@ export function resolveTransactionCycle(
     return manualOverrideCycleKey.trim();
   }
 
-  const { year, month } = parseIsoDate(txDate);
+  const normalizedDate = normalizeIsoDate(txDate);
+  const { year, month } = parseIsoDate(normalizedDate);
   const monthIndex = month - 1;
   const thisMonthEnd = getValidDateInMonth(year, monthIndex, billingDay);
 
-  if (txDate <= thisMonthEnd) {
+  if (normalizedDate <= thisMonthEnd) {
     return thisMonthEnd.slice(0, 7);
   }
 
@@ -182,7 +242,8 @@ export function getActiveUnbilledCycle(
   referenceDate: string,
   gracePeriodDays?: number
 ): CreditCardCycleWindow {
-  const { year, month } = parseIsoDate(referenceDate);
+  const normalizedRef = normalizeIsoDate(referenceDate);
+  const { year, month } = parseIsoDate(normalizedRef);
   const monthIndex = month - 1;
 
   const currentMonthCycle = getCycleWindowForMonth(
@@ -194,7 +255,7 @@ export function getActiveUnbilledCycle(
   );
 
   // If today is strictly before periodEnd, currentMonthCycle is still accumulating unbilled spends.
-  if (referenceDate < currentMonthCycle.periodEnd) {
+  if (normalizedRef < currentMonthCycle.periodEnd) {
     return currentMonthCycle;
   }
 
@@ -219,7 +280,7 @@ export function allocatePaymentToStatements(
   paymentAmount: number,
   targetStatementId?: string | null
 ): { updatedStatements: CreditCardStatement[]; unallocatedAmount: number } {
-  let remainingPayment = Math.max(0, paymentAmount);
+  let remainingPayment = roundCurrency(Math.max(0, paymentAmount));
   const updated: CreditCardStatement[] = statements.map((s) => ({ ...s }));
 
   if (remainingPayment <= 0) {
@@ -231,11 +292,11 @@ export function allocatePaymentToStatements(
     const targetIdx = updated.findIndex((s) => s.id === targetStatementId || s.cycleKey === targetStatementId);
     if (targetIdx !== -1) {
       const s = updated[targetIdx];
-      const allocatable = Math.max(0, s.remainingDue);
-      const paymentToApply = Math.min(remainingPayment, allocatable);
-      const newPaid = s.paidAmount + paymentToApply;
-      const newRemaining = Math.max(0, s.totalDue - newPaid);
-      remainingPayment -= paymentToApply;
+      const allocatable = roundCurrency(Math.max(0, s.remainingDue));
+      const paymentToApply = roundCurrency(Math.min(remainingPayment, allocatable));
+      const newPaid = roundCurrency(s.paidAmount + paymentToApply);
+      const newRemaining = roundCurrency(Math.max(0, s.totalDue - newPaid));
+      remainingPayment = roundCurrency(Math.max(0, remainingPayment - paymentToApply));
 
       let status: StatementStatus = s.status;
       if (newRemaining === 0 && s.totalDue > 0) {
@@ -264,11 +325,11 @@ export function allocatePaymentToStatements(
 
     for (const { s, idx } of unpaidIndices) {
       if (remainingPayment <= 0) break;
-      const allocatable = s.remainingDue;
-      const paymentToApply = Math.min(remainingPayment, allocatable);
-      const newPaid = s.paidAmount + paymentToApply;
-      const newRemaining = Math.max(0, s.totalDue - newPaid);
-      remainingPayment -= paymentToApply;
+      const allocatable = roundCurrency(s.remainingDue);
+      const paymentToApply = roundCurrency(Math.min(remainingPayment, allocatable));
+      const newPaid = roundCurrency(s.paidAmount + paymentToApply);
+      const newRemaining = roundCurrency(Math.max(0, s.totalDue - newPaid));
+      remainingPayment = roundCurrency(Math.max(0, remainingPayment - paymentToApply));
 
       let status: StatementStatus = s.status;
       if (newRemaining === 0 && s.totalDue > 0) {
@@ -289,7 +350,7 @@ export function allocatePaymentToStatements(
 
   return {
     updatedStatements: updated,
-    unallocatedAmount: remainingPayment,
+    unallocatedAmount: roundCurrency(remainingPayment),
   };
 }
 
@@ -306,7 +367,7 @@ export function computeCreditCardSummary(params: {
   referenceDate?: string; // YYYY-MM-DD
 }): CreditCardCycleSummary {
   const { account, transactions, persistedStatements = [] } = params;
-  const referenceDate = params.referenceDate || new Date().toISOString().split('T')[0];
+  const referenceDate = normalizeIsoDate(params.referenceDate || getLocalIsoDate());
 
   const { billingDay, dueDay, creditLimit, gracePeriodDays } = resolveCardBillingConfig(account);
 
@@ -320,11 +381,21 @@ export function computeCreditCardSummary(params: {
 
   // Separate CC bill payments vs regular card spends/credits
   // A bill payment is a transfer from bank -> this card (or flagged isCreditCardPayment)
-  const billPaymentTxs = cardTxs.filter(
+  const rawBillPaymentTxs = cardTxs.filter(
     (t) =>
       t.isCreditCardPayment === true ||
       (t.type === 'transfer' && t.toAccountId === account.id)
   );
+
+  // Sort bill payments: explicitly linked (paidStatementId) first, then ascending by date
+  const billPaymentTxs = [...rawBillPaymentTxs].sort((a, b) => {
+    const aLinked = a.paidStatementId ? 1 : 0;
+    const bLinked = b.paidStatementId ? 1 : 0;
+    if (aLinked !== bLinked) return bLinked - aLinked;
+    const dateDiff = normalizeIsoDate(a.date).localeCompare(normalizeIsoDate(b.date));
+    if (dateDiff !== 0) return dateDiff;
+    return (a.createdAt || a.id).localeCompare(b.createdAt || b.id);
+  });
 
   // Regular spends and refunds on this card
   const standardCardTxs = cardTxs.filter(
@@ -348,15 +419,14 @@ export function computeCreditCardSummary(params: {
     txByCycle.set(cycleKey, list);
   }
 
-  // Calculate unbilled cycle amount
+  // Calculate unbilled cycle amount (only 'income' reduces card balance; expense & investment are card spends)
   const unbilledTxs = txByCycle.get(unbilledWindow.cycleKey) || [];
   let unbilledCalculated = 0;
   for (const tx of unbilledTxs) {
-    if (tx.type === 'expense') {
-      unbilledCalculated += tx.amount;
-    } else if (tx.type === 'income' || tx.type === 'investment') {
-      // Refunds / cashback reduce unbilled spends
-      unbilledCalculated -= tx.amount;
+    if (tx.type === 'income') {
+      unbilledCalculated = roundCurrency(unbilledCalculated - tx.amount);
+    } else {
+      unbilledCalculated = roundCurrency(unbilledCalculated + tx.amount);
     }
   }
 
@@ -388,7 +458,7 @@ export function computeCreditCardSummary(params: {
     knownCycleKeys.add(prevCycleWindow.cycleKey);
   }
 
-  // Build statement list for all billed cycles
+  // Build statement list for all billed cycles in ascending chronological order
   const billedStatements: CreditCardStatement[] = [];
   for (const cycleKey of Array.from(knownCycleKeys).sort()) {
     const [cYear, cMonth] = cycleKey.split('-').map(Number);
@@ -402,10 +472,10 @@ export function computeCreditCardSummary(params: {
     const cycleTxs = txByCycle.get(cycleKey) || [];
     let calculatedAmount = 0;
     for (const tx of cycleTxs) {
-      if (tx.type === 'expense') {
-        calculatedAmount += tx.amount;
-      } else if (tx.type === 'income' || tx.type === 'investment') {
-        calculatedAmount -= tx.amount;
+      if (tx.type === 'income') {
+        calculatedAmount = roundCurrency(calculatedAmount - tx.amount);
+      } else {
+        calculatedAmount = roundCurrency(calculatedAmount + tx.amount);
       }
     }
 
@@ -414,17 +484,26 @@ export function computeCreditCardSummary(params: {
       (s) => s.accountId === account.id && s.cycleKey === cycleKey && !s.deletedAt
     );
 
-    const manualAdjustment = existing?.manualAdjustment ?? 0;
-    const carriedForward = existing?.carriedForwardAmount ?? 0;
-    const totalDue = Math.max(0, calculatedAmount + manualAdjustment + carriedForward);
+    const manualAdjustment = roundCurrency(existing?.manualAdjustment ?? 0);
+    // Guard against double-counting carriedForwardAmount while prior statements remain open/unpaid
+    const hasPriorOpenStatement = billedStatements.some((prev) => prev.remainingDue > 0);
+    const carriedForward = hasPriorOpenStatement
+      ? 0
+      : roundCurrency(existing?.carriedForwardAmount ?? 0);
+    const totalDue = roundCurrency(Math.max(0, calculatedAmount + manualAdjustment + carriedForward));
 
-    // If there are recorded bill payment transactions, allocate dynamically from 0.
-    // Otherwise fallback to existing persisted paidAmount (e.g. manual offline statement).
-    const initialPaid = billPaymentTxs.length > 0 ? 0 : Math.max(0, existing?.paidAmount ?? 0);
-    const initialRemaining = Math.max(0, totalDue - initialPaid);
+    // Preserve existing persisted paidAmount unless one or more payment transactions explicitly link to this statement
+    const statementId = existing?.id || `${account.id}_${cycleKey}`;
+    const hasLinkedPayment = billPaymentTxs.some(
+      (tx) =>
+        Boolean(tx.paidStatementId) &&
+        (tx.paidStatementId === statementId || tx.paidStatementId === cycleKey)
+    );
+    const initialPaid = hasLinkedPayment ? 0 : roundCurrency(Math.max(0, existing?.paidAmount ?? 0));
+    const initialRemaining = roundCurrency(Math.max(0, totalDue - initialPaid));
 
     const statement: CreditCardStatement = {
-      id: existing?.id || `${account.id}_${cycleKey}`,
+      id: statementId,
       userId: account.userId,
       accountId: account.id,
       cycleKey,
@@ -447,8 +526,8 @@ export function computeCreditCardSummary(params: {
     billedStatements.push(statement);
   }
 
-  // Apply bill payments across billed statements
-  // First, check payments with explicit statement linking
+  // Apply bill payments across billed statements (sorted linked-first, then chronological)
+  // Only excess overpayments whose payment date falls within the active unbilled cycle reduce unbilled spend
   let unallocatedPayments = 0;
   for (const payTx of billPaymentTxs) {
     const targetStatementId = payTx.paidStatementId;
@@ -457,15 +536,23 @@ export function computeCreditCardSummary(params: {
       payTx.amount,
       targetStatementId
     );
-    // Replace array contents with updated instances
     for (let i = 0; i < updatedStatements.length; i++) {
       billedStatements[i] = updatedStatements[i];
     }
-    unallocatedPayments += unallocatedAmount;
+    const payDate = normalizeIsoDate(payTx.date);
+    if (
+      unallocatedAmount > 0 &&
+      payDate >= unbilledWindow.periodStart &&
+      payDate <= unbilledWindow.periodEnd
+    ) {
+      unallocatedPayments = roundCurrency(unallocatedPayments + unallocatedAmount);
+    }
   }
 
   // Evaluate status for each billed statement relative to referenceDate
   for (const s of billedStatements) {
+    s.paidAmount = roundCurrency(s.paidAmount);
+    s.remainingDue = roundCurrency(s.remainingDue);
     if (s.remainingDue <= 0 && s.totalDue > 0) {
       s.status = 'paid';
     } else if (s.paidAmount > 0 && s.remainingDue > 0) {
@@ -477,9 +564,8 @@ export function computeCreditCardSummary(params: {
     }
   }
 
-  // If there are unallocated payments (overpayment of all billed statements),
-  // they reduce the unbilled cycle amount
-  const netUnbilledAmount = Math.max(0, unbilledCalculated - unallocatedPayments);
+  // Excess payments made within the active unbilled cycle reduce unbilled cycle spend
+  const netUnbilledAmount = roundCurrency(Math.max(0, unbilledCalculated - unallocatedPayments));
 
   // Unpaid billed statements
   const unpaidStatements = billedStatements
@@ -487,14 +573,16 @@ export function computeCreditCardSummary(params: {
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   const overdueStatements = unpaidStatements.filter((s) => s.status === 'overdue');
-  const billedDueTotal = unpaidStatements.reduce((sum, s) => sum + s.remainingDue, 0);
+  const billedDueTotal = roundCurrency(
+    unpaidStatements.reduce((sum, s) => roundCurrency(sum + s.remainingDue), 0)
+  );
 
   // Most recent unpaid billed statement
   const currentBilledStatement = unpaidStatements[0] || null;
 
   // Total utilized credit card debt
-  const totalOutstanding = Math.round(billedDueTotal + netUnbilledAmount);
-  const availableCredit = creditLimit > 0 ? Math.max(0, creditLimit - totalOutstanding) : 0;
+  const totalOutstanding = roundCurrency(billedDueTotal + netUnbilledAmount);
+  const availableCredit = creditLimit > 0 ? roundCurrency(Math.max(0, creditLimit - totalOutstanding)) : 0;
   const utilizationPercent =
     creditLimit > 0 ? Math.min(100, Math.round((totalOutstanding / creditLimit) * 100)) : 0;
 

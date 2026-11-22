@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,9 @@ import type { CreditCardStatement, FinanceAccount, FinanceTransaction } from '@/
 import {
   resolveTransactionCycle,
   daysBetween,
+  getLocalIsoDate,
+  formatOrdinal,
+  formatShortDate,
 } from '@/lib/finance/credit-card-cycles';
 import {
   CreditCard,
@@ -31,10 +34,20 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+export type StatementHistoryTab = 'current' | 'unbilled' | 'archive' | 'billed' | 'history';
+type InternalHistoryTab = 'current' | 'unbilled' | 'archive';
+
+function normalizeInitialTab(tab?: StatementHistoryTab): InternalHistoryTab {
+  if (tab === 'unbilled') return 'unbilled';
+  if (tab === 'archive' || tab === 'history') return 'archive';
+  return 'current';
+}
+
 interface StatementHistoryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   card: FinanceAccount;
+  initialTab?: StatementHistoryTab;
   onPay?: (statement?: CreditCardStatement | null) => void;
   onReconcile?: (statement?: CreditCardStatement | null) => void;
 }
@@ -43,6 +56,7 @@ export function StatementHistoryModal({
   open,
   onOpenChange,
   card,
+  initialTab = 'current',
   onPay,
   onReconcile,
 }: StatementHistoryModalProps) {
@@ -52,8 +66,14 @@ export function StatementHistoryModal({
   const categories = useFinanceStore((s) => s.categories);
   const moveTransactionToCycle = useFinanceStore((s) => s.moveTransactionToCycle);
 
-  const [activeTab, setActiveTab] = useState<'current' | 'unbilled' | 'archive'>('current');
+  const [activeTab, setActiveTab] = useState<InternalHistoryTab>(() => normalizeInitialTab(initialTab));
   const [isMoving, setIsMoving] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setActiveTab(normalizeInitialTab(initialTab));
+    }
+  }, [open, initialTab]);
 
   const summary = getCreditCardSummary(card.id);
   const billingDay = card.billingDay ?? card.statementDay ?? 1;
@@ -61,9 +81,22 @@ export function StatementHistoryModal({
 
   if (!summary) return null;
 
-  // Filter statements for this card, sorted descending
+  // Build lookup of live unpaid statements from summary so archive matches Box A
+  const liveStatementMap = new Map<string, CreditCardStatement>();
+  for (const s of summary.overdueStatements) {
+    liveStatementMap.set(s.cycleKey, s);
+  }
+  if (summary.currentBilledStatement) {
+    liveStatementMap.set(summary.currentBilledStatement.cycleKey, summary.currentBilledStatement);
+  }
+
+  // Filter statements for this card, sorted descending, merged with live summary state
   const cardStatements = statements
     .filter((s) => s.accountId === card.id && !s.deletedAt)
+    .map((s) => {
+      const live = liveStatementMap.get(s.cycleKey);
+      return live ? { ...s, ...live, notes: s.notes ?? live.notes } : s;
+    })
     .sort((a, b) => b.cycleKey.localeCompare(a.cycleKey));
 
   // Transactions for this card
@@ -107,29 +140,36 @@ export function StatementHistoryModal({
   const getStatusBadge = (status: string, dueDate: string, remainingDue: number) => {
     if (remainingDue <= 0 || status === 'paid') {
       return (
-        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] gap-1">
+        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
           <CheckCircle2 className="w-3 h-3" /> Paid
         </Badge>
       );
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalIsoDate();
     const diff = daysBetween(today, dueDate);
     if (diff < 0) {
       return (
-        <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] gap-1">
+        <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
           <AlertTriangle className="w-3 h-3" /> Overdue by {Math.abs(diff)}d
+        </Badge>
+      );
+    }
+    if (diff <= 3) {
+      return (
+        <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
+          <Clock className="w-3 h-3" /> {diff === 0 ? 'Due Today' : `Due in ${diff}d`}
         </Badge>
       );
     }
     if (diff <= 5) {
       return (
-        <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] gap-1">
+        <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
           <Clock className="w-3 h-3" /> Due in {diff}d
         </Badge>
       );
     }
     return (
-      <Badge className="bg-primary/10 text-primary border border-primary/20 text-[10px] gap-1">
+      <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
         Billed
       </Badge>
     );
@@ -137,7 +177,7 @@ export function StatementHistoryModal({
 
   const renderTransactionItem = (
     tx: FinanceTransaction,
-    currentCycle: string,
+    _currentCycle: string,
     alternateCycle: string,
     direction: 'next' | 'prev'
   ) => {
@@ -155,16 +195,16 @@ export function StatementHistoryModal({
             <div className="text-foreground font-semibold truncate">
               {tx.title || tx.merchantName || category?.name || 'Card Swipe'}
             </div>
-            <div className="text-muted-foreground text-[11px] flex items-center gap-1.5">
-              <span>{tx.date}</span>
+            <div className="text-muted-foreground text-[11px] flex items-center gap-1.5 flex-wrap">
+              <span className="whitespace-nowrap">{formatShortDate(tx.date)}</span>
               {category && (
                 <>
-                  <span>•</span>
-                  <span>{category.name}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="truncate">{category.name}</span>
                 </>
               )}
               {tx.statementCycleKey && (
-                <span className="text-primary font-mono text-[10px]">
+                <span className="text-primary text-[10px] font-medium whitespace-nowrap">
                   (Override: {tx.statementCycleKey})
                 </span>
               )}
@@ -172,9 +212,9 @@ export function StatementHistoryModal({
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="font-bold text-foreground">
-            {tx.type === 'expense' ? '-' : '+'}{formatINR(tx.amount)}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <span className="font-bold text-foreground tabular-nums">
+            {tx.type === 'income' ? '+' : '-'}{formatINR(tx.amount)}
           </span>
           <Button
             size="sm"
@@ -182,7 +222,7 @@ export function StatementHistoryModal({
             disabled={isMoving === tx.id}
             onClick={() => handleShiftCycle(tx.id, alternateCycle)}
             title={`Move transaction to cycle ${alternateCycle}`}
-            className="h-7 px-2 text-[11px] text-muted-foreground hover:text-primary hover:bg-muted"
+            className="h-7 px-2 text-[11px] text-muted-foreground hover:text-primary hover:bg-muted whitespace-nowrap"
           >
             {direction === 'next' ? (
               <span className="flex items-center gap-0.5">
@@ -216,7 +256,9 @@ export function StatementHistoryModal({
                   {card.name} Statements &amp; Cycles
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Billing Day: {billingDay}th of month • Payment Due: {dueDay}th of month
+                  Bill Day: {formatOrdinal(billingDay)} of month
+                  <span className="mx-1.5" aria-hidden="true">·</span>
+                  Payment Due: {formatOrdinal(dueDay)} of month
                 </DialogDescription>
               </div>
             </div>
@@ -224,33 +266,33 @@ export function StatementHistoryModal({
         </DialogHeader>
 
         <div className="p-5 pt-3">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as InternalHistoryTab)} className="w-full">
             <TabsList className="bg-muted p-1 w-full grid grid-cols-3 rounded-xl">
               <TabsTrigger
                 value="current"
-                className="text-xs data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground rounded-lg"
+                className="text-xs data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground rounded-lg whitespace-nowrap"
               >
                 Current Bill
                 {summary.billedStatement && summary.billedStatement.remainingDue > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-primary/15 text-primary text-[10px] font-semibold">
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px] font-semibold tabular-nums">
                     {formatINR(summary.billedStatement.remainingDue)}
                   </span>
                 )}
               </TabsTrigger>
               <TabsTrigger
                 value="unbilled"
-                className="text-xs data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground rounded-lg"
+                className="text-xs data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground rounded-lg whitespace-nowrap"
               >
                 Unbilled Cycle
                 {(summary.unbilledSpend ?? summary.unbilledCycle.amount) > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-muted-foreground/15 text-foreground text-[10px] font-semibold">
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400 text-[10px] font-semibold tabular-nums">
                     {formatINR(summary.unbilledSpend ?? summary.unbilledCycle.amount)}
                   </span>
                 )}
               </TabsTrigger>
               <TabsTrigger
                 value="archive"
-                className="text-xs data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground rounded-lg"
+                className="text-xs data-[state=active]:bg-background data-[state=active]:text-foreground text-muted-foreground rounded-lg whitespace-nowrap tabular-nums"
               >
                 Past Bills ({cardStatements.length})
               </TabsTrigger>
@@ -262,18 +304,18 @@ export function StatementHistoryModal({
                 <div className="space-y-3">
                   {/* Summary Card */}
                   <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <div className="text-[11px] text-muted-foreground">Statement Period</div>
-                        <div className="text-xs font-semibold text-foreground">
-                          {summary.billedStatement.periodStart} → {summary.billedStatement.periodEnd}
+                        <div className="text-xs font-semibold text-foreground whitespace-nowrap">
+                          {formatShortDate(summary.billedStatement.periodStart)} – {formatShortDate(summary.billedStatement.periodEnd)}
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="text-[11px] text-muted-foreground">Due Date</div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
-                            {summary.billedStatement.dueDate}
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span className="text-xs font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                            {formatShortDate(summary.billedStatement.dueDate)}
                           </span>
                           {getStatusBadge(
                             summary.billedStatement.status,
@@ -287,19 +329,19 @@ export function StatementHistoryModal({
                     <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/70 text-center">
                       <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                         <div className="text-[10px] text-muted-foreground font-medium">Total Billed</div>
-                        <div className="text-sm font-bold text-foreground">
+                        <div className="text-sm font-bold text-foreground tabular-nums">
                           {formatINR(summary.billedStatement.totalDue)}
                         </div>
                       </div>
                       <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                         <div className="text-[10px] text-muted-foreground font-medium">Paid Amount</div>
-                        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
                           {formatINR(summary.billedStatement.paidAmount)}
                         </div>
                       </div>
                       <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                         <div className="text-[10px] text-muted-foreground font-medium">Remaining Due</div>
-                        <div className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                        <div className="text-sm font-bold text-amber-600 dark:text-amber-400 tabular-nums">
                           {formatINR(summary.billedStatement.remainingDue)}
                         </div>
                       </div>
@@ -308,7 +350,7 @@ export function StatementHistoryModal({
                     {summary.billedStatement.manualAdjustment !== 0 && (
                       <div className="text-[11px] text-muted-foreground bg-background px-3 py-2 rounded-lg border border-border/70 flex justify-between">
                         <span>Includes manual reconciliation adjustment:</span>
-                        <span className="font-semibold text-primary">
+                        <span className="font-semibold text-primary tabular-nums">
                           {summary.billedStatement.manualAdjustment > 0 ? '+' : ''}
                           {formatINR(summary.billedStatement.manualAdjustment)}
                         </span>
@@ -324,7 +366,7 @@ export function StatementHistoryModal({
                           onReconcile?.(summary.billedStatement);
                           onOpenChange(false);
                         }}
-                        className="h-8 text-xs border-border text-foreground hover:bg-muted"
+                        className="h-8 text-xs border-border text-foreground hover:bg-muted whitespace-nowrap"
                       >
                         Adjust / Reconcile Bill
                       </Button>
@@ -335,7 +377,7 @@ export function StatementHistoryModal({
                             onPay?.(summary.billedStatement);
                             onOpenChange(false);
                           }}
-                          className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-xs"
+                          className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 font-medium shadow-xs whitespace-nowrap tabular-nums"
                         >
                           Pay Bill ({formatINR(summary.billedStatement.remainingDue)})
                         </Button>
@@ -404,17 +446,17 @@ export function StatementHistoryModal({
             <TabsContent value="unbilled" className="space-y-4 pt-3 focus-visible:outline-none">
               <div className="space-y-3">
                 <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div>
                       <div className="text-[11px] text-muted-foreground">Current Unbilled Cycle</div>
-                      <div className="text-xs font-semibold text-foreground">
-                        {summary.unbilledCycle.periodStart} → {summary.unbilledCycle.periodEnd}
+                      <div className="text-xs font-semibold text-foreground whitespace-nowrap">
+                        {formatShortDate(summary.unbilledCycle.periodStart)} – {formatShortDate(summary.unbilledCycle.periodEnd)}
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-[11px] text-muted-foreground">Statement Generates On</div>
-                      <div className="text-xs font-bold text-primary">
-                        {summary.unbilledCycle.periodEnd}
+                      <div className="text-xs font-bold text-sky-600 dark:text-sky-400 whitespace-nowrap">
+                        {formatShortDate(summary.unbilledCycle.periodEnd)}
                       </div>
                     </div>
                   </div>
@@ -422,20 +464,20 @@ export function StatementHistoryModal({
                   <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/70 text-center">
                     <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                       <div className="text-[10px] text-muted-foreground font-medium">Total Unbilled Spends</div>
-                      <div className="text-base font-bold text-foreground">
+                      <div className="text-base font-bold text-foreground tabular-nums">
                         {formatINR(summary.unbilledSpend ?? summary.unbilledCycle.amount)}
                       </div>
                     </div>
                     <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                       <div className="text-[10px] text-muted-foreground font-medium">Estimated Due Date</div>
-                      <div className="text-base font-bold text-amber-600 dark:text-amber-400">
-                        {summary.unbilledCycle.dueDate}
+                      <div className="text-base font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                        {formatShortDate(summary.unbilledCycle.dueDate)}
                       </div>
                     </div>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Spends made during this period will not be payable until the statement generates on{' '}
-                    <strong className="text-foreground">{summary.unbilledCycle.periodEnd}</strong>.
+                    Spends made during this period become payable after the statement generates on{' '}
+                    <strong className="text-foreground">{formatShortDate(summary.unbilledCycle.periodEnd)}</strong>.
                   </p>
                 </div>
 
@@ -480,31 +522,33 @@ export function StatementHistoryModal({
                     {cardStatements.map((stmt) => (
                       <div
                         key={stmt.id}
-                        className="p-3.5 rounded-xl bg-background border border-border flex items-center justify-between text-xs hover:border-border/80 transition-colors shadow-xs"
+                        className="p-3.5 rounded-xl bg-background border border-border flex items-center justify-between gap-3 text-xs hover:border-border/80 transition-colors shadow-xs"
                       >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-foreground">{stmt.cycleKey}</span>
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-foreground tabular-nums">{stmt.cycleKey}</span>
                             {getStatusBadge(stmt.status, stmt.dueDate, stmt.remainingDue)}
                           </div>
-                          <div className="text-muted-foreground text-[11px]">
-                            {stmt.periodStart} to {stmt.periodEnd} • Due: {stmt.dueDate}
+                          <div className="text-muted-foreground text-[11px] whitespace-nowrap">
+                            {formatShortDate(stmt.periodStart)} – {formatShortDate(stmt.periodEnd)}
+                            <span className="mx-1.5" aria-hidden="true">·</span>
+                            Due {formatShortDate(stmt.dueDate)}
                           </div>
                           {stmt.notes && (
-                            <div className="text-muted-foreground text-[10px] italic">Note: {stmt.notes}</div>
+                            <div className="text-muted-foreground text-[10px] italic truncate">Note: {stmt.notes}</div>
                           )}
                         </div>
 
                         <div className="text-right space-y-1 shrink-0">
-                          <div className="text-foreground font-bold">
+                          <div className="text-foreground font-bold tabular-nums">
                             {formatINR(stmt.totalDue)}
                           </div>
                           {stmt.remainingDue > 0 ? (
-                            <div className="text-amber-600 dark:text-amber-400 text-[11px] font-semibold">
+                            <div className="text-amber-600 dark:text-amber-400 text-[11px] font-semibold tabular-nums">
                               Due: {formatINR(stmt.remainingDue)}
                             </div>
                           ) : (
-                            <div className="text-emerald-600 dark:text-emerald-400 text-[11px] font-medium">
+                            <div className="text-emerald-600 dark:text-emerald-400 text-[11px] font-medium tabular-nums">
                               Paid {formatINR(stmt.paidAmount)}
                             </div>
                           )}
@@ -527,7 +571,7 @@ export function StatementHistoryModal({
                                   onPay?.(stmt);
                                   onOpenChange(false);
                                 }}
-                                className="h-6 px-2 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                                className="h-6 px-2 text-[10px] bg-primary text-primary-foreground hover:bg-primary/90 font-medium"
                               >
                                 Pay
                               </Button>

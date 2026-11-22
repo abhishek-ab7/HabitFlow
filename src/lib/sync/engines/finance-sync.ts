@@ -170,8 +170,16 @@ export async function deduplicateFinanceRecordsInDexie(userId: string): Promise<
 
       for (const acc of accGroup) {
         const txCount = await db.financeTransactions.where('accountId').equals(acc.id).count();
+        const toTxCount = await db.financeTransactions
+          .where('userId')
+          .equals(userId)
+          .filter((t) => t.toAccountId === acc.id)
+          .count();
+        const stmtCount = db.creditCardStatements
+          ? await db.creditCardStatements.where('accountId').equals(acc.id).count()
+          : 0;
         const balanceBonus = Math.abs(acc.balance || 0) > 0 ? 100 : 0;
-        const score = txCount * 10 + balanceBonus;
+        const score = (txCount + toTxCount + stmtCount) * 10 + balanceBonus;
 
         if (score > bestScore) {
           bestScore = score;
@@ -190,6 +198,41 @@ export async function deduplicateFinanceRecordsInDexie(userId: string): Promise<
         const txs = await db.financeTransactions.where('accountId').equals(acc.id).toArray();
         for (const tx of txs) {
           await db.financeTransactions.update(tx.id, { accountId: bestAcc.id });
+        }
+
+        // Remap incoming transfers (e.g. credit card bill payments) pointing via toAccountId
+        const incomingTxs = await db.financeTransactions
+          .where('userId')
+          .equals(userId)
+          .filter((t) => t.toAccountId === acc.id)
+          .toArray();
+        for (const tx of incomingTxs) {
+          await db.financeTransactions.update(tx.id, { toAccountId: bestAcc.id });
+        }
+
+        // Remap credit card statements belonging to the duplicate account
+        if (db.creditCardStatements) {
+          const stmts = await db.creditCardStatements.where('accountId').equals(acc.id).toArray();
+          for (const stmt of stmts) {
+            const existingOnBest = await db.creditCardStatements
+              .where('[accountId+cycleKey]')
+              .equals([bestAcc.id, stmt.cycleKey])
+              .first();
+            if (existingOnBest) {
+              // Remap any transactions linked to the discarded statement ID
+              const linkedTxs = await db.financeTransactions
+                .where('userId')
+                .equals(userId)
+                .filter((t) => t.paidStatementId === stmt.id)
+                .toArray();
+              for (const ltx of linkedTxs) {
+                await db.financeTransactions.update(ltx.id, { paidStatementId: existingOnBest.id });
+              }
+              await db.creditCardStatements.delete(stmt.id);
+            } else {
+              await db.creditCardStatements.update(stmt.id, { accountId: bestAcc.id });
+            }
+          }
         }
 
         await db.financeAccounts.delete(acc.id);
@@ -457,6 +500,139 @@ export class FinanceSyncEngine implements ISynchronizer {
               isDirty: false,
             });
             pulled++;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    // 2b. Sync Dirty Credit Card Statements -> Remote (MUST run after finance_accounts and BEFORE finance_transactions so paid_statement_id FK exists)
+    try {
+      if (db.creditCardStatements && !missingRemoteFinanceTables.has('credit_card_statements')) {
+        const dirtyStatements = await db.creditCardStatements
+          .where('userId')
+          .equals(userId)
+          .filter((s) => s.isDirty !== false)
+          .toArray();
+
+        for (const s of dirtyStatements) {
+          if (s.deletedAt) {
+            const { error } = await (supabase.from('credit_card_statements') as any)
+              .delete()
+              .eq('id', s.id)
+              .eq('user_id', userId);
+            if (error) {
+              if (isMissingRelationError(error)) {
+                missingRemoteFinanceTables.add('credit_card_statements');
+                break;
+              }
+            } else {
+              await db.creditCardStatements.delete(s.id);
+              pushed++;
+            }
+            continue;
+          }
+
+          const payload = {
+            id: s.id,
+            user_id: userId,
+            account_id: s.accountId,
+            cycle_key: s.cycleKey,
+            period_start: s.periodStart,
+            period_end: s.periodEnd,
+            due_date: s.dueDate,
+            calculated_amount: Number(s.calculatedAmount || 0),
+            manual_adjustment: Number(s.manualAdjustment || 0),
+            total_due: Number(s.totalDue || 0),
+            carried_forward_amount: Number(s.carriedForwardAmount || 0),
+            paid_amount: Number(s.paidAmount || 0),
+            remaining_due: Number(s.remainingDue || 0),
+            status: s.status || 'billed',
+            paid_at: s.paidAt || null,
+            notes: s.notes || null,
+            generation_counter: s.generationCounter || 1,
+            created_at: s.createdAt || new Date().toISOString(),
+            updated_at: s.updatedAt || new Date().toISOString(),
+            deleted_at: s.deletedAt || null,
+          };
+          const { error } = await upsertWithColumnFallback(
+            supabase,
+            'credit_card_statements',
+            payload,
+            { onConflict: 'user_id,account_id,cycle_key' }
+          );
+          if (error) {
+            if (isMissingRelationError(error)) {
+              missingRemoteFinanceTables.add('credit_card_statements');
+              logger.info('[FinanceSyncEngine] Skipping unmigrated table credit_card_statements for this session.');
+              break;
+            } else {
+              logger.error('[FinanceSyncEngine] CreditCardStatement upsert failed:', error);
+              hasError = true;
+            }
+          } else {
+            await db.creditCardStatements.update(s.id, { isDirty: false });
+            pushed++;
+          }
+        }
+
+        if (!missingRemoteFinanceTables.has('credit_card_statements')) {
+          const { data: remoteStmts, error: pullStmtError } = await (supabase.from('credit_card_statements') as any)
+            .select('*')
+            .eq('user_id', userId);
+          if (pullStmtError && isMissingRelationError(pullStmtError)) {
+            missingRemoteFinanceTables.add('credit_card_statements');
+          } else if (Array.isArray(remoteStmts)) {
+            for (const r of remoteStmts) {
+              let local = await db.creditCardStatements.get(r.id);
+              if (!local && r.account_id && r.cycle_key) {
+                const sameCycle = await db.creditCardStatements
+                  .where('[accountId+cycleKey]')
+                  .equals([r.account_id, r.cycle_key])
+                  .first();
+                if (sameCycle && sameCycle.id !== r.id) {
+                  if (this.shouldApplyRemote(sameCycle, r)) {
+                    const linkedTxs = await db.financeTransactions
+                      .where('userId')
+                      .equals(userId)
+                      .filter((t) => t.paidStatementId === sameCycle.id)
+                      .toArray();
+                    for (const ltx of linkedTxs) {
+                      await db.financeTransactions.update(ltx.id, { paidStatementId: r.id });
+                    }
+                    await db.creditCardStatements.delete(sameCycle.id);
+                  }
+                  local = sameCycle;
+                }
+              }
+              if (this.shouldApplyRemote(local, r)) {
+                await db.creditCardStatements.put({
+                  id: r.id,
+                  userId: r.user_id,
+                  accountId: r.account_id,
+                  cycleKey: r.cycle_key,
+                  periodStart: r.period_start,
+                  periodEnd: r.period_end,
+                  dueDate: r.due_date,
+                  calculatedAmount: Number(r.calculated_amount || 0),
+                  manualAdjustment: Number(r.manual_adjustment || 0),
+                  totalDue: Number(r.total_due || 0),
+                  carriedForwardAmount: Number(r.carried_forward_amount || 0),
+                  paidAmount: Number(r.paid_amount || 0),
+                  remainingDue: Number(r.remaining_due || 0),
+                  status: r.status as any,
+                  paidAt: r.paid_at || null,
+                  notes: r.notes || undefined,
+                  generationCounter: r.generation_counter || 1,
+                  createdAt: r.created_at || r.updated_at || new Date().toISOString(),
+                  updatedAt: r.updated_at || new Date().toISOString(),
+                  deletedAt: r.deleted_at || null,
+                  isDirty: false,
+                });
+                pulled++;
+              }
+            }
           }
         }
       }
@@ -860,6 +1036,7 @@ export class FinanceSyncEngine implements ISynchronizer {
           linked_debt_installment_id: null,
           linked_emi_id: null,
           linked_sip_id: null,
+          paid_statement_id: null,
         };
         const retryResult = await upsertWithColumnFallback(supabase, 'finance_transactions', unlinkedPayload);
         error = retryResult.error;
@@ -1291,119 +1468,6 @@ export class FinanceSyncEngine implements ISynchronizer {
                   generationCounter: r.generation_counter || 1,
                   createdAt: r.created_at || r.updated_at || new Date().toISOString(),
                   updatedAt: r.updated_at || new Date().toISOString(),
-                  isDirty: false,
-                });
-                pulled++;
-              }
-            }
-          }
-        }
-      }
-    } catch {
-      // Non-fatal
-    }
-
-    // 13. Sync Dirty Credit Card Statements -> Remote
-    try {
-      if (db.creditCardStatements && !missingRemoteFinanceTables.has('credit_card_statements')) {
-        const dirtyStatements = await db.creditCardStatements
-          .where('userId')
-          .equals(userId)
-          .filter((s) => s.isDirty !== false)
-          .toArray();
-
-        for (const s of dirtyStatements) {
-          if (s.deletedAt) {
-            const { error } = await (supabase.from('credit_card_statements') as any)
-              .delete()
-              .eq('id', s.id)
-              .eq('user_id', userId);
-            if (error) {
-              if (isMissingRelationError(error)) {
-                missingRemoteFinanceTables.add('credit_card_statements');
-                break;
-              }
-            } else {
-              await db.creditCardStatements.delete(s.id);
-              pushed++;
-            }
-            continue;
-          }
-
-          const payload = {
-            id: s.id,
-            user_id: userId,
-            account_id: s.accountId,
-            cycle_key: s.cycleKey,
-            period_start: s.periodStart,
-            period_end: s.periodEnd,
-            due_date: s.dueDate,
-            calculated_amount: Number(s.calculatedAmount || 0),
-            manual_adjustment: Number(s.manualAdjustment || 0),
-            total_due: Number(s.totalDue || 0),
-            carried_forward_amount: Number(s.carriedForwardAmount || 0),
-            paid_amount: Number(s.paidAmount || 0),
-            remaining_due: Number(s.remainingDue || 0),
-            status: s.status || 'billed',
-            paid_at: s.paidAt || null,
-            notes: s.notes || null,
-            generation_counter: s.generationCounter || 1,
-            created_at: s.createdAt || new Date().toISOString(),
-            updated_at: s.updatedAt || new Date().toISOString(),
-            deleted_at: s.deletedAt || null,
-          };
-          const { error } = await upsertWithColumnFallback(
-            supabase,
-            'credit_card_statements',
-            payload,
-            { onConflict: 'user_id,account_id,cycle_key' }
-          );
-          if (error) {
-            if (isMissingRelationError(error)) {
-              missingRemoteFinanceTables.add('credit_card_statements');
-              logger.info('[FinanceSyncEngine] Skipping unmigrated table credit_card_statements for this session.');
-              break;
-            } else {
-              logger.error('[FinanceSyncEngine] CreditCardStatement upsert failed:', error);
-              hasError = true;
-            }
-          } else {
-            await db.creditCardStatements.update(s.id, { isDirty: false });
-            pushed++;
-          }
-        }
-
-        if (!missingRemoteFinanceTables.has('credit_card_statements')) {
-          const { data: remoteStmts, error: pullStmtError } = await (supabase.from('credit_card_statements') as any)
-            .select('*')
-            .eq('user_id', userId);
-          if (pullStmtError && isMissingRelationError(pullStmtError)) {
-            missingRemoteFinanceTables.add('credit_card_statements');
-          } else if (Array.isArray(remoteStmts)) {
-            for (const r of remoteStmts) {
-              const local = await db.creditCardStatements.get(r.id);
-              if (this.shouldApplyRemote(local, r)) {
-                await db.creditCardStatements.put({
-                  id: r.id,
-                  userId: r.user_id,
-                  accountId: r.account_id,
-                  cycleKey: r.cycle_key,
-                  periodStart: r.period_start,
-                  periodEnd: r.period_end,
-                  dueDate: r.due_date,
-                  calculatedAmount: Number(r.calculated_amount || 0),
-                  manualAdjustment: Number(r.manual_adjustment || 0),
-                  totalDue: Number(r.total_due || 0),
-                  carriedForwardAmount: Number(r.carried_forward_amount || 0),
-                  paidAmount: Number(r.paid_amount || 0),
-                  remainingDue: Number(r.remaining_due || 0),
-                  status: r.status as any,
-                  paidAt: r.paid_at || null,
-                  notes: r.notes || undefined,
-                  generationCounter: r.generation_counter || 1,
-                  createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-                  updatedAt: r.updated_at || new Date().toISOString(),
-                  deletedAt: r.deleted_at || null,
                   isDirty: false,
                 });
                 pulled++;

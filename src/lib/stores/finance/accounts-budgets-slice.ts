@@ -12,9 +12,11 @@ import type {
 import {
   computeCreditCardSummary,
   getCycleWindowForMonth,
+  getLocalIsoDate,
   resolveTransactionCycle,
   allocatePaymentToStatements,
   resolveCardBillingConfig,
+  roundCurrency,
 } from '@/lib/finance/credit-card-cycles';
 import {
   getCurrentMonthKey,
@@ -226,7 +228,7 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
 
     if (cards.length === 0) return;
     const now = new Date().toISOString();
-    const todayIso = now.slice(0, 10);
+    const todayIso = getLocalIsoDate();
 
     for (const card of cards) {
       const summary = computeCreditCardSummary({
@@ -250,8 +252,15 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
             isDirty: true,
           });
         } else {
+          const hasLinkedPayment = get().transactions.some(
+            (t) =>
+              !t.deletedAt &&
+              t.paidStatementId &&
+              (t.paidStatementId === stmt.id || t.paidStatementId === stmt.cycleKey)
+          );
           await db.creditCardStatements.put({
             ...stmt,
+            paidAmount: hasLinkedPayment ? stmt.paidAmount : 0,
             userId: card.userId,
             isDirty: true,
             createdAt: now,
@@ -284,8 +293,11 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
       throw new Error('Payment amount must be greater than zero');
     }
 
-    const txDate = date || new Date().toISOString().slice(0, 10);
+    const txDate = date || getLocalIsoDate();
     const now = new Date().toISOString();
+
+    const preSummary = get().getCreditCardSummary(cardAccountId, txDate);
+    const resolvedStatementId = statementId || preSummary?.currentBilledStatement?.id || null;
 
     const billsCategory =
       get().categories.find((c) => c.slug === 'utilities-bills') ||
@@ -303,7 +315,7 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
       notes: note || `Payment toward ${card.name}`,
       tags: ['credit-card-payment'],
       statementCycleKey: null,
-      paidStatementId: statementId || null,
+      paidStatementId: resolvedStatementId,
       isCreditCardPayment: true,
     } as any);
 
@@ -318,12 +330,17 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
       const { updatedStatements } = allocatePaymentToStatements(
         currentStatements,
         payAmount,
-        statementId
+        resolvedStatementId
       );
 
       for (const updated of updatedStatements) {
+        // Only write paidAmount onto the directly linked statement so secondary waterfall targets
+        // aren't double-counted by computeCreditCardSummary
+        const isDirectlyLinked =
+          Boolean(resolvedStatementId) &&
+          (updated.id === resolvedStatementId || updated.cycleKey === resolvedStatementId);
         await db.creditCardStatements.update(updated.id, {
-          paidAmount: updated.paidAmount,
+          ...(isDirectlyLinked ? { paidAmount: updated.paidAmount } : {}),
           remainingDue: updated.remainingDue,
           status: updated.status,
           paidAt: updated.paidAt,
@@ -360,13 +377,13 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
     for (const tx of cardTxs) {
       const txCycle = resolveTransactionCycle(tx.date, billingDay, dueDay, tx.statementCycleKey);
       if (txCycle === cycleKey) {
-        if (tx.type === 'expense') calculatedAmount += tx.amount;
-        else if (tx.type === 'income' || tx.type === 'investment') calculatedAmount -= tx.amount;
+        if (tx.type === 'income') calculatedAmount = roundCurrency(calculatedAmount - tx.amount);
+        else calculatedAmount = roundCurrency(calculatedAmount + tx.amount);
       }
     }
 
-    const actual = Math.max(0, Number(actualStatementAmount));
-    const manualAdjustment = actual - calculatedAmount;
+    const actual = roundCurrency(Math.max(0, Number(actualStatementAmount)));
+    const manualAdjustment = roundCurrency(actual - calculatedAmount);
 
     const existing = await db.creditCardStatements
       .where('accountId')
@@ -376,8 +393,10 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
 
     let statement: CreditCardStatement;
     if (existing) {
-      const totalDue = Math.max(0, calculatedAmount + manualAdjustment + (existing.carriedForwardAmount || 0));
-      const remainingDue = Math.max(0, totalDue - existing.paidAmount);
+      const totalDue = roundCurrency(
+        Math.max(0, calculatedAmount + manualAdjustment + (existing.carriedForwardAmount || 0))
+      );
+      const remainingDue = roundCurrency(Math.max(0, totalDue - existing.paidAmount));
       let status = existing.status;
       if (remainingDue === 0 && totalDue > 0) status = 'paid';
       else if (existing.paidAmount > 0) status = 'partial';

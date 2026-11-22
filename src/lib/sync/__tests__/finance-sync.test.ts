@@ -640,4 +640,328 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     const localAcc = await db.financeAccounts.get('acc-slice-1');
     expect(localAcc?.isDirty).toBe(false);
   });
+
+  test('13. Pushes credit_card_statements strictly BEFORE finance_transactions so paid_statement_id FK resolves', async () => {
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+    const upsertOrder: string[] = [];
+
+    customTableHandlers['credit_card_statements'] = {
+      upsert: vi.fn(async () => {
+        upsertOrder.push('credit_card_statements');
+        return { error: null };
+      }),
+      delete: mockDelete,
+      select: mockSelect,
+    };
+
+    customTableHandlers['finance_transactions'] = {
+      upsert: vi.fn(async () => {
+        upsertOrder.push('finance_transactions');
+        return { error: null };
+      }),
+      delete: mockDelete,
+      select: mockSelect,
+    };
+
+    await db.creditCardStatements.add({
+      id: 'stmt-order-1',
+      userId,
+      accountId: 'acc-card-1',
+      cycleKey: '2026-11',
+      periodStart: '2026-10-22',
+      periodEnd: '2026-11-21',
+      dueDate: '2026-12-05',
+      calculatedAmount: 12000,
+      manualAdjustment: 0,
+      totalDue: 12000,
+      carriedForwardAmount: 0,
+      paidAmount: 12000,
+      remainingDue: 0,
+      status: 'paid',
+      isDirty: true,
+      generationCounter: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.financeTransactions.add({
+      id: 'tx-pay-order-1',
+      userId,
+      title: 'Credit Card Bill Payment',
+      amount: 12000,
+      type: 'transfer',
+      categoryId: 'cat-1',
+      accountId: 'acc-bank-1',
+      toAccountId: 'acc-card-1',
+      paidStatementId: 'stmt-order-1',
+      isCreditCardPayment: true,
+      date: '2026-11-25',
+      monthKey: '2026-11',
+      tags: [],
+      isRecurring: false,
+      isDirty: true,
+      generationCounter: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(upsertOrder).toEqual(['credit_card_statements', 'finance_transactions']);
+  });
+
+  test('14. Clears paid_statement_id alongside other FKs on 23503 retry fallback', async () => {
+    const payloads: any[] = [];
+    customTableHandlers['finance_transactions'] = {
+      upsert: vi.fn(async (payload: any) => {
+        payloads.push(payload);
+        if (payloads.length === 1) {
+          return { error: { message: 'violates foreign key constraint', code: '23503' } };
+        }
+        return { error: null };
+      }),
+      delete: mockDelete,
+      select: mockSelect,
+    };
+
+    const syncer = new FinanceSyncEngine();
+    const now = new Date().toISOString();
+
+    await db.financeTransactions.add({
+      id: 'tx-fk-stmt',
+      userId,
+      title: 'Card Payment FK Missing',
+      amount: 5000,
+      type: 'transfer',
+      categoryId: 'cat-1',
+      accountId: 'acc-bank-1',
+      toAccountId: 'acc-card-1',
+      paidStatementId: 'stmt-missing-remote',
+      isCreditCardPayment: true,
+      date: '2026-11-25',
+      monthKey: '2026-11',
+      tags: [],
+      isRecurring: false,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+    expect(payloads.length).toBe(2);
+    expect(payloads[0].paid_statement_id).toBe('stmt-missing-remote');
+    expect(payloads[1].paid_statement_id).toBeNull();
+  });
+
+  test('15. Deduplicates credit_card_statements by [accountId+cycleKey] on remote pull and remaps paidStatementId', async () => {
+    const now = new Date().toISOString();
+    await db.creditCardStatements.add({
+      id: 'stmt-local-uuid',
+      userId,
+      accountId: 'acc-card-1',
+      cycleKey: '2026-11',
+      periodStart: '2026-10-22',
+      periodEnd: '2026-11-21',
+      dueDate: '2026-12-05',
+      calculatedAmount: 10000,
+      manualAdjustment: 0,
+      totalDue: 10000,
+      carriedForwardAmount: 0,
+      paidAmount: 0,
+      remainingDue: 10000,
+      status: 'billed',
+      isDirty: false,
+      generationCounter: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.financeTransactions.add({
+      id: 'tx-linked-local-stmt',
+      userId,
+      title: 'Partial Payment',
+      amount: 4000,
+      type: 'transfer',
+      categoryId: 'cat-1',
+      accountId: 'acc-bank-1',
+      toAccountId: 'acc-card-1',
+      paidStatementId: 'stmt-local-uuid',
+      isCreditCardPayment: true,
+      date: '2026-11-25',
+      monthKey: '2026-11',
+      tags: [],
+      isRecurring: false,
+      isDirty: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    customTableHandlers['credit_card_statements'] = {
+      upsert: mockUpsert,
+      delete: mockDelete,
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'stmt-remote-uuid',
+              user_id: userId,
+              account_id: 'acc-card-1',
+              cycle_key: '2026-11',
+              period_start: '2026-10-22',
+              period_end: '2026-11-21',
+              due_date: '2026-12-05',
+              calculated_amount: 10000,
+              manual_adjustment: 0,
+              total_due: 10000,
+              carried_forward_amount: 0,
+              paid_amount: 4000,
+              remaining_due: 6000,
+              status: 'partial',
+              generation_counter: 2,
+              updated_at: new Date(Date.now() + 10000).toISOString(),
+            },
+          ],
+          error: null,
+        }),
+      }),
+    };
+
+    const syncer = new FinanceSyncEngine();
+    const result = await syncer.sync(userId);
+    expect(result.status).toBe('success');
+
+    expect(await db.creditCardStatements.get('stmt-local-uuid')).toBeUndefined();
+    const canonicalStmt = await db.creditCardStatements.get('stmt-remote-uuid');
+    expect(canonicalStmt).toBeDefined();
+    expect(canonicalStmt?.paidAmount).toBe(4000);
+
+    const remappedTx = await db.financeTransactions.get('tx-linked-local-stmt');
+    expect(remappedTx?.paidStatementId).toBe('stmt-remote-uuid');
+  });
+
+  test('16. deduplicateFinanceRecordsInDexie remaps incoming toAccountId transfers and creditCardStatements', async () => {
+    const { deduplicateFinanceRecordsInDexie } = await import('../engines/finance-sync');
+    const now = new Date().toISOString();
+
+    await db.financeAccounts.add({
+      id: 'cc-dup-1',
+      userId,
+      name: 'Slice Card',
+      type: 'credit_card',
+      balance: 0,
+      currency: 'INR',
+      color: '#6366f1',
+      icon: 'CreditCard',
+      isDefault: false,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.financeAccounts.add({
+      id: 'cc-dup-2',
+      userId,
+      name: 'Slice Card',
+      type: 'credit_card',
+      balance: -15000,
+      currency: 'INR',
+      color: '#6366f1',
+      icon: 'CreditCard',
+      isDefault: false,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.creditCardStatements.add({
+      id: 'stmt-dup-nov-on-1',
+      userId,
+      accountId: 'cc-dup-1',
+      cycleKey: '2026-11',
+      periodStart: '2026-10-22',
+      periodEnd: '2026-11-21',
+      dueDate: '2026-12-05',
+      calculatedAmount: 15000,
+      manualAdjustment: 0,
+      totalDue: 15000,
+      carriedForwardAmount: 0,
+      paidAmount: 0,
+      remainingDue: 15000,
+      status: 'billed',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.creditCardStatements.add({
+      id: 'stmt-dup-oct-on-1',
+      userId,
+      accountId: 'cc-dup-1',
+      cycleKey: '2026-10',
+      periodStart: '2026-09-22',
+      periodEnd: '2026-10-21',
+      dueDate: '2026-11-05',
+      calculatedAmount: 5000,
+      manualAdjustment: 0,
+      totalDue: 5000,
+      carriedForwardAmount: 0,
+      paidAmount: 5000,
+      remainingDue: 0,
+      status: 'paid',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.creditCardStatements.add({
+      id: 'stmt-best-nov-on-2',
+      userId,
+      accountId: 'cc-dup-2',
+      cycleKey: '2026-11',
+      periodStart: '2026-10-22',
+      periodEnd: '2026-11-21',
+      dueDate: '2026-12-05',
+      calculatedAmount: 15000,
+      manualAdjustment: 0,
+      totalDue: 15000,
+      carriedForwardAmount: 0,
+      paidAmount: 0,
+      remainingDue: 15000,
+      status: 'billed',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await db.financeTransactions.add({
+      id: 'tx-bill-pay-dup',
+      userId,
+      title: 'Slice Bill Pay',
+      amount: 15000,
+      type: 'transfer',
+      categoryId: 'cat-1',
+      accountId: 'acc-bank-1',
+      toAccountId: 'cc-dup-1',
+      paidStatementId: 'stmt-dup-nov-on-1',
+      isCreditCardPayment: true,
+      date: '2026-11-25',
+      monthKey: '2026-11',
+      tags: [],
+      isRecurring: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await deduplicateFinanceRecordsInDexie(userId);
+
+    const remainingAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
+    expect(remainingAccs.length).toBe(1);
+    expect(remainingAccs[0].id).toBe('cc-dup-2');
+
+    const remappedTx = await db.financeTransactions.get('tx-bill-pay-dup');
+    expect(remappedTx?.toAccountId).toBe('cc-dup-2');
+    expect(remappedTx?.paidStatementId).toBe('stmt-best-nov-on-2');
+
+    const octStmt = await db.creditCardStatements.get('stmt-dup-oct-on-1');
+    expect(octStmt?.accountId).toBe('cc-dup-2');
+    expect(await db.creditCardStatements.get('stmt-dup-nov-on-1')).toBeUndefined();
+  });
 });
