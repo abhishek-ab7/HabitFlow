@@ -784,5 +784,101 @@ describe('Credit Card Cycle Engine (credit-card-cycles.ts)', () => {
       // Because 2026-10 (5000) is still open, 2026-11 should not also add carriedForwardAmount (5000)
       expect(summary.billedDueTotal).toBe(8000);
     });
+
+    it('Scenario 18: Axis Bank — bill generated on 15th Nov of ₹3,000 configured via account dues without past transactions', () => {
+      const axisAccount = createMockAccount({
+        id: 'acc-axis-1',
+        name: 'Axis Bank',
+        creditLimit: 81000,
+        billingDay: 15,
+        dueDay: 3,
+        balance: 3000, // User entered ₹3,000 current dues in Edit Account
+      });
+
+      // User has one swipe of ₹206 in active unbilled cycle (16 Nov - 15 Dec)
+      const unbilledSwipe = createMockTransaction({
+        id: 'tx-swipe-1',
+        accountId: 'acc-axis-1',
+        amount: 206,
+        date: '2026-11-18',
+        type: 'expense',
+      });
+
+      const summary = computeCreditCardSummary({
+        account: axisAccount,
+        transactions: [unbilledSwipe],
+        persistedStatements: [],
+        referenceDate: '2026-11-22',
+      });
+
+      // Statement Due for Nov 15 bill must be ₹3,000 (Due Dec 3)
+      expect(summary.billedDueTotal).toBe(3000);
+      expect(summary.currentBilledStatement).not.toBeNull();
+      expect(summary.currentBilledStatement?.cycleKey).toBe('2026-11');
+      expect(summary.currentBilledStatement?.periodStart).toBe('2026-10-16');
+      expect(summary.currentBilledStatement?.periodEnd).toBe('2026-11-15');
+      expect(summary.currentBilledStatement?.dueDate).toBe('2026-12-03');
+      expect(summary.currentBilledStatement?.totalDue).toBe(3000);
+      expect(summary.currentBilledStatement?.remainingDue).toBe(3000);
+      expect(summary.currentBilledStatement?.status).toBe('billed');
+
+      // Unbilled cycle must be ₹206
+      expect(summary.unbilledCycle.cycleKey).toBe('2026-12');
+      expect(summary.unbilledCycle.periodStart).toBe('2026-11-16');
+      expect(summary.unbilledCycle.periodEnd).toBe('2026-12-15');
+      expect(summary.unbilledCycle.dueDate).toBe('2027-01-03');
+      expect(summary.unbilledCycle.amount).toBe(206);
+
+      // Total utilized: ₹3,000 billed + ₹206 unbilled = ₹3,206
+      expect(summary.totalOutstanding).toBe(3206);
+      expect(summary.availableCredit).toBe(77794); // 81000 - 3206
+      expect(summary.utilizationPercent).toBe(4); // round((3206 / 81000) * 100) = 4%
+    });
+
+    it('Scenario 19: Axis Bank — paying ₹3,000 bill marks opening statement paid and clears billed dues', () => {
+      const axisAccount = createMockAccount({
+        id: 'acc-axis-1',
+        name: 'Axis Bank',
+        creditLimit: 81000,
+        billingDay: 15,
+        dueDay: 3,
+        balance: 3000,
+      });
+
+      const unbilledSwipe = createMockTransaction({
+        id: 'tx-swipe-1',
+        accountId: 'acc-axis-1',
+        amount: 206,
+        date: '2026-11-18',
+        type: 'expense',
+      });
+
+      const billPayment = createMockTransaction({
+        id: 'tx-pay-1',
+        accountId: 'bank-acc-1',
+        toAccountId: 'acc-axis-1',
+        amount: 3000,
+        date: '2026-11-23',
+        type: 'transfer',
+        isCreditCardPayment: true,
+      });
+
+      const summary = computeCreditCardSummary({
+        account: axisAccount,
+        transactions: [unbilledSwipe, billPayment],
+        persistedStatements: [],
+        referenceDate: '2026-11-23',
+      });
+
+      // Billed statement should be paid
+      expect(summary.billedDueTotal).toBe(0);
+      expect(summary.currentBilledStatement).toBeNull();
+      expect(summary.overdueStatements.length).toBe(0);
+
+      // Unbilled spend remains ₹206
+      expect(summary.unbilledSpend).toBe(206);
+      expect(summary.totalOutstanding).toBe(206);
+      expect(summary.availableCredit).toBe(80794);
+    });
   });
 });

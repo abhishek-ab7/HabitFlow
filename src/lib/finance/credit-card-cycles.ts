@@ -374,6 +374,17 @@ export function computeCreditCardSummary(params: {
   // Active unbilled cycle
   const unbilledWindow = getActiveUnbilledCycle(billingDay, dueDay, referenceDate, gracePeriodDays);
 
+  // Latest closed cycle window (e.g. Nov 15 statement close when today is Nov 22)
+  const { year: unbilledY, month: unbilledM } = parseIsoDate(unbilledWindow.periodEnd);
+  const prevCycleMonthIndex = unbilledM - 2; // previous month
+  const prevCycleWindow = getCycleWindowForMonth(
+    billingDay,
+    dueDay,
+    unbilledY,
+    prevCycleMonthIndex,
+    gracePeriodDays
+  );
+
   // Filter transactions for this card
   const cardTxs = transactions.filter(
     (t) => (t.accountId === account.id || t.toAccountId === account.id) && !t.deletedAt
@@ -430,6 +441,17 @@ export function computeCreditCardSummary(params: {
     }
   }
 
+  const rawAccountBalance = Math.abs(Number(account.balance) || 0);
+  const hasAnyPersistedStatements = persistedStatements.some(
+    (s) => s.accountId === account.id && !s.deletedAt
+  );
+
+  // If no closed cycle exists yet and no statements are persisted, opening dues accumulate in unbilled cycle
+  if (!hasAnyPersistedStatements && rawAccountBalance > 0 && prevCycleWindow.periodEnd > referenceDate) {
+    const unbilledOpeningFallback = Math.max(0, rawAccountBalance - unbilledCalculated);
+    unbilledCalculated = roundCurrency(unbilledCalculated + unbilledOpeningFallback);
+  }
+
   // Collect all known billed cycle keys (from transactions or persisted statements)
   const knownCycleKeys = new Set<string>();
   for (const key of txByCycle.keys()) {
@@ -444,16 +466,7 @@ export function computeCreditCardSummary(params: {
   }
 
   // If the unbilled cycle's previous cycle isn't in knownCycleKeys, add it so we always check
-  // the most recent closed statement (e.g. Nov 21 when today is Nov 25)
-  const { year: unbilledY, month: unbilledM } = parseIsoDate(unbilledWindow.periodEnd);
-  const prevCycleMonthIndex = unbilledM - 2; // previous month
-  const prevCycleWindow = getCycleWindowForMonth(
-    billingDay,
-    dueDay,
-    unbilledY,
-    prevCycleMonthIndex,
-    gracePeriodDays
-  );
+  // the most recent closed statement (e.g. Nov 15 when today is Nov 22)
   if (prevCycleWindow.periodEnd <= referenceDate) {
     knownCycleKeys.add(prevCycleWindow.cycleKey);
   }
@@ -484,7 +497,17 @@ export function computeCreditCardSummary(params: {
       (s) => s.accountId === account.id && s.cycleKey === cycleKey && !s.deletedAt
     );
 
-    const manualAdjustment = roundCurrency(existing?.manualAdjustment ?? 0);
+    // If no persisted statement exists for this card, account.balance represents the user's
+    // opening dues/bill for the latest closed statement (e.g. entered via Edit Account "Current Dues").
+    const isLatestClosedCycle = cycleKey === prevCycleWindow.cycleKey;
+    const openingDuesFallback =
+      !existing && !hasAnyPersistedStatements && isLatestClosedCycle && rawAccountBalance > 0
+        ? rawAccountBalance
+        : 0;
+
+    const manualAdjustment = roundCurrency(
+      existing?.manualAdjustment ?? (openingDuesFallback > 0 ? Math.max(0, openingDuesFallback - calculatedAmount) : 0)
+    );
     // Guard against double-counting carriedForwardAmount while prior statements remain open/unpaid
     const hasPriorOpenStatement = billedStatements.some((prev) => prev.remainingDue > 0);
     const carriedForward = hasPriorOpenStatement

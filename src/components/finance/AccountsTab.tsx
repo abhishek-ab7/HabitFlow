@@ -45,7 +45,13 @@ import {
 } from '@/components/ui/dialog';
 import { CategoryIcon } from './CategoryIcon';
 import { CreditCardItem } from './credit-cards/CreditCardItem';
-import { getCycleWindowForMonth, getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
+import {
+  getCycleWindowForMonth,
+  getLocalIsoDate,
+  getActiveUnbilledCycle,
+  parseIsoDate,
+  formatShortDate,
+} from '@/lib/finance/credit-card-cycles';
 import { toast } from 'sonner';
 
 interface AccountsTabProps {
@@ -84,6 +90,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const setDefaultAccount = useFinanceStore((s) => s.setDefaultAccount);
   const deleteAccount = useFinanceStore((s) => s.deleteAccount);
   const reconcileAccountBalance = useFinanceStore((s) => s.reconcileAccountBalance);
+  const reconcileCreditCardStatement = useFinanceStore((s) => s.reconcileCreditCardStatement);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
 
   const addCategory = useFinanceStore((s) => s.addCategory);
@@ -245,6 +252,29 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
           ? Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15))
           : undefined,
     });
+
+    if (accType === 'credit_card' && !isNaN(bal) && bal > 0) {
+      try {
+        const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
+        const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
+        const todayStr = getLocalIsoDate();
+        const unbilledWin = getActiveUnbilledCycle(bDay, dDay, todayStr);
+        const { year: uY, month: uM } = parseIsoDate(unbilledWin.periodEnd);
+        const prevCycle = getCycleWindowForMonth(bDay, dDay, uY, uM - 2);
+
+        if (prevCycle.periodEnd <= todayStr) {
+          await reconcileCreditCardStatement({
+            cardAccountId: editingAccount.id,
+            cycleKey: prevCycle.cycleKey,
+            actualStatementAmount: bal,
+            note: 'Updated via Edit Account current dues',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to auto-reconcile statement from account dues:', err);
+      }
+    }
+
     toast.success(`Updated ${accName.trim()}`);
     setEditingAccount(null);
   };
@@ -272,7 +302,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       wallet: '#06b6d4',
       investment: '#8b5cf6',
     };
-    await addAccount({
+    const newAccount = await addAccount({
       name: accName.trim(),
       type: accType,
       balance: bal,
@@ -299,6 +329,28 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       isDefault: activeAccounts.length === 0 || accIsDefault,
       archived: false,
     });
+
+    if (accType === 'credit_card' && bal > 0 && newAccount) {
+      try {
+        const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
+        const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
+        const todayStr = getLocalIsoDate();
+        const unbilledWin = getActiveUnbilledCycle(bDay, dDay, todayStr);
+        const { year: uY, month: uM } = parseIsoDate(unbilledWin.periodEnd);
+        const prevCycle = getCycleWindowForMonth(bDay, dDay, uY, uM - 2);
+
+        if (prevCycle.periodEnd <= todayStr) {
+          await reconcileCreditCardStatement({
+            cardAccountId: newAccount.id,
+            cycleKey: prevCycle.cycleKey,
+            actualStatementAmount: bal,
+            note: 'Opening bill statement',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to auto-reconcile statement on creation:', err);
+      }
+    }
     toast.success(`Added ${accName.trim()}`);
     setIsNewAccountOpen(false);
     setAccName('');
@@ -1156,12 +1208,28 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                 {(() => {
                   const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
                   const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
-                  const now = new Date();
-                  const win = getCycleWindowForMonth(bDay, dDay, now.getFullYear(), now.getMonth());
+                  const todayStr = getLocalIsoDate();
+                  const unbilledWin = getActiveUnbilledCycle(bDay, dDay, todayStr);
+                  const { year: uY, month: uM } = parseIsoDate(unbilledWin.periodEnd);
+                  const lastBilledWin = getCycleWindowForMonth(bDay, dDay, uY, uM - 2);
+                  const hasLastBilled = lastBilledWin.periodEnd <= todayStr;
+
                   return (
-                    <div className="col-span-3 text-[11px] text-primary bg-primary/10 border border-primary/20 p-2.5 rounded-xl">
-                      Next bill generates on <strong className="text-foreground">{win.periodEnd}</strong> · Due on{' '}
-                      <strong className="text-amber-600 dark:text-amber-400">{win.dueDate}</strong>
+                    <div className="col-span-3 text-[11px] text-primary bg-primary/10 border border-primary/20 p-2.5 rounded-xl space-y-1">
+                      {hasLastBilled && (
+                        <div className="flex items-center justify-between text-muted-foreground flex-wrap gap-1">
+                          <span>Latest bill generated:</span>
+                          <span className="font-semibold text-foreground">
+                            {formatShortDate(lastBilledWin.periodEnd)} (Due <strong className="text-amber-600 dark:text-amber-400 font-semibold">{formatShortDate(lastBilledWin.dueDate)}</strong>)
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-muted-foreground flex-wrap gap-1">
+                        <span>Next bill generates:</span>
+                        <span className="font-semibold text-foreground">
+                          {formatShortDate(unbilledWin.periodEnd)} (Due {formatShortDate(unbilledWin.dueDate)})
+                        </span>
+                      </div>
                     </div>
                   );
                 })()}
@@ -1304,12 +1372,28 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
                 {(() => {
                   const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
                   const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
-                  const now = new Date();
-                  const win = getCycleWindowForMonth(bDay, dDay, now.getFullYear(), now.getMonth());
+                  const todayStr = getLocalIsoDate();
+                  const unbilledWin = getActiveUnbilledCycle(bDay, dDay, todayStr);
+                  const { year: uY, month: uM } = parseIsoDate(unbilledWin.periodEnd);
+                  const lastBilledWin = getCycleWindowForMonth(bDay, dDay, uY, uM - 2);
+                  const hasLastBilled = lastBilledWin.periodEnd <= todayStr;
+
                   return (
-                    <div className="col-span-3 text-[11px] text-primary bg-primary/10 border border-primary/20 p-2.5 rounded-xl">
-                      Next bill generates on <strong className="text-foreground">{win.periodEnd}</strong> · Due on{' '}
-                      <strong className="text-amber-600 dark:text-amber-400">{win.dueDate}</strong>
+                    <div className="col-span-3 text-[11px] text-primary bg-primary/10 border border-primary/20 p-2.5 rounded-xl space-y-1">
+                      {hasLastBilled && (
+                        <div className="flex items-center justify-between text-muted-foreground flex-wrap gap-1">
+                          <span>Latest bill generated:</span>
+                          <span className="font-semibold text-foreground">
+                            {formatShortDate(lastBilledWin.periodEnd)} (Due <strong className="text-amber-600 dark:text-amber-400 font-semibold">{formatShortDate(lastBilledWin.dueDate)}</strong>)
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-muted-foreground flex-wrap gap-1">
+                        <span>Next bill generates:</span>
+                        <span className="font-semibold text-foreground">
+                          {formatShortDate(unbilledWin.periodEnd)} (Due {formatShortDate(unbilledWin.dueDate)})
+                        </span>
+                      </div>
                     </div>
                   );
                 })()}

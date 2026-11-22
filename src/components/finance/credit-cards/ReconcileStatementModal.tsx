@@ -85,7 +85,13 @@ export function ReconcileStatementModal({
     if (open) {
       const activeKey = statement?.cycleKey || defaultCycleKey || currentMonthKey;
       setCycleKey(activeKey);
-      const initialTotal = statement ? statement.totalDue : calculatedSpend > 0 ? calculatedSpend : '';
+      const initialTotal = statement
+        ? statement.totalDue
+        : calculatedSpend > 0
+        ? calculatedSpend
+        : Math.abs(card.balance || 0) > 0
+        ? Math.abs(card.balance || 0)
+        : '';
       setActualAmount(initialTotal ? String(initialTotal) : '');
       setNote(statement?.notes || '');
     }
