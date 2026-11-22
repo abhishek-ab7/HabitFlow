@@ -5,12 +5,14 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { subDays, subYears, format } from 'date-fns';
-import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile, Brain, Sparkles, AlertCircle, ShoppingBag } from 'lucide-react';
+import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile, Brain, Sparkles, AlertCircle, ShoppingBag, Utensils, ShieldCheck, RefreshCw, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { TimeRangeTabs } from '@/components/analytics';
 import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore, useFinanceStore, formatINR } from '@/lib/stores';
+import { CrossDomainActionMediator } from '@/lib/stores/mediator';
+import { toast } from 'sonner';
 import {
   calculateDailyStats,
   calculateCategoryBreakdown,
@@ -60,12 +62,13 @@ const YearInReview = dynamic(
 );
 
 export default function AnalyticsPageContent() {
-  const { habits, completions, loadHabits, loadCompletions, isLoading: habitsLoading } = useHabitStore(
+  const { habits, completions, loadHabits, loadCompletions, addHabit, isLoading: habitsLoading } = useHabitStore(
     useShallow((s) => ({
       habits: s.habits,
       completions: s.completions,
       loadHabits: s.loadHabits,
       loadCompletions: s.loadCompletions,
+      addHabit: s.addHabit,
       isLoading: s.isLoading,
     }))
   );
@@ -222,6 +225,9 @@ export default function AnalyticsPageContent() {
     };
   }, [habits, completions, goals, dateRange]);
 
+  const [isCreatingNoSpend, setIsCreatingNoSpend] = useState(false);
+  const [isSyncingNoSpend, setIsSyncingNoSpend] = useState(false);
+
   // Behavioral Correlations: Mood & Habits × Spending
   const behavioralCorrelations = useMemo(() => {
     const expenseTransactions = transactions.filter(t => t.type === 'expense');
@@ -229,6 +235,9 @@ export default function AnalyticsPageContent() {
     // Map daily spending
     const dailySpendMap = new Map<string, { total: number; impulse: number }>();
     const impulseKeywords = ['food', 'dining', 'restaurant', 'swiggy', 'zomato', 'blinkit', 'zepto', 'shopping', 'amazon', 'flipkart', 'coffee', 'cafe', 'uber', 'entertainment', 'cinema'];
+    const foodKeywords = ['food', 'dining', 'restaurant', 'swiggy', 'zomato', 'blinkit', 'zepto', 'cafe', 'takeout', 'fast food'];
+
+    const dailyFoodSpendMap = new Map<string, number>();
 
     expenseTransactions.forEach(tx => {
       const dateKey = tx.date.split('T')[0];
@@ -241,11 +250,18 @@ export default function AnalyticsPageContent() {
       const isImpulse = impulseKeywords.some(kw => 
         descLower.includes(kw) || merchantLower.includes(kw) || catLower.includes(kw)
       );
+      const isFood = foodKeywords.some(kw =>
+        descLower.includes(kw) || merchantLower.includes(kw) || catLower.includes(kw)
+      );
 
       dailySpendMap.set(dateKey, {
         total: prev.total + tx.amount,
         impulse: prev.impulse + (isImpulse ? tx.amount : 0),
       });
+
+      if (isFood) {
+        dailyFoodSpendMap.set(dateKey, (dailyFoodSpendMap.get(dateKey) || 0) + tx.amount);
+      }
     });
 
     const stressedSpends: number[] = [];
@@ -255,6 +271,13 @@ export default function AnalyticsPageContent() {
 
     const highHabitSpends: number[] = [];
     const lowHabitSpends: number[] = [];
+
+    // Health habits correlation
+    const healthHabits = habits.filter(
+      h => !h.archived && (h.category === 'health' || /gym|workout|exercise|cook|walk|run|yoga|meal/i.test(h.name))
+    );
+    const healthDaysFoodSpends: number[] = [];
+    const nonHealthDaysFoodSpends: number[] = [];
 
     dailySpendMap.forEach((spend, dateKey) => {
       const mood = getMoodForDate(dateKey);
@@ -274,6 +297,18 @@ export default function AnalyticsPageContent() {
           lowHabitSpends.push(spend.total);
         }
       }
+
+      // Check health habit completion for this day
+      const foodSpend = dailyFoodSpendMap.get(dateKey) || 0;
+      const completedHealth = healthHabits.some(h => {
+        const c = completionsMap.get(`${h.id}_${dateKey}`);
+        return c && c.completed;
+      });
+      if (completedHealth) {
+        healthDaysFoodSpends.push(foodSpend);
+      } else {
+        nonHealthDaysFoodSpends.push(foodSpend);
+      }
     });
 
     const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
@@ -285,6 +320,12 @@ export default function AnalyticsPageContent() {
 
     const avgHighHabitSpend = Math.round(avg(highHabitSpends));
     const avgLowHabitSpend = Math.round(avg(lowHabitSpends));
+
+    const avgHealthDaysFoodSpend = Math.round(avg(healthDaysFoodSpends));
+    const avgNonHealthDaysFoodSpend = Math.round(avg(nonHealthDaysFoodSpends));
+    const healthFoodSavingsPct = avgNonHealthDaysFoodSpend > 0
+      ? Math.round(((avgNonHealthDaysFoodSpend - avgHealthDaysFoodSpend) / avgNonHealthDaysFoodSpend) * 100)
+      : 0;
 
     const moodDiffPct = avgCalmSpend > 0 
       ? Math.round(((avgStressedSpend - avgCalmSpend) / avgCalmSpend) * 100)
@@ -298,6 +339,28 @@ export default function AnalyticsPageContent() {
       ? Math.round(((avgLowHabitSpend - avgHighHabitSpend) / avgHighHabitSpend) * 100)
       : 0;
 
+    // No-Spend Day tracking status
+    const noSpendHabit = habits.find(
+      h => !h.archived && (h.autoTrackRule === 'no_spend_day' || h.autoTrackRule === ('no_spend' as any))
+    );
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const essentialCategories = new Set([
+      'bills_utilities',
+      'rent_housing',
+      'education',
+      'insurance',
+      'healthcare',
+      'groceries_essentials',
+    ]);
+    const todayExpenses = expenseTransactions.filter(t => t.date.split('T')[0] === todayStr);
+    const todayDiscretionarySpend = todayExpenses.reduce((sum, tx) => {
+      if (tx.linkedEmiId || tx.linkedCommitmentId || tx.linkedSipId || tx.paidStatementId || tx.linkedDebtId) return sum;
+      const cat = categories.find(c => c.id === tx.categoryId);
+      const slug = cat?.slug || cat?.id || '';
+      if (essentialCategories.has(slug)) return sum;
+      return sum + tx.amount;
+    }, 0);
+
     const hasData = dailySpendMap.size > 0;
 
     return {
@@ -309,6 +372,14 @@ export default function AnalyticsPageContent() {
       avgCalmImpulse,
       avgHighHabitSpend,
       avgLowHabitSpend,
+      avgHealthDaysFoodSpend,
+      avgNonHealthDaysFoodSpend,
+      healthFoodSavingsPct,
+      healthDaysCount: healthDaysFoodSpends.length,
+      nonHealthDaysCount: nonHealthDaysFoodSpends.length,
+      hasHealthHabits: healthHabits.length > 0,
+      noSpendHabit,
+      todayDiscretionarySpend,
       moodDiffPct,
       impulseDiffPct,
       habitDiffPct,
@@ -317,7 +388,40 @@ export default function AnalyticsPageContent() {
       highHabitDaysCount: highHabitSpends.length,
       lowHabitDaysCount: lowHabitSpends.length,
     };
-  }, [transactions, categories, getMoodForDate, analyticsData.dailyStats]);
+  }, [transactions, categories, getMoodForDate, analyticsData.dailyStats, habits, completionsMap]);
+
+  const handleCreateNoSpendHabit = async () => {
+    try {
+      setIsCreatingNoSpend(true);
+      await addHabit({
+        name: 'No-Spend Day',
+        category: 'finance',
+        targetDaysPerWeek: 7,
+        frequencyType: 'daily',
+        autoTrackRule: 'no_spend_day',
+        difficulty: 'medium',
+        icon: 'Wallet',
+      });
+      await CrossDomainActionMediator.evaluateNoSpendDayRules();
+      toast.success("Created auto-tracked 'No-Spend Day' habit!");
+    } catch {
+      toast.error("Failed to create No-Spend Day habit");
+    } finally {
+      setIsCreatingNoSpend(false);
+    }
+  };
+
+  const handleSyncNoSpend = async () => {
+    try {
+      setIsSyncingNoSpend(true);
+      await CrossDomainActionMediator.evaluateNoSpendDayRules();
+      toast.success("Synced No-Spend Day completions with Finance records");
+    } catch {
+      toast.error("Failed to sync No-Spend Day records");
+    } finally {
+      setIsSyncingNoSpend(false);
+    }
+  };
 
   // Generate insights based on data
   const insights = useMemo((): Insight[] => {
@@ -813,27 +917,124 @@ export default function AnalyticsPageContent() {
                           </div>
                         </div>
 
-                        {/* Correlation 3: Life OS Coping Index */}
-                        <div className="p-3.5 surface-subtle space-y-2.5 flex flex-col justify-between">
-                          <div>
-                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1">
-                              Emotional Coping Index
+                        {/* Correlation 3: Health Habits vs Outside Food Spend */}
+                        <div className="p-3.5 surface-subtle space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Health Habits × Dining
                             </span>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-2xl font-mono font-bold tabular-nums text-foreground">
-                                {behavioralCorrelations.impulseDiffPct > 20 ? 'High' : behavioralCorrelations.impulseDiffPct > 0 ? 'Moderate' : 'Low'}
+                            <span className={cn(
+                              "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border",
+                              behavioralCorrelations.healthFoodSavingsPct > 0
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                : "bg-muted text-muted-foreground"
+                            )}>
+                              {behavioralCorrelations.healthFoodSavingsPct > 0 ? `-${behavioralCorrelations.healthFoodSavingsPct}% delivery` : 'Balanced'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <Utensils className="h-3.5 w-3.5 text-emerald-500" /> On Health Habit Days:
                               </span>
-                              <span className="text-xs text-muted-foreground">
-                                coping sensitivity
+                              <span className="font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                {formatINR(behavioralCorrelations.avgHealthDaysFoodSpend)}/day
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <Utensils className="h-3.5 w-3.5 text-muted-foreground" /> On Off-Track Days:
+                              </span>
+                              <span className="font-mono font-bold tabular-nums text-foreground">
+                                {formatINR(behavioralCorrelations.avgNonHealthDaysFoodSpend)}/day
                               </span>
                             </div>
                           </div>
 
-                          <p className="text-[11px] text-muted-foreground leading-relaxed">
-                            {behavioralCorrelations.impulseDiffPct > 20
-                              ? "Stress noticeably drives higher food delivery and retail purchases."
-                              : "Discretionary purchases remain consistent across emotional states."}
-                          </p>
+                          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden flex">
+                            <div
+                              className="h-full bg-emerald-500"
+                              style={{ width: `${Math.min(100, Math.max(20, (behavioralCorrelations.avgHealthDaysFoodSpend / (behavioralCorrelations.avgHealthDaysFoodSpend + behavioralCorrelations.avgNonHealthDaysFoodSpend || 1)) * 100))}%` }}
+                            />
+                            <div
+                              className="h-full bg-rose-500"
+                              style={{ width: `${Math.min(100, Math.max(20, (behavioralCorrelations.avgNonHealthDaysFoodSpend / (behavioralCorrelations.avgHealthDaysFoodSpend + behavioralCorrelations.avgNonHealthDaysFoodSpend || 1)) * 100))}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 1-Click No-Spend Day Habit Automation Card */}
+                      <div className="rounded-xl border border-border/70 bg-card p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+                            <ShieldCheck className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-foreground">
+                                {behavioralCorrelations.noSpendHabit
+                                  ? "'No-Spend Day' Tracking Active"
+                                  : "Automate 'No-Spend Day' Tracking"}
+                              </span>
+                              {behavioralCorrelations.noSpendHabit && (
+                                <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.2 rounded-full border border-emerald-500/20">
+                                  Rule Active
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                              {behavioralCorrelations.noSpendHabit
+                                ? "Auto-completes days with ₹0 non-essential spend from your FlowFinance transactions."
+                                : "Connect your daily routine with financial discipline. Automatically ticks whenever you log ₹0 discretionary spend."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                          {behavioralCorrelations.noSpendHabit ? (
+                            <div className="flex items-center gap-2.5">
+                              <span className={cn(
+                                "text-xs font-mono font-semibold px-2.5 py-1 rounded-lg border",
+                                behavioralCorrelations.todayDiscretionarySpend === 0
+                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                              )}>
+                                {behavioralCorrelations.todayDiscretionarySpend === 0
+                                  ? "Today: On Track (₹0 spent)"
+                                  : `Today: ${formatINR(behavioralCorrelations.todayDiscretionarySpend)} spent`}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={isSyncingNoSpend}
+                                onClick={handleSyncNoSpend}
+                                title="Sync completions with ledger"
+                                className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                              >
+                                <RefreshCw className={cn("h-3.5 w-3.5", isSyncingNoSpend && "animate-spin")} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={isCreatingNoSpend}
+                              onClick={handleCreateNoSpendHabit}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-xs disabled:opacity-50"
+                            >
+                              {isCreatingNoSpend ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  Creating...
+                                </>
+                              ) : (
+                                <>
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                  Create 'No-Spend Day' Habit
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -842,7 +1043,11 @@ export default function AnalyticsPageContent() {
                         <Sparkles className="h-4 w-4 text-invest shrink-0 mt-0.5" />
                         <div className="text-xs leading-relaxed text-muted-foreground">
                           <span className="font-semibold text-foreground">Life OS Behavioral Insight: </span>
-                          {behavioralCorrelations.impulseDiffPct > 15 ? (
+                          {behavioralCorrelations.healthFoodSavingsPct > 15 ? (
+                            <span>
+                              On days when you complete health &amp; fitness habits, outside food delivery and dining spend drops by <strong className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">-{behavioralCorrelations.healthFoodSavingsPct}%</strong>. Physical discipline visibly protects your wallet from convenience spending.
+                            </span>
+                          ) : behavioralCorrelations.impulseDiffPct > 15 ? (
                             <span>
                               On days logged as stressed or sad, your food delivery and impulse retail spend increases by <strong className="text-rose-600 dark:text-rose-400 font-mono">+{behavioralCorrelations.impulseDiffPct}%</strong>. We recommend creating an auto-tracked habit: <em>"5-min evening meditation or walk"</em> to pause before checking delivery apps.
                             </span>

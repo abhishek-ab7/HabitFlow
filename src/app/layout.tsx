@@ -8,6 +8,7 @@ import { Header, ShortcutsProvider, MobileNav, AppStartupGate } from '@/componen
 import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
+import { QuickCaptureModal } from '@/components/quick-capture/QuickCaptureModal';
 import './globals.css';
 
 const geistSans = Geist({
@@ -90,6 +91,7 @@ export default function RootLayout({
                 <ShortcutsProvider />
                 <Toaster richColors position="bottom-right" />
                 <PomodoroFloating />
+                <QuickCaptureModal />
                 <PWAInstallPrompt />
               </AppStartupGate>
             </SyncProvider>

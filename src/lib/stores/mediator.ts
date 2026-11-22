@@ -106,6 +106,84 @@ export class CrossDomainActionMediator {
     }
   }
 
+  // Evaluate No-Spend Day rules across target dates or past week
+  public static async evaluateNoSpendDayRules(targetDate?: string) {
+    const { useFinanceStore } = await import('./finance-store');
+    const habitStore = useHabitStore.getState();
+    const financeStore = useFinanceStore.getState();
+
+    const noSpendHabits = habitStore.habits.filter(
+      (h) => !h.archived && (h.autoTrackRule === 'no_spend_day' || h.autoTrackRule === ('no_spend' as any))
+    );
+    if (noSpendHabits.length === 0) return;
+
+    const today = new Date();
+    const datesToEvaluate: string[] = targetDate
+      ? [targetDate]
+      : Array.from({ length: 7 }, (_, i) => {
+          const d = new Date();
+          d.setDate(today.getDate() - i);
+          return d.toISOString().split('T')[0];
+        });
+
+    const transactions = financeStore.transactions.filter((t) => !t.deletedAt);
+    const categories = financeStore.categories;
+    const categoryMap = new Map(categories.map((c) => [c.id, c]));
+
+    const essentialCategories = new Set([
+      'bills_utilities',
+      'rent_housing',
+      'education',
+      'insurance',
+      'healthcare',
+      'groceries_essentials',
+    ]);
+
+    for (const date of datesToEvaluate) {
+      const dayExpenses = transactions.filter((t) => t.date === date && t.type === 'expense');
+
+      const discretionarySpend = dayExpenses.reduce((sum, tx) => {
+        if (tx.linkedEmiId || tx.linkedCommitmentId || tx.linkedSipId || tx.paidStatementId || tx.linkedDebtId) {
+          return sum;
+        }
+        const cat = categoryMap.get(tx.categoryId);
+        const slug = cat?.slug || cat?.id || '';
+        if (essentialCategories.has(slug)) {
+          return sum;
+        }
+        return sum + tx.amount;
+      }, 0);
+
+      for (const habit of noSpendHabits) {
+        const isDone = habitStore.completions.some(
+          (c) => c.habitId === habit.id && c.date === date && c.completed
+        );
+
+        if (discretionarySpend === 0 && !isDone) {
+          await CrossDomainActionMediator.dispatch({
+            type: 'HABIT_COMPLETED',
+            payload: {
+              habitId: habit.id,
+              date,
+              difficulty: habit.difficulty || 'medium',
+              category: 'finance',
+            },
+          });
+        } else if (discretionarySpend > 0 && isDone) {
+          await CrossDomainActionMediator.dispatch({
+            type: 'HABIT_UNCOMPLETED',
+            payload: {
+              habitId: habit.id,
+              date,
+              difficulty: habit.difficulty || 'medium',
+              category: 'finance',
+            },
+          });
+        }
+      }
+    }
+  }
+
   // Handle FlowFinance events: auto-complete matching money/finance habits
   public static async onFinanceEvent(event: {
     type:
@@ -117,6 +195,9 @@ export class CrossDomainActionMediator {
     date: string;
     amount?: number;
   }) {
+    // 1. Evaluate No-Spend Day rules dynamically (auto-tick if 0, auto-reverse if spent)
+    await CrossDomainActionMediator.evaluateNoSpendDayRules(event.date);
+
     const habitStore = useHabitStore.getState();
 
     // Auto-complete matching daily expense/finance tracking habits for the date

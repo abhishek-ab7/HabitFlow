@@ -56,6 +56,7 @@ import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
 import { SettingsHero } from '@/components/settings/SettingsHero';
 import { AvatarSelector } from '@/components/settings/AvatarSelector';
 import { PasswordChangeModal } from '@/components/settings/password-change-modal';
+import { DataVaultCard } from '@/components/settings/DataVaultCard';
 import { useUserStore } from '@/lib/stores/user-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import type { Avatar } from '@/lib/avatars';
@@ -1117,97 +1118,13 @@ export default function SettingsPageContent() {
             </section>
 
             {/* DATA VAULT */}
-            <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
-              <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
-                    <Database className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="text-sm font-semibold text-foreground tracking-tight">
-                      Data Vault
-                    </h2>
-                    <p className="text-[11px] text-muted-foreground">
-                      Backups, exports &amp; storage
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    'text-[11px] font-medium px-2 py-0.5 rounded-md whitespace-nowrap shrink-0',
-                    isStoragePersistent
-                      ? 'bg-success/12 text-success'
-                      : 'bg-warning/12 text-warning'
-                  )}
-                >
-                  {isStoragePersistent ? 'Persistent' : 'Standard'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportData}
-                  disabled={isExporting}
-                  className="w-full justify-center gap-1.5 h-9 px-2.5 text-xs whitespace-nowrap"
-                  title="Backup to JSON"
-                >
-                  <Download className="h-3.5 w-3.5 shrink-0" />
-                  <span>JSON Backup</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportCSVData}
-                  disabled={isExporting}
-                  className="w-full justify-center gap-1.5 h-9 px-2.5 text-xs whitespace-nowrap"
-                  title="Export to CSV"
-                >
-                  <Download className="h-3.5 w-3.5 shrink-0" />
-                  <span>CSV Export</span>
-                </Button>
-              </div>
-
-              <div className="relative w-full">
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleImportData}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-center gap-1.5 h-9 px-3 text-xs border-dashed whitespace-nowrap"
-                  title="Restore from JSON"
-                >
-                  <Upload className="h-3.5 w-3.5 shrink-0" />
-                  <span>Restore from JSON Backup</span>
-                </Button>
-              </div>
-
-              {hasDuplicates && (
-                <div className="p-3 bg-warning/10 rounded-xl border border-warning/20 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-xs font-medium text-warning min-w-0">
-                    <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">
-                      {duplicateCounts.habits + duplicateCounts.goals} duplicates found
-                    </span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleCleanupDuplicates}
-                    disabled={isCleaning}
-                    className="h-7 px-2.5 text-xs bg-warning/15 hover:bg-warning/25 text-warning whitespace-nowrap shrink-0"
-                  >
-                    Fix Now
-                  </Button>
-                </div>
-              )}
-            </section>
+            <DataVaultCard
+              isStoragePersistent={!!isStoragePersistent}
+              hasDuplicates={!!hasDuplicates}
+              duplicateCounts={duplicateCounts || { habits: 0, goals: 0 }}
+              handleCleanupDuplicates={handleCleanupDuplicates}
+              isCleaning={isCleaning}
+            />
           </div>
         </div>
 

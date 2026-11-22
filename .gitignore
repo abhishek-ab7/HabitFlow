@@ -61,6 +61,10 @@ dev.log
 /playwright-report/
 /test-results/
 /LT
+/.nyc_output/
+
+# Lockfile standardization (npm)
+pnpm-lock.yaml
 
 .aistudio/
 .antigravity/

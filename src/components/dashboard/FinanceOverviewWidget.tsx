@@ -9,6 +9,8 @@ import {
   CalendarClock,
   CheckCircle2,
   Receipt,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type { FinancialObligationItem } from '@/lib/types';
@@ -40,6 +42,7 @@ export function FinanceOverviewWidget() {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [payingCardAccount, setPayingCardAccount] = useState<FinanceAccount | null>(null);
   const [payingCardAmount, setPayingCardAmount] = useState<number | undefined>(undefined);
+  const [payingId, setPayingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (categories.length === 0) {
@@ -49,8 +52,24 @@ export function FinanceOverviewWidget() {
 
   const summary = getMonthlySummary();
   const netWorth = getNetWorthSummary();
-  const due14d = getUpcomingFinancialObligations(14);
-  const dueTotal = due14d.reduce((acc, item) => acc + item.amount, 0);
+
+  const due5d = useMemo(
+    () => getUpcomingFinancialObligations(5),
+    [getUpcomingFinancialObligations, transactions]
+  );
+  const totalDue5d = useMemo(
+    () => due5d.reduce((acc, item) => acc + item.amount, 0),
+    [due5d]
+  );
+
+  const due14d = useMemo(
+    () => getUpcomingFinancialObligations(14),
+    [getUpcomingFinancialObligations, transactions]
+  );
+  const dueTotal14d = useMemo(
+    () => due14d.reduce((acc, item) => acc + item.amount, 0),
+    [due14d]
+  );
 
   const topCategories = summary.categoryBreakdown
     .filter((c) => c.budgetLimit > 0 || c.spent > 0)
@@ -70,20 +89,36 @@ export function FinanceOverviewWidget() {
   );
 
   const handleQuickPay = async (item: FinancialObligationItem) => {
-    if (item.type === 'bill') {
-      const tx = await payRecurringBill(item.sourceId);
-      if (tx) toast.success(`Marked ${item.title} paid`);
-    } else if (item.type === 'emi') {
-      const tx = await payMonthlyEmi(item.sourceId);
-      if (tx) toast.success(`Logged ${item.title}`);
-    } else if (item.type === 'sip') {
-      const tx = await payMonthlySip(item.sourceId);
-      if (tx) toast.success(`Logged ${item.title}`);
-    } else if (item.type === 'commitment') {
-      const tx = await settleCommitmentBalance(item.sourceId, undefined, selectedMonth);
-      if (tx) toast.success(`Settled ${item.title}`);
-    } else {
-      router.push('/finance?tab=trackers');
+    if (payingId) return; // Prevent double taps
+    setPayingId(item.id);
+    try {
+      if (item.type === 'bill') {
+        const tx = await payRecurringBill(item.sourceId);
+        if (tx) toast.success(`Marked ${item.title} paid`);
+      } else if (item.type === 'emi') {
+        const tx = await payMonthlyEmi(item.sourceId);
+        if (tx) toast.success(`Logged EMI payment for ${item.title}`);
+      } else if (item.type === 'sip') {
+        const tx = await payMonthlySip(item.sourceId);
+        if (tx) toast.success(`Logged SIP investment for ${item.title}`);
+      } else if (item.type === 'commitment') {
+        const tx = await settleCommitmentBalance(item.sourceId, undefined, selectedMonth);
+        if (tx) toast.success(`Settled commitment: ${item.title}`);
+      } else if (item.type === 'credit_card') {
+        const card = accounts.find((a) => a.id === item.sourceId);
+        if (card) {
+          setPayingCardAccount(card);
+          setPayingCardAmount(item.amount);
+        } else {
+          router.push('/finance?tab=accounts');
+        }
+      } else {
+        router.push('/finance?tab=trackers');
+      }
+    } catch {
+      toast.error(`Could not process payment for ${item.title}`);
+    } finally {
+      setPayingId(null);
     }
   };
 
@@ -136,6 +171,108 @@ export function FinanceOverviewWidget() {
             </Button>
           </div>
         </div>
+
+        {/* 5-Day Due Soon Action Strip (Overdue + Next 5 Days) */}
+        {due5d.length > 0 && (
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3.5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                  <CalendarClock className="h-3.5 w-3.5" />
+                </span>
+                <span className="text-xs font-bold text-foreground">
+                  Due Soon (≤5 Days)
+                </span>
+                <span className="text-[11px] font-mono tabular-nums text-muted-foreground">
+                  · {due5d.length} {due5d.length === 1 ? 'obligation' : 'obligations'} ({formatINR(totalDue5d)})
+                </span>
+              </div>
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                Action Required
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {due5d.map((item) => {
+                const isItemPaying = payingId === item.id;
+                return (
+                  <div
+                    key={`due5-${item.id}`}
+                    className="rounded-xl border border-border/80 bg-background/90 p-3 flex flex-col justify-between gap-2.5 shadow-2xs transition-colors hover:border-border"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-foreground truncate">
+                            {item.title}
+                          </span>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-muted text-muted-foreground uppercase">
+                            {item.type === 'credit_card' ? 'Card' : item.type}
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-mono tabular-nums mt-0.5">
+                          <span
+                            className={
+                              item.isOverdue
+                                ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                                : item.daysUntilDue === 0
+                                ? 'text-amber-600 dark:text-amber-400 font-semibold'
+                                : 'text-muted-foreground'
+                            }
+                          >
+                            {item.isOverdue
+                              ? `Overdue by ${Math.abs(item.daysUntilDue)}d`
+                              : item.daysUntilDue === 0
+                              ? 'Due Today'
+                              : `Due in ${item.daysUntilDue}d`}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="text-right font-mono tabular-nums font-bold text-xs sm:text-sm text-foreground shrink-0">
+                        {formatINR(item.amount)}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end pt-1 border-t border-border/40">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={payingId !== null}
+                        onClick={() => handleQuickPay(item)}
+                        className={`h-7 px-3 text-xs rounded-lg gap-1.5 font-semibold ${
+                          item.type === 'credit_card'
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            : item.type === 'sip'
+                            ? 'bg-violet-600 hover:bg-violet-700 text-white'
+                            : 'bg-primary hover:bg-primary/90 text-primary-foreground'
+                        }`}
+                      >
+                        {isItemPaying ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Processing...
+                          </>
+                        ) : item.type === 'credit_card' ? (
+                          'Pay Bill'
+                        ) : item.type === 'sip' ? (
+                          'Invest'
+                        ) : item.type === 'commitment' ? (
+                          'Settle'
+                        ) : item.type === 'emi' ? (
+                          'Pay EMI'
+                        ) : item.type === 'debt' ? (
+                          'View'
+                        ) : (
+                          'Mark Paid'
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 2-Column Operational Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-2 border-t border-border/60">
@@ -274,7 +411,7 @@ export function FinanceOverviewWidget() {
                 Upcoming Dues (14d)
               </span>
               <span className="font-mono tabular-nums text-muted-foreground">
-                {due14d.length > 0 ? formatINR(dueTotal) : 'Clear'}
+                {due14d.length > 0 ? formatINR(dueTotal14d) : 'Clear'}
               </span>
             </div>
 
@@ -285,73 +422,82 @@ export function FinanceOverviewWidget() {
               </div>
             ) : (
               <div className="space-y-2">
-                {due14d.slice(0, 4).map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border border-border/80 bg-background p-2.5 flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-foreground truncate">
-                        {item.title}
-                      </p>
-                      <p className="text-[11px] font-mono tabular-nums text-muted-foreground truncate">
-                        <span
-                          className={
-                            item.isOverdue
-                              ? 'text-rose-600 dark:text-rose-400 font-semibold'
-                              : item.daysUntilDue <= 3
-                              ? 'text-amber-600 dark:text-amber-400 font-semibold'
-                              : ''
-                          }
+                {due14d.slice(0, 4).map((item) => {
+                  const isItemPaying = payingId === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-border/80 bg-background p-2.5 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-foreground truncate">
+                          {item.title}
+                        </p>
+                        <p className="text-[11px] font-mono tabular-nums text-muted-foreground truncate">
+                          <span
+                            className={
+                              item.isOverdue
+                                ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                                : item.daysUntilDue <= 3
+                                ? 'text-amber-600 dark:text-amber-400 font-semibold'
+                                : ''
+                            }
+                          >
+                            {item.isOverdue
+                              ? `${Math.abs(item.daysUntilDue)}d overdue`
+                              : item.daysUntilDue === 0
+                              ? 'Today'
+                              : `In ${item.daysUntilDue}d`}
+                          </span>{' '}
+                          · {formatINR(item.amount)}
+                        </p>
+                      </div>
+                      {item.type === 'credit_card' ? (
+                        <button
+                          type="button"
+                          disabled={payingId !== null}
+                          onClick={() => {
+                            const card = accounts.find((a) => a.id === item.sourceId);
+                            if (card) {
+                              setPayingCardAccount(card);
+                              setPayingCardAmount(item.amount);
+                            } else {
+                              router.push('/finance?tab=accounts');
+                            }
+                          }}
+                          className="min-h-[32px] px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold shrink-0 transition-colors disabled:opacity-50"
                         >
-                          {item.isOverdue
-                            ? `${Math.abs(item.daysUntilDue)}d overdue`
-                            : item.daysUntilDue === 0
-                            ? 'Today'
-                            : `In ${item.daysUntilDue}d`}
-                        </span>{' '}
-                        · {formatINR(item.amount)}
-                      </p>
+                          Pay
+                        </button>
+                      ) : item.type !== 'debt' ? (
+                        <button
+                          type="button"
+                          disabled={payingId !== null}
+                          onClick={() => handleQuickPay(item)}
+                          className="min-h-[32px] px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold shrink-0 transition-colors disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {isItemPaying ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : item.type === 'sip' ? (
+                            'Invest'
+                          ) : item.type === 'commitment' ? (
+                            'Settle'
+                          ) : (
+                            'Paid'
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => router.push('/finance?tab=trackers')}
+                          className="min-h-[32px] px-2.5 rounded-lg border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground shrink-0"
+                        >
+                          View
+                        </button>
+                      )}
                     </div>
-                    {item.type === 'credit_card' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const card = accounts.find((a) => a.id === item.sourceId);
-                          if (card) {
-                            setPayingCardAccount(card);
-                            setPayingCardAmount(item.amount);
-                          } else {
-                            router.push('/finance?tab=accounts');
-                          }
-                        }}
-                        className="min-h-[32px] px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold shrink-0 transition-colors"
-                      >
-                        Pay
-                      </button>
-                    ) : item.type !== 'debt' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleQuickPay(item)}
-                        className="min-h-[32px] px-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold shrink-0 transition-colors"
-                      >
-                        {item.type === 'sip'
-                          ? 'Invest'
-                          : item.type === 'commitment'
-                          ? 'Settle'
-                          : 'Paid'}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => router.push('/finance?tab=trackers')}
-                        className="min-h-[32px] px-2.5 rounded-lg border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground shrink-0"
-                      >
-                        View
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
                 {due14d.length > 4 && (
                   <button
                     type="button"
