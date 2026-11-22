@@ -17,7 +17,10 @@ import { useFinanceStore } from '@/lib/stores/finance-store';
 import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
 import {
   getCycleWindowForMonth,
+  getLocalIsoDate,
+  formatShortDate,
   resolveTransactionCycle,
+  roundCurrency,
 } from '@/lib/finance/credit-card-cycles';
 import { Calculator, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,9 +47,8 @@ export function ReconcileStatementModal({
   const dueDay = card.dueDay ?? 20;
   const gracePeriodDays = card.gracePeriodDays;
 
-  // Determine cycleKey to reconcile
-  const now = new Date();
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // Determine cycleKey to reconcile using local calendar date
+  const currentMonthKey = getLocalIsoDate().slice(0, 7);
   const initialCycleKey = statement?.cycleKey || defaultCycleKey || currentMonthKey;
 
   const [cycleKey, setCycleKey] = useState(initialCycleKey);
@@ -71,8 +73,11 @@ export function ReconcileStatementModal({
   for (const tx of trackedTransactions) {
     const txCycle = resolveTransactionCycle(tx.date, billingDay, dueDay, tx.statementCycleKey);
     if (txCycle === cycleKey) {
-      if (tx.type === 'expense') calculatedSpend += tx.amount;
-      else if (tx.type === 'income' || tx.type === 'investment') calculatedSpend -= tx.amount;
+      if (tx.type === 'income') {
+        calculatedSpend = roundCurrency(calculatedSpend - tx.amount);
+      } else {
+        calculatedSpend = roundCurrency(calculatedSpend + tx.amount);
+      }
     }
   }
 
@@ -87,7 +92,7 @@ export function ReconcileStatementModal({
   }, [open, statement, defaultCycleKey, currentMonthKey, calculatedSpend]);
 
   const numActual = parseFloat(actualAmount) || 0;
-  const adjustment = numActual - calculatedSpend;
+  const adjustment = roundCurrency(numActual - calculatedSpend);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,17 +144,17 @@ export function ReconcileStatementModal({
           <div className="rounded-xl bg-muted/50 border border-border/70 p-3.5 space-y-2 text-xs">
             <div className="flex justify-between items-center text-foreground">
               <span className="text-muted-foreground">Billing Cycle:</span>
-              <span className="font-semibold text-foreground">
-                {cycleWindow.periodStart} to {cycleWindow.periodEnd}
+              <span className="font-semibold text-foreground whitespace-nowrap">
+                {formatShortDate(cycleWindow.periodStart)} – {formatShortDate(cycleWindow.periodEnd)}
               </span>
             </div>
             <div className="flex justify-between items-center text-foreground">
               <span className="text-muted-foreground">Payment Due Date:</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400">{cycleWindow.dueDate}</span>
+              <span className="font-bold text-warning whitespace-nowrap">{formatShortDate(cycleWindow.dueDate)}</span>
             </div>
             <div className="flex justify-between items-center text-foreground pt-1.5 border-t border-border/60">
               <span className="text-muted-foreground">Tracked Spends in HabitFlow:</span>
-              <span className="font-semibold text-foreground">{formatINR(calculatedSpend)}</span>
+              <span className="font-semibold text-foreground tabular-nums">{formatINR(calculatedSpend)}</span>
             </div>
           </div>
 
@@ -168,7 +173,7 @@ export function ReconcileStatementModal({
                 placeholder="22000"
                 value={actualAmount}
                 onChange={(e) => setActualAmount(e.target.value)}
-                className="pl-7 bg-background border-border text-foreground text-base font-semibold focus-visible:ring-primary h-11"
+                className="pl-7 bg-background border-border text-foreground text-base font-semibold tabular-nums focus-visible:ring-primary h-11"
                 required
                 autoFocus
               />
@@ -182,7 +187,7 @@ export function ReconcileStatementModal({
           {actualAmount !== '' && (
             <div className="rounded-xl p-3 text-xs bg-muted/40 border border-border/60">
               {Math.abs(adjustment) < 0.01 ? (
-                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                <div className="flex items-center gap-1.5 text-success font-medium">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>Exact match! No manual adjustment needed.</span>
                 </div>
@@ -190,17 +195,17 @@ export function ReconcileStatementModal({
                 <div className="flex items-start gap-2 text-primary">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-semibold">Adjustment: +{formatINR(adjustment)}</span>
+                    <span className="font-semibold tabular-nums">Adjustment: +{formatINR(adjustment)}</span>
                     <p className="text-muted-foreground text-[11px] mt-0.5">
                       Accounted as untracked historical spend or opening balance.
                     </p>
                   </div>
                 </div>
               ) : (
-                <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
+                <div className="flex items-start gap-2 text-warning">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-semibold">Adjustment: -{formatINR(Math.abs(adjustment))}</span>
+                    <span className="font-semibold tabular-nums">Adjustment: -{formatINR(Math.abs(adjustment))}</span>
                     <p className="text-muted-foreground text-[11px] mt-0.5">
                       Accounted as credits, refunds, or cashback discounts.
                     </p>

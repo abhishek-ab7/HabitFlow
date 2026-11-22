@@ -140,7 +140,7 @@ export function StatementHistoryModal({
   const getStatusBadge = (status: string, dueDate: string, remainingDue: number) => {
     if (remainingDue <= 0 || status === 'paid') {
       return (
-        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
+        <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
           <CheckCircle2 className="w-3 h-3" /> Paid
         </Badge>
       );
@@ -149,27 +149,27 @@ export function StatementHistoryModal({
     const diff = daysBetween(today, dueDate);
     if (diff < 0) {
       return (
-        <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
+        <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
           <AlertTriangle className="w-3 h-3" /> Overdue by {Math.abs(diff)}d
         </Badge>
       );
     }
     if (diff <= 3) {
       return (
-        <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
+        <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
           <Clock className="w-3 h-3" /> {diff === 0 ? 'Due Today' : `Due in ${diff}d`}
         </Badge>
       );
     }
     if (diff <= 5) {
       return (
-        <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
+        <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
           <Clock className="w-3 h-3" /> Due in {diff}d
         </Badge>
       );
     }
     return (
-      <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
+      <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-1 whitespace-nowrap shrink-0">
         Billed
       </Badge>
     );
@@ -245,10 +245,7 @@ export function StatementHistoryModal({
         <DialogHeader className="p-5 pb-3 border-b border-border bg-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
-                style={{ backgroundColor: `${card.color || '#f43f5e'}18`, color: card.color || '#f43f5e' }}
-              >
+              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 shadow-xs">
                 <CreditCard className="w-4 h-4" />
               </div>
               <div>
@@ -274,7 +271,14 @@ export function StatementHistoryModal({
               >
                 Current Bill
                 {summary.billedStatement && summary.billedStatement.remainingDue > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px] font-semibold tabular-nums">
+                  <span
+                    className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums ${
+                      summary.overdueStatements.length > 0 ||
+                      (summary.daysUntilDue !== null && summary.daysUntilDue <= 3)
+                        ? 'bg-destructive/15 text-destructive'
+                        : 'bg-warning/15 text-warning'
+                    }`}
+                  >
                     {formatINR(summary.billedStatement.remainingDue)}
                   </span>
                 )}
@@ -285,7 +289,7 @@ export function StatementHistoryModal({
               >
                 Unbilled Cycle
                 {(summary.unbilledSpend ?? summary.unbilledCycle.amount) > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400 text-[10px] font-semibold tabular-nums">
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
                     {formatINR(summary.unbilledSpend ?? summary.unbilledCycle.amount)}
                   </span>
                 )}
@@ -314,7 +318,14 @@ export function StatementHistoryModal({
                       <div className="text-right">
                         <div className="text-[11px] text-muted-foreground">Due Date</div>
                         <div className="flex items-center gap-1.5 justify-end">
-                          <span className="text-xs font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                          <span
+                            className={`text-xs font-bold whitespace-nowrap ${
+                              summary.billedStatement.status === 'overdue' ||
+                              (summary.daysUntilDue !== null && summary.daysUntilDue <= 3)
+                                ? 'text-destructive'
+                                : 'text-warning'
+                            }`}
+                          >
                             {formatShortDate(summary.billedStatement.dueDate)}
                           </span>
                           {getStatusBadge(
@@ -335,13 +346,20 @@ export function StatementHistoryModal({
                       </div>
                       <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                         <div className="text-[10px] text-muted-foreground font-medium">Paid Amount</div>
-                        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                        <div className="text-sm font-bold text-success tabular-nums">
                           {formatINR(summary.billedStatement.paidAmount)}
                         </div>
                       </div>
                       <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                         <div className="text-[10px] text-muted-foreground font-medium">Remaining Due</div>
-                        <div className="text-sm font-bold text-amber-600 dark:text-amber-400 tabular-nums">
+                        <div
+                          className={`text-sm font-bold tabular-nums ${
+                            summary.billedStatement.status === 'overdue' ||
+                            (summary.daysUntilDue !== null && summary.daysUntilDue <= 3)
+                              ? 'text-destructive'
+                              : 'text-warning'
+                          }`}
+                        >
                           {formatINR(summary.billedStatement.remainingDue)}
                         </div>
                       </div>
@@ -455,7 +473,7 @@ export function StatementHistoryModal({
                     </div>
                     <div className="text-right">
                       <div className="text-[11px] text-muted-foreground">Statement Generates On</div>
-                      <div className="text-xs font-bold text-sky-600 dark:text-sky-400 whitespace-nowrap">
+                      <div className="text-xs font-bold text-primary whitespace-nowrap">
                         {formatShortDate(summary.unbilledCycle.periodEnd)}
                       </div>
                     </div>
@@ -470,7 +488,7 @@ export function StatementHistoryModal({
                     </div>
                     <div className="bg-background border border-border/70 p-2.5 rounded-lg">
                       <div className="text-[10px] text-muted-foreground font-medium">Estimated Due Date</div>
-                      <div className="text-base font-bold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                      <div className="text-base font-bold text-warning whitespace-nowrap">
                         {formatShortDate(summary.unbilledCycle.dueDate)}
                       </div>
                     </div>
@@ -544,11 +562,15 @@ export function StatementHistoryModal({
                             {formatINR(stmt.totalDue)}
                           </div>
                           {stmt.remainingDue > 0 ? (
-                            <div className="text-amber-600 dark:text-amber-400 text-[11px] font-semibold tabular-nums">
+                            <div
+                              className={`text-[11px] font-semibold tabular-nums ${
+                                stmt.status === 'overdue' ? 'text-destructive' : 'text-warning'
+                              }`}
+                            >
                               Due: {formatINR(stmt.remainingDue)}
                             </div>
                           ) : (
-                            <div className="text-emerald-600 dark:text-emerald-400 text-[11px] font-medium tabular-nums">
+                            <div className="text-success text-[11px] font-medium tabular-nums">
                               Paid {formatINR(stmt.paidAmount)}
                             </div>
                           )}

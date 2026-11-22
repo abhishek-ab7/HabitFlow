@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/dialog';
 import { CategoryIcon } from './CategoryIcon';
 import { CreditCardItem } from './credit-cards/CreditCardItem';
-import { getCycleWindowForMonth } from '@/lib/finance/credit-card-cycles';
+import { getCycleWindowForMonth, getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { toast } from 'sonner';
 
 interface AccountsTabProps {
@@ -321,7 +321,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       categoryId: fallbackCat,
       accountId: payCardFromAccId,
       toAccountId: payingCard.id,
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalIsoDate(),
     });
     toast.success(`Paid ${formatINR(amt)} toward ${payingCard.name}`);
     setPayingCard(null);

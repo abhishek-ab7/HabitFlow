@@ -122,9 +122,9 @@
   --ring: oklch(0.52 0.14 163);
 
   /* Semantic Status */
-  --success: oklch(0.54 0.16 155);
+  --success: oklch(0.50 0.155 155);
   --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.68 0.16 70);
+  --warning: oklch(0.55 0.155 64);
   --warning-foreground: oklch(0.22 0.05 70);
   --info: oklch(0.56 0.14 235);
   --info-foreground: oklch(0.99 0 0);

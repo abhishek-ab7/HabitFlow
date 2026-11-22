@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { formatINR } from '@/lib/stores/finance/helpers';
 import { useFinanceStore } from '@/lib/stores/finance-store';
 import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
-import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
+import { getLocalIsoDate, formatShortDate } from '@/lib/finance/credit-card-cycles';
 import { Landmark, ArrowRight, ShieldCheck, Calendar, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -109,14 +109,14 @@ export function PayCreditCardModal({
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto bg-card border border-border text-card-foreground shadow-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
-            <span className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+            <span className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
               <CreditCard className="w-4 h-4" />
             </span>
             <span>Pay {card.name}</span>
           </DialogTitle>
           <DialogDescription className="text-xs">
             {statement
-              ? `Statement (${statement.periodStart} – ${statement.periodEnd}) · Due ${statement.dueDate}`
+              ? `Statement (${formatShortDate(statement.periodStart)} – ${formatShortDate(statement.periodEnd)}) · Due ${formatShortDate(statement.dueDate)}`
               : `Current outstanding balance: ${formatINR(suggestedAmount)}`}
           </DialogDescription>
         </DialogHeader>
@@ -145,7 +145,7 @@ export function PayCreditCardModal({
                       </span>
                       <div className="min-w-0">
                         <p className="text-xs font-semibold text-foreground truncate">{acc.name}</p>
-                        <p className="text-[10px] text-muted-foreground font-mono tabular-nums">
+                        <p className="text-[10px] text-muted-foreground tabular-nums">
                           Balance: {formatINR(acc.balance)}
                         </p>
                       </div>
@@ -187,7 +187,7 @@ export function PayCreditCardModal({
                 placeholder="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="pl-8 text-base font-bold font-mono tabular-nums"
+                className="pl-8 text-base font-bold tabular-nums"
                 required
               />
             </div>
@@ -204,7 +204,7 @@ export function PayCreditCardModal({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="text-xs font-mono"
+                className="text-xs tabular-nums"
                 required
               />
             </div>
@@ -230,7 +230,7 @@ export function PayCreditCardModal({
               <ArrowRight className="w-3.5 h-3.5 shrink-0" />
               <span className="font-medium text-foreground truncate">{card.name}</span>
             </div>
-            <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">
+            <div className="flex items-center gap-1 text-[11px] text-success font-semibold shrink-0">
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>Not double-counted</span>
             </div>

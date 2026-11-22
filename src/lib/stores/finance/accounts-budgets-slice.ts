@@ -473,7 +473,7 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
     }
 
     const now = new Date().toISOString();
-    const todayStr = now.split('T')[0];
+    const todayStr = getLocalIsoDate();
 
     if (logAdjustmentTransaction) {
       const fallbackCat =
@@ -512,7 +512,7 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
       const targetMonth = monthKey || getCurrentMonthKey();
       const nw = get().getNetWorthSummary();
       const now = new Date().toISOString();
-      const todayStr = now.split('T')[0];
+      const todayStr = getLocalIsoDate();
 
       const existing = await db.financeNetWorthSnapshots
         .where('[userId+monthKey]')

@@ -35,7 +35,7 @@ import {
   Star,
   CreditCard,
 } from 'lucide-react';
-import { resolveTransactionCycle, getCycleWindowForMonth } from '@/lib/finance/credit-card-cycles';
+import { resolveTransactionCycle, getCycleWindowForMonth, getLocalIsoDate, formatShortDate } from '@/lib/finance/credit-card-cycles';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
 import { SmsImportModal } from './SmsImportModal';
@@ -138,7 +138,7 @@ export function AddTransactionModal({
   const setDefaultAccount = useFinanceStore((s) => s.setDefaultAccount);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalIsoDate();
 
   const [type, setType] = useState<FinanceTransactionType>('expense');
   const [amountStr, setAmountStr] = useState('');
@@ -1276,7 +1276,7 @@ export function AddTransactionModal({
                 if (selectedAcc?.type === 'credit_card') {
                   const bDay = selectedAcc.billingDay ?? selectedAcc.statementDay ?? 1;
                   const dDay = selectedAcc.dueDay ?? 20;
-                  const txDate = date || new Date().toISOString().slice(0, 10);
+                  const txDate = date || getLocalIsoDate();
                   const cycleKey = resolveTransactionCycle(txDate, bDay, dDay);
                   const [y, m] = cycleKey.split('-').map(Number);
                   const cycleWin = getCycleWindowForMonth(bDay, dDay, y, m - 1, selectedAcc.gracePeriodDays);
@@ -1284,8 +1284,8 @@ export function AddTransactionModal({
                     <div className="mt-2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 text-xs text-primary">
                       <CreditCard className="w-3.5 h-3.5 shrink-0 text-primary" />
                       <span>
-                        Bill Cycle: <strong className="text-foreground">{cycleWin.periodEnd}</strong> · Due on{' '}
-                        <strong className="text-amber-600 dark:text-amber-400">{cycleWin.dueDate}</strong>
+                        Bill Cycle: <strong className="text-foreground">{formatShortDate(cycleWin.periodEnd)}</strong> · Due on{' '}
+                        <strong className="text-warning">{formatShortDate(cycleWin.dueDate)}</strong>
                       </span>
                     </div>
                   );

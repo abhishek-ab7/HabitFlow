@@ -2,6 +2,7 @@
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { logger } from '@/lib/logger';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import type { ISynchronizer } from '../types';
 import type { SyncEngine } from '../sync-engine';
 
@@ -989,8 +990,9 @@ export class FinanceSyncEngine implements ISynchronizer {
         continue;
       }
 
-      const safeMonthKey = tx.monthKey || (tx.date ? tx.date.slice(0, 7) : new Date().toISOString().slice(0, 7));
-      const safeDate = tx.date || new Date().toISOString().slice(0, 10);
+      const localToday = getLocalIsoDate();
+      const safeMonthKey = tx.monthKey || (tx.date ? tx.date.slice(0, 7) : localToday.slice(0, 7));
+      const safeDate = tx.date || localToday;
       const payload = {
         id: tx.id,
         user_id: userId,

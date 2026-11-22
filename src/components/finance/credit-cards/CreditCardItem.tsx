@@ -53,16 +53,26 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
   const daysToDue = summary.daysUntilDue;
 
   // Segment widths for utilization bar (only meaningful when limit > 0)
-  const billedPct = limit > 0 ? Math.min(100, Math.round((billedDue / limit) * 100)) : 0;
-  const unbilledPct = limit > 0 ? Math.min(100 - billedPct, Math.round((unbilledSpend / limit) * 100)) : 0;
+  const rawBilledPct = limit > 0 && billedDue > 0 ? Math.min(100, Math.round((billedDue / limit) * 100)) : 0;
+  const rawUnbilledPct = limit > 0 && unbilledSpend > 0 ? Math.min(100, Math.round((unbilledSpend / limit) * 100)) : 0;
+  // Reserve room when both billed and unbilled are active so neither sliver is clipped by overflow-hidden
+  const billedPct =
+    billedDue > 0 && unbilledSpend > 0
+      ? Math.min(96, Math.max(2, rawBilledPct))
+      : rawBilledPct;
+  const unbilledPct =
+    unbilledSpend > 0
+      ? Math.min(100 - billedPct, Math.max(billedDue > 0 ? 2 : 0, rawUnbilledPct))
+      : 0;
 
-  const isUrgentOrOverdue = billedDue > 0 && daysToDue !== null && daysToDue <= 3;
+  const isOverdue = summary.overdueStatements.length > 0 || (billedDue > 0 && daysToDue !== null && daysToDue < 0);
+  const isUrgentOrOverdue = billedDue > 0 && (isOverdue || (daysToDue !== null && daysToDue <= 3));
   const boxASurfaceClass =
     billedDue <= 0
-      ? 'border-border bg-background'
+      ? 'border-success/25 bg-success/[0.05]'
       : isUrgentOrOverdue
-      ? 'border-rose-500/30 bg-rose-500/[0.04]'
-      : 'border-amber-500/30 bg-amber-500/[0.04]';
+      ? 'border-destructive/30 bg-destructive/[0.05]'
+      : 'border-warning/30 bg-warning/[0.05]';
 
   const currentStmt = summary.currentBilledStatement ?? summary.billedStatement ?? null;
   const hasMultipleOverdue =
@@ -91,10 +101,7 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
       {/* 1. Header: Name, Card Meta, Actions */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
-            style={{ backgroundColor: `${card.color || '#f43f5e'}18`, color: card.color || '#f43f5e' }}
-          >
+          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 shadow-xs">
             <CreditCard className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -161,31 +168,36 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
             {billedDue > 0 && (
               <div
                 style={{ width: `${billedPct}%` }}
-                className={`h-full min-w-[4px] transition-all ${
-                  isUrgentOrOverdue ? 'bg-rose-500' : 'bg-amber-500'
+                className={`h-full min-w-[4px] shrink-0 transition-all ${
+                  isUrgentOrOverdue ? 'bg-destructive' : 'bg-warning'
                 }`}
-                title={`Billed statement due: ${formatINR(billedDue)} (${billedPct}%)`}
+                title={`Billed statement due: ${formatINR(billedDue)} (${rawBilledPct}%)`}
               />
             )}
             {unbilledSpend > 0 && (
               <div
                 style={{ width: `${unbilledPct}%` }}
-                className="h-full min-w-[4px] bg-sky-500 transition-all"
-                title={`Unbilled cycle: ${formatINR(unbilledSpend)} (${unbilledPct}%)`}
+                className="h-full min-w-[4px] shrink-0 bg-primary transition-all"
+                title={`Unbilled cycle: ${formatINR(unbilledSpend)} (${rawUnbilledPct}%)`}
               />
             )}
           </div>
 
           <div className="flex items-center justify-between text-[11px] text-muted-foreground flex-wrap gap-1.5">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="flex items-center gap-1.5">
-                <span className={`w-2 h-2 rounded-full ${isUrgentOrOverdue ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isUrgentOrOverdue ? 'bg-destructive' : 'bg-warning'}`} />
                 <span>
                   Billed Due: <strong className="text-foreground tabular-nums">{formatINR(billedDue)}</strong>
+                  {summary.overdueStatements.length > 0 && (
+                    <span className="ml-1 text-[10px] font-semibold text-destructive whitespace-nowrap">
+                      ({summary.overdueStatements.length} overdue)
+                    </span>
+                  )}
                 </span>
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-sky-500" />
+                <span className="w-2 h-2 rounded-full shrink-0 bg-primary" />
                 <span>
                   Unbilled: <strong className="text-foreground tabular-nums">{formatINR(unbilledSpend)}</strong>
                 </span>
@@ -194,7 +206,11 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
             <div>
               <span
                 className={`tabular-nums ${
-                  utilPct > 30 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-emerald-600 dark:text-emerald-400'
+                  utilPct > 70
+                    ? 'text-destructive font-medium'
+                    : utilPct > 30
+                    ? 'text-warning font-medium'
+                    : 'text-success font-medium'
                 }`}
               >
                 Total Utilized: {formatINR(totalUtilized)} ({utilPct}%)
@@ -211,25 +227,39 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 whitespace-nowrap">
-                <Calendar className={`w-3.5 h-3.5 shrink-0 ${isUrgentOrOverdue ? 'text-rose-500' : 'text-amber-500'}`} />
+                <Calendar
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    billedDue <= 0
+                      ? 'text-success'
+                      : isUrgentOrOverdue
+                      ? 'text-destructive'
+                      : 'text-warning'
+                  }`}
+                />
                 Statement Due
               </span>
               {summary.billedStatement ? (
                 billedDue <= 0 ? (
-                  <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
+                  <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
                     <CheckCircle2 className="w-3 h-3" /> Paid
                   </Badge>
                 ) : daysToDue !== null && daysToDue < 0 ? (
-                  <Badge className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
+                  <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
                     <AlertCircle className="w-3 h-3" /> Overdue {Math.abs(daysToDue)}d
                   </Badge>
-                ) : (
-                  <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
+                ) : daysToDue !== null && daysToDue <= 3 ? (
+                  <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
                     <Clock className="w-3 h-3" /> {daysToDue === 0 ? 'Due Today' : `Due in ${daysToDue}d`}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
+                    <Clock className="w-3 h-3" /> {daysToDue === null ? 'Billed' : `Due in ${daysToDue}d`}
                   </Badge>
                 )
               ) : (
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">Settled</span>
+                <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
+                  <CheckCircle2 className="w-3 h-3" /> Settled
+                </Badge>
               )}
             </div>
 
@@ -239,7 +269,7 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
                   {formatINR(billedDue)}
                 </div>
                 {hasMultipleOverdue && (
-                  <span className="text-[10px] font-medium text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                  <span className="text-[10px] font-medium text-destructive whitespace-nowrap">
                     Includes {summary.overdueStatements.length} overdue
                   </span>
                 )}
@@ -251,7 +281,7 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
                       {formatShortDate(summary.billedStatement.periodStart)} – {formatShortDate(summary.billedStatement.periodEnd)}
                     </span>
                     <span className="mx-1.5" aria-hidden="true">·</span>
-                    <strong className={isUrgentOrOverdue ? 'text-rose-600 dark:text-rose-400 whitespace-nowrap' : 'text-amber-600 dark:text-amber-400 whitespace-nowrap'}>
+                    <strong className={isUrgentOrOverdue ? 'text-destructive whitespace-nowrap' : 'text-warning whitespace-nowrap'}>
                       Due {formatShortDate(summary.billedStatement.dueDate)}
                     </strong>
                   </>
@@ -295,16 +325,16 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
         </div>
 
         {/* Box B: Unbilled Cycle */}
-        <div className="p-3 rounded-xl bg-muted/30 border border-border/70 shadow-xs flex flex-col justify-between space-y-2.5">
+        <div className="p-3 rounded-xl bg-primary/[0.04] border border-primary/20 shadow-xs flex flex-col justify-between space-y-2.5">
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 whitespace-nowrap">
-                <Clock className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+                <Clock className="w-3.5 h-3.5 shrink-0 text-primary" />
                 Unbilled Cycle
               </span>
               <Badge
                 variant="outline"
-                className="text-[10px] bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20 px-1.5 whitespace-nowrap shrink-0"
+                className="text-[10px] bg-primary/10 text-primary border-primary/20 px-1.5 whitespace-nowrap shrink-0"
               >
                 Accumulating
               </Badge>
