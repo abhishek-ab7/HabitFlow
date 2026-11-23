@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  FINANCE_GEMINI_MODEL,
-  createFinanceGeminiClient,
-  resolveGeminiApiKey,
+  DEFAULT_GEMINI_MODEL,
+  resolveGeminiApiKeys,
+  runWithGeminiFailover,
 } from '@/lib/ai/gemini-server';
 import { buildDeterministicFinanceAnswer } from '@/lib/finance/qa-analyzer';
 
@@ -24,8 +24,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Question is required' }, { status: 400 });
     }
 
-    const apiKey = resolveGeminiApiKey();
-    if (!apiKey) {
+    if (resolveGeminiApiKeys().length === 0) {
       return NextResponse.json({
         answer: buildDeterministicFinanceAnswer(question, context),
         source: 'local',
@@ -35,15 +34,14 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const ai = createFinanceGeminiClient(apiKey);
-
       const conversationHistory = history
         .map((m) => `${m.role === 'user' ? 'User' : 'Advisor'}: ${m.content}`)
         .join('\n');
 
-      const response = await ai.models.generateContent({
-        model: FINANCE_GEMINI_MODEL,
-        contents: `You are HabitFlow's concise, high-signal Personal Finance Analyst.
+      const response = await runWithGeminiFailover((ai) =>
+        ai.models.generateContent({
+          model: DEFAULT_GEMINI_MODEL,
+          contents: `You are HabitFlow's concise, high-signal Personal Finance Analyst.
 Answer the user's specific question directly and concisely using ONLY the verified financial snapshot below (currency: INR ₹).
 Do NOT repeat a generic full monthly summary if the user asks a targeted question (e.g. a category, merchant, net worth, bills, or affordability).
 Never invent transactions or balances that are not in the snapshot. If data is missing, state it directly.
@@ -55,14 +53,15 @@ ${JSON.stringify(context)}
 ${conversationHistory ? `RECENT CONVERSATION:\n${conversationHistory}\n` : ''}
 USER QUESTION:
 ${question}`,
-      });
+        })
+      );
 
       const answer = response.text?.trim();
       if (answer) {
         return NextResponse.json({
           answer,
           source: 'gemini',
-          model: FINANCE_GEMINI_MODEL,
+          model: DEFAULT_GEMINI_MODEL,
         });
       }
     } catch (aiErr) {

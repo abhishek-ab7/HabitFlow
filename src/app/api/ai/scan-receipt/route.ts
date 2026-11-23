@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Type } from '@google/genai';
 import {
-  FINANCE_GEMINI_MODEL,
-  createFinanceGeminiClient,
-  resolveGeminiApiKey,
+  DEFAULT_GEMINI_MODEL,
+  resolveGeminiApiKeys,
+  runWithGeminiFailover,
 } from '@/lib/ai/gemini-server';
 
 interface ReceiptImagePayload {
@@ -55,18 +55,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = resolveGeminiApiKey();
-    if (!apiKey) {
+    if (resolveGeminiApiKeys().length === 0) {
       return NextResponse.json(
         {
-          error: 'Receipt OCR requires GEMINI_API_KEY on the server. Add GEMINI_API_KEY in Settings > Secrets, or enter the expense manually.',
+          error: 'Receipt OCR requires a configured server key (such as GEMINI_KEY_TASKS_1 or GEMINI_KEY_TASKS_3), or enter the expense manually.',
           code: 'AI_UNAVAILABLE',
         },
         { status: 503 }
       );
     }
-
-    const ai = createFinanceGeminiClient(apiKey);
 
     const categorySlugs = categories.length
       ? categories.map((c) => `${c.slug} (${c.name})`).join(', ')
@@ -99,41 +96,43 @@ Return JSON with an "items" array. Use YYYY-MM-DD for dates (default ${todayIso}
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: FINANCE_GEMINI_MODEL,
-      contents: [{ role: 'user', parts }],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            items: {
-              type: Type.ARRAY,
+    const response = await runWithGeminiFailover((ai) =>
+      ai.models.generateContent({
+        model: DEFAULT_GEMINI_MODEL,
+        contents: [{ role: 'user', parts }],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
               items: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  merchantName: { type: Type.STRING },
-                  amount: { type: Type.NUMBER },
-                  type: { type: Type.STRING, enum: ['expense', 'income', 'investment'] },
-                  date: { type: Type.STRING },
-                  categorySlug: { type: Type.STRING },
-                  paymentMethodType: {
-                    type: Type.STRING,
-                    enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'],
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    merchantName: { type: Type.STRING },
+                    amount: { type: Type.NUMBER },
+                    type: { type: Type.STRING, enum: ['expense', 'income', 'investment'] },
+                    date: { type: Type.STRING },
+                    categorySlug: { type: Type.STRING },
+                    paymentMethodType: {
+                      type: Type.STRING,
+                      enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'],
+                    },
+                    referenceId: { type: Type.STRING, nullable: true },
+                    notes: { type: Type.STRING, nullable: true },
+                    confidence: { type: Type.NUMBER },
                   },
-                  referenceId: { type: Type.STRING, nullable: true },
-                  notes: { type: Type.STRING, nullable: true },
-                  confidence: { type: Type.NUMBER },
+                  required: ['title', 'amount', 'type', 'date', 'categorySlug', 'paymentMethodType'],
                 },
-                required: ['title', 'amount', 'type', 'date', 'categorySlug', 'paymentMethodType'],
               },
             },
+            required: ['items'],
           },
-          required: ['items'],
         },
-      },
-    });
+      })
+    );
 
     const rawJson = response.text?.trim();
     if (!rawJson) {

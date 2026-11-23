@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Type } from '@google/genai';
 import {
-  FINANCE_GEMINI_MODEL,
-  createFinanceGeminiClient,
-  resolveGeminiApiKey,
+  DEFAULT_GEMINI_MODEL,
+  resolveGeminiApiKeys,
+  runWithGeminiFailover,
 } from '@/lib/ai/gemini-server';
 
 interface CategoryInput {
@@ -150,15 +150,12 @@ export async function POST(req: NextRequest) {
     }
 
     const fallback = parseExpenseDeterministically(rawText);
-    const apiKey = resolveGeminiApiKey();
 
-    if (!apiKey) {
+    if (resolveGeminiApiKeys().length === 0) {
       return NextResponse.json({ data: fallback, source: 'deterministic' });
     }
 
     try {
-      const ai = createFinanceGeminiClient(apiKey);
-
       const categoryCatalog = categories.length
         ? categories
             .map(
@@ -170,9 +167,10 @@ export async function POST(req: NextRequest) {
 
       const todayIso = getTodayIso();
 
-      const response = await ai.models.generateContent({
-        model: FINANCE_GEMINI_MODEL,
-        contents: `Parse this Indian personal finance note or voice transcript into structured transaction JSON.
+      const response = await runWithGeminiFailover((ai) =>
+        ai.models.generateContent({
+          model: DEFAULT_GEMINI_MODEL,
+          contents: `Parse this Indian personal finance note or voice transcript into structured transaction JSON.
 Today's date is ${todayIso}.
 
 User input: "${rawText}"
@@ -185,29 +183,30 @@ Rules:
 - Resolve relative dates like "yesterday" or "2 days ago" to YYYY-MM-DD relative to ${todayIso}.
 - Choose the closest matching categorySlug from the list above.
 - Detect paymentMethodType among: upi, bank, cash, credit_card, wallet.`,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              amount: { type: Type.NUMBER },
-              type: { type: Type.STRING, enum: ['expense', 'income', 'investment'] },
-              categorySlug: { type: Type.STRING },
-              subcategory: { type: Type.STRING },
-              paymentMethodType: {
-                type: Type.STRING,
-                enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                amount: { type: Type.NUMBER },
+                type: { type: Type.STRING, enum: ['expense', 'income', 'investment'] },
+                categorySlug: { type: Type.STRING },
+                subcategory: { type: Type.STRING },
+                paymentMethodType: {
+                  type: Type.STRING,
+                  enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'],
+                },
+                date: { type: Type.STRING },
+                suggestedCommitmentKeyword: { type: Type.STRING, nullable: true },
+                tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                confidence: { type: Type.NUMBER },
               },
-              date: { type: Type.STRING },
-              suggestedCommitmentKeyword: { type: Type.STRING, nullable: true },
-              tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-              confidence: { type: Type.NUMBER },
+              required: ['title', 'amount', 'type', 'categorySlug', 'paymentMethodType', 'date'],
             },
-            required: ['title', 'amount', 'type', 'categorySlug', 'paymentMethodType', 'date'],
           },
-        },
-      });
+        })
+      );
 
       const text = response.text?.trim();
       if (text) {

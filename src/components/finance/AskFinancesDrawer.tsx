@@ -250,8 +250,8 @@ export function AskFinancesDrawer({
                     {msg.role === 'assistant' && msg.source && (
                       <div className="mt-1.5 pt-1 border-t border-border/50 text-[10px] text-muted-foreground font-mono">
                         {msg.source === 'gemini'
-                          ? 'Answered by Gemini (gemini-4-hydrogen)'
-                          : 'Answered by Local Ledger Analyzer (GEMINI_API_KEY not active)'}
+                          ? 'Answered by Gemini'
+                          : 'Answered by Local Ledger Analyzer (AI key not configured)'}
                       </div>
                     )}
                   </div>
