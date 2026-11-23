@@ -13,6 +13,9 @@ import {
   Loader2,
   Check,
   ShieldCheck,
+  Receipt,
+  Users,
+  CheckSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -318,52 +321,66 @@ export function DataVaultCard({
   return (
     <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+      <div className="flex items-start justify-between gap-2 pb-3 border-b border-border">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
+          <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
             <Database className="h-4 w-4" />
           </div>
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-foreground tracking-tight">
-              Data Vault &amp; Full Backups
+              Data Vault &amp; Backups
             </h2>
-            <p className="text-[11px] text-muted-foreground">
-              Encrypted snapshots, CSV spreadsheets &amp; all 20 Dexie tables
+            <p className="text-[11px] text-muted-foreground truncate">
+              Encrypted snapshots &amp; CSV exports
             </p>
           </div>
         </div>
         <span
           className={cn(
-            'text-[11px] font-medium px-2 py-0.5 rounded-md whitespace-nowrap shrink-0',
-            isStoragePersistent ? 'bg-success/12 text-success' : 'bg-warning/12 text-warning'
+            'text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 mt-0.5',
+            isStoragePersistent
+              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
           )}
         >
-          {isStoragePersistent ? 'Persistent Storage' : 'Standard'}
+          {isStoragePersistent ? 'Persistent' : 'Standard'}
         </span>
       </div>
 
       {/* 1. CSV Data Exports */}
       <div className="space-y-2">
-        <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-          <FileSpreadsheet className="w-3.5 h-3.5 text-primary" />
-          One-Click CSV Spreadsheets (Formula-Injection Safe)
-        </Label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+            <FileSpreadsheet className="w-3.5 h-3.5 text-primary" />
+            Spreadsheet Exports
+          </span>
+          <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+            .CSV
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleExportTransactionsCSV}
             disabled={isExporting !== null}
-            className="w-full justify-center gap-1.5 h-9 px-2 text-xs rounded-xl"
+            className="w-full justify-between h-8.5 px-3 text-xs rounded-xl hover:bg-muted/50 border-border/70 transition-colors"
             title="Export all transactions to CSV"
           >
-            {isExporting === 'tx_csv' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5" />
-            )}
-            <span>Transactions CSV</span>
+            <span className="flex items-center gap-2 min-w-0">
+              <Receipt className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="font-medium text-foreground truncate">Transactions</span>
+            </span>
+            <span className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground shrink-0">
+              {isExporting === 'tx_csv' ? (
+                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              ) : (
+                <Download className="h-3 w-3" />
+              )}
+              <span>Export</span>
+            </span>
           </Button>
 
           <Button
@@ -372,15 +389,21 @@ export function DataVaultCard({
             size="sm"
             onClick={handleExportFriendsDebtCSV}
             disabled={isExporting !== null}
-            className="w-full justify-center gap-1.5 h-9 px-2 text-xs rounded-xl"
+            className="w-full justify-between h-8.5 px-3 text-xs rounded-xl hover:bg-muted/50 border-border/70 transition-colors"
             title="Export everyday splits & loans to CSV"
           >
-            {isExporting === 'debt_csv' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5" />
-            )}
-            <span>Friends Debt CSV</span>
+            <span className="flex items-center gap-2 min-w-0">
+              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="font-medium text-foreground truncate">Friends &amp; Debts</span>
+            </span>
+            <span className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground shrink-0">
+              {isExporting === 'debt_csv' ? (
+                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              ) : (
+                <Download className="h-3 w-3" />
+              )}
+              <span>Export</span>
+            </span>
           </Button>
 
           <Button
@@ -389,78 +412,124 @@ export function DataVaultCard({
             size="sm"
             onClick={handleExportHabitsCSV}
             disabled={isExporting !== null}
-            className="w-full justify-center gap-1.5 h-9 px-2 text-xs rounded-xl"
+            className="w-full justify-between h-8.5 px-3 text-xs rounded-xl hover:bg-muted/50 border-border/70 transition-colors"
             title="Export habits and completion logs to CSV"
           >
-            {isExporting === 'habits_csv' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5" />
-            )}
-            <span>Habits CSV</span>
+            <span className="flex items-center gap-2 min-w-0">
+              <CheckSquare className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="font-medium text-foreground truncate">Habits &amp; Logs</span>
+            </span>
+            <span className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground shrink-0">
+              {isExporting === 'habits_csv' ? (
+                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              ) : (
+                <Download className="h-3 w-3" />
+              )}
+              <span>Export</span>
+            </span>
           </Button>
         </div>
       </div>
 
       {/* 2. Full Workspace Snapshot (All 20 Tables) */}
-      <div className="pt-2 border-t border-border/60 space-y-3">
+      <div className="pt-2 border-t border-border/60 space-y-2.5">
         <div className="flex items-center justify-between">
-          <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+          <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-            Full Database Snapshot (All 20 Tables)
-          </Label>
-          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-muted-foreground select-none">
-            <input
-              type="checkbox"
-              checked={encryptBackup}
-              onChange={(e) => setEncryptBackup(e.target.checked)}
-              className="rounded border-input text-primary focus:ring-primary"
-            />
-            {encryptBackup ? (
-              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
-                <Lock className="w-3 h-3" /> Encrypted (AES-256)
-              </span>
-            ) : (
-              <span className="flex items-center gap-1">
-                <Unlock className="w-3 h-3" /> Plain JSON
-              </span>
-            )}
-          </label>
+            Full Database Backup
+          </span>
+          <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+            20 Tables
+          </span>
+        </div>
+
+        {/* Interactive Mode Toggle Banner */}
+        <div
+          onClick={() => setEncryptBackup(!encryptBackup)}
+          className={cn(
+            'flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all select-none',
+            encryptBackup
+              ? 'bg-emerald-500/5 border-emerald-500/30 hover:bg-emerald-500/10'
+              : 'bg-muted/30 border-border/70 hover:bg-muted/50'
+          )}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setEncryptBackup(!encryptBackup);
+            }
+          }}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={cn(
+                'p-1.5 rounded-lg shrink-0 transition-colors',
+                encryptBackup
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {encryptBackup ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground leading-tight">
+                {encryptBackup ? 'Encrypted Backup' : 'Plaintext JSON'}
+              </p>
+              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5 truncate">
+                {encryptBackup ? 'AES-256-GCM + PBKDF2' : 'Unencrypted snapshot'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0 pl-2">
+            <span className="text-[10px] font-mono text-muted-foreground uppercase">
+              {encryptBackup ? 'Lock' : 'Plain'}
+            </span>
+            <div
+              className={cn(
+                'w-8 h-4.5 rounded-full p-0.5 transition-colors relative flex items-center',
+                encryptBackup ? 'bg-primary justify-end' : 'bg-muted-foreground/30 justify-start'
+              )}
+            >
+              <div className="w-3.5 h-3.5 rounded-full bg-background shadow-xs transition-transform" />
+            </div>
+          </div>
         </div>
 
         {encryptBackup && (
-          <div className="p-3 rounded-xl border border-border/80 bg-muted/20 space-y-2">
-            <p className="text-[11px] text-muted-foreground">
-              Your backup will be encrypted in your browser using PBKDF2 + AES-256-GCM.
-              We cannot recover your data if you forget this passphrase.
+          <div className="p-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 space-y-2">
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Your backup is client-side encrypted with AES-256-GCM. Save your passphrase carefully; it cannot be recovered.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="flex flex-col gap-2">
               <Input
                 type="password"
                 placeholder="Passphrase (min 4 chars)"
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
-                className="h-8 text-xs rounded-lg"
+                className="h-8 text-xs rounded-lg bg-background"
               />
               <Input
                 type="password"
                 placeholder="Confirm passphrase"
                 value={confirmPassphrase}
                 onChange={(e) => setConfirmPassphrase(e.target.value)}
-                className="h-8 text-xs rounded-lg"
+                className="h-8 text-xs rounded-lg bg-background"
               />
             </div>
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {/* Action Buttons: Stacked vertically for perfect fit without overflow */}
+        <div className="flex flex-col gap-2 pt-0.5">
           <Button
             type="button"
             variant="default"
             size="sm"
             onClick={handleFullBackup}
             disabled={isExporting !== null}
-            className="w-full justify-center gap-1.5 h-9 px-3 text-xs rounded-xl font-semibold shadow-xs"
+            className="w-full justify-center gap-2 h-9 px-3 text-xs rounded-xl font-medium shadow-xs"
           >
             {isExporting === 'full_backup' ? (
               <>
@@ -470,7 +539,7 @@ export function DataVaultCard({
             ) : (
               <>
                 <Download className="h-3.5 w-3.5" />
-                <span>Download Full JSON Backup</span>
+                <span>Export Database Snapshot</span>
               </>
             )}
           </Button>
@@ -487,10 +556,10 @@ export function DataVaultCard({
               type="button"
               variant="outline"
               size="sm"
-              className="w-full justify-center gap-1.5 h-9 px-3 text-xs border-dashed rounded-xl whitespace-nowrap"
+              className="w-full justify-center gap-2 h-9 px-3 text-xs border-dashed rounded-xl hover:bg-muted/50 transition-colors"
             >
               <Upload className="h-3.5 w-3.5 shrink-0" />
-              <span>Restore from JSON Backup</span>
+              <span>Restore from Backup</span>
             </Button>
           </div>
         </div>
