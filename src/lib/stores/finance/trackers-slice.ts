@@ -220,6 +220,7 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     accountId,
     categoryId,
     note,
+    splitGroupId,
   }) => {
     const debt = get().debtRecords.find((d) => d.id === debtId);
     if (!debt || amount <= 0) return null;
@@ -265,10 +266,17 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
         notes:
           note ||
           `Partial installment (${formatINR(amount)}). Remaining balance: ${formatINR(newRemaining)}`,
-        tags: ['debt-installment', debt.personName.toLowerCase()],
+        tags: Array.from(
+          new Set([
+            'debt-installment',
+            debt.personName.toLowerCase(),
+            ...(splitGroupId ? ['split'] : []),
+          ])
+        ),
         isRecurring: false,
         linkedDebtId: debt.id,
         linkedDebtInstallmentId: installmentId,
+        splitGroupId: splitGroupId || null,
         isDirty: true,
         generationCounter: 1,
         createdAt: now,
@@ -317,6 +325,9 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
 
     await get().loadFinanceData(userId);
     await get().recordCurrentNetWorthSnapshot(monthKey);
+    if (selectedAccount?.type === 'credit_card') {
+      await get().syncCardStatements(selectedAccount.id);
+    }
     notifyFinanceSync();
 
     try {
@@ -632,6 +643,9 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
           isDirty: true,
           updatedAt: now,
         });
+        if (selectedAccount.type === 'credit_card') {
+          await get().syncCardStatements(selectedAccount.id);
+        }
       }
     }
 

@@ -730,8 +730,11 @@ export function AddTransactionModal({
         isSplitEnabled &&
         splitFriendName.trim()
       ) {
+        const parsedFriendShare = parseFloat(splitFriendShareStr);
         const friendShare =
-          parseFloat(splitFriendShareStr) || Math.round(numericAmount / 2);
+          !isNaN(parsedFriendShare) && splitFriendShareStr.trim() !== ''
+            ? Math.max(0, parsedFriendShare)
+            : Math.round(numericAmount / 2);
         const myShare = Math.max(0, numericAmount - friendShare);
         await splitTransactionWithFriend({
           txData: {
@@ -746,6 +749,7 @@ export function AddTransactionModal({
           },
           friendName: splitFriendName.trim(),
           friendShareAmount: friendShare,
+          existingDebtId: linkedDebtId && linkedDebtId !== 'none' ? linkedDebtId : undefined,
         });
         toast.success(
           `Logged your share (${formatINR(myShare)}) & added ${formatINR(
@@ -1510,24 +1514,29 @@ export function AddTransactionModal({
                       </div>
                     </div>
                     <p className="text-[11px] text-muted-foreground font-mono tabular-nums">
-                      Your budget logs{' '}
+                      You pay{' '}
                       <strong className="text-foreground">
                         {formatINR(
                           Math.max(
                             0,
                             numericAmount -
-                              (parseFloat(splitFriendShareStr) ||
-                                Math.round(numericAmount / 2))
+                              (!isNaN(parseFloat(splitFriendShareStr)) && splitFriendShareStr.trim() !== ''
+                                ? Math.max(0, parseFloat(splitFriendShareStr))
+                                : Math.round(numericAmount / 2))
                           )
                         )}
                       </strong>{' '}
-                      · Friends Ledger adds{' '}
+                      ({categories.find((c) => c.id === categoryId)?.name || 'Category'}), Friend owes{' '}
                       <strong className="text-sky-600 dark:text-sky-400">
                         {formatINR(
-                          parseFloat(splitFriendShareStr) ||
-                            Math.round(numericAmount / 2)
+                          !isNaN(parseFloat(splitFriendShareStr)) && splitFriendShareStr.trim() !== ''
+                            ? Math.max(0, parseFloat(splitFriendShareStr))
+                            : Math.round(numericAmount / 2)
                         )}
                       </strong>
+                      {accounts.find((a) => a.id === accountId)?.type === 'credit_card' && (
+                        <span> (Credit Card swipe: {formatINR(numericAmount)})</span>
+                      )}
                     </p>
                   </div>
                 )}

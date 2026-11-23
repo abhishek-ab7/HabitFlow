@@ -47,6 +47,7 @@ export function QuickCaptureModal() {
   const categories = useFinanceStore((s) => s.categories);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
+  const splitTransactionWithFriend = useFinanceStore((s) => s.splitTransactionWithFriend);
   const addDebtRecord = useFinanceStore((s) => s.addDebtRecord);
   const addTask = useTaskStore((s) => s.addTask);
 
@@ -204,33 +205,39 @@ export function QuickCaptureModal() {
 
       try {
         setIsSubmitting(true);
-        // 1. Add Transaction
-        await addTransaction({
-          title: expenseTitle.trim() || 'Expense',
-          amount: amt,
-          type: 'expense',
-          categoryId: matchingCategory?.id || '',
-          accountId: resolvedAccountId,
-          date: expenseDate,
-        });
-
-        // 2. Add split friend everyday tab if toggled
         if (isSplit && splitFriend.trim()) {
-          const sAmt = parseFloat(splitAmount) || Math.round((amt / 2) * 100) / 100;
-          await addDebtRecord({
-            personName: splitFriend.trim(),
-            direction: 'lent',
-            title: `Split: ${expenseTitle.trim() || 'Expense'}`,
-            principalAmount: sAmt,
-            startDate: expenseDate,
-            bucketType: 'everyday_split',
-            repaymentSchedule: 'flexible',
-            color: '#10b981',
+          const parsedSplitAmt = parseFloat(splitAmount);
+          const sAmt =
+            !isNaN(parsedSplitAmt) && splitAmount.trim() !== ''
+              ? Math.max(0, parsedSplitAmt)
+              : Math.round((amt / 2) * 100) / 100;
+          const myShare = Math.max(0, amt - sAmt);
+          await splitTransactionWithFriend({
+            txData: {
+              title: expenseTitle.trim() || 'Expense',
+              amount: amt,
+              type: 'expense',
+              categoryId: matchingCategory?.id || '',
+              accountId: resolvedAccountId,
+              date: expenseDate,
+            },
+            friendName: splitFriend.trim(),
+            friendShareAmount: sAmt,
           });
           toast.success(
-            `Logged ${formatINR(amt)} expense (Split ${formatINR(sAmt)} with ${splitFriend.trim()})`
+            `Logged your share (${formatINR(myShare)}) & added ${formatINR(
+              sAmt
+            )} to ${splitFriend.trim()}'s Friends Ledger`
           );
         } else {
+          await addTransaction({
+            title: expenseTitle.trim() || 'Expense',
+            amount: amt,
+            type: 'expense',
+            categoryId: matchingCategory?.id || '',
+            accountId: resolvedAccountId,
+            date: expenseDate,
+          });
           toast.success(`Logged ${formatINR(amt)} expense`);
         }
 

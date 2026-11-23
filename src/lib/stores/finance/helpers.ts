@@ -366,6 +366,7 @@ export interface FinanceStore {
     accountId?: string;
     categoryId?: string;
     note?: string;
+    splitGroupId?: string;
   }) => Promise<DebtInstallment | null>;
   updateDebtInstallment: (
     id: string,

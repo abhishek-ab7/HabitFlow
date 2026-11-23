@@ -414,33 +414,20 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     existingDebtId,
   }) => {
     const userId = await resolveCurrentUserId(undefined, get().currentUserId);
-    const now = new Date().toISOString();
-    const totalOutflow = Number(txData.amount);
-    const friendPortion = Math.max(0, Math.min(totalOutflow, Number(friendShareAmount)));
-    const myShare = Math.max(0, totalOutflow - friendPortion);
+    const cleanFriendName = friendName.trim();
+    const totalOutflow = Math.max(0, Number(txData.amount) || 0);
+    const friendPortion = Math.max(0, Math.min(totalOutflow, Number(friendShareAmount) || 0));
+    const roundedFriendPortion = Math.round(friendPortion * 100) / 100;
+    const roundedMyShare = Math.round(Math.max(0, totalOutflow - roundedFriendPortion) * 100) / 100;
     const splitGroupId = crypto.randomUUID();
 
-    const tx = await get().addTransaction({
-      ...txData,
-      amount: myShare,
-      splitGroupId,
-      notes: `${txData.notes ? txData.notes + ' · ' : ''}Split with ${friendName} (Your share: ${formatINR(
-        myShare
-      )}, ${friendName} owes: ${formatINR(friendPortion)})`,
-      tags: Array.from(new Set([...(txData.tags || []), 'split', friendName.toLowerCase()])),
-    });
+    // Find EMIs & Debt category for friend portion (slug: 'emis-debt-repayment')
+    const debtCat =
+      get().categories.find((c) => c.slug === 'emis-debt-repayment') ||
+      get().categories.find((c) => c.name.toLowerCase().includes('debt') || c.name.toLowerCase().includes('emi')) ||
+      get().categories[0];
 
-    if (friendPortion > 0) {
-      const account = get().accounts.find((a) => a.id === txData.accountId);
-      if (account) {
-        await db.financeAccounts.update(account.id, {
-          balance: account.balance - friendPortion,
-          isDirty: true,
-          updatedAt: now,
-        });
-      }
-    }
-
+    // Find existing debt if specified or look for active everyday split with friend
     let debtRecord: DebtRecord | undefined;
     if (existingDebtId) {
       debtRecord = get().debtRecords.find((d) => d.id === existingDebtId);
@@ -448,44 +435,84 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
       debtRecord = get().debtRecords.find(
         (d) =>
           d.bucketType === 'everyday_split' &&
-          d.direction === 'lent' &&
           d.status === 'active' &&
-          d.personName.trim().toLowerCase() === friendName.trim().toLowerCase()
+          d.personName.trim().toLowerCase() === cleanFriendName.toLowerCase()
       );
     }
 
-    if (debtRecord && friendPortion > 0) {
-      if (debtRecord.direction === 'borrowed') {
-        await get().recordDebtInstallment({
+    // 1. User share leg: Only create if myShare > 0 or if friendPortion === 0 (boundary case)
+    let userTx: FinanceTransaction | undefined;
+    if (roundedMyShare > 0 || roundedFriendPortion === 0) {
+      userTx = await get().addTransaction({
+        ...txData,
+        amount: roundedMyShare,
+        splitGroupId,
+        notes: `${txData.notes ? txData.notes + ' · ' : ''}Split with ${cleanFriendName} (Your share: ${formatINR(
+          roundedMyShare
+        )}, ${cleanFriendName} owes: ${formatINR(roundedFriendPortion)})`,
+        tags: Array.from(new Set([...(txData.tags || []), 'split', cleanFriendName.toLowerCase()])),
+      });
+    }
+
+    // 2. Friend share leg & Debt handling: Only if friendPortion > 0
+    let friendTx: FinanceTransaction | undefined;
+    if (roundedFriendPortion > 0) {
+      if (debtRecord && debtRecord.direction === 'borrowed') {
+        // User owes friend money: Swipe on card pays down user's debt to friend
+        const installment = await get().recordDebtInstallment({
           debtId: debtRecord.id,
-          amount: friendPortion,
+          amount: roundedFriendPortion,
           date: txData.date,
+          accountId: txData.accountId,
           paymentMethod: 'offset_expense',
           note: `Repayment via split: ${txData.title}`,
+          splitGroupId,
         });
+        debtRecord = get().debtRecords.find((d) => d.id === debtRecord!.id);
+        if (installment?.transactionId) {
+          friendTx = get().transactions.find((t) => t.id === installment.transactionId);
+        }
       } else {
-        await get().topUpDebt(
-          debtRecord.id,
-          friendPortion,
-          `Split: ${txData.title} (${txData.date})`
-        );
+        // Friend owes user: create expense on same account under debt category
+        friendTx = await get().addTransaction({
+          title: `${cleanFriendName}'s Share: ${txData.title}`,
+          amount: roundedFriendPortion,
+          type: 'expense',
+          categoryId: debtCat.id,
+          subcategory: 'Friend Split',
+          accountId: txData.accountId,
+          date: txData.date,
+          notes: `Friend split portion for ${cleanFriendName} · ${txData.title}`,
+          tags: Array.from(
+            new Set([...(txData.tags || []), 'split', cleanFriendName.toLowerCase(), 'friend-share'])
+          ),
+          splitGroupId,
+        });
+
+        if (debtRecord && debtRecord.direction === 'lent') {
+          await get().topUpDebt(
+            debtRecord.id,
+            roundedFriendPortion,
+            `Split: ${txData.title} (${txData.date})`
+          );
+          debtRecord = get().debtRecords.find((d) => d.id === debtRecord!.id);
+        } else {
+          debtRecord = await get().addDebtRecord({
+            personName: cleanFriendName,
+            direction: 'lent',
+            title: `Everyday Split: ${txData.title}`,
+            principalAmount: roundedFriendPortion,
+            startDate: txData.date,
+            repaymentSchedule: 'flexible',
+            bucketType: 'everyday_split',
+            color: '#10b981',
+            notes: `Created from split expense "${txData.title}" on ${txData.date}`,
+          });
+        }
       }
-      debtRecord = get().debtRecords.find((d) => d.id === debtRecord!.id);
-    } else if (friendPortion > 0) {
+    } else if (!debtRecord) {
       debtRecord = await get().addDebtRecord({
-        personName: friendName.trim(),
-        direction: 'lent',
-        title: `Everyday Split: ${txData.title}`,
-        principalAmount: friendPortion,
-        startDate: txData.date,
-        repaymentSchedule: 'flexible',
-        bucketType: 'everyday_split',
-        color: '#10b981',
-        notes: `Created from split expense "${txData.title}" on ${txData.date}`,
-      });
-    } else {
-      debtRecord = await get().addDebtRecord({
-        personName: friendName.trim(),
+        personName: cleanFriendName,
         direction: 'lent',
         title: `Everyday Split: ${txData.title}`,
         principalAmount: 0,
@@ -497,7 +524,13 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     }
 
     await get().loadFinanceData(userId);
-    return { transaction: tx, debt: debtRecord! };
+    const account = get().accounts.find((a) => a.id === txData.accountId);
+    if (account?.type === 'credit_card') {
+      await get().syncCardStatements(account.id);
+    }
+
+    const primaryTx = userTx || friendTx;
+    return { transaction: primaryTx!, debt: debtRecord! };
   },
 
   importTransactionsCsv: async (csvText, defaultAccountId) => {

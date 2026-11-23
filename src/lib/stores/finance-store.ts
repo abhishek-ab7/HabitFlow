@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { db } from '@/lib/db';
 import { deduplicateFinanceRecordsInDexie } from '@/lib/sync/engines/finance-sync';
+import {
+  repairLegacySplitTransactions,
+  hasUserRunSplitRepair,
+  markUserSplitRepairDone,
+  type SplitRepairResult,
+} from '@/lib/finance/split-repair-migration';
 import type { FinanceAccount, FinanceCategory } from '@/lib/types';
 import {
   DEFAULT_FINANCE_CATEGORIES,
@@ -293,6 +299,12 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
       await deduplicateFinanceRecordsInDexie(userId);
       await get().seedInitialFinanceData(userId);
 
+      let repairResult: SplitRepairResult = { repairedCount: 0, affectedCardIds: [] };
+      if (!hasUserRunSplitRepair(userId)) {
+        repairResult = await repairLegacySplitTransactions(userId);
+        markUserSplitRepairDone(userId);
+      }
+
       const [
         categories,
         accounts,
@@ -427,6 +439,12 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
         creditCardStatements,
         isLoading: false,
       });
+
+      if (repairResult.affectedCardIds.length > 0) {
+        for (const cardId of repairResult.affectedCardIds) {
+          await get().syncCardStatements(cardId);
+        }
+      }
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : 'Failed to load finance data',
