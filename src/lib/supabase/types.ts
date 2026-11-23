@@ -167,6 +167,7 @@ export interface Database {
           user_id: string;
           title: string;
           description: string | null;
+          notes: string | null;
           status: string;
           priority: string;
           due_date: string | null;
@@ -183,6 +184,7 @@ export interface Database {
           user_id: string;
           title: string;
           description?: string | null;
+          notes?: string | null;
           status?: string;
           priority?: string;
           due_date?: string | null;
@@ -199,6 +201,7 @@ export interface Database {
           user_id?: string;
           title?: string;
           description?: string | null;
+          notes?: string | null;
           status?: string;
           priority?: string;
           due_date?: string | null;

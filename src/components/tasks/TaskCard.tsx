@@ -1,14 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion"
-import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2, ChevronDown, ChevronRight, Edit } from "lucide-react"
+import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2, ChevronDown, ChevronRight, Edit, StickyNote, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { isAIEnabled } from "@/lib/ai-features-flag"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Tooltip,
   TooltipContent,
@@ -36,7 +37,7 @@ interface AIPriority {
   urgencyScore: number;
 }
 
-export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
+export function TaskCard({ task, onComplete, onUpdate, compact }: TaskCardProps) {
     const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
     const [loadingPriority, setLoadingPriority] = useState(false);
     
@@ -44,6 +45,36 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [expandedSubtasks, setExpandedSubtasks] = useState<Set<string>>(new Set());
     const [activeEditTask, setActiveEditTask] = useState<Task | null>(null);
+    const [isNotesOpen, setIsNotesOpen] = useState(false);
+    const [noteDraft, setNoteDraft] = useState(task.notes ?? "");
+    const [isSavingNote, setIsSavingNote] = useState(false);
+    const [justSavedNote, setJustSavedNote] = useState(false);
+
+    useEffect(() => {
+        setNoteDraft(task.notes ?? "");
+    }, [task.notes]);
+
+    const normalizedExistingNote = (task.notes ?? "").trim();
+    const hasUnsavedNote = noteDraft.trim() !== normalizedExistingNote;
+
+    const handleSaveNote = async () => {
+        const nextNote = noteDraft.trim();
+        if (nextNote === normalizedExistingNote || isSavingNote) return;
+
+        setIsSavingNote(true);
+        try {
+            const valueToPersist = nextNote.length > 0 ? nextNote : null;
+            await editTask(task.id, { notes: valueToPersist });
+            onUpdate?.({ ...task, notes: valueToPersist });
+            setJustSavedNote(true);
+            setTimeout(() => setJustSavedNote(false), 1800);
+        } catch (err) {
+            console.error("Failed to save task note:", err);
+            toast.error("Failed to save note");
+        } finally {
+            setIsSavingNote(false);
+        }
+    };
 
     const toggleExpandSubtask = (subtaskId: string) => {
         const next = new Set(expandedSubtasks);
@@ -181,6 +212,7 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                             await addTask({
                                                 title: task.title,
                                                 description: task.description || undefined,
+                                                notes: task.notes || undefined,
                                                 priority: task.priority,
                                                 due_date: task.due_date || undefined,
                                                 estimatedTime: task.estimatedTime,
@@ -492,7 +524,110 @@ export function TaskCard({ task, onComplete, compact }: TaskCardProps) {
                                     )}
                                 </div>
                             )}
+
+                            {/* Quick Notes Toggle */}
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsNotesOpen((prev) => !prev);
+                                }}
+                                aria-expanded={isNotesOpen}
+                                aria-label={isNotesOpen ? "Hide quick notes" : "Quick notes"}
+                                className={cn(
+                                    "h-6 px-2 text-[10px] gap-1 rounded-md font-medium transition-colors",
+                                    isNotesOpen || normalizedExistingNote
+                                        ? "text-primary bg-primary/10 hover:bg-primary/15"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                )}
+                            >
+                                <StickyNote className="h-3 w-3" />
+                                <span>{normalizedExistingNote ? "Notes" : "Add Note"}</span>
+                            </Button>
                         </div>
+
+                        {/* Collapsed Note Preview */}
+                        {!isNotesOpen && normalizedExistingNote && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsNotesOpen(true);
+                                }}
+                                className="w-full text-left flex items-start gap-1.5 rounded-lg bg-muted/40 hover:bg-muted/70 border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors"
+                            >
+                                <StickyNote className="h-3.5 w-3.5 mt-0.5 text-primary/80 shrink-0" />
+                                <span className="line-clamp-2 whitespace-pre-wrap break-words text-foreground/85">
+                                    {normalizedExistingNote}
+                                </span>
+                            </button>
+                        )}
+
+                        {/* Quick Notes Textarea Editor */}
+                        {isNotesOpen && (
+                            <div
+                                className="space-y-1.5 pt-1"
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                            >
+                                <Textarea
+                                    value={noteDraft}
+                                    onChange={(e) => setNoteDraft(e.target.value)}
+                                    onBlur={handleSaveNote}
+                                    onKeyDown={(e) => {
+                                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                                            e.preventDefault();
+                                            handleSaveNote();
+                                        }
+                                    }}
+                                    placeholder="Write quick notes, context, or reminders..."
+                                    aria-label={`Quick notes for ${task.title}`}
+                                    rows={compact ? 2 : 3}
+                                    className="min-h-[68px] text-xs sm:text-sm bg-muted/35 border-border/70 focus-visible:ring-1 focus-visible:ring-primary/40 rounded-xl resize-y"
+                                />
+                                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                                    <span>
+                                        {isSavingNote ? (
+                                            "Saving..."
+                                        ) : justSavedNote ? (
+                                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                                                <Check className="h-3 w-3" />
+                                                Saved
+                                            </span>
+                                        ) : hasUnsavedNote ? (
+                                            "Unsaved changes"
+                                        ) : (
+                                            "Auto-saves on blur"
+                                        )}
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                                setNoteDraft(task.notes ?? "");
+                                                setIsNotesOpen(false);
+                                            }}
+                                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                        >
+                                            Close
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            disabled={!hasUnsavedNote || isSavingNote}
+                                            onClick={handleSaveNote}
+                                            className="h-7 px-2.5 text-xs rounded-lg"
+                                        >
+                                            {isSavingNote ? "Saving..." : "Save Note"}
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Enhanced Progress Bar for Subtasks */}
                         {subtasks.length > 0 && !compact && (

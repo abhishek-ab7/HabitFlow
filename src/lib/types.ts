@@ -214,6 +214,7 @@ export interface Task {
   userId: string;
   title: string;
   description?: string | null;
+  notes?: string | null;
   status: TaskStatus;
   priority: Priority;
   due_date?: string | null;
@@ -393,6 +394,7 @@ export interface TaskFormData {
   isImportant?: boolean;
   title: string;
   description?: string;
+  notes?: string;
   priority: Priority;
   due_date?: string;
   goal_id?: string;

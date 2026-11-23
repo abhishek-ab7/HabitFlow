@@ -339,6 +339,18 @@ db.version(15).stores({
   creditCardStatements: 'id, userId, accountId, cycleKey, [accountId+cycleKey], status, dueDate, updatedAt, deletedAt',
 });
 
+// Schema version 16 - Quick Notes persistence on Tasks
+db.version(16).stores({
+  tasks: 'id, userId, status, priority, due_date, created_at, updated_at, parentTaskId, depth',
+}).upgrade(async (tx) => {
+  const existingTasks = await tx.table('tasks').toArray();
+  for (const t of existingTasks) {
+    if (t.notes === undefined) {
+      await tx.table('tasks').update(t.id, { notes: null });
+    }
+  }
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 
@@ -982,6 +994,7 @@ export async function createTask(data: TaskFormData & { userId: UserId }): Promi
     userId: data.userId,
     title: data.title,
     description: data.description || null,
+    notes: data.notes || null,
     status: 'todo',
     priority: data.priority,
     due_date: data.due_date || null,
