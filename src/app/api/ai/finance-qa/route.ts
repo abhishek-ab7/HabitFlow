@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
 Answer the user's specific question directly and concisely using ONLY the verified financial snapshot below (currency: INR ₹).
 Do NOT repeat a generic full monthly summary if the user asks a targeted question (e.g. a category, merchant, net worth, bills, or affordability).
 Never invent transactions or balances that are not in the snapshot. If data is missing, state it directly.
-Keep responses crisp (2–5 short sentences or clean bullets), format numbers in Indian rupee format (e.g. ₹12,450), and end with one concrete next step when helpful.
+Keep responses crisp (2–5 short sentences or clean '-' bullets), format numbers in Indian rupee format (e.g. ₹12,450), bold only key totals or section labels sparingly, avoid backticks around transaction names, and end with one concrete next step when helpful.
 
 FINANCIAL SNAPSHOT (JSON):
 ${JSON.stringify(context)}

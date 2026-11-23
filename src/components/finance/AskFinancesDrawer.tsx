@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { useFinanceStore } from '@/lib/stores/finance-store';
 import { buildFinanceQAContext } from '@/lib/finance/anomalies';
 import { Sparkles, X, Send, Loader2, Bot, User } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 interface AskFinancesDrawerProps {
   open: boolean;
@@ -240,15 +241,58 @@ export function AskFinancesDrawer({
                   </span>
 
                   <div
-                    className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
+                    className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed ${
                       msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground rounded-tr-sm'
+                        ? 'bg-primary text-primary-foreground rounded-tr-sm whitespace-pre-wrap'
                         : 'border border-border bg-card text-foreground rounded-tl-sm'
                     }`}
                   >
-                    <div>{msg.content}</div>
+                    {msg.role === 'assistant' ? (
+                      <div className="space-y-2 break-words">
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => (
+                              <p className="leading-relaxed last:mb-0">{children}</p>
+                            ),
+                            ul: ({ children }) => (
+                              <ul className="list-disc pl-4 space-y-1 my-1.5">{children}</ul>
+                            ),
+                            ol: ({ children }) => (
+                              <ol className="list-decimal pl-4 space-y-1 my-1.5">{children}</ol>
+                            ),
+                            li: ({ children }) => (
+                              <li className="leading-relaxed">{children}</li>
+                            ),
+                            strong: ({ children }) => (
+                              <strong className="font-semibold text-foreground">{children}</strong>
+                            ),
+                            em: ({ children }) => (
+                              <em className="italic text-foreground/90">{children}</em>
+                            ),
+                            code: ({ children }) => (
+                              <span className="px-1.5 py-0.5 rounded-md bg-muted text-foreground font-medium text-[0.92em]">
+                                {children}
+                              </span>
+                            ),
+                            h1: ({ children }) => (
+                              <p className="font-bold text-foreground">{children}</p>
+                            ),
+                            h2: ({ children }) => (
+                              <p className="font-bold text-foreground">{children}</p>
+                            ),
+                            h3: ({ children }) => (
+                              <p className="font-semibold text-foreground">{children}</p>
+                            ),
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div>{msg.content}</div>
+                    )}
                     {msg.role === 'assistant' && msg.source && (
-                      <div className="mt-1.5 pt-1 border-t border-border/50 text-[10px] text-muted-foreground font-mono">
+                      <div className="mt-2 pt-1.5 border-t border-border/50 text-[10px] text-muted-foreground font-mono">
                         {msg.source === 'gemini'
                           ? 'Answered by Gemini'
                           : 'Answered by Local Ledger Analyzer (AI key not configured)'}

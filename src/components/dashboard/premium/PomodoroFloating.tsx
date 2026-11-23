@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
@@ -14,8 +14,6 @@ import {
   Plus,
   Minus,
   Check,
-  Sparkles,
-  Zap,
 } from 'lucide-react';
 import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
 import { Button } from '@/components/ui/button';
@@ -28,7 +26,6 @@ export function PomodoroFloating() {
     activeTaskTitle,
     mode,
     timeLeft,
-    duration,
     isRunning,
     completedSessions,
     pauseTimer,
@@ -40,18 +37,13 @@ export function PomodoroFloating() {
   } = usePomodoroStore();
 
   const pathname = usePathname() ?? '';
+  const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState(25);
 
   const isAppRoute =
     pathname !== '/' && pathname !== '/login' && !pathname.startsWith('/auth');
-
-  // Collapse mobile speed-dial on route change
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   // Sync typed minutes when not editing
   useEffect(() => {
@@ -105,7 +97,6 @@ export function PomodoroFloating() {
 
   useEffect(() => {
     const handleOpen = () => {
-      setMobileMenuOpen(false);
       setIsExpanded(true);
     };
     window.addEventListener('open-pomodoro', handleOpen);
@@ -121,9 +112,6 @@ export function PomodoroFloating() {
       .toString()
       .padStart(2, '0')}`;
   };
-
-  const progress = duration > 0 ? (timeLeft / duration) * 100 : 0;
-  const strokeDashoffset = 113 - (113 * progress) / 100;
 
   const modeColors = {
     focus: {
@@ -148,30 +136,17 @@ export function PomodoroFloating() {
 
   const activeColor = modeColors[mode];
 
-  const handleOpenQuickCapture = () => {
-    setMobileMenuOpen(false);
-    setIsExpanded(false);
-    window.dispatchEvent(new CustomEvent('open-quick-capture'));
+  const handleMobileAddEntry = () => {
+    if (pathname.startsWith('/finance')) {
+      window.dispatchEvent(new CustomEvent('open-finance-add-entry'));
+    } else {
+      router.push('/finance?add=1');
+    }
   };
 
   return (
     <>
-      {/* Mobile Speed-Dial Backdrop Dismiss */}
-      <AnimatePresence>
-        {mobileMenuOpen && !isExpanded && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.16 }}
-            onClick={() => setMobileMenuOpen(false)}
-            className="md:hidden fixed inset-0 z-40 bg-black/35"
-            aria-hidden="true"
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Floating Container — Mobile sits cleanly above bottom nav; Desktop single pill at bottom-right */}
+      {/* Floating Container — Mobile direct + Add Entry above bottom nav; Desktop single Pomodoro pill at bottom-right */}
       <div className="fixed bottom-[76px] right-4 md:bottom-6 md:right-6 z-50 select-none flex flex-col items-end gap-2.5">
         <AnimatePresence mode="wait">
           {isExpanded ? (
@@ -449,112 +424,17 @@ export function PomodoroFloating() {
                 </span>
               </motion.button>
 
-              {/* MOBILE: Single expandable speed-dial FAB (Quick Capture + Pomodoro) */}
-              <div className="md:hidden flex flex-col items-end gap-2">
-                <AnimatePresence>
-                  {mobileMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 12, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.16 }}
-                      className="flex flex-col items-end gap-2 mb-0.5"
-                    >
-                      <button
-                        type="button"
-                        onClick={handleOpenQuickCapture}
-                        className="min-h-[44px] pl-3.5 pr-4 rounded-full bg-card border border-border shadow-lg flex items-center gap-2.5 text-xs font-semibold text-foreground active:scale-95 transition-transform"
-                      >
-                        <span className="w-7 h-7 rounded-full bg-primary/15 text-primary flex items-center justify-center">
-                          <Sparkles className="w-4 h-4" />
-                        </span>
-                        <span>Quick Capture</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMobileMenuOpen(false);
-                          setIsExpanded(true);
-                        }}
-                        className="min-h-[44px] pl-3.5 pr-4 rounded-full bg-card border border-border shadow-lg flex items-center gap-2.5 text-xs font-semibold text-foreground active:scale-95 transition-transform"
-                      >
-                        <span
-                          className={cn(
-                            'w-7 h-7 rounded-full flex items-center justify-center',
-                            activeColor.bg,
-                            activeColor.text
-                          )}
-                        >
-                          {mode === 'focus' ? (
-                            <Timer className="w-4 h-4" />
-                          ) : (
-                            <Coffee className="w-4 h-4" />
-                          )}
-                        </span>
-                        <span>
-                          {isRunning
-                            ? `Focus · ${formatTime(timeLeft)}`
-                            : 'Focus Timer'}
-                        </span>
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <motion.button
-                  type="button"
-                  onClick={() => setMobileMenuOpen((prev) => !prev)}
-                  whileTap={{ scale: 0.94 }}
-                  aria-label={
-                    mobileMenuOpen
-                      ? 'Close quick tools'
-                      : 'Open Quick Capture and Focus Timer'
-                  }
-                  aria-expanded={mobileMenuOpen}
-                  className={cn(
-                    'w-12 h-12 rounded-full flex items-center justify-center border shadow-lg bg-card text-foreground relative transition-colors',
-                    mobileMenuOpen
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : isRunning
-                      ? activeColor.border
-                      : 'border-border'
-                  )}
-                >
-                  {isRunning && !mobileMenuOpen && (
-                    <svg className="w-12 h-12 absolute transform -rotate-90 pointer-events-none">
-                      <circle
-                        cx="24"
-                        cy="24"
-                        r="18"
-                        className="stroke-muted-foreground/15 fill-none"
-                        strokeWidth="2.5"
-                      />
-                      <circle
-                        cx="24"
-                        cy="24"
-                        r="18"
-                        className={cn(
-                          'fill-none transition-all duration-300',
-                          activeColor.stroke
-                        )}
-                        strokeWidth="2.5"
-                        strokeDasharray="113"
-                        strokeDashoffset={strokeDashoffset}
-                      />
-                    </svg>
-                  )}
-                  <span className="z-10 flex items-center justify-center">
-                    {mobileMenuOpen ? (
-                      <X className="w-5 h-5" />
-                    ) : isRunning ? (
-                      <Timer className={cn('w-4 h-4', activeColor.text)} />
-                    ) : (
-                      <Zap className="w-5 h-5 text-primary" />
-                    )}
-                  </span>
-                </motion.button>
-              </div>
+              {/* MOBILE: Direct single-tap + Add Entry button above bottom navbar */}
+              <motion.button
+                type="button"
+                onClick={handleMobileAddEntry}
+                whileTap={{ scale: 0.95 }}
+                aria-label="Add Entry"
+                className="md:hidden inline-flex items-center gap-1.5 h-12 px-4 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 font-semibold text-sm active:scale-95 transition-transform"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>Add Entry</span>
+              </motion.button>
             </div>
           )}
         </AnimatePresence>

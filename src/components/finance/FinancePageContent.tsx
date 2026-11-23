@@ -120,6 +120,16 @@ export function FinancePageContent() {
     setIsAddTxModalOpen(true);
   };
 
+  useEffect(() => {
+    const onOpenAddEntry = () => {
+      setEditingTx(null);
+      setDefaultCommitmentId(null);
+      setIsAddTxModalOpen(true);
+    };
+    window.addEventListener('open-finance-add-entry', onOpenAddEntry);
+    return () => window.removeEventListener('open-finance-add-entry', onOpenAddEntry);
+  }, []);
+
   const handleOpenOffsetForCommitment = (commitmentId: string) => {
     setEditingTx(null);
     setDefaultCommitmentId(commitmentId);
