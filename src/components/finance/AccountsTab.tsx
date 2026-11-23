@@ -7,13 +7,11 @@ import {
   RotateCcw,
   Pencil,
   CreditCard,
-  Sparkles,
   Trash2,
   ArrowRightLeft,
   Scale,
   SlidersHorizontal,
   TrendingUp,
-  Power,
   Tag,
   Star,
 } from 'lucide-react';
@@ -30,7 +28,6 @@ import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type {
   FinanceAccount,
   FinanceAccountType,
-  FinanceCategorizationRule,
 } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -83,7 +80,6 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const accounts = useFinanceStore((s) => s.accounts);
   const categories = useFinanceStore((s) => s.categories);
   const transactions = useFinanceStore((s) => s.transactions);
-  const categorizationRules = useFinanceStore((s) => s.categorizationRules);
 
   const addAccount = useFinanceStore((s) => s.addAccount);
   const updateAccount = useFinanceStore((s) => s.updateAccount);
@@ -94,10 +90,6 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const addTransaction = useFinanceStore((s) => s.addTransaction);
 
   const addCategory = useFinanceStore((s) => s.addCategory);
-
-  const addCategorizationRule = useFinanceStore((s) => s.addCategorizationRule);
-  const updateCategorizationRule = useFinanceStore((s) => s.updateCategorizationRule);
-  const deleteCategorizationRule = useFinanceStore((s) => s.deleteCategorizationRule);
 
   const getNetWorthSummary = useFinanceStore((s) => s.getNetWorthSummary);
   const getNetWorthHistory = useFinanceStore((s) => s.getNetWorthHistory);
@@ -115,23 +107,6 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const assetAccounts = activeAccounts.filter((a) => a.type !== 'credit_card');
   const creditCards = activeAccounts.filter((a) => a.type === 'credit_card');
   const activeCategories = categories.filter((c) => !c.deletedAt);
-  const activeRules = categorizationRules.filter((r) => !r.deletedAt);
-
-  // Match counts per smart rule across historical transactions
-  const ruleMatchCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const rule of activeRules) {
-      const pattern = rule.matchPattern.toLowerCase();
-      let count = 0;
-      for (const tx of transactions) {
-        if (tx.deletedAt) continue;
-        const hay = `${tx.rawMerchant || ''} ${tx.merchantName || ''} ${tx.title}`.toLowerCase();
-        if (hay.includes(pattern)) count += 1;
-      }
-      map.set(rule.id, count);
-    }
-    return map;
-  }, [activeRules, transactions]);
 
   // Edit / Create Account dialog
   const [editingAccount, setEditingAccount] = useState<FinanceAccount | null>(null);
@@ -164,11 +139,6 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const [newCatName, setNewCatName] = useState('');
   const [newCatLimit, setNewCatLimit] = useState('0');
   const [newCatColor, setNewCatColor] = useState('#3b82f6');
-
-  // Smart Merchant Rule form
-  const [rulePattern, setRulePattern] = useState('');
-  const [ruleCleanName, setRuleCleanName] = useState('');
-  const [ruleCategoryId, setRuleCategoryId] = useState('');
 
   // Fresh Start Reset Confirmation
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -407,29 +377,6 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
     setIsNewCatOpen(false);
     setNewCatName('');
     setNewCatLimit('0');
-  };
-
-  const handleAddRule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const targetCatId = ruleCategoryId || activeCategories[0]?.id;
-    if (!rulePattern.trim() || !targetCatId) {
-      toast.error('Enter a merchant keyword and select a category');
-      return;
-    }
-    await addCategorizationRule({
-      matchPattern: rulePattern.trim(),
-      cleanMerchantName: ruleCleanName.trim() || rulePattern.trim(),
-      categoryId: targetCatId,
-      isActive: true,
-    });
-    toast.success(`Added rule for "${rulePattern.trim()}"`);
-    setRulePattern('');
-    setRuleCleanName('');
-  };
-
-  const handleToggleRule = async (rule: FinanceCategorizationRule) => {
-    await updateCategorizationRule(rule.id, { isActive: !rule.isActive });
-    toast.success(rule.isActive ? 'Rule paused' : 'Rule enabled');
   };
 
   const handleExportCsv = () => {
@@ -763,145 +710,8 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
           </section>
         </div>
 
-        {/* Right Column: Smart Merchant Auto-Categorization Rules + Custom Category Directory */}
+        {/* Right Column: Custom Category Directory */}
         <div className="lg:col-span-7 space-y-5">
-          {/* Smart Merchant Auto-Categorization Rules Engine */}
-          <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
-            <div className="flex items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2.5">
-                <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                  <Sparkles className="w-4 h-4" />
-                </span>
-                <div>
-                  <h2 className="text-sm font-bold text-foreground">
-                    Smart Merchant Rules ({activeRules.length})
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Auto-categorize SMS imports, receipt scans, and manual entries
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <form
-              onSubmit={handleAddRule}
-              className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end"
-            >
-              <div className="sm:col-span-4 space-y-1">
-                <Label htmlFor="r-pat" className="text-[11px] text-muted-foreground">
-                  Keyword (e.g. SWIGGY)
-                </Label>
-                <Input
-                  id="r-pat"
-                  value={rulePattern}
-                  onChange={(e) => setRulePattern(e.target.value)}
-                  placeholder="SWIGGY"
-                  className="h-9 text-xs"
-                />
-              </div>
-              <div className="sm:col-span-3 space-y-1">
-                <Label htmlFor="r-clean" className="text-[11px] text-muted-foreground">
-                  Clean Name
-                </Label>
-                <Input
-                  id="r-clean"
-                  value={ruleCleanName}
-                  onChange={(e) => setRuleCleanName(e.target.value)}
-                  placeholder="Swiggy"
-                  className="h-9 text-xs"
-                />
-              </div>
-              <div className="sm:col-span-3 space-y-1">
-                <Label htmlFor="r-cat" className="text-[11px] text-muted-foreground">
-                  Category
-                </Label>
-                <select
-                  id="r-cat"
-                  value={ruleCategoryId || activeCategories[0]?.id || ''}
-                  onChange={(e) => setRuleCategoryId(e.target.value)}
-                  className="w-full h-9 px-2 text-xs rounded-lg border border-input bg-background"
-                >
-                  {activeCategories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <Button type="submit" size="sm" className="w-full h-9 text-xs rounded-lg">
-                  Add Rule
-                </Button>
-              </div>
-            </form>
-
-            {activeRules.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground text-center">
-                No custom rules yet. Add a keyword above or recategorize an SMS import to build rules automatically.
-              </div>
-            ) : (
-              <div className="divide-y divide-border/60 border-t border-border/60 pt-1">
-                {activeRules.map((rule) => {
-                  const cat = activeCategories.find((c) => c.id === rule.categoryId);
-                  const matches = ruleMatchCounts.get(rule.id) || 0;
-                  return (
-                    <div
-                      key={rule.id}
-                      className={`py-2.5 flex items-center justify-between gap-2 text-xs ${
-                        !rule.isActive ? 'opacity-55' : ''
-                      }`}
-                    >
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="truncate">
-                          <span className="font-mono font-semibold text-foreground">
-                            &ldquo;{rule.matchPattern}&rdquo;
-                          </span>
-                          <span className="text-muted-foreground">
-                            {' '}
-                            → {rule.cleanMerchantName} ·{' '}
-                          </span>
-                          <span className="font-semibold text-primary">
-                            {cat?.name || 'Category'}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground font-mono tabular-nums">
-                          Matched {matches} historical {matches === 1 ? 'entry' : 'entries'} ·{' '}
-                          {rule.isActive ? 'Active' : 'Paused'}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleRule(rule)}
-                          title={rule.isActive ? 'Pause rule' : 'Enable rule'}
-                          aria-label={rule.isActive ? 'Pause rule' : 'Enable rule'}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            rule.isActive
-                              ? 'text-emerald-600 hover:bg-emerald-500/10'
-                              : 'text-muted-foreground hover:bg-muted'
-                          }`}
-                        >
-                          <Power className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await deleteCategorizationRule(rule.id);
-                            toast.success('Rule deleted');
-                          }}
-                          className="text-muted-foreground hover:text-rose-500 p-1.5 rounded-lg"
-                          aria-label="Delete rule"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
           {/* Streamlined Categories Directory (Envelope budgets centralized in MonthlyBudgetModal) */}
           <section className="rounded-2xl border border-border bg-card p-5 space-y-3.5">
             <div className="flex flex-wrap items-center justify-between gap-2">

@@ -24,7 +24,6 @@ import {
   Copy,
   Sparkles,
   AlertTriangle,
-  Wand2,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
@@ -34,14 +33,6 @@ interface SmsImportModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialText?: string | null;
-}
-
-interface PendingRulePrompt {
-  itemId: string;
-  merchantPattern: string;
-  cleanMerchantName: string;
-  categoryId: string;
-  categoryName: string;
 }
 
 export function SmsImportModal({
@@ -54,7 +45,6 @@ export function SmsImportModal({
   const transactions = useFinanceStore((s) => s.transactions);
   const categorizationRules = useFinanceStore((s) => s.categorizationRules);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
-  const addCategorizationRule = useFinanceStore((s) => s.addCategorizationRule);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -67,8 +57,6 @@ export function SmsImportModal({
   const [showAutomationGuide, setShowAutomationGuide] = useState(false);
   const [editingCategoryItemId, setEditingCategoryItemId] = useState<string | null>(null);
   const [sendToReviewInbox, setSendToReviewInbox] = useState(true);
-  const [pendingRulePrompt, setPendingRulePrompt] = useState<PendingRulePrompt | null>(null);
-  const [isSavingRule, setIsSavingRule] = useState(false);
 
   useEffect(() => {
     if (open && categories.length === 0) {
@@ -85,7 +73,6 @@ export function SmsImportModal({
     }
 
     setIsParsing(true);
-    setPendingRulePrompt(null);
     try {
       let detected = parseSmsOrNotificationBatch(
         trimmed,
@@ -161,7 +148,6 @@ export function SmsImportModal({
   useEffect(() => {
     if (!open) {
       setEditingCategoryItemId(null);
-      setPendingRulePrompt(null);
       return;
     }
     if (initialText && initialText.trim()) {
@@ -224,73 +210,6 @@ export function SmsImportModal({
       categoryId,
       categorySlug: cat?.slug || targetItem?.categorySlug || '',
     });
-
-    if (targetItem && cat) {
-      const merchantSeed = (targetItem.rawMerchant || targetItem.title || '').trim();
-      const lowerSeed = merchantSeed.toLowerCase();
-      const isGeneric =
-        merchantSeed.length < 3 ||
-        lowerSeed === 'bank / upi expense' ||
-        lowerSeed === 'bank / upi credit' ||
-        lowerSeed === 'parsed expense';
-
-      if (!isGeneric) {
-        const alreadyRule = categorizationRules.some(
-          (r) =>
-            !r.deletedAt &&
-            r.isActive &&
-            r.matchPattern.toLowerCase() === lowerSeed &&
-            r.categoryId === categoryId
-        );
-        if (!alreadyRule) {
-          setPendingRulePrompt({
-            itemId: targetItem.id,
-            merchantPattern: merchantSeed,
-            cleanMerchantName: targetItem.title.trim() || merchantSeed,
-            categoryId,
-            categoryName: cat.name,
-          });
-        }
-      }
-    }
-  };
-
-  const handleSaveSmartRule = async () => {
-    if (!pendingRulePrompt) return;
-    setIsSavingRule(true);
-    try {
-      const created = await addCategorizationRule({
-        matchPattern: pendingRulePrompt.merchantPattern,
-        cleanMerchantName: pendingRulePrompt.cleanMerchantName,
-        categoryId: pendingRulePrompt.categoryId,
-        isActive: true,
-      });
-
-      const patternLower = pendingRulePrompt.merchantPattern.toLowerCase();
-      const targetCat = categories.find((c) => c.id === pendingRulePrompt.categoryId);
-      setParsedItems((prev) =>
-        prev.map((item) => {
-          const hay = `${item.rawMerchant || ''} ${item.title} ${item.rawText}`.toLowerCase();
-          if (hay.includes(patternLower)) {
-            return {
-              ...item,
-              categoryId: pendingRulePrompt.categoryId,
-              categorySlug: targetCat?.slug || item.categorySlug,
-              matchedRuleId: created.id,
-              matchedRulePattern: created.matchPattern,
-            };
-          }
-          return item;
-        })
-      );
-
-      toast.success(
-        `Rule saved: "${pendingRulePrompt.merchantPattern}" → ${pendingRulePrompt.categoryName}`
-      );
-      setPendingRulePrompt(null);
-    } finally {
-      setIsSavingRule(false);
-    }
   };
 
   const selectedItems = parsedItems.filter((item) => item.selected && item.amount > 0);
@@ -358,7 +277,6 @@ export function SmsImportModal({
   };
 
   const editingCategoryItem = parsedItems.find((i) => i.id === editingCategoryItemId);
-  const activeRuleCount = categorizationRules.filter((r) => r.isActive && !r.deletedAt).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -382,7 +300,7 @@ export function SmsImportModal({
                 Fetch from SMS &amp; Notifications
               </DialogTitle>
               <p className="text-xs text-muted-foreground truncate">
-                UPI, bank &amp; card parser · {activeRuleCount} active smart {activeRuleCount === 1 ? 'rule' : 'rules'}
+                UPI, bank &amp; card notification parser
               </p>
             </div>
           </div>
@@ -461,38 +379,6 @@ export function SmsImportModal({
               </Button>
             </div>
           </div>
-
-          {/* Inline "Always Apply Rule?" Prompt after recategorization */}
-          {pendingRulePrompt && (
-            <div className="rounded-xl border border-primary/40 bg-primary/5 px-3.5 py-2.5 flex items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2 min-w-0 text-xs">
-                <Wand2 className="w-4 h-4 text-primary shrink-0" />
-                <span className="text-foreground truncate">
-                  Always categorize <strong>{pendingRulePrompt.merchantPattern}</strong> as{' '}
-                  <strong>{pendingRulePrompt.categoryName}</strong>?
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={isSavingRule}
-                  onClick={handleSaveSmartRule}
-                  className="h-8 px-2.5 rounded-lg text-xs font-semibold"
-                >
-                  {isSavingRule ? 'Saving...' : 'Apply Rule'}
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setPendingRulePrompt(null)}
-                  aria-label="Dismiss rule prompt"
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Parsed Transactions Review List */}
           {hasParsed && (
@@ -645,21 +531,13 @@ export function SmsImportModal({
                           </span>
                         </div>
 
-                        {/* Unboxed metadata row: smart rule match / review status / duplicate */}
-                        {(item.matchedRulePattern || item.isDuplicate) && (
+                        {/* Duplicate notice */}
+                        {item.isDuplicate && (
                           <div className="pl-7 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                            {item.matchedRulePattern && (
-                              <span className="text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
-                                <Wand2 className="w-3 h-3 shrink-0" />
-                                Rule matched: {item.matchedRulePattern} · Auto-verified
-                              </span>
-                            )}
-                            {item.isDuplicate && (
-                              <span className="text-amber-600 dark:text-amber-400 font-medium inline-flex items-center gap-1">
-                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                Possible duplicate of an existing entry
-                              </span>
-                            )}
+                            <span className="text-amber-600 dark:text-amber-400 font-medium inline-flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                              Possible duplicate of an existing entry
+                            </span>
                           </div>
                         )}
                       </div>

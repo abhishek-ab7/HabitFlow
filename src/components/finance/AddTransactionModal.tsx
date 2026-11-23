@@ -130,7 +130,6 @@ export function AddTransactionModal({
   const splitTransactionWithFriend = useFinanceStore(
     (s) => s.splitTransactionWithFriend
   );
-  const addCategorizationRule = useFinanceStore((s) => s.addCategorizationRule);
   const applyCategorizationRules = useFinanceStore(
     (s) => s.applyCategorizationRules
   );
@@ -186,9 +185,6 @@ export function AddTransactionModal({
   const [isSplitEnabled, setIsSplitEnabled] = useState(false);
   const [splitFriendName, setSplitFriendName] = useState('');
   const [splitFriendShareStr, setSplitFriendShareStr] = useState('');
-
-  // Smart Merchant Rule checkbox
-  const [saveMerchantRule, setSaveMerchantRule] = useState(false);
 
   const { user } = useAuth();
   const [isCategorySheetOpen, setIsCategorySheetOpen] = useState(false);
@@ -280,7 +276,6 @@ export function AddTransactionModal({
       setIsCategorySplitEnabled(false);
       setSplitRows([]);
       setIsRecurringEnabled(false);
-      setSaveMerchantRule(false);
       setNlpInput('');
       setScannedBatch([]);
       return () => clearTimeout(focusTimer);
@@ -313,7 +308,6 @@ export function AddTransactionModal({
     setIsRecurringEnabled(false);
     setRecurringCadence('monthly');
     setRecurringDueDay(String(new Date().getDate()));
-    setSaveMerchantRule(false);
     setNlpInput('');
     setScannedBatch([]);
 
@@ -675,16 +669,6 @@ export function AddTransactionModal({
 
     setIsSaving(true);
     try {
-      if (saveMerchantRule && title.trim().length >= 2 && resolvedCategoryId) {
-        await addCategorizationRule({
-          matchPattern: title.trim(),
-          cleanMerchantName: title.trim(),
-          categoryId: resolvedCategoryId,
-          defaultTags: tags.length > 0 ? tags : undefined,
-          isActive: true,
-        });
-      }
-
       // Create recurring bill template if toggled on for new expenses
       if (!editingTransaction && type === 'expense' && isRecurringEnabled) {
         const parsedDue = Math.min(31, Math.max(1, parseInt(recurringDueDay, 10) || 1));
@@ -1154,23 +1138,6 @@ export function AddTransactionModal({
                     </div>
                   )}
                 </div>
-
-                {/* Smart Merchant Rule Toggle */}
-                {title.trim().length >= 3 && !editingTransaction && !isCategorySplitEnabled && (
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none pt-0.5">
-                    <input
-                      type="checkbox"
-                      checked={saveMerchantRule}
-                      onChange={(e) => setSaveMerchantRule(e.target.checked)}
-                      className="rounded border-input"
-                    />
-                    <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
-                    <span className="truncate">
-                      Always categorize <strong className="text-foreground">{title.trim()}</strong> as{' '}
-                      <strong className="text-foreground">{selectedCategory?.name}</strong>
-                    </span>
-                  </label>
-                )}
               </div>
             ) : (
               <div className="space-y-3">
