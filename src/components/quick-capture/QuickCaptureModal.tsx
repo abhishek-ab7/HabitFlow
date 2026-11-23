@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { useTaskStore } from '@/lib/stores/task-store';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import {
   detectIntent,
   parseExpenseNaturalLanguage,
@@ -44,6 +45,7 @@ export function QuickCaptureModal() {
   // Stores
   const accounts = useFinanceStore((s) => s.accounts);
   const categories = useFinanceStore((s) => s.categories);
+  const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const addDebtRecord = useFinanceStore((s) => s.addDebtRecord);
   const addTask = useTaskStore((s) => s.addTask);
@@ -61,15 +63,25 @@ export function QuickCaptureModal() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Focus input when opened
+  // Shared event trigger to open Quick-Capture from any floating button or command bar
+  useEffect(() => {
+    const handleOpen = () => setIsOpen(true);
+    window.addEventListener('open-quick-capture', handleOpen);
+    return () => window.removeEventListener('open-quick-capture', handleOpen);
+  }, []);
+
+  // Focus input and hydrate stores when opened
   useEffect(() => {
     if (isOpen) {
+      if (accounts.length === 0 || categories.length === 0) {
+        loadFinanceData();
+      }
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setRawText('');
       setManualMode('auto');
     }
-  }, [isOpen]);
+  }, [isOpen, accounts.length, categories.length, loadFinanceData]);
 
   // Derived intent
   const detectedIntent: QuickCaptureIntent = useMemo(() => {
@@ -92,7 +104,7 @@ export function QuickCaptureModal() {
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCategorySlug, setExpenseCategorySlug] = useState('');
   const [expenseAccountId, setExpenseAccountId] = useState('');
-  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(() => getLocalIsoDate());
   const [isSplit, setIsSplit] = useState(false);
   const [splitFriend, setSplitFriend] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
@@ -103,7 +115,15 @@ export function QuickCaptureModal() {
   const [taskDueTime, setTaskDueTime] = useState('');
   const [taskPriority, setTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
 
-  // Sync parsed results into editable form fields as user types
+  // Track default account assignment without resetting manual/AI inputs
+  useEffect(() => {
+    if (!expenseAccountId && accounts.length > 0) {
+      setExpenseAccountId(accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || '');
+    }
+  }, [accounts, expenseAccountId]);
+
+  // Sync parsed results into editable form fields as user types rawText or mode changes
+  // Note: expenseAccountId is explicitly excluded from deps to prevent resetting manual/AI inputs
   useEffect(() => {
     if (detectedIntent === 'expense') {
       setExpenseTitle(parsedExpense.title);
@@ -113,17 +133,13 @@ export function QuickCaptureModal() {
       setIsSplit(parsedExpense.isSplit);
       setSplitFriend(parsedExpense.splitWithFriend || '');
       setSplitAmount(parsedExpense.splitAmount ? String(parsedExpense.splitAmount) : '');
-
-      if (!expenseAccountId && accounts.length > 0) {
-        setExpenseAccountId(accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || '');
-      }
     } else {
       setTaskTitle(parsedTask.title);
-      setTaskDueDate(parsedTask.dueDate || new Date().toISOString().split('T')[0]);
+      setTaskDueDate(parsedTask.dueDate || '');
       setTaskDueTime(parsedTask.dueTime || '');
       setTaskPriority(parsedTask.priority);
     }
-  }, [rawText, detectedIntent, parsedExpense, parsedTask, accounts, expenseAccountId]);
+  }, [rawText, detectedIntent, parsedExpense, parsedTask]);
 
   // AI Refine for Expense
   const handleAiRefine = async () => {
@@ -138,14 +154,28 @@ export function QuickCaptureModal() {
           categories: categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug })),
         }),
       });
-      const data = await res.json();
-      if (data.success && data.parsed) {
-        const p = data.parsed;
+      const json = await res.json();
+      if (res.ok && json.data) {
+        const p = json.data;
         if (p.title) setExpenseTitle(p.title);
         if (p.amount) setExpenseAmount(String(p.amount));
         if (p.categorySlug) setExpenseCategorySlug(p.categorySlug);
         if (p.date) setExpenseDate(p.date);
-        toast.success('AI refined expense details');
+        if (p.paymentMethodType) {
+          const matchingAcc = accounts.find(
+            (a) => a.type === p.paymentMethodType || (p.paymentMethodType === 'upi' && a.type === 'bank')
+          );
+          if (matchingAcc) {
+            setExpenseAccountId(matchingAcc.id);
+          }
+        }
+        toast.success(
+          json.source === 'gemini'
+            ? 'AI refined expense details'
+            : 'Parsed expense details using smart heuristics'
+        );
+      } else {
+        toast.error('Could not refine details; keeping current values');
       }
     } catch {
       toast.info('Kept local parsed values');
@@ -223,6 +253,8 @@ export function QuickCaptureModal() {
           title: taskTitle.trim(),
           due_date: taskDueDate || undefined,
           priority: taskPriority,
+          metadata: taskDueTime ? { dueTime: taskDueTime } : undefined,
+          description: taskDueTime ? `Due at ${taskDueTime}` : undefined,
         });
         toast.success(`Task created: "${taskTitle.trim()}"`);
         setIsOpen(false);
@@ -236,19 +268,7 @@ export function QuickCaptureModal() {
 
   return (
     <>
-      {/* Global Floating Action Button */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        aria-label="Quick Capture (Ctrl+K)"
-        title="Quick Capture (Ctrl+K)"
-        className="fixed z-40 bottom-20 right-4 sm:bottom-6 sm:right-6 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center group"
-      >
-        <Plus className="h-6 w-6 transition-transform group-hover:rotate-90" />
-        <span className="sr-only">Quick Capture</span>
-      </button>
-
-      {/* Command Bar Dialog */}
+      {/* Command Bar Dialog (Triggered via unified Pomodoro stack button or ⌘K/Ctrl+K) */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="max-w-xl p-0 overflow-hidden rounded-2xl gap-0 border-border shadow-2xl">
           <DialogHeader className="sr-only">
@@ -471,13 +491,23 @@ export function QuickCaptureModal() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div className="space-y-1">
                     <Label className="text-xs">Due Date</Label>
                     <Input
                       type="date"
                       value={taskDueDate}
                       onChange={(e) => setTaskDueDate(e.target.value)}
+                      className="rounded-xl text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Due Time</Label>
+                    <Input
+                      type="time"
+                      value={taskDueTime}
+                      onChange={(e) => setTaskDueTime(e.target.value)}
                       className="rounded-xl text-xs"
                     />
                   </div>

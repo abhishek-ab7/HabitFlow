@@ -64,8 +64,13 @@ export function ShareSettlementDialog({
 
   if (!group) return null;
 
-  const totalNet = group.everydayNet + group.longTermNetPosition;
-  const isOwedNet = totalNet > 0;
+  const targetNet =
+    targetBucket === 'everyday_only'
+      ? group.everydayNet
+      : targetBucket === 'loans_only'
+      ? group.longTermNetPosition
+      : group.everydayNet + group.longTermNetPosition;
+  const isOwedNet = targetNet > 0;
   const isUpiValid = validateUpiId(upiId.trim());
 
   const handleCopy = async () => {
@@ -79,10 +84,7 @@ export function ShareSettlementDialog({
     }
   };
 
-  const handleWhatsApp = () => {
-    const url = generateWhatsAppShareUrl(shareText, group.contactInfo);
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
+  const waUrl = generateWhatsAppShareUrl(shareText, group.contactInfo);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -210,14 +212,15 @@ export function ShareSettlementDialog({
               </>
             )}
           </Button>
-          <Button
-            type="button"
-            onClick={handleWhatsApp}
-            className="w-full sm:w-auto text-xs rounded-xl gap-1.5 bg-[#25D366] hover:bg-[#20ba5a] text-white"
+          <a
+            href={waUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto inline-flex items-center justify-center font-semibold transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring h-9 px-4 py-2 text-xs rounded-xl gap-1.5 bg-[#25D366] hover:bg-[#20ba5a] text-white shadow-xs"
           >
             <Share2 className="w-3.5 h-3.5" />
             Share on WhatsApp
-          </Button>
+          </a>
         </DialogFooter>
       </DialogContent>
     </Dialog>

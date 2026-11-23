@@ -140,6 +140,56 @@ describe('settlement-share utilities', () => {
       expect(text).toContain('UPI ID: alex@okhdfcbank');
       expect(text).toContain('upi://pay?pa=alex%40okhdfcbank');
     });
+
+    it('scopes net settlement and UPI link strictly to target: everyday_only', () => {
+      // In mockGroup: everydayNet = +300, longTermNetPosition = -2000.
+      // Combined total is -1700 (I owe), but everyday_only target should be +300 (You owe) with UPI link for 300!
+      const text = formatSettlementShareText(mockGroup, {
+        userUpiId: 'myname@okhdfcbank',
+        includeUpiLink: true,
+        target: 'everyday_only',
+      });
+
+      expect(text).toContain('*1. Everyday Splits Tab*');
+      expect(text).not.toContain('*2. Long-Term Loans & EMIs*');
+      expect(text).toContain('👉 Total: You owe ₹300 net');
+      expect(text).toContain('am=300.00');
+    });
+
+    it('scopes net settlement strictly to target: loans_only', () => {
+      const text = formatSettlementShareText(mockGroup, {
+        userUpiId: 'myname@okhdfcbank',
+        includeUpiLink: true,
+        target: 'loans_only',
+      });
+
+      expect(text).not.toContain('*1. Everyday Splits Tab*');
+      expect(text).toContain('*2. Long-Term Loans & EMIs*');
+      expect(text).toContain('👉 Total: I owe you ₹2,000 net');
+      expect(text).not.toContain('upi://pay'); // User owes, no UPI request link
+    });
+
+    it('filters out already-settled loans from the formatted loan breakdown', () => {
+      const settledLoan: DebtRecord = {
+        ...mockLoan,
+        id: 'd-settled',
+        title: 'Old Bike Loan',
+        remainingAmount: 0,
+        status: 'settled',
+      };
+
+      const groupWithSettled: FriendLedgerGroup = {
+        ...mockGroup,
+        longTermLoans: [mockLoan, settledLoan],
+      };
+
+      const text = formatSettlementShareText(groupWithSettled, {
+        target: 'loans_only',
+      });
+
+      expect(text).toContain('Laptop Loan: I owe ₹2,000');
+      expect(text).not.toContain('Old Bike Loan');
+    });
   });
 
   describe('generateWhatsAppShareUrl', () => {

@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 
 interface SettleTabDialogProps {
   group: FriendLedgerGroup | null;
@@ -41,7 +42,7 @@ export function SettleTabDialog({
 }: SettleTabDialogProps) {
   const [settleAccountId, setSettleAccountId] = useState('');
   const [settleMethod, setSettleMethod] = useState<DebtPaymentMethod>('upi');
-  const [settleDate, setSettleDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [settleDate, setSettleDate] = useState(() => getLocalIsoDate());
   const [settleNote, setSettleNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -49,7 +50,7 @@ export function SettleTabDialog({
     if (isOpen && group) {
       setSettleAccountId(accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || '');
       setSettleMethod('upi');
-      setSettleDate(new Date().toISOString().split('T')[0]);
+      setSettleDate(getLocalIsoDate());
       setSettleNote('');
     }
   }, [isOpen, group, accounts]);

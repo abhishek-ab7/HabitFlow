@@ -116,14 +116,16 @@ export class FinanceSyncEngine implements ISynchronizer {
     // 6. EMI Trackers
     applyStep(await syncEmis(supabase, userId));
 
-    // 7. Finance Transactions (FKs depend on Accounts, Statements, Commitments, Debts, Installments, EMIs)
+    // 6b. SIP Plans (MUST run before transactions so linked_sip_id FK exists when syncing offline creations)
+    applyStep(await syncSips(supabase, userId));
+
+    // 7. Finance Transactions (FKs depend on Accounts, Statements, Commitments, Debts, Installments, EMIs, SIPs)
     applyStep(await syncTransactions(supabase, userId));
 
     // 8. Finance Budgets
     applyStep(await syncBudgets(supabase, userId));
 
-    // 9. V2 Trackers: SIP Plans, Rules, Recurring Bills, Net Worth Snapshots
-    applyStep(await syncSips(supabase, userId));
+    // 9. V2 Trackers: Rules, Recurring Bills, Net Worth Snapshots
     applyStep(await syncCategorizationRules(supabase, userId));
     applyStep(await syncRecurringBills(supabase, userId));
     applyStep(await syncNetWorthSnapshots(supabase, userId));

@@ -4,7 +4,6 @@ import type {
   FinanceAccount,
   FinanceCategory,
   DebtRecord,
-  FriendLedgerGroup,
   Habit,
   HabitCompletion,
 } from '@/lib/types';
@@ -93,7 +92,7 @@ export function exportFriendsDebtCSV(debts: DebtRecord[]): string {
     .map((d) => [
       sanitizeCsvCell(d.id),
       sanitizeCsvCell(d.personName),
-      sanitizeCsvCell(d.bucketType || 'everyday_split'),
+      sanitizeCsvCell(d.bucketType || 'long_term_loan'),
       sanitizeCsvCell(d.title),
       sanitizeCsvCell(d.direction === 'borrowed' ? 'I Borrowed (I Owe)' : 'I Lent (They Owe)'),
       sanitizeCsvCell(d.principalAmount.toFixed(2)),
@@ -132,18 +131,20 @@ export function exportHabitsCSV(
     'CreatedAt',
   ];
 
-  const rows = habits.map((h) => [
-    sanitizeCsvCell(h.id),
-    sanitizeCsvCell(h.name),
-    sanitizeCsvCell(h.category),
-    sanitizeCsvCell(h.targetDaysPerWeek),
-    sanitizeCsvCell(h.frequencyType || 'daily'),
-    sanitizeCsvCell(h.difficulty || 'medium'),
-    sanitizeCsvCell(h.autoTrackRule || 'none'),
-    sanitizeCsvCell(h.archived ? 'Yes' : 'No'),
-    sanitizeCsvCell(completionCounts.get(h.id) || 0),
-    sanitizeCsvCell(h.createdAt),
-  ]);
+  const rows = habits
+    .filter((h) => !h.archived)
+    .map((h) => [
+      sanitizeCsvCell(h.id),
+      sanitizeCsvCell(h.name),
+      sanitizeCsvCell(h.category),
+      sanitizeCsvCell(h.targetDaysPerWeek),
+      sanitizeCsvCell(h.frequencyType || 'daily'),
+      sanitizeCsvCell(h.difficulty || 'medium'),
+      sanitizeCsvCell(h.autoTrackRule || 'none'),
+      sanitizeCsvCell(h.archived ? 'Yes' : 'No'),
+      sanitizeCsvCell(completionCounts.get(h.id) || 0),
+      sanitizeCsvCell(h.createdAt),
+    ]);
 
   return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 }
@@ -210,12 +211,9 @@ export async function restoreDatabaseSnapshot(
   await db.transaction('rw', ALL_WORKSPACE_TABLES as any, async () => {
     for (const tableName of validTableNames) {
       const records = tables[tableName];
-      if (Array.isArray(records)) {
-        await db.table(tableName).clear();
-        if (records.length > 0) {
-          await db.table(tableName).bulkAdd(records);
-          totalRecords += records.length;
-        }
+      if (Array.isArray(records) && records.length > 0) {
+        await db.table(tableName).bulkPut(records);
+        totalRecords += records.length;
         restoredTables++;
       }
     }

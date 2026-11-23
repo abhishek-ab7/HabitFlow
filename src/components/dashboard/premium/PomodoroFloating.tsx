@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, RotateCcw, X, Timer, Coffee, CheckSquare, Plus, Minus, Check, Wallet } from 'lucide-react';
+import { Play, Pause, RotateCcw, X, Timer, Coffee, CheckSquare, Plus, Minus, Check, Sparkles } from 'lucide-react';
 import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
-import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -32,9 +31,8 @@ export function PomodoroFloating() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState(25);
-  const [isQuickExpenseOpen, setIsQuickExpenseOpen] = useState(false);
 
-  const showQuickExpense =
+  const showQuickCapture =
     pathname !== '/' && pathname !== '/login' && !pathname.startsWith('/auth');
 
   // Sync typed minutes when not editing
@@ -132,22 +130,22 @@ export function PomodoroFloating() {
   return (
     <>
       <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-50 select-none flex flex-col items-end gap-3">
-        {/* Quick Add Expense Widget stacked on top of Focus Timer */}
-        {showQuickExpense && (
+        {/* Unified Quick-Capture trigger stacked on top of Focus Timer */}
+        {showQuickCapture && (
           <motion.button
             type="button"
             onClick={() => {
               setIsExpanded(false);
-              setIsQuickExpenseOpen(true);
+              window.dispatchEvent(new CustomEvent('open-quick-capture'));
             }}
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.95 }}
-            aria-label="Quick Add Expense"
-            title="Quick Add Expense"
-            className="w-12 h-12 rounded-full flex items-center justify-center border border-emerald-500/30 shadow-lg backdrop-blur-xl bg-card/95 text-emerald-600 dark:text-emerald-400 relative hover:border-emerald-500/60 transition-colors"
+            aria-label="Quick Capture (Ctrl+K)"
+            title="Quick Capture (Ctrl+K)"
+            className="w-12 h-12 rounded-full flex items-center justify-center border border-primary/30 shadow-lg backdrop-blur-xl bg-card/95 text-primary relative hover:border-primary/60 transition-colors"
           >
-            <Wallet className="h-5 w-5" />
-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm">
+            <Sparkles className="h-5 w-5" />
+            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
               <Plus className="h-3 w-3 stroke-[3]" />
             </span>
           </motion.button>
@@ -418,13 +416,6 @@ export function PomodoroFloating() {
         )}
       </AnimatePresence>
       </div>
-
-      {showQuickExpense && (
-        <AddTransactionModal
-          open={isQuickExpenseOpen}
-          onOpenChange={setIsQuickExpenseOpen}
-        />
-      )}
     </>
   );
 }

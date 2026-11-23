@@ -27,6 +27,12 @@ export function FinanceOverviewWidget() {
   const categories = useFinanceStore((s) => s.categories);
   const accounts = useFinanceStore((s) => s.accounts);
   const transactions = useFinanceStore((s) => s.transactions);
+  const emiTrackers = useFinanceStore((s) => s.emiTrackers);
+  const sipPlans = useFinanceStore((s) => s.sipPlans);
+  const recurringBills = useFinanceStore((s) => s.recurringBills);
+  const commitments = useFinanceStore((s) => s.commitments);
+  const creditCardStatements = useFinanceStore((s) => s.creditCardStatements);
+  const debtRecords = useFinanceStore((s) => s.debtRecords);
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
   const getMonthlySummary = useFinanceStore((s) => s.getMonthlySummary);
@@ -55,16 +61,43 @@ export function FinanceOverviewWidget() {
 
   const due5d = useMemo(
     () => getUpcomingFinancialObligations(5),
-    [getUpcomingFinancialObligations, transactions]
+    [
+      getUpcomingFinancialObligations,
+      transactions,
+      emiTrackers,
+      sipPlans,
+      recurringBills,
+      commitments,
+      accounts,
+      creditCardStatements,
+      debtRecords,
+    ]
   );
   const totalDue5d = useMemo(
     () => due5d.reduce((acc, item) => acc + item.amount, 0),
     [due5d]
   );
 
-  const due14d = useMemo(
+  const rawDue14d = useMemo(
     () => getUpcomingFinancialObligations(14),
-    [getUpcomingFinancialObligations, transactions]
+    [
+      getUpcomingFinancialObligations,
+      transactions,
+      emiTrackers,
+      sipPlans,
+      recurringBills,
+      commitments,
+      accounts,
+      creditCardStatements,
+      debtRecords,
+    ]
+  );
+
+  // Deduplicate obligations: Exclude items already displayed in Due Soon (≤5 Days)
+  const due5dIds = useMemo(() => new Set(due5d.map((i) => i.id)), [due5d]);
+  const due14d = useMemo(
+    () => rawDue14d.filter((item) => !due5dIds.has(item.id)),
+    [rawDue14d, due5dIds]
   );
   const dueTotal14d = useMemo(
     () => due14d.reduce((acc, item) => acc + item.amount, 0),

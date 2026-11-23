@@ -40,7 +40,24 @@ import {
   decryptBackupData,
   type EncryptedBackupPayload,
 } from '@/lib/vault/backup-crypto';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { cn } from '@/lib/utils';
+
+interface RestorePreviewData {
+  formatVersion: string | number;
+  exportedAt?: string;
+  counts: {
+    habits: number;
+    completions: number;
+    tasks: number;
+    goals: number;
+    transactions: number;
+    accounts: number;
+    debts: number;
+    statements: number;
+  };
+  tables: Record<string, any[]>;
+}
 
 interface DataVaultCardProps {
   isStoragePersistent: boolean | null;
@@ -67,6 +84,8 @@ export function DataVaultCard({
     useState<EncryptedBackupPayload | null>(null);
   const [decryptPassword, setDecryptPassword] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [restorePreview, setRestorePreview] = useState<RestorePreviewData | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. Export CSV helpers
@@ -78,13 +97,14 @@ export function DataVaultCard({
         db.financeAccounts.toArray(),
         db.financeCategories.toArray(),
       ]);
+      const activeTxs = txs.filter((t) => !t.deletedAt);
       const csv = exportTransactionsCSV(txs, accs, cats);
       downloadFile(
         csv,
-        `habitflow-transactions-${new Date().toISOString().split('T')[0]}.csv`,
+        `habitflow-transactions-${getLocalIsoDate()}.csv`,
         'text/csv;charset=utf-8;'
       );
-      toast.success(`Exported ${txs.length} transactions to CSV`);
+      toast.success(`Exported ${activeTxs.length} transactions to CSV`);
     } catch {
       toast.error('Failed to export transactions CSV');
     } finally {
@@ -96,13 +116,14 @@ export function DataVaultCard({
     try {
       setIsExporting('debt_csv');
       const debts = await db.debtRecords.toArray();
+      const activeDebts = debts.filter((d) => !d.deletedAt);
       const csv = exportFriendsDebtCSV(debts);
       downloadFile(
         csv,
-        `habitflow-friends-debt-${new Date().toISOString().split('T')[0]}.csv`,
+        `habitflow-friends-debt-${getLocalIsoDate()}.csv`,
         'text/csv;charset=utf-8;'
       );
-      toast.success(`Exported ${debts.length} debt/split entries to CSV`);
+      toast.success(`Exported ${activeDebts.length} debt/split entries to CSV`);
     } catch {
       toast.error('Failed to export friends debt CSV');
     } finally {
@@ -117,13 +138,14 @@ export function DataVaultCard({
         db.habits.toArray(),
         db.completions.toArray(),
       ]);
-      const csv = exportHabitsCSV(habits, completions);
+      const activeHabits = habits.filter((h) => !h.archived);
+      const csv = exportHabitsCSV(activeHabits, completions);
       downloadFile(
         csv,
-        `habitflow-habits-${new Date().toISOString().split('T')[0]}.csv`,
+        `habitflow-habits-${getLocalIsoDate()}.csv`,
         'text/csv;charset=utf-8;'
       );
-      toast.success(`Exported ${habits.length} habits to CSV`);
+      toast.success(`Exported ${activeHabits.length} habits to CSV`);
     } catch {
       toast.error('Failed to export habits CSV');
     } finally {
@@ -148,7 +170,7 @@ export function DataVaultCard({
       setIsExporting('full_backup');
       const snapshot = await generateFullDatabaseSnapshot();
 
-      const dateStr = new Date().toISOString().split('T')[0];
+      const dateStr = getLocalIsoDate();
       if (encryptBackup) {
         const encrypted = await encryptBackupData(snapshot, passphrase);
         downloadFile(
@@ -178,7 +200,7 @@ export function DataVaultCard({
     }
   };
 
-  // 3. Restore handler
+  // 3. Restore handler: Validate & preview before write
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -192,26 +214,49 @@ export function DataVaultCard({
         setPendingEncryptedPayload(parsed as EncryptedBackupPayload);
         setDecryptPassword('');
       } else if (parsed.tables && typeof parsed.tables === 'object') {
-        // V2 plain backup
-        const result = await restoreDatabaseSnapshot(parsed.tables);
-        toast.success(
-          `Restored ${result.totalRecords} records across ${result.restoredTables} tables. Refreshing...`
-        );
-        setTimeout(() => window.location.reload(), 1500);
+        // V2 plain backup -> preview before write
+        const tables = parsed.tables;
+        setRestorePreview({
+          formatVersion: parsed.version ? `V${parsed.version}` : 'V2',
+          exportedAt: parsed.exportedAt || undefined,
+          counts: {
+            habits: (tables.habits || []).length,
+            completions: (tables.completions || []).length,
+            tasks: (tables.tasks || []).length,
+            goals: (tables.goals || []).length,
+            transactions: (tables.financeTransactions || []).length,
+            accounts: (tables.financeAccounts || []).length,
+            debts: (tables.debtRecords || []).length + (tables.debtInstallments || []).length,
+            statements: (tables.creditCardStatements || []).length,
+          },
+          tables,
+        });
       } else if (parsed.version === 1 && parsed.habits) {
-        // Legacy V1 backup fallback
-        await db.habits.clear();
-        await db.completions.clear();
-        await db.goals.clear();
-        await db.milestones.clear();
-
-        if (parsed.habits?.length) await db.habits.bulkAdd(parsed.habits);
-        if (parsed.completions?.length) await db.completions.bulkAdd(parsed.completions);
-        if (parsed.goals?.length) await db.goals.bulkAdd(parsed.goals);
-        if (parsed.milestones?.length) await db.milestones.bulkAdd(parsed.milestones);
-
-        toast.success('Restored legacy V1 backup. Refreshing...');
-        setTimeout(() => window.location.reload(), 1500);
+        // Legacy V1 backup fallback -> preview before write (preserving userSettings on V1 restores)
+        const tables: Record<string, any[]> = {
+          habits: parsed.habits || [],
+          completions: parsed.completions || [],
+          goals: parsed.goals || [],
+          milestones: parsed.milestones || [],
+        };
+        if (parsed.userSettings || parsed.settings) {
+          tables.userSettings = parsed.userSettings || parsed.settings || [];
+        }
+        setRestorePreview({
+          formatVersion: 'V1 (Legacy)',
+          exportedAt: parsed.exportedAt || undefined,
+          counts: {
+            habits: (tables.habits || []).length,
+            completions: (tables.completions || []).length,
+            tasks: 0,
+            goals: (tables.goals || []).length,
+            transactions: 0,
+            accounts: 0,
+            debts: 0,
+            statements: 0,
+          },
+          tables,
+        });
       } else {
         throw new Error('Unrecognized backup file format');
       }
@@ -229,16 +274,44 @@ export function DataVaultCard({
     try {
       setIsDecrypting(true);
       const decrypted = await decryptBackupData(pendingEncryptedPayload, decryptPassword);
-      const result = await restoreDatabaseSnapshot(decrypted.tables);
-      toast.success(
-        `Decrypted & restored ${result.totalRecords} records across ${result.restoredTables} tables. Refreshing...`
-      );
+      const tables = decrypted.tables;
       setPendingEncryptedPayload(null);
-      setTimeout(() => window.location.reload(), 1500);
+      setRestorePreview({
+        formatVersion: 'V2 (Encrypted AES-256-GCM)',
+        exportedAt: pendingEncryptedPayload.exportedAt || undefined,
+        counts: {
+          habits: (tables.habits || []).length,
+          completions: (tables.completions || []).length,
+          tasks: (tables.tasks || []).length,
+          goals: (tables.goals || []).length,
+          transactions: (tables.financeTransactions || []).length,
+          accounts: (tables.financeAccounts || []).length,
+          debts: (tables.debtRecords || []).length + (tables.debtInstallments || []).length,
+          statements: (tables.creditCardStatements || []).length,
+        },
+        tables,
+      });
     } catch (err: any) {
       toast.error(err.message || 'Decryption failed');
     } finally {
       setIsDecrypting(false);
+    }
+  };
+
+  const handleExecuteRestore = async () => {
+    if (!restorePreview) return;
+    try {
+      setIsRestoring(true);
+      const result = await restoreDatabaseSnapshot(restorePreview.tables);
+      toast.success(
+        `Restored ${result.totalRecords} records across ${result.restoredTables} tables. Refreshing...`
+      );
+      setRestorePreview(null);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err: any) {
+      toast.error(err.message || 'Restore failed');
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -510,6 +583,113 @@ export function DataVaultCard({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={!!restorePreview} onOpenChange={(open) => !open && setRestorePreview(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-primary" />
+              Confirm Database Restore
+            </DialogTitle>
+            <DialogDescription>
+              Review the backup details before restoring. Records will be safely merged into your local workspace.
+            </DialogDescription>
+          </DialogHeader>
+
+          {restorePreview && (
+            <div className="space-y-4 py-2 text-xs">
+              <div className="p-3 rounded-xl bg-muted/40 border border-border space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Format Version:</span>
+                  <span className="font-semibold text-foreground">{restorePreview.formatVersion}</span>
+                </div>
+                {restorePreview.exportedAt && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Exported At:</span>
+                    <span className="font-mono text-foreground">
+                      {new Date(restorePreview.exportedAt).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <span className="font-semibold text-foreground block">Record Counts:</span>
+                <div className="grid grid-cols-2 gap-2 font-mono">
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">Habits:</span>
+                    <span className="font-bold">{restorePreview.counts.habits}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">Completions:</span>
+                    <span className="font-bold">{restorePreview.counts.completions}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">Tasks:</span>
+                    <span className="font-bold">{restorePreview.counts.tasks}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">Goals:</span>
+                    <span className="font-bold">{restorePreview.counts.goals}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">Transactions:</span>
+                    <span className="font-bold">{restorePreview.counts.transactions}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">Accounts:</span>
+                    <span className="font-bold">{restorePreview.counts.accounts}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">Debts &amp; Splits:</span>
+                    <span className="font-bold">{restorePreview.counts.debts}</span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-background border border-border flex justify-between">
+                    <span className="text-muted-foreground">CC Statements:</span>
+                    <span className="font-bold">{restorePreview.counts.statements}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isRestoring}
+              onClick={() => setRestorePreview(null)}
+              className="rounded-xl text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isRestoring}
+              onClick={handleExecuteRestore}
+              className="rounded-xl text-xs gap-1.5"
+            >
+              {isRestoring ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Restoring...
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  Confirm &amp; Restore
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </section>

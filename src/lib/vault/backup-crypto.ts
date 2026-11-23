@@ -44,7 +44,11 @@ function base64ToBuffer(base64: string): Uint8Array {
 
 const ITERATIONS = 100_000;
 
-async function deriveAesKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveAesKey(
+  password: string,
+  salt: Uint8Array,
+  iterations: number = ITERATIONS
+): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const passwordKey = await crypto.subtle.importKey(
     'raw',
@@ -58,7 +62,7 @@ async function deriveAesKey(password: string, salt: Uint8Array): Promise<CryptoK
     {
       name: 'PBKDF2',
       salt: salt as any,
-      iterations: ITERATIONS,
+      iterations: iterations || ITERATIONS,
       hash: 'SHA-256',
     },
     passwordKey,
@@ -124,7 +128,7 @@ export async function decryptBackupData(
     const iv = base64ToBuffer(payload.iv);
     const ciphertext = base64ToBuffer(payload.ciphertext);
 
-    const key = await deriveAesKey(passphrase, salt);
+    const key = await deriveAesKey(passphrase, salt, payload.iterations || ITERATIONS);
 
     const decryptedBuffer = await crypto.subtle.decrypt(
       {

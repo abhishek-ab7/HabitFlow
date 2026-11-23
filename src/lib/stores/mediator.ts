@@ -41,6 +41,7 @@ export class CrossDomainActionMediator {
   public static async dispatch(action: MediatorAction) {
     const habitStore = useHabitStore.getState();
     const { habitId, date } = action.payload;
+    const targetHabit = habitStore.habits.find((h) => h.id === habitId);
 
     if (action.type === 'HABIT_COMPLETED') {
       const isAlreadyCompleted = habitStore.completions.some(
@@ -52,7 +53,7 @@ export class CrossDomainActionMediator {
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        const userId = session?.user?.id || 'test-user';
+        const userId = targetHabit?.userId || session?.user?.id || 'test-user';
 
         // Toggle in DB to ensure record exists
         const result = await toggleCompletion(habitId, date, userId);
@@ -84,7 +85,7 @@ export class CrossDomainActionMediator {
         const {
           data: { session },
         } = await supabase.auth.getSession();
-        const userId = session?.user?.id || 'test-user';
+        const userId = targetHabit?.userId || session?.user?.id || 'test-user';
 
         // Toggle in DB
         const result = await toggleCompletion(habitId, date, userId);
@@ -109,21 +110,38 @@ export class CrossDomainActionMediator {
   // Evaluate No-Spend Day rules across target dates or past week
   public static async evaluateNoSpendDayRules(targetDate?: string) {
     const { useFinanceStore } = await import('./finance-store');
+    const { getLocalIsoDate } = await import('@/lib/finance/credit-card-cycles');
+
+    // 1. Hydrate habits and completions from Dexie if not yet loaded in useHabitStore
+    if (useHabitStore.getState().habits.length === 0) {
+      const { db } = await import('../db');
+      const [dexieHabits, dexieCompletions] = await Promise.all([
+        db.habits.toArray(),
+        db.completions.toArray(),
+      ]);
+      if (dexieHabits.length > 0) {
+        useHabitStore.setState({
+          habits: dexieHabits,
+          completions: dexieCompletions,
+        });
+      }
+    }
+
     const habitStore = useHabitStore.getState();
     const financeStore = useFinanceStore.getState();
 
     const noSpendHabits = habitStore.habits.filter(
-      (h) => !h.archived && (h.autoTrackRule === 'no_spend_day' || h.autoTrackRule === ('no_spend' as any))
+      (h) => !h.archived && h.autoTrackRule === 'no_spend_day'
     );
     if (noSpendHabits.length === 0) return;
 
-    const today = new Date();
+    const todayStr = getLocalIsoDate();
     const datesToEvaluate: string[] = targetDate
-      ? [targetDate]
+      ? [targetDate.slice(0, 10)]
       : Array.from({ length: 7 }, (_, i) => {
           const d = new Date();
-          d.setDate(today.getDate() - i);
-          return d.toISOString().split('T')[0];
+          d.setDate(d.getDate() - i);
+          return getLocalIsoDate(d);
         });
 
     const transactions = financeStore.transactions.filter((t) => !t.deletedAt);
@@ -132,18 +150,36 @@ export class CrossDomainActionMediator {
 
     const essentialCategories = new Set([
       'bills_utilities',
+      'utilities-bills',
       'rent_housing',
+      'rent-housing',
       'education',
       'insurance',
       'healthcare',
+      'medical-supplements',
       'groceries_essentials',
+      'groceries-household',
+      'family-commitments',
+      'family_support',
     ]);
 
-    for (const date of datesToEvaluate) {
-      const dayExpenses = transactions.filter((t) => t.date === date && t.type === 'expense');
+    for (const rawDate of datesToEvaluate) {
+      const date = rawDate.slice(0, 10);
+      const isPastDay = date < todayStr;
+      const isToday = date === todayStr;
+
+      const dayExpenses = transactions.filter(
+        (t) => t.date.slice(0, 10) === date && t.type === 'expense'
+      );
 
       const discretionarySpend = dayExpenses.reduce((sum, tx) => {
-        if (tx.linkedEmiId || tx.linkedCommitmentId || tx.linkedSipId || tx.paidStatementId || tx.linkedDebtId) {
+        if (
+          tx.linkedEmiId ||
+          tx.linkedCommitmentId ||
+          tx.linkedSipId ||
+          tx.paidStatementId ||
+          tx.linkedDebtId
+        ) {
           return sum;
         }
         const cat = categoryMap.get(tx.categoryId);
@@ -155,30 +191,49 @@ export class CrossDomainActionMediator {
       }, 0);
 
       for (const habit of noSpendHabits) {
-        const isDone = habitStore.completions.some(
+        // Read fresh completions on each iteration
+        const currentCompletions = useHabitStore.getState().completions;
+        const isDone = currentCompletions.some(
           (c) => c.habitId === habit.id && c.date === date && c.completed
         );
 
-        if (discretionarySpend === 0 && !isDone) {
-          await CrossDomainActionMediator.dispatch({
-            type: 'HABIT_COMPLETED',
-            payload: {
-              habitId: habit.id,
-              date,
-              difficulty: habit.difficulty || 'medium',
-              category: 'finance',
-            },
-          });
-        } else if (discretionarySpend > 0 && isDone) {
-          await CrossDomainActionMediator.dispatch({
-            type: 'HABIT_UNCOMPLETED',
-            payload: {
-              habitId: habit.id,
-              date,
-              difficulty: habit.difficulty || 'medium',
-              category: 'finance',
-            },
-          });
+        if (isPastDay) {
+          // Past days: auto-complete if ₹0 discretionary spend; reverse if spent
+          if (discretionarySpend === 0 && !isDone) {
+            await CrossDomainActionMediator.dispatch({
+              type: 'HABIT_COMPLETED',
+              payload: {
+                habitId: habit.id,
+                date,
+                difficulty: habit.difficulty || 'medium',
+                category: 'finance',
+              },
+            });
+          } else if (discretionarySpend > 0 && isDone) {
+            await CrossDomainActionMediator.dispatch({
+              type: 'HABIT_UNCOMPLETED',
+              payload: {
+                habitId: habit.id,
+                date,
+                difficulty: habit.difficulty || 'medium',
+                category: 'finance',
+              },
+            });
+          }
+        } else if (isToday) {
+          // Today: keep as live tracking badge, do not auto-complete mid-day,
+          // but reverse if an expense was logged that breaks the day
+          if (discretionarySpend > 0 && isDone) {
+            await CrossDomainActionMediator.dispatch({
+              type: 'HABIT_UNCOMPLETED',
+              payload: {
+                habitId: habit.id,
+                date,
+                difficulty: habit.difficulty || 'medium',
+                category: 'finance',
+              },
+            });
+          }
         }
       }
     }

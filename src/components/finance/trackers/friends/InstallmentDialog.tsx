@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 
 interface InstallmentDialogProps {
   debt: DebtRecord | null;
@@ -46,7 +47,7 @@ export function InstallmentDialog({
   onUpdateInstallment,
 }: InstallmentDialogProps) {
   const [instAmount, setInstAmount] = useState('');
-  const [instDate, setInstDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [instDate, setInstDate] = useState(() => getLocalIsoDate());
   const [instMethod, setInstMethod] = useState<DebtPaymentMethod>('upi');
   const [instAccountId, setInstAccountId] = useState('');
   const [instNote, setInstNote] = useState('');
@@ -63,7 +64,7 @@ export function InstallmentDialog({
       } else if (debt) {
         const suggestedAmt = debt.emiAmount || debt.plannedMonthlyInstallment || debt.remainingAmount;
         setInstAmount(String(suggestedAmt));
-        setInstDate(new Date().toISOString().split('T')[0]);
+        setInstDate(getLocalIsoDate());
         setInstMethod('upi');
         setInstAccountId(accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || '');
         setInstNote('');

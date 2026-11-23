@@ -294,6 +294,15 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
         }
       }
     }
+
+    try {
+      await CrossDomainActionMediator.evaluateNoSpendDayRules(updatedDate);
+      if (existing.date && existing.date.slice(0, 10) !== updatedDate.slice(0, 10)) {
+        await CrossDomainActionMediator.evaluateNoSpendDayRules(existing.date);
+      }
+    } catch {
+      // Non-blocking gamification hook
+    }
   },
 
   deleteTransaction: async (id) => {
@@ -350,6 +359,14 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
       await get().syncCardStatements(account.id);
     }
     notifyFinanceSync();
+
+    try {
+      if (existing.date) {
+        await CrossDomainActionMediator.evaluateNoSpendDayRules(existing.date);
+      }
+    } catch {
+      // Non-blocking gamification hook
+    }
   },
 
   approveReviewedTransaction: async (id) => {

@@ -67,6 +67,10 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     await db.debtInstallments.clear();
     await db.emiTrackers.clear();
     if (db.creditCardStatements) await db.creditCardStatements.clear();
+    if (db.financeSipPlans) await db.financeSipPlans.clear();
+    if (db.financeRecurringBills) await db.financeRecurringBills.clear();
+    if (db.financeCategorizationRules) await db.financeCategorizationRules.clear();
+    if (db.financeNetWorthSnapshots) await db.financeNetWorthSnapshots.clear();
   });
 
   test('1. Pushes dirty transactions to Supabase and marks isDirty: false in Dexie', async () => {
@@ -457,11 +461,12 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
   test('10. Deduplicates local categories by slug and accounts by (name, type), remapping transaction references', async () => {
     const { deduplicateFinanceRecordsInDexie } = await import('../engines/finance-sync');
     const now = new Date().toISOString();
+    const isolatedUserId = 'user-test-dedup-isolated-slug';
 
     // Two categories with same slug
     await db.financeCategories.add({
       id: 'cat-dup-1',
-      userId,
+      userId: isolatedUserId,
       name: 'Food & Dining',
       slug: 'food-dining',
       type: 'expense',
@@ -477,7 +482,7 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     });
     await db.financeCategories.add({
       id: 'cat-dup-2',
-      userId,
+      userId: isolatedUserId,
       name: 'Food & Dining',
       slug: 'food-dining',
       type: 'expense',
@@ -495,7 +500,7 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     // Two accounts with same name and type
     await db.financeAccounts.add({
       id: 'acc-dup-1',
-      userId,
+      userId: isolatedUserId,
       name: 'Cash',
       type: 'cash',
       balance: 0,
@@ -509,7 +514,7 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     });
     await db.financeAccounts.add({
       id: 'acc-dup-2',
-      userId,
+      userId: isolatedUserId,
       name: 'Cash',
       type: 'cash',
       balance: 1500,
@@ -525,7 +530,7 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     // Transaction pointing to the empty duplicate account and cat-dup-2
     await db.financeTransactions.add({
       id: 'tx-dup-test',
-      userId,
+      userId: isolatedUserId,
       title: 'Snacks',
       amount: 150,
       type: 'expense',
@@ -539,15 +544,15 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
       updatedAt: now,
     });
 
-    await deduplicateFinanceRecordsInDexie(userId);
+    await deduplicateFinanceRecordsInDexie(isolatedUserId);
 
     // Categories: only 1 food-dining remains
-    const remainingCats = await db.financeCategories.where('userId').equals(userId).toArray();
+    const remainingCats = await db.financeCategories.where('userId').equals(isolatedUserId).toArray();
     expect(remainingCats.length).toBe(1);
     expect(remainingCats[0].id).toBe('cat-dup-2');
 
     // Accounts: only 1 Cash remains, with balance 1500
-    const remainingAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
+    const remainingAccs = await db.financeAccounts.where('userId').equals(isolatedUserId).toArray();
     expect(remainingAccs.length).toBe(1);
     expect(remainingAccs[0].id).toBe('acc-dup-2');
     expect(remainingAccs[0].balance).toBe(1500);
@@ -963,5 +968,123 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     const octStmt = await db.creditCardStatements.get('stmt-dup-oct-on-1');
     expect(octStmt?.accountId).toBe('cc-dup-2');
     expect(await db.creditCardStatements.get('stmt-dup-nov-on-1')).toBeUndefined();
+  });
+
+  test('19. Propagates hasError = true when syncSips, syncRecurringBills, syncCategorizationRules, or syncNetWorthSnapshots fail', async () => {
+    const { syncSips, syncRecurringBills } = await import('../engines/finance/finance-sync-trackers');
+    const { syncCategorizationRules, syncNetWorthSnapshots } = await import('../engines/finance/finance-sync-transactions');
+
+    const failingSupabase = {
+      from: vi.fn().mockReturnValue({
+        upsert: vi.fn().mockResolvedValue({ error: new Error('Postgres error') }),
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ data: null, error: new Error('Postgres error') }),
+        }),
+      }),
+    };
+
+    const now = new Date().toISOString();
+    await db.financeSipPlans.add({
+      id: 'sip-err-1',
+      userId,
+      name: 'Nifty 50',
+      assetClass: 'equity_mf',
+      monthlyAmount: 5000,
+      sipDayOfMonth: 10,
+      startDate: '2026-01-01',
+      totalInvested: 50000,
+      currentValue: 55000,
+      isActive: true,
+      color: '#10b981',
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sipResult = await syncSips(failingSupabase, userId);
+    expect(sipResult.hasError).toBe(true);
+
+    await db.financeRecurringBills.add({
+      id: 'bill-err-1',
+      userId,
+      name: 'Wifi',
+      amount: 1000,
+      cadence: 'monthly',
+      dueDayOfMonth: 5,
+      categoryId: 'cat-1',
+      autoLog: false,
+      isActive: true,
+      color: '#6366f1',
+      icon: 'Wifi',
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const billResult = await syncRecurringBills(failingSupabase, userId);
+    expect(billResult.hasError).toBe(true);
+
+    await db.financeCategorizationRules.add({
+      id: 'rule-err-1',
+      userId,
+      matchPattern: 'SWIGGY',
+      cleanMerchantName: 'Swiggy',
+      categoryId: 'cat-1',
+      defaultTags: [],
+      isActive: true,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const ruleResult = await syncCategorizationRules(failingSupabase, userId);
+    expect(ruleResult.hasError).toBe(true);
+
+    await db.financeNetWorthSnapshots.add({
+      id: 'snap-err-1',
+      userId,
+      monthKey: '2026-11',
+      snapshotDate: '2026-11-20',
+      liquidAssets: 50000,
+      investmentAssets: 100000,
+      friendReceivables: 0,
+      totalAssets: 150000,
+      creditCardLiabilities: 10000,
+      emiRemainingPrincipal: 0,
+      friendPayables: 0,
+      totalLiabilities: 10000,
+      netWorth: 140000,
+      isDirty: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const snapResult = await syncNetWorthSnapshots(failingSupabase, userId);
+    expect(snapResult.hasError).toBe(true);
+  });
+
+  test('20. FinanceSyncEngine runs syncSips before syncTransactions', async () => {
+    const syncer = new FinanceSyncEngine();
+    const trackers = await import('../engines/finance/finance-sync-trackers');
+    const transactions = await import('../engines/finance/finance-sync-transactions');
+
+    const executionOrder: string[] = [];
+    const spySips = vi.spyOn(trackers, 'syncSips').mockImplementation(async () => {
+      executionOrder.push('syncSips');
+      return { pushed: 0, pulled: 0, hasError: false };
+    });
+    const spyTxs = vi.spyOn(transactions, 'syncTransactions').mockImplementation(async () => {
+      executionOrder.push('syncTransactions');
+      return { pushed: 0, pulled: 0, hasError: false };
+    });
+
+    await syncer.sync(userId);
+
+    expect(executionOrder.indexOf('syncSips')).toBeGreaterThanOrEqual(0);
+    expect(executionOrder.indexOf('syncTransactions')).toBeGreaterThanOrEqual(0);
+    expect(executionOrder.indexOf('syncSips')).toBeLessThan(executionOrder.indexOf('syncTransactions'));
+
+    spySips.mockRestore();
+    spyTxs.mockRestore();
   });
 });

@@ -158,7 +158,7 @@ export async function syncTransactions(supabase: any, userId: string): Promise<S
 export async function syncCategorizationRules(supabase: any, userId: string): Promise<SyncStepResult> {
   let pushed = 0;
   let pulled = 0;
-  const hasError = false;
+  let hasError = false;
 
   try {
     if (db.financeCategorizationRules) {
@@ -185,12 +185,18 @@ export async function syncCategorizationRules(supabase: any, userId: string): Pr
         if (!error) {
           await db.financeCategorizationRules.update(rule.id, { isDirty: false });
           pushed++;
+        } else {
+          logger.error('[FinanceSyncEngine] Rule upsert failed:', error);
+          hasError = true;
         }
       }
-      const { data: remoteRules } = await (supabase.from('finance_categorization_rules') as any)
+      const { data: remoteRules, error: pullErr } = await (supabase.from('finance_categorization_rules') as any)
         .select('*')
         .eq('user_id', userId);
-      if (Array.isArray(remoteRules)) {
+      if (pullErr) {
+        logger.error('[FinanceSyncEngine] Rule pull failed:', pullErr);
+        hasError = true;
+      } else if (Array.isArray(remoteRules)) {
         for (const r of remoteRules) {
           const local = await db.financeCategorizationRules.get(r.id);
           if (shouldApplyRemote(local, r)) {
@@ -214,8 +220,9 @@ export async function syncCategorizationRules(supabase: any, userId: string): Pr
         }
       }
     }
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    logger.error('[FinanceSyncEngine] syncCategorizationRules unexpected error:', err);
+    hasError = true;
   }
 
   return { pushed, pulled, hasError };
@@ -224,7 +231,7 @@ export async function syncCategorizationRules(supabase: any, userId: string): Pr
 export async function syncNetWorthSnapshots(supabase: any, userId: string): Promise<SyncStepResult> {
   let pushed = 0;
   let pulled = 0;
-  const hasError = false;
+  let hasError = false;
 
   try {
     if (db.financeNetWorthSnapshots && !missingRemoteFinanceTables.has('finance_net_worth_snapshots')) {
@@ -264,6 +271,9 @@ export async function syncNetWorthSnapshots(supabase: any, userId: string): Prom
             missingRemoteFinanceTables.add('finance_net_worth_snapshots');
             logger.info('[FinanceSyncEngine] Skipping unmigrated table finance_net_worth_snapshots for this session.');
             break;
+          } else {
+            logger.error('[FinanceSyncEngine] Net worth snapshot upsert failed:', error);
+            hasError = true;
           }
         } else {
           await db.financeNetWorthSnapshots.update(snap.id, { isDirty: false });
@@ -276,6 +286,9 @@ export async function syncNetWorthSnapshots(supabase: any, userId: string): Prom
           .eq('user_id', userId);
         if (pullSnapError && isMissingRelationError(pullSnapError)) {
           missingRemoteFinanceTables.add('finance_net_worth_snapshots');
+        } else if (pullSnapError) {
+          logger.error('[FinanceSyncEngine] Net worth snapshot pull failed:', pullSnapError);
+          hasError = true;
         } else if (Array.isArray(remoteSnaps)) {
           for (const r of remoteSnaps) {
             const local = await db.financeNetWorthSnapshots.get(r.id);
@@ -306,8 +319,9 @@ export async function syncNetWorthSnapshots(supabase: any, userId: string): Prom
         }
       }
     }
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    logger.error('[FinanceSyncEngine] syncNetWorthSnapshots unexpected error:', err);
+    hasError = true;
   }
 
   return { pushed, pulled, hasError };

@@ -364,7 +364,7 @@ export async function syncEmis(supabase: any, userId: string): Promise<SyncStepR
 export async function syncSips(supabase: any, userId: string): Promise<SyncStepResult> {
   let pushed = 0;
   let pulled = 0;
-  const hasError = false;
+  let hasError = false;
 
   try {
     if (db.financeSipPlans) {
@@ -402,6 +402,7 @@ export async function syncSips(supabase: any, userId: string): Promise<SyncStepR
           pushed++;
         } else {
           logger.error('[FinanceSyncEngine] SIP plan upsert failed:', error);
+          hasError = true;
         }
       }
 
@@ -409,7 +410,10 @@ export async function syncSips(supabase: any, userId: string): Promise<SyncStepR
         .from('finance_sip_plans') as any)
         .select('*')
         .eq('user_id', userId);
-      if (!pullSipErr && Array.isArray(remoteSips)) {
+      if (pullSipErr) {
+        logger.error('[FinanceSyncEngine] SIP plan pull failed:', pullSipErr);
+        hasError = true;
+      } else if (Array.isArray(remoteSips)) {
         for (const r of remoteSips) {
           const local = await db.financeSipPlans.get(r.id);
           if (shouldApplyRemote(local, r)) {
@@ -442,8 +446,9 @@ export async function syncSips(supabase: any, userId: string): Promise<SyncStepR
         }
       }
     }
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    logger.error('[FinanceSyncEngine] syncSips unexpected error:', err);
+    hasError = true;
   }
 
   return { pushed, pulled, hasError };
@@ -452,7 +457,7 @@ export async function syncSips(supabase: any, userId: string): Promise<SyncStepR
 export async function syncRecurringBills(supabase: any, userId: string): Promise<SyncStepResult> {
   let pushed = 0;
   let pulled = 0;
-  const hasError = false;
+  let hasError = false;
 
   try {
     if (db.financeRecurringBills) {
@@ -485,12 +490,18 @@ export async function syncRecurringBills(supabase: any, userId: string): Promise
         if (!error) {
           await db.financeRecurringBills.update(bill.id, { isDirty: false });
           pushed++;
+        } else {
+          logger.error('[FinanceSyncEngine] Recurring bill upsert failed:', error);
+          hasError = true;
         }
       }
-      const { data: remoteBills } = await (supabase.from('finance_recurring_bills') as any)
+      const { data: remoteBills, error: pullBillErr } = await (supabase.from('finance_recurring_bills') as any)
         .select('*')
         .eq('user_id', userId);
-      if (Array.isArray(remoteBills)) {
+      if (pullBillErr) {
+        logger.error('[FinanceSyncEngine] Recurring bill pull failed:', pullBillErr);
+        hasError = true;
+      } else if (Array.isArray(remoteBills)) {
         for (const r of remoteBills) {
           const local = await db.financeRecurringBills.get(r.id);
           if (shouldApplyRemote(local, r)) {
@@ -520,8 +531,9 @@ export async function syncRecurringBills(supabase: any, userId: string): Promise
         }
       }
     }
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    logger.error('[FinanceSyncEngine] syncRecurringBills unexpected error:', err);
+    hasError = true;
   }
 
   return { pushed, pulled, hasError };

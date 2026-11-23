@@ -11,6 +11,7 @@ import type {
   FriendLedgerGroup,
 } from '@/lib/types';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
 import {
   FriendCard,
@@ -64,6 +65,10 @@ export function FriendsDebtSection() {
 
   // Share Settlement Dialog
   const [shareFriend, setShareFriend] = useState<FriendLedgerGroup | null>(null);
+
+  // Confirm delete states
+  const [debtToDelete, setDebtToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [installmentToDelete, setInstallmentToDelete] = useState<string | null>(null);
 
   const summary = getDebtSummary();
   const allFriendGroups = getFriendLedgerGroups();
@@ -144,18 +149,26 @@ export function FriendsDebtSection() {
     }
   };
 
-  const handleDeleteDebt = async (debtId: string, title: string) => {
-    if (confirm(`Delete "${title}"?`)) {
-      await deleteDebtRecord(debtId);
-      toast.success('Deleted debt entry');
-    }
+  const handleDeleteDebt = (debtId: string, title: string) => {
+    setDebtToDelete({ id: debtId, title });
   };
 
-  const handleDeleteInstallment = async (instId: string) => {
-    if (confirm('Delete this installment log?')) {
-      await deleteDebtInstallment(instId);
-      toast.success('Deleted installment log');
-    }
+  const handleConfirmDeleteDebt = async () => {
+    if (!debtToDelete) return;
+    await deleteDebtRecord(debtToDelete.id);
+    toast.success('Deleted debt entry');
+    setDebtToDelete(null);
+  };
+
+  const handleDeleteInstallment = (instId: string) => {
+    setInstallmentToDelete(instId);
+  };
+
+  const handleConfirmDeleteInstallment = async () => {
+    if (!installmentToDelete) return;
+    await deleteDebtInstallment(installmentToDelete);
+    toast.success('Deleted installment log');
+    setInstallmentToDelete(null);
   };
 
   return (
@@ -432,6 +445,26 @@ export function FriendsDebtSection() {
         group={shareFriend}
         isOpen={!!shareFriend}
         onClose={() => setShareFriend(null)}
+      />
+
+      <ConfirmDialog
+        open={!!debtToDelete}
+        onOpenChange={(open) => !open && setDebtToDelete(null)}
+        title="Delete Debt Entry"
+        description={`Are you sure you want to delete "${debtToDelete?.title || 'this debt'}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleConfirmDeleteDebt}
+      />
+
+      <ConfirmDialog
+        open={!!installmentToDelete}
+        onOpenChange={(open) => !open && setInstallmentToDelete(null)}
+        title="Delete Installment Log"
+        description="Are you sure you want to delete this installment payment log? This cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleConfirmDeleteInstallment}
       />
     </section>
   );

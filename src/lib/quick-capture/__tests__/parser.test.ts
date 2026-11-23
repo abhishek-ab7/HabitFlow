@@ -20,6 +20,17 @@ describe('quick-capture parser', () => {
       expect(detectIntent('review quarterly goals')).toBe('task');
       expect(detectIntent('send invoice to client')).toBe('task');
     });
+
+    it('classifies future bill reminders without explicit currency as tasks and explicit amounts as expenses', () => {
+      expect(detectIntent('pay electricity bill tomorrow at 6pm')).toBe('task');
+      expect(detectIntent('pay electricity bill')).toBe('task');
+      expect(detectIntent('call landlord at 6:00')).toBe('task');
+      expect(detectIntent('remind me to pay wifi bill tomorrow')).toBe('task');
+      expect(detectIntent('pay bill ₹750')).toBe('expense');
+      expect(detectIntent('pay 500 for electricity bill')).toBe('expense');
+      expect(detectIntent('pay electricity bill 1200')).toBe('expense');
+      expect(detectIntent('shoes 3500')).toBe('expense');
+    });
   });
 
   describe('parseExpenseNaturalLanguage', () => {
@@ -44,6 +55,47 @@ describe('quick-capture parser', () => {
       const parsed = parseExpenseNaturalLanguage('uber 420 to airport');
       expect(parsed.amount).toBe(420);
       expect(parsed.categorySlug).toBe('transport-fuel');
+    });
+
+    it('parses comma-formatted amounts cleanly without leaving stray commas in title', () => {
+      const parsed1 = parseExpenseNaturalLanguage('Groceries 1,200');
+      expect(parsed1.amount).toBe(1200);
+      expect(parsed1.title).toBe('Groceries');
+      expect(parsed1.title).not.toContain(',');
+
+      const parsed2 = parseExpenseNaturalLanguage('Laptop repair 12,500.50 rs');
+      expect(parsed2.amount).toBe(12500.5);
+      expect(parsed2.title).toBe('Laptop repair');
+      expect(parsed2.title).not.toContain(',');
+    });
+
+    it('prevents false-positive splits for non-person phrases like with milk or with card', () => {
+      const parsedMilk = parseExpenseNaturalLanguage('Coffee with milk 150');
+      expect(parsedMilk.amount).toBe(150);
+      expect(parsedMilk.isSplit).toBe(false);
+      expect(parsedMilk.splitWithFriend).toBeUndefined();
+      expect(parsedMilk.title.toLowerCase()).toContain('coffee with milk');
+
+      const parsedCard = parseExpenseNaturalLanguage('Dinner with card 450');
+      expect(parsedCard.amount).toBe(450);
+      expect(parsedCard.isSplit).toBe(false);
+      expect(parsedCard.splitWithFriend).toBeUndefined();
+    });
+
+    it('correctly detects explicit friend splits and strips friend name from title', () => {
+      const parsed = parseExpenseNaturalLanguage('Dinner with Rahul split 1200');
+      expect(parsed.amount).toBe(1200);
+      expect(parsed.isSplit).toBe(true);
+      expect(parsed.splitWithFriend).toBe('Rahul');
+      expect(parsed.splitAmount).toBe(600);
+      expect(parsed.title).toBe('Dinner');
+
+      const parsedFifty = parseExpenseNaturalLanguage('Dinner with Rahul 50/50 1200');
+      expect(parsedFifty.amount).toBe(1200);
+      expect(parsedFifty.isSplit).toBe(true);
+      expect(parsedFifty.splitWithFriend).toBe('Rahul');
+      expect(parsedFifty.splitAmount).toBe(600);
+      expect(parsedFifty.title).toBe('Dinner');
     });
   });
 

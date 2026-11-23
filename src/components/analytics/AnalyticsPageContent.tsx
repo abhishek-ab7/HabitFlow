@@ -230,7 +230,12 @@ export default function AnalyticsPageContent() {
 
   // Behavioral Correlations: Mood & Habits × Spending
   const behavioralCorrelations = useMemo(() => {
-    const expenseTransactions = transactions.filter(t => t.type === 'expense');
+    const startDateStr = format(dateRange.startDate, 'yyyy-MM-dd');
+    const endDateStr = format(dateRange.endDate, 'yyyy-MM-dd');
+
+    const expenseTransactions = transactions.filter(
+      (t) => t.type === 'expense' && !t.deletedAt && t.date.slice(0, 10) >= startDateStr && t.date.slice(0, 10) <= endDateStr
+    );
 
     // Map daily spending
     const dailySpendMap = new Map<string, { total: number; impulse: number }>();
@@ -279,26 +284,29 @@ export default function AnalyticsPageContent() {
     const healthDaysFoodSpends: number[] = [];
     const nonHealthDaysFoodSpends: number[] = [];
 
-    dailySpendMap.forEach((spend, dateKey) => {
+    // Iterate across all calendar days in analyticsData.dailyStats (including ₹0-spend days)
+    analyticsData.dailyStats.forEach((dayStat) => {
+      const dateKey = dayStat.date;
+      const spend = dailySpendMap.get(dateKey);
       const mood = getMoodForDate(dateKey);
-      if (mood === 'stressed' || mood === 'sad') {
-        stressedSpends.push(spend.total);
-        stressedImpulseSpends.push(spend.impulse);
-      } else if (mood === 'calm' || mood === 'happy') {
-        calmSpends.push(spend.total);
-        calmImpulseSpends.push(spend.impulse);
-      }
 
-      const habitDayStat = analyticsData.dailyStats.find(d => d.date === dateKey);
-      if (habitDayStat) {
-        if (habitDayStat.completionRate >= 70) {
+      if (spend) {
+        if (mood === 'stressed' || mood === 'sad') {
+          stressedSpends.push(spend.total);
+          stressedImpulseSpends.push(spend.impulse);
+        } else if (mood === 'calm' || mood === 'happy') {
+          calmSpends.push(spend.total);
+          calmImpulseSpends.push(spend.impulse);
+        }
+
+        if (dayStat.completionRate >= 70) {
           highHabitSpends.push(spend.total);
-        } else if (habitDayStat.completionRate < 50) {
+        } else if (dayStat.completionRate < 50) {
           lowHabitSpends.push(spend.total);
         }
       }
 
-      // Check health habit completion for this day
+      // Check health habit completion for this day across all days in range (reflects ₹0 home-cooked days)
       const foodSpend = dailyFoodSpendMap.get(dateKey) || 0;
       const completedHealth = healthHabits.some(h => {
         const c = completionsMap.get(`${h.id}_${dateKey}`);
@@ -341,16 +349,22 @@ export default function AnalyticsPageContent() {
 
     // No-Spend Day tracking status
     const noSpendHabit = habits.find(
-      h => !h.archived && (h.autoTrackRule === 'no_spend_day' || h.autoTrackRule === ('no_spend' as any))
+      (h) => !h.archived && h.autoTrackRule === 'no_spend_day'
     );
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const essentialCategories = new Set([
       'bills_utilities',
+      'utilities-bills',
       'rent_housing',
+      'rent-housing',
       'education',
       'insurance',
       'healthcare',
+      'medical-supplements',
       'groceries_essentials',
+      'groceries-household',
+      'family-commitments',
+      'family_support',
     ]);
     const todayExpenses = expenseTransactions.filter(t => t.date.split('T')[0] === todayStr);
     const todayDiscretionarySpend = todayExpenses.reduce((sum, tx) => {
@@ -388,7 +402,7 @@ export default function AnalyticsPageContent() {
       highHabitDaysCount: highHabitSpends.length,
       lowHabitDaysCount: lowHabitSpends.length,
     };
-  }, [transactions, categories, getMoodForDate, analyticsData.dailyStats, habits, completionsMap]);
+  }, [transactions, categories, getMoodForDate, analyticsData.dailyStats, habits, completionsMap, dateRange]);
 
   const handleCreateNoSpendHabit = async () => {
     try {

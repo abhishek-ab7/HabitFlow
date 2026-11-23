@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 
 interface AddDebtModalProps {
   isOpen: boolean;
@@ -61,7 +62,7 @@ export function AddDebtModal({
   const [direction, setDirection] = useState<DebtDirection>('lent');
   const [title, setTitle] = useState('');
   const [principal, setPrincipal] = useState('');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(() => getLocalIsoDate());
   const [notes, setNotes] = useState('');
 
   // Loan/EMI specific fields
@@ -82,7 +83,7 @@ export function AddDebtModal({
       setDirection(editingDebt.direction);
       setTitle(editingDebt.title);
       setPrincipal(String(editingDebt.principalAmount));
-      setStartDate(editingDebt.startDate || new Date().toISOString().split('T')[0]);
+      setStartDate(editingDebt.startDate || getLocalIsoDate());
       setPlannedMonthly(editingDebt.plannedMonthlyInstallment ? String(editingDebt.plannedMonthlyInstallment) : '');
       setDueDay(String(editingDebt.dueDayOfMonth || 15));
       setRepaymentSchedule(editingDebt.repaymentSchedule || 'flexible');
@@ -98,7 +99,7 @@ export function AddDebtModal({
       setDirection(defaultBucket === 'everyday_split' ? 'lent' : 'borrowed');
       setTitle('');
       setPrincipal('');
-      setStartDate(new Date().toISOString().split('T')[0]);
+      setStartDate(getLocalIsoDate());
       setPlannedMonthly('');
       setDueDay('15');
       setRepaymentSchedule('flexible');
@@ -143,7 +144,7 @@ export function AddDebtModal({
         direction,
         title: resolvedTitle,
         principalAmount: amt,
-        startDate: startDate || new Date().toISOString().split('T')[0],
+        startDate: startDate || getLocalIsoDate(),
         bucketType: entryBucketType,
         repaymentSchedule: monthly && monthly > 0 ? 'monthly_partial' : repaymentSchedule,
         plannedMonthlyInstallment: monthly,

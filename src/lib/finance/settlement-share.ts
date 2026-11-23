@@ -56,7 +56,15 @@ export function formatSettlementShareText(
   options: SettlementShareOptions = {}
 ): string {
   const { userUpiId, includeUpiLink = true, myName, target = 'all' } = options;
-  const totalNet = group.everydayNet + group.longTermNetPosition;
+
+  let targetNet = 0;
+  if (target === 'everyday_only') {
+    targetNet = group.everydayNet;
+  } else if (target === 'loans_only') {
+    targetNet = group.longTermNetPosition;
+  } else {
+    targetNet = group.everydayNet + group.longTermNetPosition;
+  }
 
   const lines: string[] = [];
 
@@ -91,10 +99,13 @@ export function formatSettlementShareText(
   // 2. Long-Term Loans & EMIs (if requested or all)
   if (target === 'all' || target === 'loans_only') {
     lines.push(`*2. Long-Term Loans & EMIs*`);
-    if (group.longTermLoans.length === 0) {
+    const activeLoans = (group.longTermLoans || []).filter(
+      (loan) => loan.status !== 'settled' && loan.remainingAmount > 0
+    );
+    if (activeLoans.length === 0) {
       lines.push(`• Status: No active loans`);
     } else {
-      group.longTermLoans.forEach((loan) => {
+      activeLoans.forEach((loan) => {
         const dirLabel = loan.direction === 'lent' ? 'You owe' : 'I owe';
         const emiLabel = loan.isEmi && loan.totalInstallments
           ? ` (${loan.paidInstallments || 0}/${loan.totalInstallments} EMIs)`
@@ -116,20 +127,20 @@ export function formatSettlementShareText(
 
   // 3. Net Settle-Up
   lines.push(`*Net Settle-Up*`);
-  if (totalNet > 0) {
-    lines.push(`👉 Total: You owe ₹${totalNet.toLocaleString('en-IN')} net`);
-  } else if (totalNet < 0) {
-    lines.push(`👉 Total: I owe you ₹${Math.abs(totalNet).toLocaleString('en-IN')} net`);
+  if (targetNet > 0) {
+    lines.push(`👉 Total: You owe ₹${targetNet.toLocaleString('en-IN')} net`);
+  } else if (targetNet < 0) {
+    lines.push(`👉 Total: I owe you ₹${Math.abs(targetNet).toLocaleString('en-IN')} net`);
   } else {
     lines.push(`👉 Total: Everything is fully settled up (₹0)`);
   }
 
   // 4. UPI Payment Link if friend owes user and UPI is provided
-  if (totalNet > 0 && userUpiId && validateUpiId(userUpiId) && includeUpiLink) {
+  if (targetNet > 0 && userUpiId && validateUpiId(userUpiId) && includeUpiLink) {
     const upiUri = generateUpiPayUri({
       upiId: userUpiId,
       payeeName: myName,
-      amount: totalNet,
+      amount: targetNet,
       note: `Settlement for ${group.friendName}`,
     });
     if (upiUri) {
