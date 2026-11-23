@@ -23,6 +23,7 @@ import { MonthlyBudgetModal } from './MonthlyBudgetModal';
 import { SmsImportModal } from './SmsImportModal';
 import { AskFinancesDrawer } from './AskFinancesDrawer';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 import { useAuth } from '@/providers/auth-provider';
 
 type ActiveTab = 'overview' | 'activity' | 'trackers' | 'accounts';
@@ -137,81 +138,84 @@ export function FinancePageContent() {
   };
 
   return (
-    <div className="container max-w-6xl mx-auto px-4 sm:px-6 pt-4 pb-28 md:py-6 md:pb-16 space-y-5">
-      {/* Compact Header & Month Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-          Finance
-        </h1>
+    <div className="container max-w-6xl mx-auto overflow-x-hidden px-4 sm:px-6 pt-5 pb-24 md:py-6 md:pb-12 space-y-5">
+      {/* Standardized Header & Month Switcher */}
+      <PageHeader
+        title="Finance"
+        actions={
+          <>
+            <div className="inline-flex items-center rounded-xl border border-border bg-card p-0.5">
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, -1))}
+                className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Previous month"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="px-2 text-xs sm:text-sm font-semibold text-foreground min-w-[82px] text-center whitespace-nowrap font-mono tabular-nums">
+                {formatMonthDisplay(selectedMonth)}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, 1))}
+                className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Next month"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex items-center rounded-xl border border-border bg-card p-0.5">
-            <button
+            <Button
               type="button"
-              onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, -1))}
-              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Previous month"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAskAiOpen(true)}
+              className="h-9 px-2.5 sm:px-3 rounded-xl gap-1.5 whitespace-nowrap"
+              title="Ask AI about your finances"
             >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="px-2 text-xs sm:text-sm font-semibold text-foreground min-w-[84px] text-center whitespace-nowrap font-mono tabular-nums">
-              {formatMonthDisplay(selectedMonth)}
-            </span>
-            <button
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-xs sm:text-sm">Ask AI</span>
+            </Button>
+
+            <Button
               type="button"
-              onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, 1))}
-              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Next month"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSharedSmsText(null);
+                setIsSmsModalOpen(true);
+              }}
+              className="h-9 px-2.5 sm:px-3 rounded-xl gap-1.5 whitespace-nowrap"
+              title="Fetch expenses from SMS or notifications"
             >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+              <MessageSquareText className="w-4 h-4 text-primary" />
+              <span className="text-xs sm:text-sm">SMS</span>
+            </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setIsAskAiOpen(true)}
-            className="min-h-[40px] sm:min-h-[44px] px-3 rounded-xl gap-1.5 whitespace-nowrap"
-            title="Ask AI about your finances"
-          >
-            <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-xs sm:text-sm">Ask AI</span>
-          </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenBudgetModal()}
+              className="hidden sm:inline-flex h-9 px-3 rounded-xl gap-1.5 whitespace-nowrap"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Budgets
+            </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setSharedSmsText(null);
-              setIsSmsModalOpen(true);
-            }}
-            className="min-h-[40px] sm:min-h-[44px] px-3 rounded-xl gap-1.5 whitespace-nowrap"
-            title="Fetch expenses from SMS or notifications"
-          >
-            <MessageSquareText className="w-4 h-4 text-primary" />
-            <span className="text-xs sm:text-sm">SMS</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => handleOpenBudgetModal()}
-            className="hidden sm:inline-flex min-h-[44px] px-3.5 rounded-xl gap-1.5 whitespace-nowrap"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-            Budgets
-          </Button>
-
-          <Button
-            type="button"
-            onClick={handleOpenNewTx}
-            className="hidden md:inline-flex min-h-[44px] px-4 rounded-xl gap-1.5 whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            Add Entry
-          </Button>
-        </div>
-      </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleOpenNewTx}
+              className="hidden md:inline-flex h-9 px-3.5 rounded-xl gap-1.5 whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              Add Entry
+            </Button>
+          </>
+        }
+      />
 
       {/* 4-Tab Finance V2 Architecture */}
       <div
@@ -293,16 +297,6 @@ export function FinancePageContent() {
         </div>
       )}
 
-      {/* Floating Desktop Quick-Add Button (Mobile uses MobileNav raised + button) */}
-      <button
-        type="button"
-        onClick={handleOpenNewTx}
-        aria-label="Add expense or income"
-        className="hidden md:flex fixed md:bottom-6 md:right-24 z-40 h-14 px-5 rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-95 active:scale-95 transition-transform items-center gap-2 text-sm font-semibold whitespace-nowrap"
-      >
-        <Plus className="w-5 h-5" />
-        <span>Add</span>
-      </button>
 
       {/* Keypad Bottom Sheet / Quick-Add Modal */}
       <AddTransactionModal

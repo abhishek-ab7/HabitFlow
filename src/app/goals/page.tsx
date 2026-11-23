@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Target,
   Plus,
   Filter,
   SortAsc,
@@ -17,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton'; // Force HMR refresh
+import { PageHeader } from '@/components/ui/page-header';
 import { GoalListSkeleton } from '@/components/ui/Skeletons';
 import {
   DropdownMenu,
@@ -251,27 +251,23 @@ function GoalsPageContent() {
   }
 
   return (
-    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
-      {/* Header */}
-      <FadeIn className="mb-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <Target className="h-8 w-8 text-primary" />
-              Goal Planner
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              {activeGoalsCount > 0
-                ? `${activeGoalsCount} active goal${activeGoalsCount !== 1 ? 's' : ''}`
-                : 'Set meaningful goals and track your progress'}
-            </p>
-          </div>
-
-          <Button onClick={() => setFormModalOpen(true)} size="lg" className="gap-2">
-            <Plus className="h-5 w-5" />
-            New Goal
-          </Button>
-        </div>
+    <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto pb-24 md:pb-12">
+      {/* Standardized Page Header */}
+      <FadeIn className="mb-6">
+        <PageHeader
+          title="Goal Planner"
+          description={
+            activeGoalsCount > 0
+              ? `${activeGoalsCount} active goal${activeGoalsCount !== 1 ? 's' : ''}`
+              : 'Set meaningful goals and track your progress'
+          }
+          actions={
+            <Button onClick={() => setFormModalOpen(true)} size="sm" className="h-9 gap-1.5 rounded-xl">
+              <Plus className="h-4 w-4" />
+              New Goal
+            </Button>
+          }
+        />
       </FadeIn>
 
       {/* Filters & Controls */}
@@ -446,26 +442,26 @@ function GoalsPageContent() {
       ) : (
         <StaggerContainer
           className={cn(
-            "grid gap-6",
+            "grid",
             viewMode === 'grid'
-              ? "md:grid-cols-2 lg:grid-cols-3"
-              : "grid-cols-1 max-w-3xl"
+              ? "gap-5 md:grid-cols-2 lg:grid-cols-3"
+              : "grid-cols-1 gap-3 max-w-5xl"
           )}
         >
           <AnimatePresence mode="popLayout">
-            {displayGoals.map((goal, index) => (
+            {displayGoals.map((goal) => (
               <StaggerItem key={goal.id} className={cn(viewMode === 'grid' && "h-full")}>
                 <GoalCard
                   goal={goal}
                   milestones={getGoalMilestones(goal.id)}
                   stats={getGoalStats(goal.id)}
+                  viewMode={viewMode}
                   onEdit={handleOpenEditModal}
                   onDelete={removeGoal}
                   onArchive={handleArchiveGoal}
                   onSetFocus={handleSetFocus}
                   onToggleMilestone={toggleMilestoneComplete}
                   onAddMilestone={() => {
-                    // Could open a separate milestone modal - for now just open edit
                     handleOpenEditModal(goal);
                   }}
                 />

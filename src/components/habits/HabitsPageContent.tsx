@@ -3,12 +3,19 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import { Plus, Filter, Sparkles, Archive, X, Brain } from 'lucide-react';
+import { Plus, Filter, Sparkles, Archive, X, Brain, ChevronDown, LayoutTemplate } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/ui/page-header';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { HabitListSkeleton } from '@/components/ui/Skeletons';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { isAIEnabled } from '@/lib/ai-features-flag';
@@ -181,85 +188,100 @@ export default function HabitsPageContent() {
   }
 
   return (
-    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
+    <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto pb-24 md:pb-12">
       <FadeIn>
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Habit Tracker</h1>
-            <p className="text-muted-foreground mt-1">
-              Track your daily habits and build consistency
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {isAIEnabled() && (
+        {/* Standardized Header (max 3 controls) */}
+        <PageHeader
+          title="Habit Tracker"
+          description="Track your daily habits and build consistency"
+          className="mb-6"
+          actions={
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-1.5 rounded-xl border-border/80 text-xs sm:text-sm"
+                  >
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <span>{isAIEnabled() ? 'AI & Templates' : 'Templates'}</span>
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 rounded-xl">
+                  {isAIEnabled() && (
+                    <DropdownMenuItem
+                      onClick={() => setShowSmartGenerator(true)}
+                      className="gap-2 cursor-pointer"
+                    >
+                      <Sparkles className="h-4 w-4 text-invest" />
+                      <span>AI Generator</span>
+                    </DropdownMenuItem>
+                  )}
+                  {isAIEnabled() && (
+                    <DropdownMenuItem
+                      onClick={() => setShowAIAssist(true)}
+                      className="gap-2 cursor-pointer"
+                    >
+                      <Brain className="h-4 w-4 text-primary" />
+                      <span>AI Assist &amp; Stacks</span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setModalTab('templates');
+                      setShowModal(true);
+                    }}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <LayoutTemplate className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                    <span>Browse Templates</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Button
-                onClick={() => setShowSmartGenerator(true)}
+                onClick={() => setShowArchivedModal(true)}
                 variant="outline"
-                className="gap-2 border-invest/30 text-invest hover:bg-invest/10"
+                size="sm"
+                className="h-9 gap-1.5 rounded-xl border-border/80 hover:bg-muted/40 text-xs sm:text-sm"
               >
-                <Sparkles className="h-4 w-4 fill-current" />
-                AI Generator
+                <Archive className="h-4 w-4 text-muted-foreground" />
+                <span className="hidden sm:inline">Archived</span>
               </Button>
-            )}
-            {isAIEnabled() && (
+
               <Button
-                onClick={() => setShowAIAssist(true)}
-                variant="outline"
-                className="gap-2 border-primary/30 text-primary hover:bg-primary/10"
+                size="sm"
+                onClick={() => {
+                  setModalTab('details');
+                  setShowModal(true);
+                }}
+                className="h-9 gap-1.5 rounded-xl text-xs sm:text-sm"
               >
-                <Brain className="h-4 w-4" />
-                AI Assist
+                <Plus className="h-4 w-4" />
+                <span>New Habit</span>
               </Button>
-            )}
-            <Button
-              onClick={() => {
-                setModalTab('templates');
-                setShowModal(true);
-              }}
-              variant="outline"
-              className="gap-2 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-950/20"
-            >
-              <Sparkles className="h-4 w-4" />
-              Browse Templates
-            </Button>
-            <Button
-              onClick={() => setShowArchivedModal(true)}
-              variant="outline"
-              className="gap-2 border-border/80 hover:bg-muted/30"
-            >
-              <Archive className="h-4 w-4 text-muted-foreground" />
-              Archived
-            </Button>
-            <Button 
-              onClick={() => {
-                setModalTab('details');
-                setShowModal(true);
-              }} 
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              New Habit
-            </Button>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Controls */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6">
           <MonthSelector 
             selectedMonth={selectedMonth} 
             onMonthChange={handleMonthChange} 
           />
           
-          {/* Category filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+          {/* Category filters: horizontal scroll on mobile so nothing clips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 lg:flex-wrap">
+            <Filter className="h-4 w-4 text-muted-foreground shrink-0 mr-0.5" />
             {CATEGORIES.map((cat) => (
               <Badge
                 key={cat.value}
                 variant={categoryFilter.includes(cat.value) ? 'default' : 'outline'}
                 className={cn(
-                  "cursor-pointer transition-all",
+                  "cursor-pointer transition-all shrink-0 h-7 px-2.5 text-xs",
                   categoryFilter.includes(cat.value) && "bg-primary"
                 )}
                 onClick={() => handleCategoryFilter(cat.value)}
@@ -272,7 +294,7 @@ export default function HabitsPageContent() {
                 variant="ghost" 
                 size="sm"
                 onClick={() => setCategoryFilter([])}
-                className="h-6 px-2 text-xs"
+                className="h-7 px-2 text-xs shrink-0"
               >
                 Clear
               </Button>
@@ -307,7 +329,7 @@ export default function HabitsPageContent() {
             <span>Completed</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-muted/40" />
+            <div className="w-4 h-4 rounded bg-muted/75 border border-border/70 dark:bg-muted/50" />
             <span>Missed</span>
           </div>
           <div className="flex items-center gap-2">

@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { CategoryIcon } from './CategoryIcon';
+import { formatMonthYear } from '@/lib/date-format';
 import { toast } from 'sonner';
 
 interface ActivityTabProps {
@@ -96,8 +97,27 @@ export function ActivityTab({
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(25);
 
   const transactions = getFilteredTransactions(selectedMonth);
+
+  useEffect(() => {
+    setVisibleCount(25);
+  }, [
+    selectedMonth,
+    filters.searchQuery,
+    filters.type,
+    filters.categoryId,
+    filters.accountId,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.needsReview,
+  ]);
+
+  const visibleTransactions = useMemo(
+    () => transactions.slice(0, visibleCount),
+    [transactions, visibleCount]
+  );
 
   const categoriesMap = useMemo(
     () => new Map(categories.map((c) => [c.id, c])),
@@ -124,7 +144,7 @@ export function ActivityTab({
       }
     >();
 
-    for (const tx of transactions) {
+    for (const tx of visibleTransactions) {
       const existing = map.get(tx.date) || {
         date: tx.date,
         items: [],
@@ -141,7 +161,7 @@ export function ActivityTab({
     }
 
     return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
-  }, [transactions]);
+  }, [visibleTransactions]);
 
   // Flat ordered list matching rendered rows for keyboard navigation
   const flatOrderedTx = useMemo(
@@ -393,8 +413,8 @@ export function ActivityTab({
 
   return (
     <div className="space-y-4">
-      {/* Filter & Import/Export Toolbar Card */}
-      <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+      {/* Sticky Filter & Import/Export Toolbar Card */}
+      <div className="sticky top-[56px] md:top-[64px] z-20 rounded-2xl border border-border bg-card/98 shadow-xs p-3.5 sm:p-4 space-y-3">
         <div className="flex flex-col md:flex-row gap-2.5">
           {/* Search Input */}
           <div className="relative flex-1">
@@ -985,6 +1005,23 @@ export function ActivityTab({
               </div>
             </div>
           ))}
+
+          {transactions.length > visibleCount && (
+            <div className="flex flex-col items-center gap-1.5 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setVisibleCount((c) => c + 25)}
+                className="h-10 px-5 rounded-xl text-xs font-semibold"
+              >
+                Load {Math.min(25, transactions.length - visibleCount)} more ({transactions.length - visibleCount} remaining)
+              </Button>
+              <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
+                Showing {visibleTransactions.length} of {transactions.length} transactions
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -997,7 +1034,7 @@ export function ActivityTab({
           <div className="px-5 py-4 border-b border-border bg-card flex items-center justify-between gap-3">
             <div>
               <DialogTitle className="text-base font-bold text-foreground">
-                Monthly Financial Report · {selectedMonth}
+                Monthly Financial Report · {formatMonthYear(selectedMonth)}
               </DialogTitle>
               <p className="text-xs text-muted-foreground">
                 Cashflow, savings rate, investments &amp; net worth snapshot

@@ -21,6 +21,7 @@ import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { useUserStore } from '@/lib/stores/user-store';
 import { useFinanceStore } from '@/lib/stores/finance-store';
+import { getTimeGreeting } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
 
 interface AICoachResponse {
@@ -159,7 +160,12 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
 
     try {
       const todaysHabits = habits.filter((h) => !h.archived);
-      const unfinishedTasks = tasks.filter((t) => t.status !== 'done');
+      const todayEnd = `${today}T23:59:59`;
+      const unfinishedTasks = tasks.filter((t) => {
+        if (t.status === 'done' || t.status === 'archived' || t.parentTaskId) return false;
+        if (!t.due_date) return false;
+        return t.due_date <= todayEnd;
+      });
 
       let userName = 'Habit Hero';
       if (displayName && displayName.trim()) {
@@ -224,6 +230,16 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
   };
 
   const animatedFocus = useTypewriter(data?.focus || '', 15, !loading);
+
+  // Always keep greeting synchronized with the current client time of day
+  const liveGreeting = useMemo(() => {
+    if (!data?.greeting) return '';
+    const { greeting: timeGreeting } = getTimeGreeting();
+    if (/^good\s+(morning|afternoon|evening|night)/i.test(data.greeting)) {
+      return data.greeting.replace(/^good\s+(morning|afternoon|evening|night)/i, timeGreeting);
+    }
+    return data.greeting;
+  }, [data?.greeting]);
 
   return (
     <Card className="rounded-2xl border border-border bg-card shadow-none overflow-hidden relative h-full flex flex-col tour-ai-coach-widget">
@@ -343,7 +359,7 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
           </div>
         ) : data ? (
           <div className="space-y-3">
-            <h3 className="text-sm font-bold text-foreground">{data.greeting}</h3>
+            <h3 className="text-sm font-bold text-foreground">{liveGreeting}</h3>
 
             <div className="flex gap-2.5 bg-background p-3.5 rounded-xl border border-border">
               <span className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">

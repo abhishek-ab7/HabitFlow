@@ -19,6 +19,7 @@ import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
 import { PayCreditCardModal } from '@/components/finance/credit-cards/PayCreditCardModal';
 import { CategoryIcon } from '@/components/finance/CategoryIcon';
 import type { FinanceAccount } from '@/lib/types';
+import { formatHumanDate } from '@/lib/date-format';
 import { toast } from 'sonner';
 
 export function FinanceOverviewWidget() {
@@ -44,6 +45,7 @@ export function FinanceOverviewWidget() {
   const payMonthlyEmi = useFinanceStore((s) => s.payMonthlyEmi);
   const payMonthlySip = useFinanceStore((s) => s.payMonthlySip);
   const settleCommitmentBalance = useFinanceStore((s) => s.settleCommitmentBalance);
+  const recordDebtInstallment = useFinanceStore((s) => s.recordDebtInstallment);
 
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [payingCardAccount, setPayingCardAccount] = useState<FinanceAccount | null>(null);
@@ -145,6 +147,14 @@ export function FinanceOverviewWidget() {
         } else {
           router.push('/finance?tab=accounts');
         }
+      } else if (item.type === 'debt') {
+        await recordDebtInstallment({
+          debtId: item.sourceId,
+          amount: item.amount,
+          paymentMethod: 'upi',
+          note: 'Quick settlement from Cashflow Radar',
+        });
+        toast.success(`Logged ${formatINR(item.amount)} for ${item.title}`);
       } else {
         router.push('/finance?tab=trackers');
       }
@@ -220,8 +230,8 @@ export function FinanceOverviewWidget() {
                   · {due5d.length} {due5d.length === 1 ? 'obligation' : 'obligations'} ({formatINR(totalDue5d)})
                 </span>
               </div>
-              <span className="text-[10px] uppercase font-semibold tracking-wider text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                Action Required
+              <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 shrink-0">
+                Action needed
               </span>
             </div>
 
@@ -294,7 +304,7 @@ export function FinanceOverviewWidget() {
                         ) : item.type === 'emi' ? (
                           'Pay EMI'
                         ) : item.type === 'debt' ? (
-                          'View'
+                          'Record Pay'
                         ) : (
                           'Mark Paid'
                         )}
@@ -413,7 +423,7 @@ export function FinanceOverviewWidget() {
                             {tx.merchantName || tx.title}
                           </p>
                           <p className="text-[11px] text-muted-foreground truncate">
-                            {cat?.name || 'General'} · {tx.date}
+                            {cat?.name || 'General'} · {formatHumanDate(tx.date)}
                           </p>
                         </div>
                         <span
@@ -502,7 +512,7 @@ export function FinanceOverviewWidget() {
                         >
                           Pay
                         </button>
-                      ) : item.type !== 'debt' ? (
+                      ) : (
                         <button
                           type="button"
                           disabled={payingId !== null}
@@ -515,17 +525,11 @@ export function FinanceOverviewWidget() {
                             'Invest'
                           ) : item.type === 'commitment' ? (
                             'Settle'
+                          ) : item.type === 'debt' ? (
+                            'Record Pay'
                           ) : (
-                            'Paid'
+                            'Mark Paid'
                           )}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => router.push('/finance?tab=trackers')}
-                          className="min-h-[32px] px-2.5 rounded-lg border border-border text-[11px] font-medium text-muted-foreground hover:text-foreground shrink-0"
-                        >
-                          View
                         </button>
                       )}
                     </div>

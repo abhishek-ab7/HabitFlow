@@ -8,6 +8,7 @@ import { subDays, subYears, format } from 'date-fns';
 import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile, Brain, Sparkles, AlertCircle, ShoppingBag, Utensils, ShieldCheck, RefreshCw, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/ui/page-header';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { TimeRangeTabs } from '@/components/analytics';
 import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore, useFinanceStore, formatINR } from '@/lib/stores';
@@ -617,70 +618,60 @@ export default function AnalyticsPageContent() {
   const noData = habits.length === 0;
 
   return (
-    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6">
-      {/* Header */}
-      <FadeIn className="mb-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-              <BarChart3 className="h-8 w-8 text-primary" />
-              Analytics & Review
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Discover patterns, track mood history, and review weekly reflections
-            </p>
-          </div>
+    <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6 pb-24 md:pb-12">
+      {/* Standardized Header */}
+      <FadeIn className="space-y-4">
+        <PageHeader
+          title="Analytics & Review"
+          description="Discover patterns, track mood history, and review weekly reflections"
+          actions={
+            activeView === 'analytics' && !noData ? (
+              <TimeRangeTabs value={timeRange} onChange={setTimeRange} />
+            ) : undefined
+          }
+        />
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-            <div className="flex p-1 bg-muted rounded-lg border border-border/40 overflow-x-auto max-w-full scrollbar-hide w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={() => setActiveView('analytics')}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
-                  activeView === 'analytics' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Analytics
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('predictive')}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
-                  activeView === 'predictive' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Predictions
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('weekly-review')}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
-                  activeView === 'weekly-review' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Weekly Review
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView('wrapped')}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors shrink-0 flex-1 sm:flex-none text-center",
-                  activeView === 'wrapped' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                2026 Wrapped
-              </button>
-            </div>
-
-            {activeView === 'analytics' && !noData && (
-              <div className="w-full sm:w-auto flex justify-end sm:justify-start">
-                <TimeRangeTabs value={timeRange} onChange={setTimeRange} />
-              </div>
+        <div className="flex p-1 bg-muted rounded-xl border border-border/50 overflow-x-auto no-scrollbar max-w-full w-full sm:w-fit">
+          <button
+            type="button"
+            onClick={() => setActiveView('analytics')}
+            className={cn(
+              "min-h-[36px] px-3.5 text-xs font-semibold rounded-lg transition-colors shrink-0 flex-1 sm:flex-none text-center",
+              activeView === 'analytics' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             )}
-          </div>
+          >
+            Analytics
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('predictive')}
+            className={cn(
+              "min-h-[36px] px-3.5 text-xs font-semibold rounded-lg transition-colors shrink-0 flex-1 sm:flex-none text-center",
+              activeView === 'predictive' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Predictions
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('weekly-review')}
+            className={cn(
+              "min-h-[36px] px-3.5 text-xs font-semibold rounded-lg transition-colors shrink-0 flex-1 sm:flex-none text-center",
+              activeView === 'weekly-review' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Weekly Review
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('wrapped')}
+            className={cn(
+              "min-h-[36px] px-3.5 text-xs font-semibold rounded-lg transition-colors shrink-0 flex-1 sm:flex-none text-center",
+              activeView === 'wrapped' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            2026 Wrapped
+          </button>
         </div>
       </FadeIn>
 
@@ -810,12 +801,12 @@ export default function AnalyticsPageContent() {
                         <Brain className="h-5 w-5" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                           <CardTitle className="text-base font-bold">
-                            Life OS Behavioral Correlations: Mood, Habits & Spending
+                            Life OS Behavioral Correlations: Mood, Habits &amp; Spending
                           </CardTitle>
-                          <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-invest/10 text-invest border border-invest/20">
-                            Cross-Domain Sync
+                          <span className="hidden sm:inline text-xs font-medium text-invest">
+                            · Cross-Domain Sync
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
@@ -839,15 +830,15 @@ export default function AnalyticsPageContent() {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Correlation 1: Mood vs Impulse Spending */}
                         <div className="p-3.5 surface-subtle space-y-2.5">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              Mood × Food & Shopping
+                              Mood × Food &amp; Shopping
                             </span>
                             <span className={cn(
-                              "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border",
+                              "text-xs font-mono tabular-nums font-semibold shrink-0",
                               behavioralCorrelations.impulseDiffPct > 0
-                                ? "bg-rose-500/10 text-rose-600 border-rose-500/20"
-                                : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                ? "text-rose-600 dark:text-rose-400"
+                                : "text-emerald-600 dark:text-emerald-400"
                             )}>
                               {behavioralCorrelations.impulseDiffPct > 0 ? `+${behavioralCorrelations.impulseDiffPct}% impulse` : 'Disciplined'}
                             </span>
@@ -886,17 +877,17 @@ export default function AnalyticsPageContent() {
 
                         {/* Correlation 2: Habit Consistency vs Daily Outflow */}
                         <div className="p-3.5 surface-subtle space-y-2.5">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               Habit Streaks × Outflow
                             </span>
                             <span className={cn(
-                              "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border",
+                              "text-xs font-mono tabular-nums font-semibold shrink-0",
                               behavioralCorrelations.habitDiffPct > 0
-                                ? "bg-amber-500/10 text-amber-600 border-amber-500/20"
-                                : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                ? "text-amber-600 dark:text-amber-400"
+                                : "text-emerald-600 dark:text-emerald-400"
                             )}>
-                              {behavioralCorrelations.habitDiffPct > 0 ? `+${behavioralCorrelations.habitDiffPct}% on broken days` : 'Optimal'}
+                              {behavioralCorrelations.habitDiffPct > 0 ? `+${behavioralCorrelations.habitDiffPct}% off-track` : 'Optimal'}
                             </span>
                           </div>
 
@@ -933,15 +924,15 @@ export default function AnalyticsPageContent() {
 
                         {/* Correlation 3: Health Habits vs Outside Food Spend */}
                         <div className="p-3.5 surface-subtle space-y-2.5">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               Health Habits × Dining
                             </span>
                             <span className={cn(
-                              "text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border",
+                              "text-xs font-mono tabular-nums font-semibold shrink-0",
                               behavioralCorrelations.healthFoodSavingsPct > 0
-                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
-                                : "bg-muted text-muted-foreground"
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-muted-foreground"
                             )}>
                               {behavioralCorrelations.healthFoodSavingsPct > 0 ? `-${behavioralCorrelations.healthFoodSavingsPct}% delivery` : 'Balanced'}
                             </span>
@@ -993,8 +984,8 @@ export default function AnalyticsPageContent() {
                                   : "Automate 'No-Spend Day' Tracking"}
                               </span>
                               {behavioralCorrelations.noSpendHabit && (
-                                <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.2 rounded-full border border-emerald-500/20">
-                                  Rule Active
+                                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                                  · Rule Active
                                 </span>
                               )}
                             </div>

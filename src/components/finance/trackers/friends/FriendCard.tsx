@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { DebtBucketType, DebtRecord, DebtInstallment, FriendLedgerGroup } from '@/lib/types';
 import { formatINR } from '@/lib/stores/finance-store';
+import { formatHumanDate, formatDueDay } from '@/lib/date-format';
 import { Button } from '@/components/ui/button';
 
 interface FriendCardProps {
@@ -40,6 +41,7 @@ interface FriendCardProps {
   getDebtInstallments: (debtId: string) => DebtInstallment[];
   onEditInstallment: (debt: DebtRecord, inst: DebtInstallment) => void;
   onDeleteInstallment: (instId: string) => void;
+  onToggleBucket: (debt: DebtRecord) => void;
 }
 
 export function FriendCard({
@@ -62,6 +64,7 @@ export function FriendCard({
   getDebtInstallments,
   onEditInstallment,
   onDeleteInstallment,
+  onToggleBucket,
 }: FriendCardProps) {
   const hasEveryday = group.everydayRecords.length > 0;
   const hasLoans = group.longTermLoans.length > 0;
@@ -284,7 +287,7 @@ export function FriendCard({
                           )}
                         </div>
                         <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-                          <span>{split.startDate}</span>
+                          <span>{formatHumanDate(split.startDate)}</span>
                           {split.notes && (
                             <>
                               <span>·</span>
@@ -313,6 +316,15 @@ export function FriendCard({
                         </div>
 
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            title="Move to Long-Term Loans"
+                            aria-label="Move to Long-Term Loans"
+                            onClick={() => onToggleBucket(split)}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                          >
+                            <ArrowLeftRight className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             aria-label="Edit split"
@@ -407,12 +419,12 @@ export function FriendCard({
                           </div>
 
                           <div className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-1.5">
-                            <span>Started {loan.startDate}</span>
+                            <span>Started {formatHumanDate(loan.startDate)}</span>
                             {loan.isEmi && loan.emiAmount ? (
                               <>
                                 <span>·</span>
                                 <span className="font-mono tabular-nums">
-                                  {formatINR(loan.emiAmount)}/mo · Due day {loan.emiDueDay || 5} ·{' '}
+                                  {formatINR(loan.emiAmount)}/mo · {formatDueDay(loan.emiDueDay || 5)} ·{' '}
                                   {loan.paidInstallments || 0}/
                                   {loan.totalInstallments || '∞'} EMIs
                                 </span>
@@ -421,8 +433,7 @@ export function FriendCard({
                               <>
                                 <span>·</span>
                                 <span className="font-mono tabular-nums">
-                                  {formatINR(loan.plannedMonthlyInstallment)}/mo · Due day{' '}
-                                  {loan.dueDayOfMonth || 15}
+                                  {formatINR(loan.plannedMonthlyInstallment)}/mo · {formatDueDay(loan.dueDayOfMonth || 15)}
                                 </span>
                               </>
                             ) : null}
@@ -471,14 +482,15 @@ export function FriendCard({
                       </div>
 
                       {/* Action Buttons for Loan */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40">
-                        <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-border/40">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           {loan.status === 'active' && (
                             <Button
                               type="button"
                               size="sm"
+                              variant="outline"
                               onClick={() => onRecordPayment(loan)}
-                              className="h-7 px-2.5 text-xs rounded-lg gap-1"
+                              className="h-8 px-2.5 text-xs rounded-lg gap-1 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary font-medium"
                             >
                               <ArrowDownLeft className="w-3.5 h-3.5" />
                               Record Payment
@@ -489,7 +501,7 @@ export function FriendCard({
                             size="sm"
                             variant="outline"
                             onClick={() => onTopUp(loan)}
-                            className="h-7 px-2.5 text-xs rounded-lg gap-1"
+                            className="h-8 px-2.5 text-xs rounded-lg gap-1"
                           >
                             <PlusCircle className="w-3.5 h-3.5" />
                             Top Up
@@ -498,8 +510,19 @@ export function FriendCard({
                             type="button"
                             size="sm"
                             variant="ghost"
+                            onClick={() => onToggleBucket(loan)}
+                            className="h-8 px-2 text-xs rounded-lg gap-1 text-muted-foreground hover:text-foreground"
+                            title="Move this item to Everyday Splits tab"
+                          >
+                            <ArrowLeftRight className="w-3.5 h-3.5" />
+                            <span>Move to Tab</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
                             onClick={() => onCopyReminder(loan)}
-                            className="h-7 px-2 text-xs rounded-lg gap-1 text-muted-foreground"
+                            className="h-8 px-2 text-xs rounded-lg gap-1 text-muted-foreground"
                           >
                             <Copy className="w-3.5 h-3.5" />
                             UPI Msg
@@ -551,8 +574,8 @@ export function FriendCard({
                                   <span className="font-semibold text-foreground">
                                     {formatINR(inst.amount)}
                                   </span>
-                                  <span className="text-[11px] text-muted-foreground ml-2">
-                                    {inst.date} · {inst.paymentMethod.toUpperCase()}
+                                  <span className="text-[11px] text-muted-foreground ml-2 font-sans">
+                                    {formatHumanDate(inst.date)} · {inst.paymentMethod.toUpperCase()}
                                   </span>
                                   {inst.note && (
                                     <p className="text-[10px] text-muted-foreground font-sans truncate max-w-xs">

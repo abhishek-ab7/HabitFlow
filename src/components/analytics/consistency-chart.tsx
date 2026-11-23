@@ -14,7 +14,6 @@ import {
 import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { DailyStats, Trend } from '@/lib/types';
 
@@ -25,13 +24,12 @@ interface ConsistencyChartProps {
 }
 
 export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartProps) {
-  // Format data for the chart
   const chartData = useMemo(() => {
     return data.map(day => ({
       ...day,
-      dateLabel: new Date(day.date).toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
+      dateLabel: new Date(day.date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
       }),
     }));
   }, [data]);
@@ -39,25 +37,22 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
   const getTrendInfo = () => {
     switch (trend) {
       case 'up':
-        return { 
-          icon: TrendingUp, 
-          label: 'Improving', 
-          color: 'text-success',
-          bgColor: 'bg-success/10',
+        return {
+          icon: TrendingUp,
+          label: 'Improving',
+          color: 'text-emerald-600 dark:text-emerald-400',
         };
       case 'down':
-        return { 
-          icon: TrendingDown, 
-          label: 'Declining', 
-          color: 'text-destructive',
-          bgColor: 'bg-destructive/10',
+        return {
+          icon: TrendingDown,
+          label: 'Declining',
+          color: 'text-rose-600 dark:text-rose-400',
         };
       default:
-        return { 
-          icon: Minus, 
-          label: 'Stable', 
+        return {
+          icon: Minus,
+          label: 'Stable',
           color: 'text-muted-foreground',
-          bgColor: 'bg-muted',
         };
     }
   };
@@ -66,71 +61,70 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
   const TrendIcon = trendInfo.icon;
 
   return (
-    <Card className="col-span-full lg:col-span-2">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+    <Card className="col-span-full lg:col-span-2 rounded-2xl border border-border/80 shadow-none">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 space-y-0 pb-3">
         <div>
-          <CardTitle className="text-lg font-semibold">Consistency Over Time</CardTitle>
+          <CardTitle className="text-base sm:text-lg font-semibold">Consistency Over Time</CardTitle>
           <CardDescription>Your daily habit completion rate</CardDescription>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="font-mono">
+        <div className="flex items-center gap-2 text-xs font-mono tabular-nums">
+          <span className="font-semibold text-foreground">
             {averageRate.toFixed(0)}% avg
-          </Badge>
-          <Badge 
-            variant="secondary" 
-            className={cn("gap-1", trendInfo.bgColor, trendInfo.color)}
-          >
-            <TrendIcon className="h-3 w-3" />
+          </span>
+          <span className="text-muted-foreground" aria-hidden="true">·</span>
+          <span className={cn('inline-flex items-center gap-1 font-sans font-semibold', trendInfo.color)}>
+            <TrendIcon className="h-3.5 w-3.5" />
             {trendInfo.label}
-          </Badge>
+          </span>
         </div>
       </CardHeader>
       <CardContent>
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="h-[300px]"
+          transition={{ duration: 0.4 }}
+          className="h-[280px] sm:h-[300px]"
         >
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                stroke="#e2e8f0"
+            <LineChart data={chartData} margin={{ top: 8, right: 12, left: -8, bottom: 5 }}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="var(--border)"
+                strokeOpacity={0.7}
                 vertical={false}
               />
-              <XAxis 
+              <XAxis
                 dataKey="dateLabel"
-                stroke="#94a3b8"
-                fontSize={12}
+                stroke="var(--muted-foreground)"
+                fontSize={11}
                 tickLine={false}
                 axisLine={false}
-                dy={10}
+                dy={8}
                 interval="preserveStartEnd"
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
               />
               <YAxis
-                stroke="#94a3b8"
-                fontSize={12}
+                stroke="var(--muted-foreground)"
+                fontSize={11}
                 tickLine={false}
                 axisLine={false}
                 domain={[0, 100]}
                 tickFormatter={value => `${value}%`}
-                dx={-10}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
+                dx={-4}
+                tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
               />
               <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
-                    const data = payload[0].payload;
+                    const point = payload[0].payload;
                     return (
-                      <div className="bg-popover border border-border rounded-lg shadow-lg p-3">
-                        <p className="text-sm font-medium">{data.dateLabel}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {data.completedHabits}/{data.totalHabits} habits
+                      <div className="bg-popover text-popover-foreground border border-border rounded-xl shadow-lg p-3">
+                        <p className="text-xs font-semibold text-foreground">{point.dateLabel}</p>
+                        <p className="text-xs text-muted-foreground font-mono tabular-nums mt-0.5">
+                          {point.completedHabits}/{point.totalHabits} habits
                         </p>
-                        <p className="text-lg font-bold text-primary">
-                          {data.completionRate.toFixed(0)}%
+                        <p className="text-base font-bold font-mono tabular-nums text-primary mt-0.5">
+                          {point.completionRate.toFixed(0)}%
                         </p>
                       </div>
                     );
@@ -138,14 +132,15 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
                   return null;
                 }}
               />
-              <ReferenceLine 
-                y={averageRate} 
-                stroke="#94a3b8" 
+              <ReferenceLine
+                y={averageRate}
+                stroke="var(--muted-foreground)"
+                strokeOpacity={0.65}
                 strokeDasharray="5 5"
                 label={{
                   value: 'Avg',
                   position: 'right',
-                  fill: '#64748b',
+                  fill: 'var(--muted-foreground)',
                   fontSize: 11,
                   fontWeight: 500,
                 }}
@@ -153,13 +148,13 @@ export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartP
               <Line
                 type="monotone"
                 dataKey="completionRate"
-                stroke="#8b5cf6"
-                strokeWidth={2}
+                stroke="var(--primary)"
+                strokeWidth={2.25}
                 dot={false}
                 activeDot={{
-                  r: 6,
-                  fill: "#8b5cf6",
-                  stroke: "#ffffff",
+                  r: 5,
+                  fill: 'var(--primary)',
+                  stroke: 'var(--background)',
                   strokeWidth: 2,
                 }}
               />

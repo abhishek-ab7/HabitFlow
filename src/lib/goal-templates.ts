@@ -149,16 +149,16 @@ export const GOAL_TEMPLATES: TemplateGoal[] = [
   },
   // Finance
   {
-    title: 'Save $1,000 Emergency Fund',
+    title: 'Save ₹1,00,000 Emergency Fund',
     description: 'Establish a safety net to cover unexpected expenses.',
     areaOfLife: 'finance',
     priority: 'high',
     durationDays: 120,
     milestones: [
       'Automate weekly savings transfers',
-      'Save first $250',
-      'Save first $500',
-      'Reach full $1,000 goal'
+      'Save first ₹25,000',
+      'Save first ₹50,000',
+      'Reach full ₹1,00,000 goal'
     ]
   },
   {

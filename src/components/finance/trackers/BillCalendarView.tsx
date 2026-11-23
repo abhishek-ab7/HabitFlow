@@ -14,6 +14,7 @@ import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { PayCreditCardModal } from '../credit-cards/PayCreditCardModal';
+import { formatHumanDate, formatMonthYear } from '@/lib/date-format';
 import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
 
 interface CalendarEventItem {
@@ -160,7 +161,7 @@ export function BillCalendarView() {
           day: dueDayNum,
           kind: 'credit_card',
           title: `${card.name} Due`,
-          subtitle: `Statement (${stmt.periodStart} – ${stmt.periodEnd})`,
+          subtitle: `Statement (${formatHumanDate(stmt.periodStart)} – ${formatHumanDate(stmt.periodEnd)})`,
           amount: stmt.remainingDue > 0 ? stmt.remainingDue : stmt.totalDue,
           isPaid: stmt.status === 'paid' || stmt.remainingDue <= 0,
         });
@@ -262,7 +263,7 @@ export function BillCalendarView() {
             </span>
             <div>
               <h2 className="text-sm font-bold text-foreground">
-                Bill &amp; Cash-Outflow Calendar ({selectedMonth})
+                Bill &amp; Cash-Outflow Calendar · {formatMonthYear(selectedMonth)}
               </h2>
               <p className="text-xs text-muted-foreground font-mono tabular-nums">
                 {monthTotals.count} scheduled · Pending{' '}
@@ -421,7 +422,7 @@ export function BillCalendarView() {
                   {ev.isPaid ? (
                     <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      Settled for {selectedMonth}
+                      Settled for {formatMonthYear(selectedMonth)}
                     </span>
                   ) : ev.kind === 'credit_card' ? (
                     <Button

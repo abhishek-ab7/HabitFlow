@@ -484,7 +484,7 @@ export const HabitGrid = memo(function HabitGrid({
                                   ? "bg-muted/10 border-transparent opacity-30 cursor-not-allowed"
                                   : isTodayDate
                                     ? "bg-primary/5 border-dashed border-primary text-primary font-bold"
-                                    : "bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/50"
+                                    : "bg-muted/65 border-border/70 text-foreground/75 hover:bg-muted dark:bg-muted/45 dark:border-border/60 dark:text-muted-foreground"
                       )}
                     >
                       <span className="text-[9px] font-bold uppercase opacity-60">

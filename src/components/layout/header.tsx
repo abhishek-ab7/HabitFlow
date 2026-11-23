@@ -20,7 +20,8 @@ import {
   CloudOff,
   Loader2,
   Keyboard,
-  Wallet
+  Wallet,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
@@ -83,8 +84,8 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b surface-chrome">
-      <div className="w-full flex h-16 items-center px-4 md:px-6">
+    <header className="sticky top-0 z-50 w-full border-b bg-background/98 dark:bg-card/98 md:surface-chrome">
+      <div className="w-full flex h-14 md:h-16 items-center px-4 md:px-6">
         {/* Logo */}
         <div className="flex-grow-0 flex-shrink-0 flex justify-start mr-4 lg:mr-8">
           <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
@@ -240,6 +241,18 @@ export function Header() {
             </Button>
           )}
 
+          {/* Desktop Quick Capture (replaces floating button pile-up) */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-quick-capture'))}
+            className="hidden md:inline-flex h-9 px-2.5 gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/70 rounded-lg"
+            title="Quick Capture (Ctrl+K)"
+          >
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span className="hidden lg:inline">Capture</span>
+          </Button>
+
           {/* Keyboard shortcuts */}
           <Button
             variant="ghost"
@@ -296,7 +309,7 @@ export function Header() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
-          className="md:hidden border-t surface-chrome"
+          className="md:hidden border-t bg-background dark:bg-card"
         >
           <div className="container px-4 py-4 space-y-1">
             {visibleNavItems.map((item) => {

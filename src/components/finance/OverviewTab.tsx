@@ -26,6 +26,7 @@ import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type { FinanceTransaction } from '@/lib/types';
 import { CategoryIcon } from './CategoryIcon';
 import { SpendingTrendChart } from './SpendingTrendChart';
+import { formatHumanDate } from '@/lib/date-format';
 import { toast } from 'sonner';
 
 interface OverviewTabProps {
@@ -188,23 +189,25 @@ export function OverviewTab({
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Safe to Spend Today{' '}
-                  <span
-                    className={`normal-case tracking-normal ml-1 ${
-                      isOverBudget
-                        ? 'text-rose-600 dark:text-rose-400'
+                  {budgetBase > 0 ? 'Safe to Spend Today' : 'Spent This Month'}
+                  {budgetBase > 0 && (
+                    <span
+                      className={`normal-case tracking-normal ml-1 ${
+                        isOverBudget
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : isAheadOfPace
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      ·{' '}
+                      {isOverBudget
+                        ? 'Over Budget'
                         : isAheadOfPace
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-emerald-600 dark:text-emerald-400'
-                    }`}
-                  >
-                    ·{' '}
-                    {isOverBudget
-                      ? 'Over Budget'
-                      : isAheadOfPace
-                      ? 'Ahead of Pace'
-                      : 'On Pace'}
-                  </span>
+                        ? 'Ahead of Pace'
+                        : 'On Pace'}
+                    </span>
+                  )}
                 </p>
                 <p className="text-3xl sm:text-4xl font-bold font-mono tabular-nums text-foreground mt-1">
                   {budgetBase > 0
@@ -744,8 +747,8 @@ export function OverviewTab({
                           <p className="text-xs sm:text-sm font-semibold text-foreground truncate">
                             {tx.merchantName || tx.title}
                           </p>
-                          <p className="text-[11px] text-muted-foreground font-mono">
-                            {cat?.name || 'Uncategorized'} · {tx.date}
+                          <p className="text-[11px] text-muted-foreground">
+                            {cat?.name || 'Uncategorized'} · {formatHumanDate(tx.date)}
                           </p>
                         </div>
                       </button>
@@ -862,7 +865,7 @@ export function OverviewTab({
                             <span aria-hidden="true">·</span>
                             <span>{acc?.name || 'Account'}</span>
                             <span aria-hidden="true">·</span>
-                            <span className="font-mono tabular-nums">{tx.date}</span>
+                            <span>{formatHumanDate(tx.date)}</span>
                             {comm && (
                               <>
                                 <span aria-hidden="true">·</span>

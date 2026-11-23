@@ -31,7 +31,6 @@ import { getTimeGreeting } from '@/lib/design-tokens';
 import { isAIEnabled } from '@/lib/ai-features-flag';
 import {
   HeroSection,
-  MetricCards,
   HabitOverview,
   FocusGoal,
   TodayTasksWidget,
@@ -546,20 +545,6 @@ export default function DashboardContent() {
   const allWidgets: Record<string, React.ReactNode> = {
     ...(workspaceLens !== 'finance'
       ? {
-          metrics: (
-            <MetricCards
-              todayCompleted={todayProgress.completed}
-              todayTotal={todayProgress.total}
-              monthlyPercentage={monthlyProgress.percentage}
-              monthlyTrend={monthlyTrend}
-              currentStreak={currentMaxStreak}
-              bestStreak={bestStreak}
-              activeGoals={activeGoalsCount}
-              upcomingDeadlines={upcomingDeadlines.length}
-              habitOnlyMode={!!settings?.habitOnlyMode}
-              streakShields={settings?.streakShield ?? 0}
-            />
-          ),
           'habit-overview': (
             <HabitOverview
               habits={habits}
@@ -608,7 +593,7 @@ export default function DashboardContent() {
   };
 
   return (
-    <div className="w-full px-4 py-4 sm:py-5 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-5 pb-24 md:pb-12">
+    <div className="w-full overflow-x-hidden px-4 py-4 sm:py-5 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-5 pb-24 md:pb-12">
       {/* LAYER 1: Unified Top Command Bar */}
       <header className="surface-card px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 tour-hero-section">
         {/* Left: Greeting + Date + Streak/Shields */}
@@ -756,7 +741,43 @@ export default function DashboardContent() {
                     <strong className="text-foreground">
                       {monthlyProgress.percentage}%
                     </strong>
+                    {monthlyTrend !== 'stable' && (
+                      <span
+                        className={
+                          monthlyTrend === 'up'
+                            ? 'text-emerald-600 dark:text-emerald-400 ml-1'
+                            : 'text-rose-600 dark:text-rose-400 ml-1'
+                        }
+                      >
+                        {monthlyTrend === 'up' ? '↑' : '↓'}
+                      </span>
+                    )}
                   </span>
+                  {isGoalsEnabled && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        Goals{' '}
+                        <strong className="text-foreground">
+                          {activeGoalsCount}
+                        </strong>
+                        {upcomingDeadlines.length > 0 && (
+                          <span className="text-amber-600 dark:text-amber-400 ml-1">
+                            ({upcomingDeadlines.length} due)
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  )}
+                  {bestStreak > 0 && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        Best{' '}
+                        <strong className="text-foreground">{bestStreak}d</strong>
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -856,22 +877,24 @@ export default function DashboardContent() {
                     <Wallet className="w-3.5 h-3.5 text-primary" />
                     Financial Pulse
                   </span>
-                  <span
-                    className={`font-semibold ${
-                      isOverBudget
-                        ? 'text-rose-600 dark:text-rose-400'
+                  {(hasBudget || financeSummary.totalIncome > 0) && (
+                    <span
+                      className={`font-semibold ${
+                        isOverBudget
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : isAheadOfPace
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      ·{' '}
+                      {isOverBudget
+                        ? 'Over Budget'
                         : isAheadOfPace
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-emerald-600 dark:text-emerald-400'
-                    }`}
-                  >
-                    ·{' '}
-                    {isOverBudget
-                      ? 'Over Budget'
-                      : isAheadOfPace
-                      ? 'Ahead of Pace'
-                      : 'On Pace'}
-                  </span>
+                        ? 'Ahead of Pace'
+                        : 'On Pace'}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-baseline gap-2 pt-0.5 flex-wrap">

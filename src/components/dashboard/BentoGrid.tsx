@@ -154,7 +154,6 @@ export function BentoGrid({ widgets }: BentoGridProps) {
 
   const handleResetLayout = async () => {
     const defaultLayout: DashboardWidgetConfig[] = [
-      { id: 'metrics', size: 'full', hidden: false, pinned: true },
       { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
       { id: 'finance-overview', size: 'full', hidden: false, pinned: false },
       { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },

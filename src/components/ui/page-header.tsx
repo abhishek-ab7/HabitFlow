@@ -5,14 +5,20 @@ import { cn } from '@/lib/utils';
 
 interface PageHeaderProps {
   title: string;
-  description: string;
+  description?: string;
   badgeText?: string;
   badgeIcon?: React.ReactNode;
   actions?: React.ReactNode;
   children?: React.ReactNode;
+  variant?: 'plain' | 'surface';
   className?: string;
 }
 
+/**
+ * Standardized responsive PageHeader across HabitFlow workspaces.
+ * Maintains a consistent typographic scale (text-2xl sm:text-3xl font-bold tracking-tight)
+ * and clean alignment for 1–3 right-side header controls without noisy icon clutter.
+ */
 export function PageHeader({
   title,
   description,
@@ -20,43 +26,53 @@ export function PageHeader({
   badgeIcon,
   actions,
   children,
+  variant = 'plain',
   className,
 }: PageHeaderProps) {
   return (
-    <div
+    <header
       className={cn(
-        'relative overflow-hidden surface-hero p-6 md:p-8',
+        variant === 'surface'
+          ? 'relative overflow-hidden surface-hero p-5 sm:p-6 md:p-7'
+          : 'w-full',
         className
       )}
     >
-      <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-        <div className="space-y-2.5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 space-y-1">
           {(badgeText || badgeIcon) && (
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold uppercase tracking-wider">
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
               {badgeIcon}
               {badgeText}
             </div>
           )}
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight leading-tight text-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground leading-tight truncate">
             {title}
           </h1>
-          <p className="text-sm md:text-base text-muted-foreground max-w-2xl leading-relaxed">
-            {description}
-          </p>
+          {description && (
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed max-w-2xl">
+              {description}
+            </p>
+          )}
         </div>
 
         {actions && (
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {actions}
           </div>
         )}
       </div>
 
       {children && (
-        <div className="relative z-10 mt-6 border-t border-border/60 pt-5">
+        <div
+          className={cn(
+            'mt-4',
+            variant === 'surface' && 'border-t border-border/60 pt-4'
+          )}
+        >
           {children}
         </div>
       )}
-    </div>
+    </header>
   );
 }

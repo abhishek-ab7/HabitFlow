@@ -486,8 +486,8 @@ export function SortableHabitRow({
                                                 : isFutureDate
                                                     ? "bg-muted/20 cursor-not-allowed opacity-40"
                                                     : isTodayDate
-                                                        ? "bg-primary/10 border-2 border-dashed border-primary/30 hover:bg-primary/20"
-                                                        : "bg-muted/40 hover:bg-muted/60",
+                                                        ? "bg-primary/10 border-2 border-dashed border-primary/40 hover:bg-primary/20"
+                                                        : "bg-muted/75 border border-border/70 hover:bg-muted dark:bg-muted/50 dark:border-border/60 dark:hover:bg-muted/70",
                             )}
                             animate={{ scale: burstActive === dateStr ? 1.25 : 1 }}
                             transition={{ type: "spring", stiffness: 500, damping: 15 }}

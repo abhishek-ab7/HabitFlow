@@ -19,10 +19,10 @@ interface HeatmapCalendarProps {
 }
 
 const LEVEL_COLORS = [
-  'bg-muted',
-  'bg-success/20',
-  'bg-success/40',
-  'bg-success/70',
+  'bg-muted/85 dark:bg-muted/70 border border-border/50',
+  'bg-success/25',
+  'bg-success/45',
+  'bg-success/75',
   'bg-success',
 ];
 

@@ -132,19 +132,25 @@ export function TrackersTab({ onLogOffsetExpense }: TrackersTabProps) {
                   </p>
                 </div>
 
-                {item.type !== 'credit_card' && item.type !== 'debt' && (
-                  <button
-                    type="button"
-                    onClick={() => handleQuickPayObligation(item)}
-                    className="min-h-[32px] w-full rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition-colors"
-                  >
-                    {item.type === 'sip'
-                      ? 'Log SIP'
-                      : item.type === 'commitment'
-                      ? 'Settle'
-                      : 'Mark Paid'}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleQuickPayObligation(item)}
+                  className={`min-h-[34px] w-full rounded-lg text-xs font-semibold transition-colors ${
+                    item.type === 'credit_card' || item.type === 'debt'
+                      ? 'border border-border bg-card hover:bg-muted text-foreground'
+                      : 'bg-primary/10 hover:bg-primary/20 text-primary'
+                  }`}
+                >
+                  {item.type === 'sip'
+                    ? 'Log SIP'
+                    : item.type === 'commitment'
+                    ? 'Settle'
+                    : item.type === 'credit_card'
+                    ? 'Pay Card'
+                    : item.type === 'debt'
+                    ? 'Record Pay'
+                    : 'Mark Paid'}
+                </button>
               </div>
             ))}
           </div>

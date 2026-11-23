@@ -78,6 +78,17 @@ export function FriendsDebtSection() {
     return Array.from(new Set(allFriendGroups.map((g) => g.friendName)));
   }, [allFriendGroups]);
 
+  const handleToggleBucket = async (debt: DebtRecord) => {
+    const nextBucket: DebtBucketType =
+      debt.bucketType === 'long_term_loan' ? 'everyday_split' : 'long_term_loan';
+    await updateDebtRecord(debt.id, { bucketType: nextBucket });
+    toast.success(
+      nextBucket === 'everyday_split'
+        ? `Moved "${debt.title}" to Everyday Tab`
+        : `Moved "${debt.title}" to Long-Term Loans`
+    );
+  };
+
   // Filtered friend groups
   const visibleGroups = useMemo(() => {
     return allFriendGroups.filter((g) => {
@@ -387,6 +398,7 @@ export function FriendsDebtSection() {
                 setEditingInstallment(inst);
               }}
               onDeleteInstallment={handleDeleteInstallment}
+              onToggleBucket={handleToggleBucket}
             />
           ))}
         </div>

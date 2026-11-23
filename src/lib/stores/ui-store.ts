@@ -43,7 +43,6 @@ interface Toast {
 
 export const normalizeLayout = (layout?: any[]): DashboardWidgetConfig[] => {
   const defaultLayout: DashboardWidgetConfig[] = [
-    { id: 'metrics', size: 'full', hidden: false, pinned: true },
     { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
     { id: 'finance-overview', size: 'full', hidden: false, pinned: false },
     { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
@@ -56,23 +55,25 @@ export const normalizeLayout = (layout?: any[]): DashboardWidgetConfig[] => {
     return defaultLayout;
   }
 
-  const normalized = layout.map(item => {
-    if (typeof item === 'string') {
-      const defaultMatch = defaultLayout.find(d => d.id === item);
+  const normalized = layout
+    .map(item => {
+      if (typeof item === 'string') {
+        const defaultMatch = defaultLayout.find(d => d.id === item);
+        return {
+          id: item,
+          size: defaultMatch?.size || 'full',
+          hidden: false,
+          pinned: item === 'hero'
+        };
+      }
       return {
-        id: item,
-        size: defaultMatch?.size || 'full',
-        hidden: false,
-        pinned: item === 'hero' || item === 'metrics'
+        id: item.id,
+        size: item.size || 'full',
+        hidden: !!item.hidden,
+        pinned: !!item.pinned
       };
-    }
-    return {
-      id: item.id,
-      size: item.size || 'full',
-      hidden: !!item.hidden,
-      pinned: !!item.pinned
-    };
-  });
+    })
+    .filter(item => item.id !== 'metrics');
 
   // Ensure all defaultLayout widgets exist in the returned layout
   const existingIds = new Set(normalized.map(n => n.id));

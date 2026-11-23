@@ -7,24 +7,23 @@ import { toast } from "sonner";
 import { useTaskStore } from "@/lib/stores/task-store";
 import { TaskListSkeleton } from "@/components/ui/Skeletons";
 import { EmptyTasksIllustration } from "@/components/ui/illustrations";
+import { PageHeader } from "@/components/ui/page-header";
 import { List, Grid2X2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function TasksPageContent() {
-    const { tasks, loadTasks, isLoading, toggleTaskComplete, editTask, addTask } = useTaskStore(
+    const { tasks, loadTasks, isLoading, toggleTaskComplete, addTask } = useTaskStore(
         useShallow((s) => ({
             tasks: s.tasks,
             loadTasks: s.loadTasks,
             isLoading: s.isLoading,
             toggleTaskComplete: s.toggleTaskComplete,
-            editTask: s.editTask,
             addTask: s.addTask,
         }))
     );
 
     const [viewMode, setViewMode] = useState<'list' | 'eisenhower'>('list');
 
-    // Initial load
     useEffect(() => {
         loadTasks();
     }, [loadTasks]);
@@ -33,7 +32,7 @@ export default function TasksPageContent() {
         try {
             await toggleTaskComplete(id);
             toast.success("Task updated");
-        } catch (error) {
+        } catch {
             toast.error("Failed to update task");
         }
     };
@@ -55,7 +54,6 @@ export default function TasksPageContent() {
         }
     };
 
-    // Memoize active & completed tasks (only root level tasks)
     const activeTasks = useMemo(() =>
         tasks.filter(t => t.status !== 'done' && t.status !== 'archived' && !t.parentTaskId),
         [tasks]
@@ -67,105 +65,106 @@ export default function TasksPageContent() {
     );
 
     return (
-        <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-8 h-[calc(100vh-8rem)] md:h-[calc(100vh-4rem)] flex flex-col">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-emerald-600 bg-clip-text text-transparent">
-                        My Tasks
-                    </h1>
-                    <p className="text-muted-foreground mt-1">
-                        Manage your daily tasks and project to-dos.
-                    </p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
-                        <Button
-                            variant={viewMode === 'list' ? 'default' : 'ghost'}
-                            size="sm"
-                            className="h-8 px-2"
-                            onClick={() => setViewMode('list')}
-                        >
-                            <List className="h-4 w-4 mr-1" />
-                            List View
-                        </Button>
-                        <Button
-                            variant={viewMode === 'eisenhower' ? 'default' : 'ghost'}
-                            size="sm"
-                            className="h-8 px-2"
-                            onClick={() => setViewMode('eisenhower')}
-                        >
-                            <Grid2X2 className="h-4 w-4 mr-1" />
-                            Eisenhower
-                        </Button>
-                    </div>
-                    <CreateTaskModal onTaskCreated={loadTasks} />
-                </div>
+        <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6 pb-24 md:pb-12">
+            {/* Standardized Page Header */}
+            <PageHeader
+                title="My Tasks"
+                description="Manage your daily priorities and project to-dos."
+                actions={
+                    <>
+                        <div className="inline-flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60">
+                            <Button
+                                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                                size="sm"
+                                className="h-8 px-2.5 rounded-lg text-xs font-medium"
+                                onClick={() => setViewMode('list')}
+                            >
+                                <List className="h-3.5 w-3.5 mr-1.5" />
+                                List
+                            </Button>
+                            <Button
+                                variant={viewMode === 'eisenhower' ? 'default' : 'ghost'}
+                                size="sm"
+                                className="h-8 px-2.5 rounded-lg text-xs font-medium"
+                                onClick={() => setViewMode('eisenhower')}
+                            >
+                                <Grid2X2 className="h-3.5 w-3.5 mr-1.5" />
+                                Eisenhower
+                            </Button>
+                        </div>
+                        <CreateTaskModal onTaskCreated={loadTasks} />
+                    </>
+                }
+            />
+
+            {/* Quick Add Input */}
+            <div className="max-w-3xl mx-auto w-full">
+                <SmartTaskInput onAddTask={handleQuickAddTask} />
             </div>
 
-            {/* Content */}
-            <div className="flex-1 min-h-0 space-y-6 flex flex-col">
-                {/* Quick Add Input */}
-                <div className="max-w-3xl mx-auto w-full shrink-0">
-                    <SmartTaskInput onAddTask={handleQuickAddTask} />
-                </div>
-
-                {isLoading && tasks.length === 0 ? (
-                    <TaskListSkeleton />
-                ) : tasks.filter(t => t.status !== 'archived').length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
-                        <div>
-                            <EmptyTasksIllustration />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-medium">No tasks yet</h3>
-                            <p className="text-muted-foreground">Get started by creating your first task.</p>
-                        </div>
+            {isLoading && tasks.length === 0 ? (
+                <TaskListSkeleton />
+            ) : tasks.filter(t => t.status !== 'archived').length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                    <EmptyTasksIllustration />
+                    <div>
+                        <h3 className="text-lg font-medium">No tasks yet</h3>
+                        <p className="text-sm text-muted-foreground">Get started by creating your first task.</p>
                     </div>
-                ) : (
-                    <div className="flex-1 min-h-0">
-                        {viewMode === 'list' ? (
-                            <div className="space-y-8 overflow-y-auto h-full pr-2 pb-8 scrollbar-thin">
-                                {/* Active Tasks */}
-                                <div className="space-y-4">
-                                    <h2 className="text-xl font-semibold flex items-center gap-2">
-                                        Active <span className="text-sm font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{activeTasks.length}</span>
-                                    </h2>
-                                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                        {activeTasks.map((task) => (
-                                            <TaskCard
-                                                key={task.id}
-                                                task={task}
-                                                onComplete={handleTaskComplete}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Completed Tasks */}
-                                {completedTasks.length > 0 && (
-                                    <div className="space-y-4 pt-8 border-t border-border/40">
-                                        <h2 className="text-xl font-semibold text-muted-foreground flex items-center gap-2">
-                                            Completed <span className="text-sm font-normal bg-muted px-2 py-0.5 rounded-full">{completedTasks.length}</span>
-                                        </h2>
-                                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 opacity-60">
-                                            {completedTasks.map((task) => (
-                                                <TaskCard
-                                                    key={task.id}
-                                                    task={task}
-                                                    onComplete={handleTaskComplete}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+                </div>
+            ) : viewMode === 'list' ? (
+                <div className="max-w-3xl mx-auto w-full space-y-8">
+                    {/* Active Tasks - Clean single-column stack to prevent uneven card heights */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                                Active
+                                <span className="font-mono tabular-nums text-foreground">
+                                    {activeTasks.length}
+                                </span>
+                            </h2>
+                        </div>
+                        {activeTasks.length === 0 ? (
+                            <p className="text-sm text-muted-foreground py-6 text-center rounded-xl border border-dashed border-border">
+                                All active tasks completed.
+                            </p>
                         ) : (
-                            <EisenhowerMatrix tasks={tasks} onComplete={handleTaskComplete} />
+                            <div className="flex flex-col gap-3">
+                                {activeTasks.map((task) => (
+                                    <TaskCard
+                                        key={task.id}
+                                        task={task}
+                                        onComplete={handleTaskComplete}
+                                    />
+                                ))}
+                            </div>
                         )}
                     </div>
-                )}
-            </div>
+
+                    {/* Completed Tasks */}
+                    {completedTasks.length > 0 && (
+                        <div className="space-y-3 pt-6 border-t border-border/60">
+                            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                                Completed
+                                <span className="font-mono tabular-nums">
+                                    {completedTasks.length}
+                                </span>
+                            </h2>
+                            <div className="flex flex-col gap-3 opacity-65">
+                                {completedTasks.map((task) => (
+                                    <TaskCard
+                                        key={task.id}
+                                        task={task}
+                                        onComplete={handleTaskComplete}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <EisenhowerMatrix tasks={tasks} onComplete={handleTaskComplete} />
+            )}
         </div>
     );
 }
