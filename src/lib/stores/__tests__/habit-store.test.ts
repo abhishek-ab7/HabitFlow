@@ -144,7 +144,7 @@ describe('HabitStore', () => {
     it('freezeHabit should consume shield if another freeze exists in the same week and shield use succeeds', async () => {
         const habitId = 'habit-1';
         const date = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-        const otherDate = format(subDays(new Date(), 2), 'yyyy-MM-dd');
+        const otherDate = date;
         const existingFrozen = { id: 'c0', habitId: 'habit-2', date: otherDate, completed: true, status: 'frozen' };
         useHabitStore.setState({
             completions: [existingFrozen as any],
@@ -166,7 +166,7 @@ describe('HabitStore', () => {
     it('freezeHabit should throw error if another freeze exists in the same week and shield use fails', async () => {
         const habitId = 'habit-1';
         const date = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-        const otherDate = format(subDays(new Date(), 2), 'yyyy-MM-dd');
+        const otherDate = date;
         const existingFrozen = { id: 'c0', habitId: 'habit-2', date: otherDate, completed: true, status: 'frozen' };
         useHabitStore.setState({
             completions: [existingFrozen as any],

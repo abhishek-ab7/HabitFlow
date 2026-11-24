@@ -57,6 +57,7 @@ import { SettingsHero } from '@/components/settings/SettingsHero';
 import { AvatarSelector } from '@/components/settings/AvatarSelector';
 import { PasswordChangeModal } from '@/components/settings/password-change-modal';
 import { DataVaultCard } from '@/components/settings/DataVaultCard';
+import { McpConnectionsCard } from '@/components/settings/McpConnectionsCard';
 import { useUserStore } from '@/lib/stores/user-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import type { Avatar } from '@/lib/avatars';
@@ -996,6 +997,9 @@ export default function SettingsPageContent() {
               handleCleanupDuplicates={handleCleanupDuplicates}
               isCleaning={isCleaning}
             />
+
+            {/* MODEL CONTEXT PROTOCOL (MCP) CONNECTIONS */}
+            <McpConnectionsCard />
           </div>
         </div>
 

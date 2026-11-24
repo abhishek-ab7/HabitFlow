@@ -149,4 +149,24 @@ describe('Middleware', () => {
     expect(mockGetSession).not.toHaveBeenCalled();
     expect(res.status).toBe(200);
   });
+
+  it('skips .well-known routes for RFC 9728 and RFC 8414 MCP discovery without session check', async () => {
+    const req = createRequest('http://localhost:3000/.well-known/oauth-protected-resource');
+    const res = await middleware(req);
+
+    expect(mockGetSession).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+  });
+
+  it('preserves query parameters in redirectedFrom when redirecting unauthenticated users to login', async () => {
+    const req = createRequest('http://localhost:3000/oauth/authorize?client_id=mcp-app&code_challenge=xyz');
+    mockGetSession.mockResolvedValueOnce({ data: { session: null }, error: null });
+
+    const res = await middleware(req);
+
+    expect(res.status).toBe(307);
+    const location = res.headers.get('location') || '';
+    expect(location).toContain('/login');
+    expect(location).toContain('redirectedFrom=%2Foauth%2Fauthorize%3Fclient_id%3Dmcp-app%26code_challenge%3Dxyz');
+  });
 });

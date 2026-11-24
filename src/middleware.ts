@@ -11,6 +11,7 @@ export async function middleware(request: NextRequest) {
     pathname === '/manifest.json' ||
     pathname === '/sw.js' ||
     pathname.startsWith('/icons/') ||
+    pathname.startsWith('/.well-known/') ||
     pathname.endsWith('.ico') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.svg') ||
@@ -23,7 +24,7 @@ export async function middleware(request: NextRequest) {
 
   // Public routes that don't require authentication.
   // We exclude '/login' from isPublicRoute so middleware can check the session and redirect logged-in users.
-  const publicRoutes = ['/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout'];
+  const publicRoutes = ['/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout', '/.well-known'];
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
   
   // We skip middleware logic for static routes / authentication callback endpoints early,
@@ -114,14 +115,20 @@ export async function middleware(request: NextRequest) {
     if (!session && !isPublicRoute && pathname !== '/login') {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = '/login';
-      redirectUrl.searchParams.set('redirectedFrom', pathname);
+      const targetQuery = request.nextUrl.search || '';
+      redirectUrl.searchParams.set('redirectedFrom', pathname + targetQuery);
       return NextResponse.redirect(redirectUrl);
     }
 
-    // If authenticated and trying to access login or root page, redirect to dashboard
+    // If authenticated and trying to access login or root page, redirect to dashboard or redirectedFrom
     if (session && (pathname === '/' || pathname.startsWith('/login'))) {
+      const redirectedFrom = request.nextUrl.searchParams.get('redirectedFrom');
+      if (redirectedFrom && redirectedFrom.startsWith('/') && !redirectedFrom.startsWith('//')) {
+        return NextResponse.redirect(new URL(redirectedFrom, request.url));
+      }
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = '/dashboard';
+      redirectUrl.search = '';
       return NextResponse.redirect(redirectUrl);
     }
   } else {
@@ -131,7 +138,8 @@ export async function middleware(request: NextRequest) {
     if (isSignedOut && !isPublicRoute && pathname !== '/login') {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = '/login';
-      redirectUrl.searchParams.set('redirectedFrom', pathname);
+      const targetQuery = request.nextUrl.search || '';
+      redirectUrl.searchParams.set('redirectedFrom', pathname + targetQuery);
       return NextResponse.redirect(redirectUrl);
     }
   }
@@ -151,8 +159,9 @@ export const config = {
      * - _next (static files, image optimization)
      * - favicon.ico
      * - api routes
+     * - .well-known routes (MCP RFC 9728 and RFC 8414 OAuth discovery)
      * Note: We also check for static files in the middleware function itself
      */
-    '/((?!_next|favicon\\.ico|api).*)',
+    '/((?!_next|favicon\\.ico|api|\\.well-known).*)',
   ],
 };

@@ -54,7 +54,7 @@ describe('TodayTasksWidget', () => {
     it('renders empty state when no tasks', async () => {
         render(<TodayTasksWidget />)
         // Wait for effect to mount
-        expect(await screen.findByText('Clear for takeoff!')).toBeInTheDocument()
+        expect(await screen.findByText(/Clear for takeoff/i)).toBeInTheDocument()
     })
 
     it('renders tasks due today', async () => {

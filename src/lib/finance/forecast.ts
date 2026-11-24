@@ -21,6 +21,7 @@ export interface CashFlowForecastInput {
   creditCardStatements?: CreditCardStatement[];
   horizonDays: 30 | 60 | 90;
   includeDiscretionaryBurn?: boolean;
+  referenceDate?: string;
 }
 
 export interface CashFlowForecastResult {
@@ -69,6 +70,7 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
     creditCardStatements,
     horizonDays,
     includeDiscretionaryBurn = true,
+    referenceDate,
   } = input;
 
   const activeAccounts = accounts.filter((a) => !a.archived && !a.deletedAt);
@@ -79,7 +81,7 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
     liquidAccounts.reduce((sum, a) => sum + Number(a.balance || 0), 0)
   );
 
-  const today = new Date();
+  const today = referenceDate ? new Date(`${referenceDate}T00:00:00`) : new Date();
   today.setHours(0, 0, 0, 0);
   const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
