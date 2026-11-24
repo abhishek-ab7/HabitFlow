@@ -10,8 +10,11 @@ import {
   Link2,
   Unlink,
   Trash2,
+  RefreshCw,
+  ArrowDownLeft,
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import type { CommitmentLedgerSummary } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +36,7 @@ interface CommitmentsSectionProps {
 export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionProps) {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const categories = useFinanceStore((s) => s.categories);
+  const accounts = useFinanceStore((s) => s.accounts);
   const transactions = useFinanceStore((s) => s.transactions);
   const getAllCommitmentLedgers = useFinanceStore((s) => s.getAllCommitmentLedgers);
   const settleCommitmentBalance = useFinanceStore((s) => s.settleCommitmentBalance);
@@ -40,9 +44,14 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
     (s) => s.attachTransactionToCommitment
   );
   const addCommitment = useFinanceStore((s) => s.addCommitment);
+  const updateCommitment = useFinanceStore((s) => s.updateCommitment);
   const deleteCommitment = useFinanceStore((s) => s.deleteCommitment);
+  const addTransaction = useFinanceStore((s) => s.addTransaction);
 
   const commitmentLedgers = getAllCommitmentLedgers(selectedMonth);
+  const liquidAccounts = accounts.filter(
+    (a) => !a.deletedAt && !a.archived && a.type !== 'credit_card'
+  );
 
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
   const toggleExpand = (id: string) =>
@@ -57,6 +66,12 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
 
   const [attachCommitmentId, setAttachCommitmentId] = useState<string | null>(null);
   const [selectedTxToAttach, setSelectedTxToAttach] = useState('');
+
+  const [reimburseComm, setReimburseComm] = useState<CommitmentLedgerSummary | null>(null);
+  const [reimburseAmount, setReimburseAmount] = useState('');
+  const [reimburseAccountId, setReimburseAccountId] = useState('');
+  const [reimburseDate, setReimburseDate] = useState(getLocalIsoDate());
+  const [reimburseNote, setReimburseNote] = useState('');
 
   const unlinkedMonthExpenses = transactions.filter(
     (t) =>
@@ -120,6 +135,53 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
     toast.success('Linked expense as offset deduction');
     setAttachCommitmentId(null);
     setSelectedTxToAttach('');
+  };
+
+  const openReimburseDialog = (ledger: CommitmentLedgerSummary) => {
+    setReimburseComm(ledger);
+    setReimburseAmount(ledger.overpaidAmount > 0 ? String(ledger.overpaidAmount) : '');
+    const defaultLiquid =
+      liquidAccounts.find((a) => a.isDefault) ||
+      liquidAccounts.find((a) => a.type === 'upi') ||
+      liquidAccounts[0];
+    setReimburseAccountId(defaultLiquid?.id || '');
+    setReimburseDate(getLocalIsoDate());
+    setReimburseNote('');
+  };
+
+  const handleRecordReimbursement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reimburseComm) return;
+    const amt = parseFloat(reimburseAmount);
+    if (isNaN(amt) || amt <= 0 || !reimburseAccountId) {
+      toast.error('Enter a valid amount and deposit account');
+      return;
+    }
+    const familyCat =
+      categories.find((c) => c.slug === 'family-commitments') || categories[0];
+    await addTransaction({
+      title: `Reimbursement from ${reimburseComm.commitment.recipientName}`,
+      merchantName: reimburseComm.commitment.recipientName,
+      amount: amt,
+      type: 'income',
+      categoryId: reimburseComm.commitment.defaultCategoryId || familyCat?.id || 'uncategorized',
+      subcategory: 'Commitment Reimbursement',
+      accountId: reimburseAccountId,
+      date: reimburseDate || getLocalIsoDate(),
+      notes:
+        reimburseNote.trim() ||
+        `Money received back for ${reimburseComm.commitment.title}`,
+      tags: [
+        'commitment-reimbursement',
+        reimburseComm.commitment.recipientName.toLowerCase(),
+      ],
+      linkedCommitmentId: reimburseComm.commitment.id,
+      commitmentContributionType: 'direct_payment',
+    });
+    toast.success(
+      `Recorded ${formatINR(amt)} received back from ${reimburseComm.commitment.recipientName}`
+    );
+    setReimburseComm(null);
   };
 
   return (
@@ -281,14 +343,23 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
                               </p>
                               <p className="text-muted-foreground">
                                 {tx.date} ·{' '}
-                                {tx.commitmentContributionType === 'direct_payment'
+                                {tx.type === 'income'
+                                  ? 'Reimbursement received'
+                                  : tx.commitmentContributionType === 'direct_payment'
                                   ? 'Direct transfer'
                                   : 'Offset deduction'}
                               </p>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              <span className="font-mono tabular-nums font-semibold">
-                                -{formatINR(tx.amount)}
+                              <span
+                                className={`font-mono tabular-nums font-semibold ${
+                                  tx.type === 'income'
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : ''
+                                }`}
+                              >
+                                {tx.type === 'income' ? '+' : '-'}
+                                {formatINR(tx.amount)}
                               </span>
                               <button
                                 type="button"
@@ -319,12 +390,46 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
                         type="button"
                         size="sm"
                         variant="outline"
+                        onClick={() => openReimburseDialog(ledger)}
+                        className="min-h-[40px] px-3 text-xs gap-1.5 rounded-xl text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                      >
+                        <ArrowDownLeft className="w-3.5 h-3.5" />
+                        Received Back
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
                         onClick={() => setAttachCommitmentId(ledger.commitment.id)}
                         className="min-h-[40px] px-3 text-xs gap-1.5 rounded-xl"
                       >
                         <Link2 className="w-3.5 h-3.5" />
                         Link Expense
                       </Button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const nextVal = !ledger.commitment.autoRolloverOverpayment;
+                          await updateCommitment(ledger.commitment.id, {
+                            autoRolloverOverpayment: nextVal,
+                          });
+                          toast.success(
+                            nextVal
+                              ? 'Overpayment rollover enabled for next month'
+                              : 'Overpayment rollover disabled — months reset fresh'
+                          );
+                        }}
+                        className={`min-h-[40px] px-3 rounded-xl border text-xs font-medium inline-flex items-center gap-1.5 transition-colors ${
+                          ledger.commitment.autoRolloverOverpayment
+                            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                            : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>
+                          Rollover: {ledger.commitment.autoRolloverOverpayment ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
                       <Button
                         type="button"
                         size="sm"
@@ -423,6 +528,87 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
                 Cancel
               </Button>
               <Button type="submit">Save Commitment</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Record Commitment Reimbursement */}
+      <Dialog
+        open={!!reimburseComm}
+        onOpenChange={(open) => !open && setReimburseComm(null)}
+      >
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>
+              Money Received Back ({reimburseComm?.commitment.recipientName})
+            </DialogTitle>
+            <DialogDescription>
+              Log extra money returned to you. This adds to your selected account balance and reduces overpayment rollover.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleRecordReimbursement} className="space-y-3.5 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rb-amt">Amount Received (₹)</Label>
+                <Input
+                  id="rb-amt"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={reimburseAmount}
+                  onChange={(e) => setReimburseAmount(e.target.value)}
+                  className="h-11 font-mono tabular-nums"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rb-date">Date</Label>
+                <Input
+                  id="rb-date"
+                  type="date"
+                  value={reimburseDate}
+                  onChange={(e) => setReimburseDate(e.target.value)}
+                  className="h-11"
+                  required
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rb-acc">Deposited Into</Label>
+              <select
+                id="rb-acc"
+                value={reimburseAccountId}
+                onChange={(e) => setReimburseAccountId(e.target.value)}
+                className="w-full h-11 px-3 text-sm rounded-xl border border-input bg-background"
+                required
+              >
+                {liquidAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} ({formatINR(acc.balance)})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rb-note">Note (optional)</Label>
+              <Input
+                id="rb-note"
+                value={reimburseNote}
+                onChange={(e) => setReimburseNote(e.target.value)}
+                placeholder="e.g., Mummy sent extra expenses back"
+                className="h-11"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReimburseComm(null)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">Record Received</Button>
             </DialogFooter>
           </form>
         </DialogContent>

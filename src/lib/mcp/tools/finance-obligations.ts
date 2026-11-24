@@ -10,6 +10,7 @@ import {
   applyAccountBalanceDelta,
 } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
+import { mapFinanceTransactionFromRow, mapMonthlyCommitmentFromRow } from '../mappers';
 import { calculateCommitmentLedger } from '@/lib/finance/shared-analytics';
 
 export function registerFinanceObligationsTools(server: McpServer) {
@@ -996,7 +997,11 @@ export function registerFinanceObligationsTools(server: McpServer) {
             .eq('linked_commitment_id', existing.id)
             .is('deleted_at', null);
 
-          const ledger = calculateCommitmentLedger(existing as any, monthKey, (txs as any) || []);
+          const ledger = calculateCommitmentLedger(
+            mapMonthlyCommitmentFromRow(existing),
+            monthKey,
+            (txs || []).map(mapFinanceTransactionFromRow)
+          );
 
           await logMcpToolInvocation(auth, {
             toolName: 'manage_monthly_commitment',

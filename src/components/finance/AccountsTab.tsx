@@ -153,7 +153,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
   const openEditAccount = (acc: FinanceAccount) => {
     setEditingAccount(acc);
     setAccName(acc.name);
-    setAccBalance(String(acc.balance));
+    setAccBalance(String(acc.type === 'credit_card' ? Math.abs(acc.balance) : acc.balance));
     setAccType(acc.type);
     setAccCreditLimit(String(acc.creditLimit || 100000));
     setAccDueDay(String(acc.dueDay || 15));
@@ -163,7 +163,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
 
   const openReconcileDialog = (acc: FinanceAccount) => {
     setReconcilingAccount(acc);
-    setReconcileTargetStr(String(acc.balance));
+    setReconcileTargetStr(String(acc.type === 'credit_card' ? Math.abs(acc.balance) : acc.balance));
     setReconcileMode('adjustment_tx');
   };
 
@@ -175,11 +175,17 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       toast.error('Enter a valid balance amount');
       return;
     }
+    const signedTarget =
+      reconcilingAccount.type === 'credit_card'
+        ? actualBal === 0
+          ? 0
+          : -Math.abs(actualBal)
+        : actualBal;
     setIsReconciling(true);
     try {
       const res = await reconcileAccountBalance(
         reconcilingAccount.id,
-        actualBal,
+        signedTarget,
         reconcileMode === 'adjustment_tx'
       );
       if (Math.abs(res.variance) < 0.01) {
@@ -207,9 +213,11 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       toast.error('Enter a valid name and balance');
       return;
     }
+    const signedBalance =
+      accType === 'credit_card' ? (bal === 0 ? 0 : -Math.abs(bal)) : bal;
     await updateAccount(editingAccount.id, {
       name: accName.trim(),
-      balance: bal,
+      balance: signedBalance,
       type: accType,
       isDefault: accIsDefault,
       creditLimit:
@@ -230,7 +238,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
           : undefined,
     });
 
-    if (accType === 'credit_card' && !isNaN(bal) && bal > 0) {
+    if (accType === 'credit_card' && !isNaN(bal) && Math.abs(bal) > 0) {
       try {
         const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
         const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
@@ -243,7 +251,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
           await reconcileCreditCardStatement({
             cardAccountId: editingAccount.id,
             cycleKey: prevCycle.cycleKey,
-            actualStatementAmount: bal,
+            actualStatementAmount: Math.abs(bal),
             note: 'Updated via Edit Account current dues',
           });
         }
@@ -279,10 +287,12 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       wallet: '#06b6d4',
       investment: '#8b5cf6',
     };
+    const signedBalance =
+      accType === 'credit_card' ? (bal === 0 ? 0 : -Math.abs(bal)) : bal;
     const newAccount = await addAccount({
       name: accName.trim(),
       type: accType,
-      balance: bal,
+      balance: signedBalance,
       creditLimit:
         accType === 'credit_card'
           ? parseFloat(accCreditLimit) || 100000
@@ -307,7 +317,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
       archived: false,
     });
 
-    if (accType === 'credit_card' && bal > 0 && newAccount) {
+    if (accType === 'credit_card' && Math.abs(bal) > 0 && newAccount) {
       try {
         const bDay = Math.min(31, Math.max(1, parseInt(accBillingDay, 10) || 1));
         const dDay = Math.min(31, Math.max(1, parseInt(accDueDay, 10) || 15));
@@ -320,7 +330,7 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
           await reconcileCreditCardStatement({
             cardAccountId: newAccount.id,
             cycleKey: prevCycle.cycleKey,
-            actualStatementAmount: bal,
+            actualStatementAmount: Math.abs(bal),
             note: 'Opening bill statement',
           });
         }
@@ -414,7 +424,13 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
 
   const reconcileVariance = reconcilingAccount
     ? Math.round(
-        ((parseFloat(reconcileTargetStr) || 0) - reconcilingAccount.balance) * 100
+        ((reconcilingAccount.type === 'credit_card'
+          ? (parseFloat(reconcileTargetStr) || 0) === 0
+            ? 0
+            : -Math.abs(parseFloat(reconcileTargetStr) || 0)
+          : parseFloat(reconcileTargetStr) || 0) -
+          reconcilingAccount.balance) *
+          100
       ) / 100
     : 0;
 
@@ -886,16 +902,32 @@ export function AccountsTab({ onOpenBudgetModal }: AccountsTabProps) {
           <DialogHeader>
             <DialogTitle>Reconcile {reconcilingAccount?.name}</DialogTitle>
             <DialogDescription>
-              Enter the real balance shown in your bank/wallet app. Current app balance:{' '}
-              <strong className="font-mono text-foreground">
-                {formatINR(reconcilingAccount?.balance || 0)}
-              </strong>
-              .
+              {reconcilingAccount?.type === 'credit_card' ? (
+                <>
+                  Enter the real total outstanding due shown in your card app. Current app due:{' '}
+                  <strong className="font-mono text-foreground">
+                    {formatINR(Math.abs(reconcilingAccount.balance || 0))}
+                  </strong>
+                  .
+                </>
+              ) : (
+                <>
+                  Enter the real balance shown in your bank/wallet app. Current app balance:{' '}
+                  <strong className="font-mono text-foreground">
+                    {formatINR(reconcilingAccount?.balance || 0)}
+                  </strong>
+                  .
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleConfirmReconcile} className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="rec-actual">Actual Bank / App Balance (₹)</Label>
+              <Label htmlFor="rec-actual">
+                {reconcilingAccount?.type === 'credit_card'
+                  ? 'Actual Total Outstanding Due (₹)'
+                  : 'Actual Bank / App Balance (₹)'}
+              </Label>
               <Input
                 id="rec-actual"
                 type="number"

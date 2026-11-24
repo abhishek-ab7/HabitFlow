@@ -353,44 +353,127 @@ export function registerFinanceTransactionsTools(server: McpServer) {
             };
           }
 
+          const cleanFriendName = args.friendName.trim();
+          const friendLower = cleanFriendName.toLowerCase();
+          const bucketType = args.friendBucketType || 'everyday_split';
           const userShare = Math.round((originalAmount - friendShare) * 100) / 100;
           const splitGroupId = existing.split_group_id || crypto.randomUUID();
+          const existingTags = Array.isArray(existing.tags) ? existing.tags : [];
 
-          // Update original transaction to user's share
+          const { data: userCategories } = await supabase
+            .from('finance_categories')
+            .select('id, slug, name')
+            .eq('user_id', auth.userId)
+            .is('deleted_at', null);
+
+          const debtCat =
+            (userCategories || []).find((c) => c.slug === 'emis-debt-repayment') ||
+            (userCategories || []).find(
+              (c) =>
+                String(c.name || '').toLowerCase().includes('debt') ||
+                String(c.name || '').toLowerCase().includes('emi')
+            );
+          const debtCatId = debtCat?.id || existing.category_id;
+
+          // 1. Update original transaction to user's share
           const meta = getUpdateMetadata(existing);
           const { data: updatedOriginal } = await supabase
             .from('finance_transactions')
             .update({
               amount: userShare,
               split_group_id: splitGroupId,
-              notes: `${existing.notes || ''} [Split with ${args.friendName}: User share ₹${userShare}]`.trim(),
+              tags: Array.from(new Set([...existingTags, 'split', friendLower])),
+              notes: `${existing.notes ? existing.notes + ' · ' : ''}Split with ${cleanFriendName} (Your share: ₹${userShare}, ${cleanFriendName} owes: ₹${friendShare})`.trim(),
               ...meta,
             })
             .eq('id', existing.id)
             .select()
             .single();
 
-          // Create a debt record for friend's share (lent to friend)
-          const debtMeta = getInsertMetadata();
-          const { data: debtRecord } = await supabase
-            .from('debt_records')
+          // 2. Insert the 2nd Friend Split expense leg on the same account/cycle without changing account balance
+          const friendLegMeta = getInsertMetadata();
+          const { data: friendTransaction } = await supabase
+            .from('finance_transactions')
             .insert({
               user_id: auth.userId,
-              person_name: args.friendName.trim(),
-              direction: 'lent',
-              bucket_type: args.friendBucketType || 'everyday_split',
-              title: `Split: ${existing.title}`,
-              principal_amount: friendShare,
-              total_repaid_amount: 0,
-              remaining_amount: friendShare,
-              start_date: existing.date,
-              repayment_schedule: 'full_on_date',
-              status: 'active',
-              notes: `Split from transaction "${existing.title}"`,
-              ...debtMeta,
+              title: `${cleanFriendName}'s Share: ${existing.title}`,
+              merchant_name: existing.merchant_name || null,
+              raw_merchant: existing.raw_merchant || null,
+              amount: friendShare,
+              type: 'expense',
+              category_id: debtCatId,
+              subcategory: 'Friend Split',
+              account_id: existing.account_id,
+              date: existing.date,
+              month_key: existing.month_key || String(existing.date).slice(0, 7),
+              notes: `Friend split portion for ${cleanFriendName} · ${existing.title}`,
+              tags: Array.from(new Set([...existingTags, 'split', friendLower, 'friend-share'])),
+              is_recurring: false,
+              needs_review: false,
+              split_group_id: splitGroupId,
+              statement_cycle_key: existing.statement_cycle_key ?? null,
+              is_credit_card_payment: false,
+              ...friendLegMeta,
             })
             .select()
             .single();
+
+          // 3. Top up an existing active lent debt record for this friend/bucket, or create a new one
+          const { data: existingDebts } = await supabase
+            .from('debt_records')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('bucket_type', bucketType)
+            .eq('direction', 'lent')
+            .eq('status', 'active')
+            .is('deleted_at', null);
+
+          const matchingDebt = (existingDebts || []).find(
+            (d) => String(d.person_name || '').trim().toLowerCase() === friendLower
+          );
+
+          let debtRecord = null;
+          if (matchingDebt) {
+            const nextPrincipal = Math.round((Number(matchingDebt.principal_amount || 0) + friendShare) * 100) / 100;
+            const nextRemaining = Math.round((Number(matchingDebt.remaining_amount || 0) + friendShare) * 100) / 100;
+            const debtUpdateMeta = getUpdateMetadata(matchingDebt);
+            const { data: toppedUp } = await supabase
+              .from('debt_records')
+              .update({
+                principal_amount: nextPrincipal,
+                remaining_amount: nextRemaining,
+                notes: matchingDebt.notes
+                  ? `${matchingDebt.notes}\nSplit: ${existing.title} (+₹${friendShare})`
+                  : `Split: ${existing.title} (+₹${friendShare})`,
+                ...debtUpdateMeta,
+              })
+              .eq('id', matchingDebt.id)
+              .select()
+              .single();
+            debtRecord = toppedUp;
+          } else {
+            const debtMeta = getInsertMetadata();
+            const { data: createdDebt } = await supabase
+              .from('debt_records')
+              .insert({
+                user_id: auth.userId,
+                person_name: cleanFriendName,
+                direction: 'lent',
+                bucket_type: bucketType,
+                title: `Everyday Split: ${existing.title}`,
+                principal_amount: friendShare,
+                total_repaid_amount: 0,
+                remaining_amount: friendShare,
+                start_date: existing.date,
+                repayment_schedule: 'flexible',
+                status: 'active',
+                notes: `Split from transaction "${existing.title}" on ${existing.date}`,
+                ...debtMeta,
+              })
+              .select()
+              .single();
+            debtRecord = createdDebt;
+          }
 
           await logMcpToolInvocation(auth, {
             toolName: 'manage_transaction',
@@ -411,6 +494,7 @@ export function registerFinanceTransactionsTools(server: McpServer) {
                     friendShare,
                     splitGroupId,
                     updatedTransaction: updatedOriginal,
+                    friendTransaction,
                     createdDebtRecord: debtRecord,
                   },
                   null,

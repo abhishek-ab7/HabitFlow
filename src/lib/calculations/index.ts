@@ -544,7 +544,7 @@ export function calculateHabitStats(
   today: Date = new Date()
 ): HabitStats {
   const habitCompletions = completions.filter(c => c.habitId === habit.id);
-  const createdDate = parseISO(habit.createdAt);
+  const createdDate = habit.createdAt ? parseISO(habit.createdAt) : today;
   const totalDays = Math.max(1, differenceInDays(today, createdDate) + 1);
   const weekProgress = getHabitWeekProgress(habit, habitCompletions, today);
 

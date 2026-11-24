@@ -10,9 +10,17 @@ import {
 } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
 import {
+  mapCreditCardStatementFromRow,
+  mapFinanceAccountFromRow,
+  mapFinanceTransactionFromRow,
+} from '../mappers';
+import {
   computeCreditCardSummary,
   allocatePaymentToStatements,
+  getCycleWindowForMonth,
+  resolveCardBillingConfig,
   resolveTransactionCycle,
+  roundCurrency,
 } from '@/lib/finance/credit-card-cycles';
 
 export function registerFinanceCreditCardsTools(server: McpServer) {
@@ -82,9 +90,9 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
         ]);
 
         const summary = computeCreditCardSummary({
-          account: card as any,
-          transactions: (txs as any) || [],
-          persistedStatements: (statements as any) || [],
+          account: mapFinanceAccountFromRow(card),
+          transactions: (txs || []).map(mapFinanceTransactionFromRow),
+          persistedStatements: (statements || []).map(mapCreditCardStatementFromRow),
           referenceDate,
         });
 
@@ -170,10 +178,11 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
             .order('period_end', { ascending: true });
 
           const paymentAmount = Number(args.amount);
+          const mappedStatements = (openStatements || []).map(mapCreditCardStatementFromRow);
           const targetStatementId =
             args.statementId ||
-            (openStatements && openStatements.length > 0 ? openStatements[0].id : null);
-          const allocated = allocatePaymentToStatements((openStatements as any) || [], paymentAmount, targetStatementId);
+            (mappedStatements.length > 0 ? mappedStatements[0].id : null);
+          const allocated = allocatePaymentToStatements(mappedStatements, paymentAmount, targetStatementId);
 
           // 1. Create transfer payment transaction
           const meta = getInsertMetadata();
@@ -208,37 +217,38 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
             { accountId: args.cardAccountId, delta: paymentAmount },
           ]);
 
-          // 3. Update target statement paid_amount
+          // 3. Persist waterfall-allocated statement updates in Supabase
           const updatedStatements = [];
-          if (targetStatementId) {
-            const { data: targetStmt } = await supabase
+          for (let i = 0; i < allocated.updatedStatements.length; i++) {
+            const orig = mappedStatements[i];
+            const nextStmt = allocated.updatedStatements[i];
+            const changed =
+              orig.remainingDue !== nextStmt.remainingDue ||
+              orig.paidAmount !== nextStmt.paidAmount ||
+              orig.status !== nextStmt.status;
+            if (!changed) continue;
+
+            const rawRow = (openStatements || []).find((s) => s.id === nextStmt.id);
+            const isDirectlyLinked =
+              Boolean(targetStatementId) &&
+              (nextStmt.id === targetStatementId || nextStmt.cycleKey === targetStatementId);
+
+            const stmtMeta = getUpdateMetadata(rawRow);
+            const { data: updated } = await supabase
               .from('credit_card_statements')
-              .select('*')
+              .update({
+                ...(isDirectlyLinked ? { paid_amount: nextStmt.paidAmount } : {}),
+                remaining_due: nextStmt.remainingDue,
+                status: nextStmt.status,
+                paid_at: nextStmt.paidAt ?? rawRow?.paid_at ?? null,
+                ...stmtMeta,
+              })
               .eq('user_id', auth.userId)
-              .eq('id', targetStatementId)
+              .eq('id', nextStmt.id)
+              .select()
               .single();
 
-            if (targetStmt) {
-              const newPaid = Math.round((Number(targetStmt.paid_amount || 0) + paymentAmount) * 100) / 100;
-              const remaining = Math.max(0, Math.round((Number(targetStmt.total_due || 0) - newPaid) * 100) / 100);
-              const status = remaining <= 0 ? 'paid' : 'partial';
-
-              const stmtMeta = getUpdateMetadata(targetStmt);
-              const { data: updated } = await supabase
-                .from('credit_card_statements')
-                .update({
-                  paid_amount: newPaid,
-                  remaining_due: remaining,
-                  status,
-                  paid_at: remaining <= 0 ? new Date().toISOString() : targetStmt.paid_at,
-                  ...stmtMeta,
-                })
-                .eq('id', targetStatementId)
-                .select()
-                .single();
-
-              if (updated) updatedStatements.push(updated);
-            }
+            if (updated) updatedStatements.push(updated);
           }
 
           await logMcpToolInvocation(auth, {
@@ -282,6 +292,32 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
             };
           }
 
+          const mappedCard = mapFinanceAccountFromRow(cardAccount);
+          const { billingDay, dueDay, gracePeriodDays } = resolveCardBillingConfig(mappedCard);
+          const [cYear, cMonth] = args.cycleKey.split('-').map(Number);
+          const window = getCycleWindowForMonth(billingDay, dueDay, cYear, cMonth - 1, gracePeriodDays);
+
+          const { data: cardTxsRows } = await supabase
+            .from('finance_transactions')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('account_id', args.cardAccountId)
+            .is('deleted_at', null);
+
+          const mappedCardTxs = (cardTxsRows || [])
+            .map(mapFinanceTransactionFromRow)
+            .filter((t) => !t.isCreditCardPayment && t.type !== 'transfer');
+
+          let calculatedAmount = 0;
+          for (const tx of mappedCardTxs) {
+            const txCycle = resolveTransactionCycle(tx.date, billingDay, dueDay, tx.statementCycleKey);
+            if (txCycle === args.cycleKey) {
+              if (tx.type === 'income') calculatedAmount = roundCurrency(calculatedAmount - tx.amount);
+              else calculatedAmount = roundCurrency(calculatedAmount + tx.amount);
+            }
+          }
+
+          const actualBilled = roundCurrency(Math.max(0, Number(args.billedTotal)));
           const statementId = `${args.cardAccountId}_${args.cycleKey}`;
           const { data: existing } = await supabase
             .from('credit_card_statements')
@@ -293,22 +329,29 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
           let savedStatement = null;
 
           if (existing) {
-            const manualAdjustment =
-              Math.round((Number(args.billedTotal) - Number(existing.calculated_amount || 0)) * 100) / 100;
-            const remainingDue = Math.max(0, Number(args.billedTotal) - Number(existing.paid_amount || 0));
-            const status = remainingDue <= 0 ? 'paid' : existing.paid_amount > 0 ? 'partial' : 'billed';
+            const manualAdjustment = roundCurrency(actualBilled - calculatedAmount);
+            const carriedForward = Number(existing.carried_forward_amount || 0);
+            const totalDue = roundCurrency(Math.max(0, calculatedAmount + manualAdjustment + carriedForward));
+            const paidAmt = Number(existing.paid_amount || 0);
+            const remainingDue = roundCurrency(Math.max(0, totalDue - paidAmt));
+            const status = remainingDue <= 0 ? 'paid' : paidAmt > 0 ? 'partial' : 'billed';
 
             const meta = getUpdateMetadata(existing);
             const { data, error } = await supabase
               .from('credit_card_statements')
               .update({
-                total_due: Number(args.billedTotal),
+                period_start: window.periodStart,
+                period_end: window.periodEnd,
+                due_date: window.dueDate,
+                calculated_amount: calculatedAmount,
+                total_due: totalDue,
                 manual_adjustment: manualAdjustment,
                 remaining_due: remainingDue,
                 status,
-                notes: args.notes || existing.notes,
+                notes: args.notes !== undefined ? args.notes : existing.notes,
                 ...meta,
               })
+              .eq('user_id', auth.userId)
               .eq('id', statementId)
               .select()
               .single();
@@ -316,6 +359,7 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
             if (error) throw error;
             savedStatement = data;
           } else {
+            const manualAdjustment = roundCurrency(actualBilled - calculatedAmount);
             const meta = getInsertMetadata(statementId);
             const { data, error } = await supabase
               .from('credit_card_statements')
@@ -323,16 +367,16 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
                 user_id: auth.userId,
                 account_id: args.cardAccountId,
                 cycle_key: args.cycleKey,
-                period_start: `${args.cycleKey}-01`,
-                period_end: `${args.cycleKey}-28`,
-                due_date: `${args.cycleKey}-25`,
-                calculated_amount: Number(args.billedTotal),
-                manual_adjustment: 0,
-                total_due: Number(args.billedTotal),
+                period_start: window.periodStart,
+                period_end: window.periodEnd,
+                due_date: window.dueDate,
+                calculated_amount: calculatedAmount,
+                manual_adjustment: manualAdjustment,
+                total_due: actualBilled,
                 carried_forward_amount: 0,
                 paid_amount: 0,
-                remaining_due: Number(args.billedTotal),
-                status: 'billed',
+                remaining_due: actualBilled,
+                status: actualBilled === 0 ? 'paid' : 'billed',
                 notes: args.notes || null,
                 ...meta,
               })
@@ -356,6 +400,65 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
               {
                 type: 'text',
                 text: JSON.stringify({ action: 'statement_reconciled', statement: savedStatement }, null, 2),
+              },
+            ],
+          };
+        }
+
+        if (args.action === 'update_notes') {
+          const targetId = args.statementId || (args.cycleKey ? `${args.cardAccountId}_${args.cycleKey}` : null);
+          if (!targetId) {
+            return {
+              isError: true,
+              content: [
+                {
+                  type: 'text',
+                  text: 'Validation Error: statementId or cycleKey is required for update_notes.',
+                },
+              ],
+            };
+          }
+
+          const { data: existing, error: fetchErr } = await supabase
+            .from('credit_card_statements')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('account_id', args.cardAccountId)
+            .eq('id', targetId)
+            .is('deleted_at', null)
+            .single();
+
+          if (fetchErr || !existing) {
+            return { isError: true, content: [{ type: 'text', text: `Statement not found: ${targetId}` }] };
+          }
+
+          const meta = getUpdateMetadata(existing);
+          const { data: updated, error: updErr } = await supabase
+            .from('credit_card_statements')
+            .update({
+              notes: args.notes ?? null,
+              ...meta,
+            })
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+
+          if (updErr) throw updErr;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_credit_card_statement',
+            action: 'update_notes',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ action: 'notes_updated', statement: updated }, null, 2),
               },
             ],
           };

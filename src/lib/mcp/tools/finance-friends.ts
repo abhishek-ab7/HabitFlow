@@ -10,6 +10,7 @@ import {
   applyAccountBalanceDelta,
 } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
+import { mapDebtRecordFromRow } from '../mappers';
 import { calculateFriendLedgerGroups } from '@/lib/finance/shared-analytics';
 
 export function registerFinanceFriendsTools(server: McpServer) {
@@ -57,7 +58,8 @@ export function registerFinanceFriendsTools(server: McpServer) {
         return { isError: true, content: [{ type: 'text', text: `Failed to fetch debt records: ${error.message}` }] };
       }
 
-      const allGroups = calculateFriendLedgerGroups((debts as any) || []);
+      const mappedDebts = (debts || []).map(mapDebtRecordFromRow);
+      const allGroups = calculateFriendLedgerGroups(mappedDebts);
 
       const filteredGroups = allGroups.map((g) => {
         if (args.bucketType === 'everyday_split') {
@@ -376,9 +378,9 @@ export function registerFinanceFriendsTools(server: McpServer) {
             const txPayload = {
               user_id: auth.userId,
               title: isRepayingBorrowed
-                ? `Repayment to ${existing.personName}`
-                : `Received from ${existing.personName}`,
-              merchant_name: existing.personName,
+                ? `Repayment to ${existing.person_name}`
+                : `Received from ${existing.person_name}`,
+              merchant_name: existing.person_name,
               amount: paymentAmount,
               type: txType,
               account_id: args.linkedAccountId,

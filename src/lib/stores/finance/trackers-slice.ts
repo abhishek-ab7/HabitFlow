@@ -69,7 +69,12 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
     const existing = get().commitments.find((c) => c.id === id);
     if (!existing) return;
     const now = new Date().toISOString();
-    await db.monthlyCommitments.update(id, { ...data, isDirty: true, updatedAt: now });
+    await db.monthlyCommitments.update(id, {
+      ...data,
+      isDirty: true,
+      generationCounter: (existing.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
     await get().loadFinanceData(existing.userId);
     notifyFinanceSync();
   },

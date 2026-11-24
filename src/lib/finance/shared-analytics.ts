@@ -137,6 +137,9 @@ export function calculateDebtSummary(debtRecords: DebtRecord[]) {
   };
 }
 
+const sumSignedCommitmentAmount = (txs: FinanceTransaction[]): number =>
+  txs.reduce((sum, t) => sum + (t.type === 'income' ? -Number(t.amount || 0) : Number(t.amount || 0)), 0);
+
 export function calculateCommitmentLedger(
   commitment: MonthlyCommitment,
   targetMonth: string,
@@ -148,7 +151,7 @@ export function calculateCommitmentLedger(
     const prevTx = transactions.filter(
       (t) => t.linkedCommitmentId === commitment.id && t.monthKey === prevMonth && !t.deletedAt
     );
-    const prevFulfilled = prevTx.reduce((sum, t) => sum + t.amount, 0);
+    const prevFulfilled = Math.max(0, sumSignedCommitmentAmount(prevTx));
     if (prevFulfilled > commitment.monthlyTargetAmount) {
       rolloverFromPreviousMonth = prevFulfilled - commitment.monthlyTargetAmount;
     }
@@ -162,15 +165,20 @@ export function calculateCommitmentLedger(
   );
 
   const directTransactions = monthTransactions.filter(
-    (t) => t.commitmentContributionType === 'direct_payment'
+    (t) => t.commitmentContributionType === 'direct_payment' && t.type !== 'income'
   );
   const offsetTransactions = monthTransactions.filter(
-    (t) => t.commitmentContributionType !== 'direct_payment'
+    (t) => t.commitmentContributionType !== 'direct_payment' && t.type !== 'income'
   );
+  const reimbursementTransactions = monthTransactions.filter((t) => t.type === 'income');
 
   const directPaidAmount = directTransactions.reduce((sum, t) => sum + t.amount, 0);
   const offsetExpensesAmount = offsetTransactions.reduce((sum, t) => sum + t.amount, 0);
-  const totalFulfilledAmount = directPaidAmount + offsetExpensesAmount;
+  const reimbursedAmount = reimbursementTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const totalFulfilledAmount = Math.max(
+    0,
+    directPaidAmount + offsetExpensesAmount - reimbursedAmount
+  );
 
   const remainingBalance = Math.max(0, effectiveTargetAmount - totalFulfilledAmount);
   const overpaidAmount = Math.max(0, totalFulfilledAmount - effectiveTargetAmount);

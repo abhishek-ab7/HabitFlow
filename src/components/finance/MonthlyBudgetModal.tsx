@@ -43,6 +43,10 @@ export function MonthlyBudgetModal({
   const [categoryInputs, setCategoryInputs] = useState<Record<string, string>>({});
   const [categoryRollovers, setCategoryRollovers] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [showLeaveHelper, setShowLeaveHelper] = useState(false);
+  const [baseSalaryInput, setBaseSalaryInput] = useState('');
+  const [leaveDaysInput, setLeaveDaysInput] = useState('0');
+  const [salaryDivisor, setSalaryDivisor] = useState<30 | 26>(30);
 
   const summary = getMonthlySummary(selectedMonth);
   const spentByCat = useMemo(() => {
@@ -70,13 +74,16 @@ export function MonthlyBudgetModal({
         ? String(existingBudget.totalBudget)
         : ''
     );
-    setExpectedIncomeInput(
+    const resolvedIncomeStr =
       existingBudget && existingBudget.expectedIncome > 0
         ? String(existingBudget.expectedIncome)
         : summary.totalIncome > 0
         ? String(summary.totalIncome)
-        : ''
-    );
+        : '';
+    setExpectedIncomeInput(resolvedIncomeStr);
+    setBaseSalaryInput(resolvedIncomeStr || '19000');
+    setLeaveDaysInput('0');
+    setShowLeaveHelper(false);
     setPlannedSipInput(
       existingBudget && (existingBudget.plannedSipAmount || 0) > 0
         ? String(existingBudget.plannedSipAmount)
@@ -115,6 +122,14 @@ export function MonthlyBudgetModal({
   const overallNum = parseFloat(overallInput) || 0;
   const expectedIncomeNum = parseFloat(expectedIncomeInput) || 0;
   const plannedSipNum = parseFloat(plannedSipInput) || 0;
+
+  const baseSalaryNum = parseFloat(baseSalaryInput) || 0;
+  const leaveDaysNum = Math.max(0, parseFloat(leaveDaysInput) || 0);
+  const leaveCutAmount =
+    baseSalaryNum > 0 && leaveDaysNum > 0
+      ? Math.round((baseSalaryNum / salaryDivisor) * leaveDaysNum)
+      : 0;
+  const netSalaryAfterLeave = Math.max(0, Math.round(baseSalaryNum - leaveCutAmount));
 
   const fixedObligations =
     summary.remainingUnpaidEmis +
@@ -353,22 +368,36 @@ export function MonthlyBudgetModal({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label
-                    htmlFor="expected-income-input"
-                    className="text-xs font-medium text-muted-foreground"
-                  >
-                    {budgetMode === 'zero_based'
-                      ? 'Monthly Income to Assign (₹)'
-                      : 'Expected Monthly Income (₹)'}
-                  </Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label
+                      htmlFor="expected-income-input"
+                      className="text-xs font-medium text-muted-foreground"
+                    >
+                      {budgetMode === 'zero_based'
+                        ? 'Monthly Income to Assign (₹)'
+                        : 'Expected Monthly Income (₹)'}
+                    </Label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!showLeaveHelper && expectedIncomeNum > 0) {
+                          setBaseSalaryInput(String(expectedIncomeNum));
+                        }
+                        setShowLeaveHelper((prev) => !prev);
+                      }}
+                      className="text-[11px] font-medium text-primary hover:underline whitespace-nowrap"
+                    >
+                      {showLeaveHelper ? 'Hide leave calc' : 'Half-day / Leave cut?'}
+                    </button>
+                  </div>
                   <Input
                     id="expected-income-input"
                     type="number"
                     min="0"
-                    step="500"
+                    step="1"
                     value={expectedIncomeInput}
                     onChange={(e) => setExpectedIncomeInput(e.target.value)}
-                    placeholder="e.g., 85000"
+                    placeholder="e.g., 19000"
                     className="h-10 font-mono tabular-nums text-sm"
                   />
                 </div>
@@ -392,6 +421,114 @@ export function MonthlyBudgetModal({
                   />
                 </div>
               </div>
+
+              {showLeaveHelper && (
+                <div className="rounded-xl border border-border/80 bg-muted/40 p-3 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-semibold text-foreground">
+                      Salary Leave / Half-Day Cut Calculator
+                    </span>
+                    <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setSalaryDivisor(30)}
+                        className={`px-2 py-0.5 rounded-md font-medium ${
+                          salaryDivisor === 30
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        ÷30 days
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSalaryDivisor(26)}
+                        className={`px-2 py-0.5 rounded-md font-medium ${
+                          salaryDivisor === 26
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        ÷26 work days
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <Label htmlFor="base-salary-calc" className="text-[11px] text-muted-foreground">
+                        Full Base Salary (₹)
+                      </Label>
+                      <Input
+                        id="base-salary-calc"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={baseSalaryInput}
+                        onChange={(e) => setBaseSalaryInput(e.target.value)}
+                        className="h-9 font-mono tabular-nums text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="leave-days-calc" className="text-[11px] text-muted-foreground">
+                        Unpaid Leave Days
+                      </Label>
+                      <Input
+                        id="leave-days-calc"
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={leaveDaysInput}
+                        onChange={(e) => setLeaveDaysInput(e.target.value)}
+                        className="h-9 font-mono tabular-nums text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[0.5, 1, 2, 3].map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => setLeaveDaysInput(String(days))}
+                        className={`px-2 py-1 rounded-lg border text-[11px] font-mono transition-colors ${
+                          leaveDaysNum === days
+                            ? 'border-primary bg-primary/10 text-primary font-semibold'
+                            : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {days === 0.5 ? 'Half day (0.5)' : `${days}d off`}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setLeaveDaysInput('0')}
+                      className="px-2 py-1 rounded-lg border border-border bg-background text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      Reset
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
+                    <span className="font-mono tabular-nums text-[11px] text-muted-foreground">
+                      Cut: <strong className="text-rose-500">-{formatINR(leaveCutAmount)}</strong> · Net:{' '}
+                      <strong className="text-foreground">{formatINR(netSalaryAfterLeave)}</strong>
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        setExpectedIncomeInput(String(netSalaryAfterLeave));
+                        setShowLeaveHelper(false);
+                        toast.success(`Updated month income to ${formatINR(netSalaryAfterLeave)}`);
+                      }}
+                      className="h-8 px-3 text-xs rounded-lg"
+                    >
+                      Apply {formatINR(netSalaryAfterLeave)}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <p className="text-xs text-muted-foreground">
                 Allocated across categories:{' '}

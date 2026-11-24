@@ -252,6 +252,36 @@ export async function deduplicateFinanceRecordsInDexie(userId: string): Promise<
         await db.financeAccounts.delete(acc.id);
       }
     }
+
+    // 3. Soft-delete duplicate `(repaired)` friend-share legs without altering account balances
+    const splitTxs = await db.financeTransactions
+      .where('userId')
+      .equals(userId)
+      .filter((t) => !t.deletedAt && Boolean(t.splitGroupId))
+      .toArray();
+    const repairedByGroupAndSig = new Map<string, typeof splitTxs>();
+    for (const tx of splitTxs) {
+      if (!tx.notes?.includes('(repaired)') || !tx.tags?.includes('friend-share')) continue;
+      const key = `${tx.splitGroupId}__${tx.amount}_${tx.accountId}_${tx.date}`;
+      const list = repairedByGroupAndSig.get(key) || [];
+      list.push(tx);
+      repairedByGroupAndSig.set(key, list);
+    }
+    const nowIso = new Date().toISOString();
+    for (const bucket of repairedByGroupAndSig.values()) {
+      if (bucket.length <= 1) continue;
+      bucket.sort(
+        (a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') || a.id.localeCompare(b.id)
+      );
+      for (const dup of bucket.slice(1)) {
+        await db.financeTransactions.update(dup.id, {
+          deletedAt: nowIso,
+          isDirty: true,
+          generationCounter: (dup.generationCounter || 1) + 1,
+          updatedAt: nowIso,
+        });
+      }
+    }
   } catch (err) {
     logger.warn('[FinanceSyncEngine] Deduplication error in Dexie:', err);
   }

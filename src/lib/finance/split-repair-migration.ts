@@ -25,6 +25,30 @@ export function markUserSplitRepairDone(userId: string): void {
 }
 
 /**
+ * Derives a deterministic RFC-4122-shaped UUID from `splitGroupId` so repeated
+ * offline repair runs never generate duplicate `(repaired)` friend-share legs.
+ */
+export function deriveRepairedSplitLegId(splitGroupId: string): string {
+  const fnv1a = (input: string, seed: number): number => {
+    let hash = seed >>> 0;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash >>> 0;
+  };
+
+  const p1 = fnv1a(`${splitGroupId}:0`, 0x811c9dc5).toString(16).padStart(8, '0');
+  const p2 = fnv1a(`${splitGroupId}:1`, 0x9e3779b9).toString(16).padStart(8, '0');
+  const p3 = fnv1a(`${splitGroupId}:2`, 0x85ebca6b).toString(16).padStart(8, '0');
+  const p4 = fnv1a(`${splitGroupId}:3`, 0xc2b2ae35).toString(16).padStart(8, '0');
+  const hex = `${p1}${p2}${p3}${p4}`;
+
+  // Set version nibble to 4 and variant nibble to a (RFC 4122)
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
  * Parses legacy single-legged split note format:
  * "Split with Rahul (Your share: ₹373, Rahul owes: ₹54)"
  * or "Dinner · Split with Amit (Your share: ₹400, Amit owes: ₹400)"
@@ -143,6 +167,40 @@ export async function repairLegacySplitTransactions(
   const now = new Date().toISOString();
 
   for (const [splitGroupId, groupTxs] of groups.entries()) {
+    // If duplicate `(repaired)` friend-share legs exist from prior non-deterministic runs,
+    // soft-delete redundant extras without altering account balances.
+    if (groupTxs.length > 2) {
+      const activeRepaired = groupTxs.filter(
+        (t) => !t.deletedAt && t.notes?.includes('(repaired)') && t.tags?.includes('friend-share')
+      );
+      if (activeRepaired.length > 1) {
+        const canonicalId = deriveRepairedSplitLegId(splitGroupId);
+        const bySig = new Map<string, FinanceTransaction[]>();
+        for (const t of activeRepaired) {
+          const sig = `${t.amount}_${t.accountId}_${t.date}`;
+          const bucket = bySig.get(sig) || [];
+          bucket.push(t);
+          bySig.set(sig, bucket);
+        }
+        for (const bucket of bySig.values()) {
+          if (bucket.length <= 1) continue;
+          bucket.sort((a, b) => {
+            if (a.id === canonicalId && b.id !== canonicalId) return -1;
+            if (b.id === canonicalId && a.id !== canonicalId) return 1;
+            return (a.createdAt || '').localeCompare(b.createdAt || '') || a.id.localeCompare(b.id);
+          });
+          for (const dup of bucket.slice(1)) {
+            await db.financeTransactions.update(dup.id, {
+              deletedAt: now,
+              isDirty: true,
+              generationCounter: (dup.generationCounter || 1) + 1,
+              updatedAt: now,
+            });
+          }
+        }
+      }
+    }
+
     // A legacy split group ONLY ever had exactly 1 transaction created in history.
     // If there is more than 1 transaction (active or deleted), this was already a multi-legged
     // split or a repaired split, and must never be touched.
@@ -193,9 +251,9 @@ export async function repairLegacySplitTransactions(
       (await db.financeAccounts.get(singleTx.accountId));
     const debtCatId = debtCat ? debtCat.id : singleTx.categoryId;
 
-    // Create the missing friend-share transaction
+    // Create the missing friend-share transaction with deterministic ID
     const friendTx: FinanceTransaction = {
-      id: crypto.randomUUID(),
+      id: deriveRepairedSplitLegId(splitGroupId),
       userId: singleTx.userId,
       title: `${friendName}'s Share: ${singleTx.title.replace(/^Split with .*?:\s*/, '')}`,
       amount: friendAmount,
@@ -232,7 +290,7 @@ export async function repairLegacySplitTransactions(
 
     // IMPORTANT: Add transaction to Dexie WITHOUT altering financeAccounts.balance
     // because legacy code already deducted friendPortion from account.balance.
-    await db.financeTransactions.add(friendTx);
+    await db.financeTransactions.put(friendTx);
     result.repairedCount++;
 
     if (account?.type === 'credit_card') {

@@ -141,6 +141,9 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
   const activeEmis = emiTrackers.filter((e) => e.status === 'active' && !e.deletedAt);
   const activeSips = sipPlans.filter((s) => s.isActive && !s.deletedAt);
   const activeCommitments = commitments.filter((c) => c.isActive && !c.deletedAt);
+  const creditCardAccountIds = new Set(
+    activeAccounts.filter((a) => a.type === 'credit_card').map((a) => a.id)
+  );
 
   const points: CashFlowForecastPoint[] = [];
   let runningBalance = startingLiquidBalance;
@@ -182,8 +185,9 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
         }
       }
 
-      // EMIs
+      // EMIs (skip EMIs billed on a credit card since creditCardStatements cover card dues)
       for (const emi of activeEmis) {
+        if (emi.accountId && creditCardAccountIds.has(emi.accountId)) continue;
         if (emi.lastPaidMonthKey === monthKey) continue;
         if (emi.paidMonths >= emi.tenureMonths) continue;
         const dueDay = clampDayForMonth(emi.billingDayOfMonth, year, monthIdx);

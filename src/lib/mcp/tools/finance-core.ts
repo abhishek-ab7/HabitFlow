@@ -6,6 +6,19 @@ import { getIstIsoDate, getIstMonthKey } from '../config';
 import { getInsertMetadata, getUpdateMetadata, getSoftDeleteMetadata } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
 import {
+  mapCreditCardStatementFromRow,
+  mapDebtInstallmentFromRow,
+  mapDebtRecordFromRow,
+  mapEmiTrackerFromRow,
+  mapFinanceAccountFromRow,
+  mapFinanceBudgetFromRow,
+  mapFinanceCategoryFromRow,
+  mapFinanceRecurringBillFromRow,
+  mapFinanceSipPlanFromRow,
+  mapFinanceTransactionFromRow,
+  mapMonthlyCommitmentFromRow,
+} from '../mappers';
+import {
   calculateMonthlySummary,
   calculateNetWorthSummary,
   calculateUpcomingFinancialObligations,
@@ -73,35 +86,47 @@ export function registerFinanceCoreTools(server: McpServer) {
         supabase.from('credit_card_statements').select('*').eq('user_id', auth.userId).is('deleted_at', null),
       ]);
 
+      const mappedAccounts = (accounts || []).map(mapFinanceAccountFromRow);
+      const mappedTxs = (txs || []).map(mapFinanceTransactionFromRow);
+      const mappedCategories = (categories || []).map(mapFinanceCategoryFromRow);
+      const mappedBudgets = (budgets || []).map(mapFinanceBudgetFromRow);
+      const mappedCommitments = (commitments || []).map(mapMonthlyCommitmentFromRow);
+      const mappedEmis = (emis || []).map(mapEmiTrackerFromRow);
+      const mappedDebts = (debts || []).map(mapDebtRecordFromRow);
+      const mappedDebtInsts = (debtInsts || []).map(mapDebtInstallmentFromRow);
+      const mappedBills = (bills || []).map(mapFinanceRecurringBillFromRow);
+      const mappedSips = (sips || []).map(mapFinanceSipPlanFromRow);
+      const mappedCcStatements = (ccStatements || []).map(mapCreditCardStatementFromRow);
+
       const monthlySummary = calculateMonthlySummary({
         monthKey,
-        transactions: (txs as any) || [],
-        categories: (categories as any) || [],
-        budgets: (budgets as any) || [],
-        commitments: (commitments as any) || [],
-        emiTrackers: (emis as any) || [],
-        debtRecords: (debts as any) || [],
-        debtInstallments: (debtInsts as any) || [],
-        recurringBills: (bills as any) || [],
-        sipPlans: (sips as any) || [],
+        transactions: mappedTxs,
+        categories: mappedCategories,
+        budgets: mappedBudgets,
+        commitments: mappedCommitments,
+        emiTrackers: mappedEmis,
+        debtRecords: mappedDebts,
+        debtInstallments: mappedDebtInsts,
+        recurringBills: mappedBills,
+        sipPlans: mappedSips,
         referenceDate,
       });
 
       const netWorth = calculateNetWorthSummary({
-        accounts: (accounts as any) || [],
-        sipPlans: (sips as any) || [],
-        debtRecords: (debts as any) || [],
-        emiTrackers: (emis as any) || [],
+        accounts: mappedAccounts,
+        sipPlans: mappedSips,
+        debtRecords: mappedDebts,
+        emiTrackers: mappedEmis,
       });
 
       const upcomingObligations = calculateUpcomingFinancialObligations({
-        emiTrackers: (emis as any) || [],
-        commitments: (commitments as any) || [],
-        debtRecords: (debts as any) || [],
-        debtInstallments: (debtInsts as any) || [],
-        recurringBills: (bills as any) || [],
-        sipPlans: (sips as any) || [],
-        transactions: (txs as any) || [],
+        emiTrackers: mappedEmis,
+        commitments: mappedCommitments,
+        debtRecords: mappedDebts,
+        debtInstallments: mappedDebtInsts,
+        recurringBills: mappedBills,
+        sipPlans: mappedSips,
+        transactions: mappedTxs,
         currentDate: referenceDate,
         withinDays: 7,
       });
@@ -109,14 +134,14 @@ export function registerFinanceCoreTools(server: McpServer) {
       let forecast = null;
       if (args.includeForecast) {
         forecast = buildCashFlowForecast({
-          accounts: (accounts as any) || [],
-          transactions: (txs as any) || [],
-          budgets: (budgets as any) || [],
-          recurringBills: (bills as any) || [],
-          emiTrackers: (emis as any) || [],
-          sipPlans: (sips as any) || [],
-          commitments: (commitments as any) || [],
-          creditCardStatements: (ccStatements as any) || [],
+          accounts: mappedAccounts,
+          transactions: mappedTxs,
+          budgets: mappedBudgets,
+          recurringBills: mappedBills,
+          emiTrackers: mappedEmis,
+          sipPlans: mappedSips,
+          commitments: mappedCommitments,
+          creditCardStatements: mappedCcStatements,
           horizonDays: 30,
           referenceDate,
         });
@@ -126,11 +151,11 @@ export function registerFinanceCoreTools(server: McpServer) {
       if (args.includeAnomalies) {
         anomalies = detectSpendingAnomalies({
           selectedMonth: monthKey,
-          transactions: (txs as any) || [],
-          categories: (categories as any) || [],
-          accounts: (accounts as any) || [],
-          debtRecords: (debts as any) || [],
-          recurringBills: (bills as any) || [],
+          transactions: mappedTxs,
+          categories: mappedCategories,
+          accounts: mappedAccounts,
+          debtRecords: mappedDebts,
+          recurringBills: mappedBills,
           upcomingObligations7d: upcomingObligations,
         });
       }
@@ -443,9 +468,11 @@ export function registerFinanceCoreTools(server: McpServer) {
         icon: z.string().optional(),
         color: z.string().optional(),
         // Rule specific fields
-        rulePattern: z.string().optional().describe('Merchant matching pattern string or regex'),
+        rulePattern: z.string().optional().describe('Merchant matching pattern string'),
+        cleanMerchantName: z.string().optional().describe('Clean normalized merchant name'),
         ruleMatchType: z.enum(['contains', 'exact', 'starts_with', 'regex']).optional(),
         ruleSubcategory: z.string().optional(),
+        defaultTags: z.array(z.string()).optional().describe('Default tags applied by this rule'),
         ruleId: z.string().uuid().optional(),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
@@ -485,7 +512,8 @@ export function registerFinanceCoreTools(server: McpServer) {
           .from('finance_categorization_rules')
           .select('*')
           .eq('user_id', auth.userId)
-          .order('priority', { ascending: false });
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false });
 
         if (error) {
           return { isError: true, content: [{ type: 'text', text: `Failed to fetch rules: ${error.message}` }] };
@@ -591,6 +619,8 @@ export function registerFinanceCoreTools(server: McpServer) {
             };
           }
 
+          const cleanPattern = args.rulePattern.trim();
+          const cleanMerchant = args.cleanMerchantName?.trim() || cleanPattern;
           let resultRule = null;
           if (args.ruleId) {
             const { data: existing } = await supabase
@@ -604,12 +634,16 @@ export function registerFinanceCoreTools(server: McpServer) {
             const { data, error } = await supabase
               .from('finance_categorization_rules')
               .update({
-                pattern: args.rulePattern,
-                match_type: args.ruleMatchType || 'contains',
+                match_pattern: cleanPattern,
+                clean_merchant_name: cleanMerchant,
                 category_id: args.categoryId,
                 subcategory: args.ruleSubcategory || null,
+                default_tags: args.defaultTags ?? existing?.default_tags ?? [],
+                is_active: true,
+                deleted_at: null,
                 ...meta,
               })
+              .eq('user_id', auth.userId)
               .eq('id', args.ruleId)
               .select()
               .single();
@@ -622,10 +656,12 @@ export function registerFinanceCoreTools(server: McpServer) {
               .from('finance_categorization_rules')
               .insert({
                 user_id: auth.userId,
-                pattern: args.rulePattern,
-                match_type: args.ruleMatchType || 'contains',
+                match_pattern: cleanPattern,
+                clean_merchant_name: cleanMerchant,
                 category_id: args.categoryId,
                 subcategory: args.ruleSubcategory || null,
+                default_tags: args.defaultTags || [],
+                is_active: true,
                 ...meta,
               })
               .select()
@@ -654,9 +690,21 @@ export function registerFinanceCoreTools(server: McpServer) {
             return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: confirm: true required.' }] };
           }
 
+          const { data: existing } = await supabase
+            .from('finance_categorization_rules')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.ruleId)
+            .single();
+
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: 'Categorization rule not found.' }] };
+          }
+
+          const meta = getSoftDeleteMetadata(existing);
           const { error } = await supabase
             .from('finance_categorization_rules')
-            .delete()
+            .update({ is_active: false, ...meta })
             .eq('user_id', auth.userId)
             .eq('id', args.ruleId);
 
@@ -996,10 +1044,10 @@ export function registerFinanceCoreTools(server: McpServer) {
           ]);
 
           const nw = calculateNetWorthSummary({
-            accounts: (accounts as any) || [],
-            sipPlans: (sips as any) || [],
-            debtRecords: (debts as any) || [],
-            emiTrackers: (emis as any) || [],
+            accounts: (accounts || []).map(mapFinanceAccountFromRow),
+            sipPlans: (sips || []).map(mapFinanceSipPlanFromRow),
+            debtRecords: (debts || []).map(mapDebtRecordFromRow),
+            emiTrackers: (emis || []).map(mapEmiTrackerFromRow),
           });
 
           // Check if snapshot exists for (user_id, month_key)

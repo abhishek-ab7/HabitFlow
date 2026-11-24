@@ -1,10 +1,12 @@
 import { z } from 'zod';
+import { parseISO } from 'date-fns';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { getMcpAuthContext, hasScope } from '../auth';
 import { getSupabaseAdmin } from '../supabase-admin';
 import { getIstIsoDate } from '../config';
 import { getInsertMetadata, getUpdateMetadata } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
+import { mapHabitCompletionFromRow, mapHabitFromRow } from '../mappers';
 import { calculateHabitStats, getHabitWeekProgress } from '@/lib/calculations';
 
 export function registerHabitsTools(server: McpServer) {
@@ -72,36 +74,15 @@ export function registerHabitsTools(server: McpServer) {
         allCompletions.filter((c) => c.date === dateIst).map((c) => [c.habit_id, c])
       );
 
+      const refDate = parseISO(dateIst);
       const enrichedHabits = (habits || []).map((h) => {
         const habitCompletions = allCompletions
           .filter((c) => c.habit_id === h.id)
-          .map((c) => ({
-            id: c.id,
-            userId: auth.userId,
-            habitId: c.habit_id,
-            date: c.date,
-            completed: c.completed,
-            skipped: c.skipped,
-            status: c.status,
-            restReason: c.rest_reason,
-            value: c.value,
-          }));
+          .map((c) => mapHabitCompletionFromRow(c, auth.userId));
 
-        const habitObj: any = {
-          id: h.id,
-          name: h.name,
-          category: h.category,
-          frequencyType: h.frequency_type,
-          scheduledDays: h.scheduled_days,
-          intervalDays: h.interval_days,
-          targetDays: h.target_days,
-          isQuantitative: h.is_quantitative,
-          targetValue: h.target_value,
-          unit: h.unit,
-          isArchived: h.is_archived,
-        };
+        const habitObj = mapHabitFromRow(h, `${dateIst}T00:00:00.000Z`);
 
-        const stats = calculateHabitStats(habitObj, habitCompletions);
+        const stats = calculateHabitStats(habitObj, habitCompletions, refDate);
         const todayComp = todayCompletionsMap.get(h.id);
 
         return {
@@ -121,7 +102,7 @@ export function registerHabitsTools(server: McpServer) {
           currentStreak: stats.currentStreak,
           longestStreak: stats.bestStreak,
           completionRate: stats.completionRate,
-          weekProgress: getHabitWeekProgress(habitObj, habitCompletions),
+          weekProgress: getHabitWeekProgress(habitObj, habitCompletions, refDate),
           todayStatus: todayComp?.status || (todayComp?.completed ? 'completed' : 'pending'),
           todayValue: todayComp?.value ?? null,
           todayNotes: todayComp?.notes ?? null,

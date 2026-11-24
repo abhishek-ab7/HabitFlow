@@ -1,7 +1,23 @@
+import { parseISO } from 'date-fns';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { getMcpAuthContext, hasScope } from './auth';
 import { getSupabaseAdmin } from './supabase-admin';
 import { getIstIsoDate, getIstMonthKey } from './config';
+import {
+  mapCreditCardStatementFromRow,
+  mapDebtInstallmentFromRow,
+  mapDebtRecordFromRow,
+  mapEmiTrackerFromRow,
+  mapFinanceAccountFromRow,
+  mapFinanceBudgetFromRow,
+  mapFinanceCategoryFromRow,
+  mapFinanceRecurringBillFromRow,
+  mapFinanceSipPlanFromRow,
+  mapFinanceTransactionFromRow,
+  mapHabitCompletionFromRow,
+  mapHabitFromRow,
+  mapMonthlyCommitmentFromRow,
+} from './mappers';
 import { calculateHabitStats, getHabitWeekProgress } from '@/lib/calculations';
 import {
   calculateMonthlySummary,
@@ -111,35 +127,15 @@ export function registerMcpResources(server: McpServer) {
       ]);
 
       const allComps = completions || [];
+      const refDate = parseISO(dateIst);
       const enriched = (habits || []).map((h) => {
         const habitComps = allComps
           .filter((c) => c.habit_id === h.id)
-          .map((c) => ({
-            id: c.id,
-            userId: auth.userId,
-            habitId: c.habit_id,
-            date: c.date,
-            completed: c.completed,
-            skipped: c.skipped,
-            status: c.status,
-            restReason: c.rest_reason,
-            value: c.value,
-          }));
+          .map((c) => mapHabitCompletionFromRow(c, auth.userId));
 
-        const habitObj: any = {
-          id: h.id,
-          name: h.name,
-          category: h.category,
-          frequencyType: h.frequency_type,
-          scheduledDays: h.scheduled_days,
-          intervalDays: h.interval_days,
-          targetDays: h.target_days,
-          isQuantitative: h.is_quantitative,
-          targetValue: h.target_value,
-          unit: h.unit,
-        };
+        const habitObj = mapHabitFromRow(h, `${dateIst}T00:00:00.000Z`);
 
-        const stats = calculateHabitStats(habitObj, habitComps);
+        const stats = calculateHabitStats(habitObj, habitComps, refDate);
         return {
           id: h.id,
           name: h.name,
@@ -148,7 +144,7 @@ export function registerMcpResources(server: McpServer) {
           currentStreak: stats.currentStreak,
           longestStreak: stats.bestStreak,
           completionRate: stats.completionRate,
-          weekProgress: getHabitWeekProgress(habitObj, habitComps),
+          weekProgress: getHabitWeekProgress(habitObj, habitComps, refDate),
           targetValue: h.target_value,
           unit: h.unit,
         };
@@ -250,25 +246,36 @@ export function registerMcpResources(server: McpServer) {
         supabase.from('finance_sip_plans').select('*').eq('user_id', auth.userId).is('deleted_at', null),
       ]);
 
+      const mappedAccounts = (accounts || []).map(mapFinanceAccountFromRow);
+      const mappedTxs = (txs || []).map(mapFinanceTransactionFromRow);
+      const mappedCategories = (categories || []).map(mapFinanceCategoryFromRow);
+      const mappedBudgets = (budgets || []).map(mapFinanceBudgetFromRow);
+      const mappedCommitments = (commitments || []).map(mapMonthlyCommitmentFromRow);
+      const mappedEmis = (emis || []).map(mapEmiTrackerFromRow);
+      const mappedDebts = (debts || []).map(mapDebtRecordFromRow);
+      const mappedDebtInsts = (debtInsts || []).map(mapDebtInstallmentFromRow);
+      const mappedBills = (bills || []).map(mapFinanceRecurringBillFromRow);
+      const mappedSips = (sips || []).map(mapFinanceSipPlanFromRow);
+
       const monthly = calculateMonthlySummary({
         monthKey,
-        transactions: (txs as any) || [],
-        categories: (categories as any) || [],
-        budgets: (budgets as any) || [],
-        commitments: (commitments as any) || [],
-        emiTrackers: (emis as any) || [],
-        debtRecords: (debts as any) || [],
-        debtInstallments: (debtInsts as any) || [],
-        recurringBills: (bills as any) || [],
-        sipPlans: (sips as any) || [],
+        transactions: mappedTxs,
+        categories: mappedCategories,
+        budgets: mappedBudgets,
+        commitments: mappedCommitments,
+        emiTrackers: mappedEmis,
+        debtRecords: mappedDebts,
+        debtInstallments: mappedDebtInsts,
+        recurringBills: mappedBills,
+        sipPlans: mappedSips,
         referenceDate,
       });
 
       const netWorth = calculateNetWorthSummary({
-        accounts: (accounts as any) || [],
-        sipPlans: (sips as any) || [],
-        debtRecords: (debts as any) || [],
-        emiTrackers: (emis as any) || [],
+        accounts: mappedAccounts,
+        sipPlans: mappedSips,
+        debtRecords: mappedDebts,
+        emiTrackers: mappedEmis,
       });
 
       const payload = {
@@ -333,9 +340,9 @@ export function registerMcpResources(server: McpServer) {
 
         summaries.push(
           computeCreditCardSummary({
-            account: card as any,
-            transactions: (txs as any) || [],
-            persistedStatements: (statements as any) || [],
+            account: mapFinanceAccountFromRow(card),
+            transactions: (txs || []).map(mapFinanceTransactionFromRow),
+            persistedStatements: (statements || []).map(mapCreditCardStatementFromRow),
             referenceDate,
           })
         );
@@ -369,7 +376,7 @@ export function registerMcpResources(server: McpServer) {
         .eq('user_id', auth.userId)
         .is('deleted_at', null);
 
-      const groups = calculateFriendLedgerGroups((debts as any) || []);
+      const groups = calculateFriendLedgerGroups((debts || []).map(mapDebtRecordFromRow));
 
       const simplified = groups.map((g) => ({
         friendName: g.friendName,

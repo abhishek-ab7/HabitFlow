@@ -3,6 +3,19 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { getMcpAuthContext, hasScope } from '../auth';
 import { getSupabaseAdmin } from '../supabase-admin';
 import { getIstIsoDate, getIstMonthKey } from '../config';
+import {
+  mapCreditCardStatementFromRow,
+  mapDebtInstallmentFromRow,
+  mapDebtRecordFromRow,
+  mapEmiTrackerFromRow,
+  mapFinanceAccountFromRow,
+  mapFinanceBudgetFromRow,
+  mapFinanceCategoryFromRow,
+  mapFinanceRecurringBillFromRow,
+  mapFinanceSipPlanFromRow,
+  mapFinanceTransactionFromRow,
+  mapMonthlyCommitmentFromRow,
+} from '../mappers';
 import { calculateHabitStats } from '@/lib/calculations';
 import { detectSpendingAnomalies } from '@/lib/finance/anomalies';
 import { buildCashFlowForecast } from '@/lib/finance/forecast';
@@ -138,17 +151,27 @@ export function registerBriefingInsightsTools(server: McpServer) {
           supabase.from('finance_sip_plans').select('*').eq('user_id', auth.userId).is('deleted_at', null),
         ]);
 
+        const mappedTxs = (txs || []).map(mapFinanceTransactionFromRow);
+        const mappedCategories = (categories || []).map(mapFinanceCategoryFromRow);
+        const mappedBudgets = (budgets || []).map(mapFinanceBudgetFromRow);
+        const mappedCommitments = (commitments || []).map(mapMonthlyCommitmentFromRow);
+        const mappedEmis = (emis || []).map(mapEmiTrackerFromRow);
+        const mappedDebts = (debts || []).map(mapDebtRecordFromRow);
+        const mappedDebtInsts = (debtInsts || []).map(mapDebtInstallmentFromRow);
+        const mappedBills = (bills || []).map(mapFinanceRecurringBillFromRow);
+        const mappedSips = (sips || []).map(mapFinanceSipPlanFromRow);
+
         const monthlySummary = calculateMonthlySummary({
           monthKey,
-          transactions: (txs as any) || [],
-          categories: (categories as any) || [],
-          budgets: (budgets as any) || [],
-          commitments: (commitments as any) || [],
-          emiTrackers: (emis as any) || [],
-          debtRecords: (debts as any) || [],
-          debtInstallments: (debtInsts as any) || [],
-          recurringBills: (bills as any) || [],
-          sipPlans: (sips as any) || [],
+          transactions: mappedTxs,
+          categories: mappedCategories,
+          budgets: mappedBudgets,
+          commitments: mappedCommitments,
+          emiTrackers: mappedEmis,
+          debtRecords: mappedDebts,
+          debtInstallments: mappedDebtInsts,
+          recurringBills: mappedBills,
+          sipPlans: mappedSips,
           referenceDate: dateIst,
         });
 
@@ -161,13 +184,13 @@ export function registerBriefingInsightsTools(server: McpServer) {
         };
 
         upcomingObligations = calculateUpcomingFinancialObligations({
-          emiTrackers: (emis as any) || [],
-          commitments: (commitments as any) || [],
-          debtRecords: (debts as any) || [],
-          debtInstallments: (debtInsts as any) || [],
-          recurringBills: (bills as any) || [],
-          sipPlans: (sips as any) || [],
-          transactions: (txs as any) || [],
+          emiTrackers: mappedEmis,
+          commitments: mappedCommitments,
+          debtRecords: mappedDebts,
+          debtInstallments: mappedDebtInsts,
+          recurringBills: mappedBills,
+          sipPlans: mappedSips,
+          transactions: mappedTxs,
           currentDate: dateIst,
           withinDays: 7,
         });
@@ -260,25 +283,34 @@ export function registerBriefingInsightsTools(server: McpServer) {
         supabase.from('completions').select('*').eq('user_id', auth.userId).gte('date', `${monthKey}-01`),
       ]);
 
-      const transactions = (txs as any) || [];
+      const mappedAccounts = (accounts as any[])?.map(mapFinanceAccountFromRow) || [];
+      const transactions = (txs as any[])?.map(mapFinanceTransactionFromRow) || [];
+      const mappedCategories = (categories as any[])?.map(mapFinanceCategoryFromRow) || [];
+      const mappedBudgets = (budgets as any[])?.map(mapFinanceBudgetFromRow) || [];
+      const mappedCommitments = (commitments as any[])?.map(mapMonthlyCommitmentFromRow) || [];
+      const mappedEmis = (emis as any[])?.map(mapEmiTrackerFromRow) || [];
+      const mappedBills = (bills as any[])?.map(mapFinanceRecurringBillFromRow) || [];
+      const mappedSips = (sips as any[])?.map(mapFinanceSipPlanFromRow) || [];
+      const mappedCcStatements = (ccStatements as any[])?.map(mapCreditCardStatementFromRow) || [];
+
       const anomalies = detectSpendingAnomalies({
         selectedMonth: monthKey,
         transactions,
-        categories: (categories as any) || [],
-        accounts: (accounts as any) || [],
+        categories: mappedCategories,
+        accounts: mappedAccounts,
         debtRecords: [],
-        recurringBills: (bills as any) || [],
+        recurringBills: mappedBills,
         upcomingObligations7d: [],
       });
       const forecast = buildCashFlowForecast({
-        accounts: (accounts as any) || [],
+        accounts: mappedAccounts,
         transactions,
-        budgets: (budgets as any) || [],
-        recurringBills: (bills as any) || [],
-        emiTrackers: (emis as any) || [],
-        sipPlans: (sips as any) || [],
-        commitments: (commitments as any) || [],
-        creditCardStatements: (ccStatements as any) || [],
+        budgets: mappedBudgets,
+        recurringBills: mappedBills,
+        emiTrackers: mappedEmis,
+        sipPlans: mappedSips,
+        commitments: mappedCommitments,
+        creditCardStatements: mappedCcStatements,
         horizonDays: 30,
         referenceDate,
       });
