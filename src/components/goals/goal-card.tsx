@@ -560,8 +560,8 @@ export function GoalCard({
 
   // Clean Grid View Card
   return (
-    <ScaleOnHover scale={1.01} lift className="h-full">
-      <Card className="relative overflow-hidden transition-all h-full flex flex-col rounded-2xl border border-border/80 bg-card shadow-none hover:border-border hover:shadow-sm">
+    <ScaleOnHover scale={1.01} lift className="h-full min-w-0 w-full">
+      <Card className="relative w-full min-w-0 overflow-hidden transition-all h-full flex flex-col rounded-2xl border border-border/80 bg-card shadow-none hover:border-border hover:shadow-sm">
         <CardHeader className="pb-3 space-y-2">
           {/* Top quiet metadata strip + menu */}
           <div className="flex items-center justify-between gap-2">
@@ -710,14 +710,15 @@ export function GoalCard({
                   e.stopPropagation();
                   handleMilestoneToggle(nextMilestone.id);
                 }}
-                className="flex items-center gap-2.5 px-3 py-2.5 bg-muted/40 border border-border/50 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors"
+                className="flex items-center gap-2.5 min-w-0 px-3 py-2.5 bg-muted/40 border border-border/50 rounded-xl cursor-pointer hover:bg-muted/70 transition-colors"
               >
                 <Checkbox
                   checked={false}
                   onCheckedChange={() => handleMilestoneToggle(nextMilestone.id)}
                   onClick={(e) => e.stopPropagation()}
+                  className="shrink-0"
                 />
-                <span className="text-xs sm:text-sm flex-1 truncate text-foreground">{nextMilestone.title}</span>
+                <span className="text-xs sm:text-sm min-w-0 flex-1 truncate text-foreground">{nextMilestone.title}</span>
                 <span className="text-[11px] text-muted-foreground shrink-0">Next</span>
               </div>
             )}

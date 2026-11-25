@@ -547,10 +547,16 @@ export function HeaderAlertsBell() {
       </button>
 
       {open && (
-        <div
-          data-testid="header-alerts-popover"
-          className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card shadow-xl z-50 overflow-hidden"
-        >
+        <>
+          <div
+            className="fixed inset-0 z-40 sm:hidden"
+            onClick={() => setOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            data-testid="header-alerts-popover"
+            className="fixed inset-x-3 top-16 sm:inset-x-auto sm:top-auto sm:absolute sm:right-0 sm:mt-2 sm:w-96 max-w-[calc(100vw-24px)] rounded-2xl border border-border bg-card shadow-xl z-50 overflow-hidden"
+          >
           <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
             <div>
               <p className="text-xs font-bold text-foreground">
@@ -648,7 +654,8 @@ export function HeaderAlertsBell() {
               </button>
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

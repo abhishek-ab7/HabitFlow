@@ -448,15 +448,15 @@ function GoalsPageContent() {
       ) : (
         <StaggerContainer
           className={cn(
-            "grid",
+            "grid grid-cols-1",
             viewMode === 'grid'
               ? "gap-5 md:grid-cols-2 lg:grid-cols-3"
-              : "grid-cols-1 gap-3 max-w-5xl"
+              : "gap-3 max-w-5xl"
           )}
         >
           <AnimatePresence mode="popLayout">
             {displayGoals.map((goal) => (
-              <StaggerItem key={goal.id} className={cn(viewMode === 'grid' && "h-full")}>
+              <StaggerItem key={goal.id} className={cn("min-w-0", viewMode === 'grid' && "h-full")}>
                 <GoalCard
                   goal={goal}
                   milestones={getGoalMilestones(goal.id)}
