@@ -24,6 +24,8 @@ import { SmsImportModal } from './SmsImportModal';
 import { AskFinancesDrawer } from './AskFinancesDrawer';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
 
 type ActiveTab = 'overview' | 'activity' | 'trackers' | 'accounts';
@@ -41,6 +43,9 @@ function formatMonthDisplay(monthKey: string): string {
 }
 
 export function FinancePageContent() {
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
   const isLoading = useFinanceStore((s) => s.isLoading);
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const setSelectedMonth = useFinanceStore((s) => s.setSelectedMonth);
@@ -182,10 +187,16 @@ export function FinancePageContent() {
               size="sm"
               onClick={() => setIsAskAiOpen(true)}
               className="h-9 px-2.5 sm:px-3 rounded-xl gap-1.5 whitespace-nowrap"
-              title="Ask Life OS across Finance, Fitness & Habits"
+              title={
+                isFitnessEnabled
+                  ? 'Ask Life OS across Finance, Fitness & Habits'
+                  : 'Ask AI about your finances'
+              }
             >
               <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-xs sm:text-sm">Ask Life OS</span>
+              <span className="text-xs sm:text-sm">
+                {isFitnessEnabled ? 'Ask Life OS' : 'Ask Finances'}
+              </span>
             </Button>
 
             <Button

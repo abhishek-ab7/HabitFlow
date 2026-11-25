@@ -15,6 +15,8 @@ import {
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
 import { calculateSupplementStockAndRoi } from '@/lib/fitness/shared-analytics';
 import {
@@ -65,6 +67,8 @@ export function BillCalendarView() {
   const settleCommitmentBalance = useFinanceStore((s) => s.settleCommitmentBalance);
 
   const { user } = useAuth();
+  const settings = useGamificationStore((s) => s.settings);
+  const isFitnessEnabled = isFitnessModuleEnabled(settings);
   const tasks = useTaskStore((s) => s.tasks);
   const loadTasks = useTaskStore((s) => s.loadTasks);
   const toggleTaskComplete = useTaskStore((s) => s.toggleTaskComplete);
@@ -250,32 +254,34 @@ export function BillCalendarView() {
     }
 
     // Supplement Refill Dates (projected runout when daysLeft <= 10)
-    const todayIso = getLocalIsoDate();
-    const roiSummary = calculateSupplementStockAndRoi(
-      supplementInventory,
-      supplementLogs,
-      todayIso
-    );
-    for (const item of roiSummary.items) {
-      if (item.daysRemaining === null || item.daysRemaining > 10) continue;
-      const runoutDateIso = addDays(todayIso, Math.max(0, item.daysRemaining));
-      if (!runoutDateIso.startsWith(selectedMonth)) continue;
-      const dayNum = parseInt(runoutDateIso.slice(8, 10), 10);
-      if (Number.isNaN(dayNum)) continue;
+    if (isFitnessEnabled) {
+      const todayIso = getLocalIsoDate();
+      const roiSummary = calculateSupplementStockAndRoi(
+        supplementInventory,
+        supplementLogs,
+        todayIso
+      );
+      for (const item of roiSummary.items) {
+        if (item.daysRemaining === null || item.daysRemaining > 10) continue;
+        const runoutDateIso = addDays(todayIso, Math.max(0, item.daysRemaining));
+        if (!runoutDateIso.startsWith(selectedMonth)) continue;
+        const dayNum = parseInt(runoutDateIso.slice(8, 10), 10);
+        if (Number.isNaN(dayNum)) continue;
 
-      pushEvent(dayNum, {
-        id: `supplement-refill-${item.supplement.id}`,
-        sourceId: item.supplement.id,
-        day: dayNum,
-        kind: 'supplement_refill',
-        title: `${item.supplement.name} Refill`,
-        subtitle:
-          item.daysRemaining <= 0
-            ? 'Stock depleted · Refill needed'
-            : `Runs out in ${item.daysRemaining}d (~${item.derivedRemainingServings} ${item.supplement.unitLabel}s left)`,
-        amount: Math.max(0, Number(item.supplement.costInr || 0)),
-        isPaid: false,
-      });
+        pushEvent(dayNum, {
+          id: `supplement-refill-${item.supplement.id}`,
+          sourceId: item.supplement.id,
+          day: dayNum,
+          kind: 'supplement_refill',
+          title: `${item.supplement.name} Refill`,
+          subtitle:
+            item.daysRemaining <= 0
+              ? 'Stock depleted · Refill needed'
+              : `Runs out in ${item.daysRemaining}d (~${item.derivedRemainingServings} ${item.supplement.unitLabel}s left)`,
+          amount: Math.max(0, Number(item.supplement.costInr || 0)),
+          isPaid: false,
+        });
+      }
     }
 
     return map;
@@ -288,6 +294,7 @@ export function BillCalendarView() {
     accounts,
     transactions,
     tasks,
+    isFitnessEnabled,
     supplementInventory,
     supplementLogs,
     selectedMonth,

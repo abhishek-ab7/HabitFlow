@@ -13,6 +13,8 @@ import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/mot
 import { TimeRangeTabs } from '@/components/analytics';
 import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore, useFinanceStore, formatINR } from '@/lib/stores';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
 import { CrossDomainActionMediator } from '@/lib/stores/mediator';
 import { computeCrossDomainInsights } from '@/lib/intelligence/cross-domain-insights';
@@ -92,6 +94,9 @@ export default function AnalyticsPageContent() {
     }))
   );
   const { user } = useAuth();
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
   const { moodLogs, loadMoodLogs, getMoodForDate } = useMoodStore(
     useShallow((s) => ({
       moodLogs: s.moodLogs,
@@ -1128,6 +1133,7 @@ export default function AnalyticsPageContent() {
             </FadeIn>
 
             {/* Life OS Correlations: Sleep/Energy vs Junk Spend & Gym/Supplement ROI */}
+            {isFitnessEnabled && (
             <FadeIn delay={0.58}>
               <Card className="surface-card overflow-hidden" data-testid="life-os-correlations-card">
                 <CardHeader className="pb-3 border-b border-border/40">
@@ -1259,6 +1265,7 @@ export default function AnalyticsPageContent() {
                 </CardContent>
               </Card>
             </FadeIn>
+            )}
           </div>
 
           {/* Heatmap - Full Width */}

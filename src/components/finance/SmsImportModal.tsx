@@ -37,6 +37,8 @@ import {
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { toast } from 'sonner';
 
 interface SmsImportModalProps {
@@ -57,6 +59,9 @@ export function SmsImportModal({
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
   const supplementInventory = useFitnessStore((s) => s.supplementInventory);
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
   const fitnessHasLoaded = useFitnessStore((s) => s.hasLoaded);
   const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
 
@@ -485,7 +490,7 @@ export function SmsImportModal({
                   {parsedItems.map((item) => {
                     const cat = categories.find((c) => c.id === item.categoryId);
                     const bridgeKind =
-                      item.type === 'expense'
+                      isFitnessEnabled && item.type === 'expense'
                         ? classifyCategoryBridgeKind(
                             cat ||
                               (item.categorySlug

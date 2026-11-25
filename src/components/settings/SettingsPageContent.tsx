@@ -134,6 +134,8 @@ export default function SettingsPageContent() {
           showTasks: true,
           showGoals: true,
           showMilestones: true,
+          showFinance: true,
+          showFitness: true,
           habitOnlyMode: false,
         };
         await db.userSettings.add(defaultSettings);
@@ -224,7 +226,13 @@ export default function SettingsPageContent() {
     const { updateUserSettings } = useGamificationStore.getState();
     await updateUserSettings({ [key]: newValue });
     setSettings({ ...settings, [key]: newValue });
-    toast.success("Workspace layout updated!");
+    if (key === 'showFitness') {
+      toast.success(newValue ? 'Body & Fitness turned on' : 'Body & Fitness turned off');
+    } else if (key === 'showFinance') {
+      toast.success(newValue ? 'Personal Finance turned on' : 'Personal Finance turned off');
+    } else {
+      toast.success('Workspace layout updated!');
+    }
   };
 
   const handleClearAllData = async () => {
@@ -942,17 +950,22 @@ export default function SettingsPageContent() {
                       Body &amp; Fitness
                     </p>
                     <p className="text-[11px] text-muted-foreground truncate">
-                      Fuel, weight trends, workouts &amp; supplements
+                      Turn on/off /fitness app, meals, workouts, supplements &amp; fitness alerts
                     </p>
                   </div>
                   <Button
+                    type="button"
+                    role="switch"
+                    aria-checked={!settings.habitOnlyMode && settings.showFitness !== false}
+                    aria-label="Toggle Body & Fitness"
+                    data-testid="toggle-fitness-module"
                     variant={settings.showFitness !== false ? 'default' : 'outline'}
                     size="sm"
                     disabled={!!settings.habitOnlyMode}
                     onClick={() => handleToggleSetting('showFitness')}
                     className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
                   >
-                    {settings.showFitness !== false ? 'Enabled' : 'Hidden'}
+                    {settings.showFitness !== false ? 'On' : 'Off'}
                   </Button>
                 </div>
 

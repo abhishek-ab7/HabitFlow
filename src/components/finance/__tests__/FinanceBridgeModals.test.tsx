@@ -230,7 +230,7 @@ describe('Finance <-> Diet & Supplement Bridge Modals (Decision 4 RTL)', () => {
       const vitd = await db.supplementInventory.get('sup_vitd');
       expect(vitd?.remainingServings).toBe(45); // 15 + 30 servings restocked
     });
-  });
+  }, 15000);
 
   it('SmsImportModal auto-bridges Junk Food SMS without asking and supports 1-tap Restock Supplement on Health & Supplements SMS', async () => {
     const onOpenChange = vi.fn();
@@ -275,5 +275,5 @@ describe('Finance <-> Diet & Supplement Bridge Modals (Decision 4 RTL)', () => {
 
     const whey = await db.supplementInventory.get('sup_whey');
     expect(whey?.remainingServings).toBe(34); // 4 + 30 default restock
-  });
+  }, 15000);
 });

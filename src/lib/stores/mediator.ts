@@ -430,15 +430,21 @@ export class CrossDomainActionMediator {
       const isJunkFood = catSlug.includes('junk') || /junk\s*food/.test(catName);
       if (isJunkFood) {
         try {
-          const { useFitnessStore } = await import('./fitness');
-          await useFitnessStore.getState().ensureMealForJunkTransaction({
-            transactionId: event.transaction.id,
-            userId: event.transaction.userId,
-            date: event.transaction.date || event.date,
-            title: event.transaction.title,
-            amountInr: event.transaction.amount,
-            notes: event.transaction.notes,
-          });
+          const { useGamificationStore } = await import('./gamification-store');
+          const { isFitnessModuleEnabled } = await import('../workspace-modules');
+          if (!isFitnessModuleEnabled(useGamificationStore.getState().settings)) {
+            // Fitness module disabled by user — skip automatic Diet logging
+          } else {
+            const { useFitnessStore } = await import('./fitness');
+            await useFitnessStore.getState().ensureMealForJunkTransaction({
+              transactionId: event.transaction.id,
+              userId: event.transaction.userId,
+              date: event.transaction.date || event.date,
+              title: event.transaction.title,
+              amountInr: event.transaction.amount,
+              notes: event.transaction.notes,
+            });
+          }
         } catch {
           // Non-blocking bridge if fitness store unavailable in isolated tests
         }
@@ -519,6 +525,16 @@ export class CrossDomainActionMediator {
     isJunk?: boolean;
   }) {
     const normalizedDate = event.date.slice(0, 10);
+
+    try {
+      const { useGamificationStore } = await import('./gamification-store');
+      const { isFitnessModuleEnabled } = await import('../workspace-modules');
+      if (!isFitnessModuleEnabled(useGamificationStore.getState().settings)) {
+        return;
+      }
+    } catch {
+      // ignore if gamification store unavailable in isolated tests
+    }
 
     if (useHabitStore.getState().habits.length === 0) {
       try {

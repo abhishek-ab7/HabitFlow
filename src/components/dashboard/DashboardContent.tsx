@@ -299,7 +299,7 @@ export default function DashboardContent() {
           loadCompletions(start, end),
           loadGamification(),
           loadFinanceData(),
-          loadFitnessData(user.id),
+          isFitnessEnabled ? loadFitnessData(user.id) : Promise.resolve(),
           loadMoodLogs(start, end),
         ]);
 
@@ -492,12 +492,15 @@ export default function DashboardContent() {
       transactions: financeTransactions,
       categories: financeCategories,
       debtRecords: financeDebtRecords,
-      mealLogs: fitnessMealLogs,
-      workoutSessions: fitnessWorkoutSessions,
-      fitnessDailyLogs,
-      supplementInventory: fitnessSupplements,
-      supplementLogs: fitnessSupplementLogs,
-      habits,
+      // Wait — pass fitness arrays only when isFitnessEnabled so turning off Fitness suppresses fitness alerts cleanly
+      mealLogs: isFitnessEnabled ? fitnessMealLogs : [],
+      workoutSessions: isFitnessEnabled ? fitnessWorkoutSessions : [],
+      fitnessDailyLogs: isFitnessEnabled ? fitnessDailyLogs : [],
+      supplementInventory: isFitnessEnabled ? fitnessSupplements : [],
+      supplementLogs: isFitnessEnabled ? fitnessSupplementLogs : [],
+      habits: isFitnessEnabled
+        ? habits
+        : habits.filter((h) => h.polarity !== 'quit' && h.category !== 'health'),
       habitCompletions: completions,
       moodLogs,
     });

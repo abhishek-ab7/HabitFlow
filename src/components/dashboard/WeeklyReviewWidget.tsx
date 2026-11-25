@@ -25,6 +25,8 @@ import { useTaskStore } from '@/lib/stores/task-store';
 import { useMoodStore } from '@/lib/stores/mood-store';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import {
   calculate7DayRollingWeight,
   calculateWeeklyWaistTrend,
@@ -83,6 +85,9 @@ export function WeeklyReviewWidget() {
   const fitnessWorkoutSessions = useFitnessStore((s) => s.workoutSessions);
   const fitnessSupplements = useFitnessStore((s) => s.supplementInventory);
   const fitnessSupplementLogs = useFitnessStore((s) => s.supplementLogs);
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
 
   const last7Days = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -523,6 +528,7 @@ export function WeeklyReviewWidget() {
                   </div>
 
                   {/* Truth 2: 7-Day Avg Weight Δ + Waist Δ + Workouts + Avg Steps */}
+                  {isFitnessEnabled && (
                   <div
                     data-testid="sunday-truth-2"
                     className="p-4 rounded-xl border border-sky-500/25 bg-sky-500/5 space-y-2"
@@ -562,6 +568,7 @@ export function WeeklyReviewWidget() {
                       </strong>
                     </p>
                   </div>
+                  )}
 
                   {/* Truth 3: Junk Spend & Empty kcal + Top Trigger */}
                   <div
@@ -571,25 +578,31 @@ export function WeeklyReviewWidget() {
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 tracking-wider inline-flex items-center gap-1">
                         <AlertTriangle className="w-3.5 h-3.5" />
-                        3. Junk Spend &amp; Empty kcal + Top Trigger
+                        {isFitnessEnabled
+                          ? '3. Junk Spend & Empty kcal + Top Trigger'
+                          : 'Junk Spend & Pattern Trigger'}
                       </span>
-                      <span className="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400">
-                        {fourTruths.truth3JunkTrigger.fatLossDragKg30d} kg drag
-                      </span>
+                      {isFitnessEnabled && (
+                        <span className="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                          {fourTruths.truth3JunkTrigger.fatLossDragKg30d} kg drag
+                        </span>
+                      )}
                     </div>
                     <div className="text-lg font-bold font-mono text-foreground">
                       {formatINR(fourTruths.truth3JunkTrigger.junkSpend14dInr)}
                       <span className="text-xs font-normal text-muted-foreground ml-1.5">
-                        (14d) · {fourTruths.truth3JunkTrigger.emptyKcal14d.toLocaleString('en-IN')} kcal
+                        (14d){isFitnessEnabled ? ` · ${fourTruths.truth3JunkTrigger.emptyKcal14d.toLocaleString('en-IN')} kcal` : ''}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       30d Total:{' '}
                       <strong className="text-foreground">
                         {formatINR(fourTruths.truth3JunkTrigger.junkSpend30dInr)}
-                      </strong>{' '}
-                      ({fourTruths.truth3JunkTrigger.emptyKcal30d.toLocaleString('en-IN')} kcal) · Top
-                      Trigger:{' '}
+                      </strong>
+                      {isFitnessEnabled
+                        ? ` (${fourTruths.truth3JunkTrigger.emptyKcal30d.toLocaleString('en-IN')} kcal)`
+                        : ''}{' '}
+                      · Top Trigger:{' '}
                       <strong className="text-foreground">
                         {fourTruths.truth3JunkTrigger.topTriggerLabel || 'None detected'}
                         {fourTruths.truth3JunkTrigger.triggerMultiplier

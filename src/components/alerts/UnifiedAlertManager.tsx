@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { calculateSupplementStockAndRoi } from '@/lib/fitness/shared-analytics';
 import { calculateCommitmentLedger } from '@/lib/finance/shared-analytics';
 import {
@@ -371,6 +373,8 @@ export const useUnifiedAlertStore = create<UnifiedAlertStoreState>((set) => ({
 export function UnifiedAlertManager() {
   const setAlerts = useUnifiedAlertStore((s) => s.setAlerts);
   const syncPermissionState = useUnifiedAlertStore((s) => s.syncPermissionState);
+  const settings = useGamificationStore((s) => s.settings);
+  const fitnessEnabled = isFitnessModuleEnabled(settings);
   const scanningRef = useRef(false);
 
   useEffect(() => {
@@ -433,8 +437,8 @@ export function UnifiedAlertManager() {
           recurringBills: filterByUser(recurringBills),
           transactions: filterByUser(transactions),
           tasks: filterByUser(tasks),
-          supplementInventory: filterByUser(supplementInventory),
-          supplementLogs: filterByUser(supplementLogs),
+          supplementInventory: fitnessEnabled ? filterByUser(supplementInventory) : [],
+          supplementLogs: fitnessEnabled ? filterByUser(supplementLogs) : [],
         });
 
         setAlerts(alerts);
@@ -474,7 +478,7 @@ export function UnifiedAlertManager() {
       active = false;
       window.removeEventListener('habitflow-sync-complete', handleRefresh);
     };
-  }, [setAlerts]);
+  }, [setAlerts, fitnessEnabled]);
 
   return null;
 }

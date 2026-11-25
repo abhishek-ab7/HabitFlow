@@ -25,6 +25,8 @@ import { toast } from 'sonner';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { useFinanceStore } from '@/lib/stores/finance-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import {
@@ -94,6 +96,9 @@ export function QuickCaptureModal() {
 
   const mealTemplates = useFitnessStore((s) => s.mealTemplates);
   const supplements = useFitnessStore((s) => s.supplementInventory);
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
   const fitnessLoaded = useFitnessStore((s) => s.hasLoaded);
   const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
   const logFromTemplate = useFitnessStore((s) => s.logFromTemplate);
@@ -219,10 +224,10 @@ export function QuickCaptureModal() {
         slug: c.slug,
         type: c.type,
       })),
-      mealTemplates,
-      supplements,
+      mealTemplates: isFitnessEnabled ? mealTemplates : [],
+      supplements: isFitnessEnabled ? supplements : [],
     }),
-    [accounts, categories, mealTemplates, supplements]
+    [accounts, categories, isFitnessEnabled, mealTemplates, supplements]
   );
 
   // Instant deterministic parse while typing (overridden only when AI enhance just produced actions for this exact text)
@@ -234,8 +239,17 @@ export function QuickCaptureModal() {
     }
     if (aiEnhancedInput === inputText) return;
     const parsed = parseUniversalCapture(inputText, parserContext);
-    setActions(parsed.actions);
-  }, [inputText, parserContext, aiEnhancedInput]);
+    const filtered = isFitnessEnabled
+      ? parsed.actions
+      : parsed.actions.filter(
+          (a) =>
+            a.kind !== 'meal' &&
+            a.kind !== 'workout' &&
+            a.kind !== 'bio' &&
+            a.kind !== 'supplement'
+        );
+    setActions(filtered);
+  }, [inputText, parserContext, aiEnhancedInput, isFitnessEnabled]);
 
   const toggleVoiceInput = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -315,7 +329,16 @@ export function QuickCaptureModal() {
       }
       const data = await res.json();
       if (Array.isArray(data?.actions) && data.actions.length > 0) {
-        setActions(data.actions);
+        const nextActions = isFitnessEnabled
+          ? data.actions
+          : data.actions.filter(
+              (a: UniversalCaptureAction) =>
+                a.kind !== 'meal' &&
+                a.kind !== 'workout' &&
+                a.kind !== 'bio' &&
+                a.kind !== 'supplement'
+            );
+        setActions(nextActions);
         setAiEnhancedInput(inputText);
         toast.success(data.source === 'gemini' ? 'Parsed with Gemini' : 'Parsed locally');
       }
@@ -605,7 +628,7 @@ export function QuickCaptureModal() {
           {!inputText.trim() && (
             <div className="space-y-2.5">
               <div className="flex flex-wrap gap-1.5">
-                {EXAMPLE_PROMPTS.map((sample) => (
+                {(isFitnessEnabled ? EXAMPLE_PROMPTS : [EXAMPLE_PROMPTS[0]]).map((sample) => (
                   <button
                     key={sample}
                     type="button"
@@ -618,6 +641,7 @@ export function QuickCaptureModal() {
               </div>
 
               {/* 1-Tap Water, Steps & Pinned Staples */}
+              {isFitnessEnabled && (
               <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -667,6 +691,7 @@ export function QuickCaptureModal() {
                   </div>
                 )}
               </div>
+              )}
             </div>
           )}
 

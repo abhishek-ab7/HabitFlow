@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils';
 import type { Goal, GoalFormData, AreaOfLife, Priority, FinancialGoalLink, FinancialGoalLinkType, FitnessGoalLink, FitnessGoalLinkType } from '@/lib/types';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { GOAL_TEMPLATES } from '@/lib/goal-templates';
 
 interface GoalFormModalProps {
@@ -54,6 +56,9 @@ export function GoalFormModal({
 }: GoalFormModalProps) {
   const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary } = useFinanceStore();
   const netWorthSummary = getNetWorthSummary();
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
   const fitnessProfile = useFitnessStore((s) => s.profile);
   const fitnessDailyLogs = useFitnessStore((s) => s.dailyLogs);
 
@@ -691,6 +696,7 @@ export function GoalFormModal({
               </div>
 
               {/* Fitness Link Section */}
+              {isFitnessEnabled && (
               <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -805,6 +811,7 @@ export function GoalFormModal({
                   </div>
                 )}
               </div>
+              )}
 
               {/* Milestones */}
               <div>

@@ -24,7 +24,10 @@ import {
 import { toast } from 'sonner';
 import { addDays, getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
+import Link from 'next/link';
 import { FuelTab } from './FuelTab';
 import { BodyTrendCharts } from './BodyTrendCharts';
 import { GymWorkoutTab } from './GymWorkoutTab';
@@ -69,6 +72,10 @@ function computeSuggestedTargets(
 export function FitnessPageContent() {
   const { user } = useAuth();
   const userId = user?.id || 'local-demo-user';
+
+  const settings = useGamificationStore((s) => s.settings);
+  const updateUserSettings = useGamificationStore((s) => s.updateUserSettings);
+  const isFitnessEnabled = isFitnessModuleEnabled(settings);
 
   const profile = useFitnessStore((s) => s.profile);
   const dailyLogs = useFitnessStore((s) => s.dailyLogs);
@@ -148,6 +155,44 @@ export function FitnessPageContent() {
     { id: 'supplements', label: 'Supplements', icon: Pill },
     { id: 'routines', label: 'Routines & Quit', icon: Shield },
   ];
+
+  if (!isFitnessEnabled) {
+    return (
+      <div
+        data-testid="fitness-module-disabled"
+        className="max-w-xl mx-auto px-4 py-14 text-center space-y-4"
+      >
+        <div className="mx-auto w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-muted-foreground">
+          <Dumbbell className="h-6 w-6" />
+        </div>
+        <h1 className="text-xl font-bold text-foreground">
+          Body &amp; Fitness Module is Turned Off
+        </h1>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {settings?.habitOnlyMode
+            ? 'Habit-Only Mode is currently active in Settings, so Body, Diet, Workouts, and Supplements are hidden.'
+            : 'You turned off the Body & Fitness app in Settings. Your saved meals, weight trends, workouts, and supplements remain safely preserved.'}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+          <Button
+            type="button"
+            onClick={async () => {
+              await updateUserSettings({
+                showFitness: true,
+                ...(settings?.habitOnlyMode ? { habitOnlyMode: false } : {}),
+              });
+              toast.success('Body & Fitness turned on');
+            }}
+          >
+            Turn On Body &amp; Fitness
+          </Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/settings">Open Settings</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-28 space-y-5">

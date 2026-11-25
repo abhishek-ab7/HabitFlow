@@ -11,6 +11,8 @@ import { useFinanceStore } from '@/lib/stores/finance-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useMoodStore } from '@/lib/stores/mood-store';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { buildFinanceQAContext } from '@/lib/finance/anomalies';
 import { getIstIsoDate } from '@/lib/mcp/config';
 import { Sparkles, X, Send, Loader2, Bot, User } from 'lucide-react';
@@ -65,6 +67,9 @@ export function AskFinancesDrawer({
   const habits = useHabitStore((s) => s.habits);
   const habitCompletions = useHabitStore((s) => s.completions);
   const moodLogs = useMoodStore((s) => s.moodLogs);
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -92,6 +97,7 @@ export function AskFinancesDrawer({
     const start35d = d.toISOString().slice(0, 10);
 
     if (
+      isFitnessEnabled &&
       fitState &&
       typeof fitState.loadFitnessData === 'function' &&
       (!fitState.hasLoaded || (userId && fitState.currentUserId !== userId))
@@ -145,18 +151,20 @@ export function AskFinancesDrawer({
         sipPlans,
         debtRecords,
         anomalies,
-        fitness: {
-          todayDate: getIstIsoDate(),
-          fitnessProfile,
-          fitnessDailyLogs,
-          mealLogs: fitnessMealLogs,
-          workoutSessions: fitnessWorkoutSessions,
-          supplementInventory: fitnessSupplements,
-          supplementLogs: fitnessSupplementLogs,
-          habits,
-          habitCompletions,
-          moodLogs,
-        },
+        fitness: isFitnessEnabled
+          ? {
+              todayDate: getIstIsoDate(),
+              fitnessProfile,
+              fitnessDailyLogs,
+              mealLogs: fitnessMealLogs,
+              workoutSessions: fitnessWorkoutSessions,
+              supplementInventory: fitnessSupplements,
+              supplementLogs: fitnessSupplementLogs,
+              habits,
+              habitCompletions,
+              moodLogs,
+            }
+          : undefined,
       });
 
       const res = await fetch('/api/ai/finance-qa', {
@@ -268,7 +276,10 @@ export function AskFinancesDrawer({
                   Suggested Questions
                 </p>
                 <div className="grid grid-cols-1 gap-2">
-                  {STARTER_PROMPTS.map((prompt) => (
+                  {(isFitnessEnabled
+                    ? STARTER_PROMPTS
+                    : STARTER_PROMPTS.slice(3)
+                  ).map((prompt) => (
                     <button
                       key={prompt}
                       type="button"

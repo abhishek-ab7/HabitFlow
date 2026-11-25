@@ -49,6 +49,8 @@ import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
 import { SmsImportModal } from './SmsImportModal';
 import { toast } from 'sonner';
+import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
+import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
 
 interface AddTransactionModalProps {
@@ -653,11 +655,17 @@ export function AddTransactionModal({
     setTags((prev) => prev.filter((t) => t !== tag));
   };
 
+  const isFitnessEnabled = isFitnessModuleEnabled(
+    useGamificationStore((s) => s.settings)
+  );
   const selectedCategory =
     activeCategories.find((c) => c.id === categoryId) || activeCategories[0];
   const numericAmount = parseFloat(amountStr) || 0;
   const bridgeKind =
-    !editingTransaction && type === 'expense' && !isCategorySplitEnabled
+    isFitnessEnabled &&
+    !editingTransaction &&
+    type === 'expense' &&
+    !isCategorySplitEnabled
       ? classifyCategoryBridgeKind(selectedCategory)
       : 'none';
   const dietPreview = useMemo(

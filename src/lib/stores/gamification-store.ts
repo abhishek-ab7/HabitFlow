@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
 import type { UserSettings } from '../types';
+export { isFitnessModuleEnabled } from '../workspace-modules';
 
 interface GamificationState {
   streakShield: number;
