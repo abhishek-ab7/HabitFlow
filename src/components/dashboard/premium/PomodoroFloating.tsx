@@ -22,6 +22,7 @@ import {
 import { usePomodoroStore, type PomodoroMode } from '@/lib/stores/pomodoro-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -158,6 +159,7 @@ export function PomodoroFloating() {
 
   const pathname = usePathname() ?? '';
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState(25);
 
@@ -571,13 +573,13 @@ export function PomodoroFloating() {
               <motion.button
                 type="button"
                 data-testid="quick-expense-lightning-pill"
-                onClick={() => window.dispatchEvent(new Event('open-quick-capture'))}
+                onClick={() => setShowExpenseModal(true)}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.94 }}
-                aria-label="Quick expense capture"
-                className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-amber-500/35 shadow-lg bg-card/95 backdrop-blur-xl text-amber-500 transition-colors hover:border-amber-500/60 hover:bg-amber-500/10"
+                aria-label="Add expense entry"
+                className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-primary/35 shadow-lg bg-card/95 backdrop-blur-xl text-primary transition-colors hover:border-primary/60 hover:bg-primary/10"
               >
-                <Zap className="h-4 w-4 fill-amber-500/20" />
+                <Zap className="h-4 w-4 fill-primary/20" />
               </motion.button>
               <motion.button
                 type="button"
@@ -619,6 +621,10 @@ export function PomodoroFloating() {
           )}
         </AnimatePresence>
       </div>
+      <AddTransactionModal
+        open={showExpenseModal}
+        onOpenChange={setShowExpenseModal}
+      />
     </>
   );
 }
