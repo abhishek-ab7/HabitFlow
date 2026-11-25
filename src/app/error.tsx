@@ -6,6 +6,20 @@ import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
+const CHUNK_RELOAD_KEY = 'habitflow_chunk_reload_at';
+const CHUNK_RELOAD_COOLDOWN_MS = 15_000;
+
+function isStaleChunkError(error: Error): boolean {
+  const message = `${error.name || ''} ${error.message || ''}`;
+  return (
+    error.name === 'ChunkLoadError' ||
+    /ChunkLoadError/i.test(message) ||
+    /Loading chunk [\w-]+ failed/i.test(message) ||
+    /Failed to fetch dynamically imported module/i.test(message) ||
+    /Importing a module script failed/i.test(message)
+  );
+}
+
 export default function Error({
   error,
   reset,
@@ -13,10 +27,33 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const isChunkError = isStaleChunkError(error);
+
   useEffect(() => {
     // Log the error to an error reporting service
     console.error(error);
-  }, [error]);
+
+    // Auto-recover once on stale deployment chunk errors by forcing a fresh reload
+    if (isChunkError && typeof window !== 'undefined') {
+      try {
+        const lastReload = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || '0');
+        if (Date.now() - lastReload > CHUNK_RELOAD_COOLDOWN_MS) {
+          sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+          window.location.reload();
+        }
+      } catch {
+        // Ignore sessionStorage failures in private browsing modes
+      }
+    }
+  }, [error, isChunkError]);
+
+  const handleRetry = () => {
+    if (isChunkError && typeof window !== 'undefined') {
+      window.location.reload();
+      return;
+    }
+    reset();
+  };
 
   return (
     <div className="container flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-4">
@@ -41,9 +78,9 @@ export default function Error({
         </p>
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Button onClick={reset} size="lg" className="gap-2">
+          <Button onClick={handleRetry} size="lg" className="gap-2">
             <RefreshCw className="h-4 w-4" />
-            Try Again
+            {isChunkError ? 'Reload App' : 'Try Again'}
           </Button>
           <Button asChild variant="outline" size="lg" className="gap-2">
             <Link href="/">

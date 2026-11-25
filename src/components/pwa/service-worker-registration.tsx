@@ -8,15 +8,20 @@ export function ServiceWorkerRegistration() {
       return;
     }
 
+    let updateIntervalId: number | undefined;
+
     const registerSW = () => {
       navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
+        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
         .then((registration) => {
           console.log('Service Worker registered with scope:', registration.scope);
 
+          // Proactively check for an updated SW immediately on page load
+          registration.update().catch(() => {});
+
           // Check for updates periodically
-          setInterval(() => {
-            registration.update();
+          updateIntervalId = window.setInterval(() => {
+            registration.update().catch(() => {});
           }, 60 * 60 * 1000); // Check every hour
         })
         .catch((error) => {
@@ -26,9 +31,15 @@ export function ServiceWorkerRegistration() {
 
     if (document.readyState === 'complete') {
       registerSW();
+      return () => {
+        if (updateIntervalId !== undefined) window.clearInterval(updateIntervalId);
+      };
     } else {
       window.addEventListener('load', registerSW);
-      return () => window.removeEventListener('load', registerSW);
+      return () => {
+        window.removeEventListener('load', registerSW);
+        if (updateIntervalId !== undefined) window.clearInterval(updateIntervalId);
+      };
     }
   }, []);
 
