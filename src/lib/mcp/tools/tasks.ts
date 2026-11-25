@@ -109,6 +109,7 @@ export function registerTasksTools(server: McpServer) {
         estimatedTime: t.estimated_time,
         actualTime: t.actual_time,
         recurrenceRule: t.recurrence_rule,
+        metadata: t.metadata || {},
         createdAt: t.created_at,
         updatedAt: t.updated_at,
       }));
@@ -143,7 +144,10 @@ export function registerTasksTools(server: McpServer) {
         actualTime: z.number().int().min(0).optional().describe('Actual duration in minutes'),
         isUrgent: z.boolean().optional().describe('Eisenhower Matrix urgent flag'),
         isImportant: z.boolean().optional().describe('Eisenhower Matrix important flag'),
-        metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata payload'),
+        metadata: z
+          .record(z.string(), z.any())
+          .optional()
+          .describe('Custom metadata payload (supports MIT pinning: { isMitForDate: "YYYY-MM-DD", mitRank: 1|2|3 })'),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
       annotations: {

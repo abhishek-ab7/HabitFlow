@@ -170,10 +170,17 @@ export const ALL_WORKSPACE_TABLES = [
   'financeRecurringBills',
   'financeNetWorthSnapshots',
   'creditCardStatements',
+  'fitnessProfiles',
+  'fitnessDailyLogs',
+  'mealTemplates',
+  'mealLogs',
+  'workoutSessions',
+  'supplementInventory',
+  'supplementLogs',
 ] as const;
 
 /**
- * Creates a full JSON snapshot of all 20 Dexie IndexedDB tables.
+ * Creates a full JSON snapshot of all workspace Dexie IndexedDB tables.
  */
 export async function generateFullDatabaseSnapshot(): Promise<Record<string, any[]>> {
   const snapshot: Record<string, any[]> = {};

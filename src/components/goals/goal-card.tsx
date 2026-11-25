@@ -20,6 +20,10 @@ import {
   PiggyBank,
   ArrowDownRight,
   TrendingUp,
+  Dumbbell,
+  Scale,
+  Ruler,
+  Footprints,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +42,9 @@ import { cn } from '@/lib/utils';
 import { getDeadlineStatus, calculateHabitStats } from '@/lib/calculations';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import { calculateFitnessGoalProgress } from '@/lib/fitness/shared-analytics';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { GoalRoadmapView } from './GoalRoadmapView';
 import { SMARTGoalAnalysis } from './SMARTGoalAnalysis';
 import type { Goal, Milestone, GoalStats, Priority, AreaOfLife } from '@/lib/types';
@@ -88,6 +95,28 @@ export function GoalCard({
 
   const { habits, completions } = useHabitStore();
   const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary, getMonthlySummary } = useFinanceStore();
+  const fitnessProfile = useFitnessStore((s) => s.profile);
+  const fitnessDailyLogs = useFitnessStore((s) => s.dailyLogs);
+  const fitnessWorkoutSessions = useFitnessStore((s) => s.workoutSessions);
+
+  const fitnessProgress = useMemo(() => {
+    if (!goal.fitnessLink || !goal.fitnessLink.targetValue) return null;
+    const summary = calculateFitnessGoalProgress(goal.fitnessLink, {
+      profile: fitnessProfile,
+      dailyLogs: fitnessDailyLogs,
+      workoutSessions: fitnessWorkoutSessions,
+      referenceDate: getLocalIsoDate(),
+    });
+    const Icon =
+      goal.fitnessLink.type === 'target_weight'
+        ? Scale
+        : goal.fitnessLink.type === 'target_waist'
+          ? Ruler
+          : goal.fitnessLink.type === 'daily_steps_avg'
+            ? Footprints
+            : Dumbbell;
+    return { ...summary, Icon };
+  }, [goal.fitnessLink, fitnessProfile, fitnessDailyLogs, fitnessWorkoutSessions]);
 
   const financialProgress = useMemo(() => {
     if (!goal.financialLink || !goal.financialLink.targetAmount) return null;
@@ -453,6 +482,23 @@ export function GoalCard({
               </div>
             )}
 
+            {/* Fitness telemetry sync compact bar if linked */}
+            {fitnessProgress && (
+              <div
+                data-testid="goal-fitness-progress-bar"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-500/5 border border-emerald-500/20 px-3 py-2 text-xs"
+              >
+                <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-300">
+                  <fitnessProgress.Icon className="h-3.5 w-3.5 text-emerald-500" />
+                  {fitnessProgress.label}
+                </span>
+                <span className="font-mono tabular-nums text-foreground font-semibold">
+                  {fitnessProgress.currentValue} / {fitnessProgress.targetValue} {fitnessProgress.unit}{' '}
+                  <span className="text-emerald-600 dark:text-emerald-400">({fitnessProgress.progressPct}%)</span>
+                </span>
+              </div>
+            )}
+
             {/* Collapsible milestones in list mode */}
             <AnimatePresence>
               {expanded && (
@@ -587,6 +633,46 @@ export function GoalCard({
                     {financialProgress.projectionText}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Live Fitness Link Section */}
+            {fitnessProgress && (
+              <div
+                data-testid="goal-fitness-progress-card"
+                className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 space-y-2"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300">
+                    <fitnessProgress.Icon className="h-3.5 w-3.5 text-emerald-500" />
+                    {fitnessProgress.label}
+                  </span>
+                  <span className="font-mono text-xs font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {fitnessProgress.progressPct}%
+                  </span>
+                </div>
+
+                <div className="flex items-baseline gap-1 font-mono tabular-nums">
+                  <span className="text-base font-bold text-foreground">
+                    {fitnessProgress.currentValue}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    / {fitnessProgress.targetValue} {fitnessProgress.unit}
+                  </span>
+                </div>
+
+                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-emerald-500 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${fitnessProgress.progressPct}%` }}
+                    transition={{ duration: 0.5, ease: 'easeOut' }}
+                  />
+                </div>
+
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {fitnessProgress.remainingLabel}
+                </p>
               </div>
             )}
 

@@ -21,7 +21,13 @@ import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { useUserStore } from '@/lib/stores/user-store';
 import { useFinanceStore } from '@/lib/stores/finance-store';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import { useMoodStore } from '@/lib/stores/mood-store';
 import { getTimeGreeting } from '@/lib/design-tokens';
+import { addDays, normalizeIsoDate } from '@/lib/finance/credit-card-cycles';
+import { getIstIsoDate } from '@/lib/mcp/config';
+import { calculate7DayRollingWeight } from '@/lib/fitness/shared-analytics';
+import { computeCrossDomainInsights } from '@/lib/intelligence/cross-domain-insights';
 import { cn } from '@/lib/utils';
 
 interface AICoachResponse {
@@ -68,10 +74,21 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
   const [error, setError] = useState<string | null>(null);
 
   const habits = useHabitStore((s) => s.habits);
+  const habitCompletions = useHabitStore((s) => s.completions);
   const tasks = useTaskStore((s) => s.tasks);
   const settings = useGamificationStore((s) => s.settings);
   const financeTransactions = useFinanceStore((s) => s.transactions);
+  const financeCategories = useFinanceStore((s) => s.categories);
+  const financeDebtRecords = useFinanceStore((s) => s.debtRecords);
   const getSpendingAnomalies = useFinanceStore((s) => s.getSpendingAnomalies);
+
+  const fitnessProfile = useFitnessStore((s) => s.profile);
+  const fitnessDailyLogs = useFitnessStore((s) => s.dailyLogs);
+  const fitnessMealLogs = useFitnessStore((s) => s.mealLogs);
+  const fitnessWorkoutSessions = useFitnessStore((s) => s.workoutSessions);
+  const fitnessSupplements = useFitnessStore((s) => s.supplementInventory);
+  const fitnessSupplementLogs = useFitnessStore((s) => s.supplementLogs);
+  const moodLogs = useMoodStore((s) => s.moodLogs);
 
   const {
     displayName,
@@ -102,7 +119,7 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
 
   useEffect(() => {
     if (user && !isLoadingUser && email && !data && !loading) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getIstIsoDate();
       const cacheKey = `ai_coach_advice_${user.id}`;
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
@@ -137,7 +154,7 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
   const fetchAdvice = async (force = false) => {
     if (!user || isLoadingUser) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getIstIsoDate();
     const cacheKey = `ai_coach_advice_${user.id}`;
 
     if (!force) {
@@ -182,15 +199,92 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
         }
       }
 
+      const window14Start = addDays(today, -13);
+      const logs14d = fitnessDailyLogs.filter(
+        (l) => !l.deletedAt && normalizeIsoDate(l.date) >= window14Start && normalizeIsoDate(l.date) <= today
+      );
+      const meals14d = fitnessMealLogs.filter(
+        (m) => !m.deletedAt && normalizeIsoDate(m.date) >= window14Start && normalizeIsoDate(m.date) <= today
+      );
+      const workouts14d = fitnessWorkoutSessions.filter(
+        (w) => !w.deletedAt && normalizeIsoDate(w.date) >= window14Start && normalizeIsoDate(w.date) <= today
+      );
+
+      const sleepLogs = logs14d.filter((l) => typeof l.sleepHours === 'number' && l.sleepHours > 0);
+      const avgSleepHours14d =
+        sleepLogs.length > 0
+          ? Math.round((sleepLogs.reduce((s, l) => s + Number(l.sleepHours || 0), 0) / sleepLogs.length) * 10) / 10
+          : null;
+      const energyLogs = logs14d.filter((l) => typeof l.energyLevel === 'number' && l.energyLevel > 0);
+      const avgEnergy14d =
+        energyLogs.length > 0
+          ? Math.round((energyLogs.reduce((s, l) => s + Number(l.energyLevel || 0), 0) / energyLogs.length) * 10) / 10
+          : null;
+      const stepLogs = logs14d.filter((l) => l.steps > 0);
+      const avgSteps14d =
+        stepLogs.length > 0
+          ? Math.round(stepLogs.reduce((s, l) => s + l.steps, 0) / stepLogs.length)
+          : null;
+
+      const mealDaysCount = new Set(meals14d.map((m) => normalizeIsoDate(m.date))).size;
+      const avgProtein14dG =
+        mealDaysCount > 0
+          ? Math.round(meals14d.reduce((s, m) => s + Number(m.proteinG || 0), 0) / mealDaysCount)
+          : null;
+
+      const weightSummary = calculate7DayRollingWeight(fitnessDailyLogs);
+      const crossDomain = computeCrossDomainInsights({
+        todayDate: today,
+        transactions: financeTransactions,
+        categories: financeCategories,
+        debtRecords: financeDebtRecords,
+        mealLogs: fitnessMealLogs,
+        workoutSessions: fitnessWorkoutSessions,
+        fitnessDailyLogs,
+        supplementInventory: fitnessSupplements,
+        supplementLogs: fitnessSupplementLogs,
+        habits,
+        habitCompletions,
+        moodLogs,
+      });
+
       const res = await fetch('/api/ai/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userData: { userName },
           context: {
+            todayIso: today,
             todaysHabits: todaysHabits.map((h) => h.name),
             unfinishedTasks: unfinishedTasks.map((t) => t.title),
             mode: 'briefing',
+            fitnessTelemetry: {
+              avgSleepHours14d,
+              avgEnergy14d,
+              workouts14dCount: workouts14d.length,
+              avgSteps14d,
+              rollingWeightKg: weightSummary.latestRollingAvgKg,
+              rollingWeightDeltaKg: weightSummary.weeklyDeltaKg,
+              avgProtein14dG,
+              proteinTargetG: fitnessProfile?.proteinTargetG ?? null,
+              calorieTarget: fitnessProfile?.calorieTarget ?? null,
+              junkSpend14dInr: crossDomain.walletWaistline.spend14dInr,
+              junkEmptyKcal14d: crossDomain.walletWaistline.emptyKcal14d,
+              fatLossDragKg14d: crossDomain.walletWaistline.fatLossDragKg14d,
+            },
+            crossDomainInsights: {
+              alerts: crossDomain.alerts.slice(0, 4).map((a) => ({
+                title: a.title,
+                description: a.description,
+                metricBadge: a.metricBadge,
+              })),
+              gymCostPerWorkoutInr: crossDomain.gymSupplementRoi.gymCostPerWorkoutInr,
+              primaryProteinCostPer25gInr: crossDomain.gymSupplementRoi.primaryCostPer25gProteinInr,
+              triggerMultiplier: crossDomain.triggers.overallSpendMultiplier,
+              topTriggerLabel: crossDomain.triggers.topTriggerLabel,
+              socialFoodSpend30dInr: crossDomain.socialSpendDiet.socialFoodSpend30dInr,
+              savings70PctMonthlyInr: crossDomain.walletWaistline.savings70PctMonthlyInr,
+            },
           },
           forceRefresh: force,
         }),
@@ -262,7 +356,7 @@ export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
               className="h-8 px-2.5 text-xs gap-1 rounded-xl"
             >
               <MessageSquare className="w-3.5 h-3.5 text-primary" />
-              Ask Finances
+              Ask Life OS
             </Button>
           )}
           <Button

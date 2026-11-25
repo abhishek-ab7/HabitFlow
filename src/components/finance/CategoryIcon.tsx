@@ -29,6 +29,7 @@ import {
   Home,
   BookOpen,
   Dumbbell,
+  Flame,
 } from 'lucide-react';
 
 interface CategoryIconProps {
@@ -91,6 +92,8 @@ export function CategoryIcon({ name, className = 'w-4 h-4', style }: CategoryIco
       return <BookOpen className={className} style={style} />;
     case 'Dumbbell':
       return <Dumbbell className={className} style={style} />;
+    case 'Flame':
+      return <Flame className={className} style={style} />;
     default:
       return <Wallet className={className} style={style} />;
   }

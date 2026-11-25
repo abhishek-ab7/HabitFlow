@@ -39,6 +39,12 @@ async function persistAndSyncUserSettings(
       stats: currentSettings?.stats,
       unlockedThemes: currentSettings?.unlockedThemes,
       motivation_text: (currentSettings as any)?.motivation_text ?? '',
+      showFitness: currentSettings?.showFitness ?? true,
+      showFinance: currentSettings?.showFinance ?? true,
+      showTasks: currentSettings?.showTasks ?? true,
+      showGoals: currentSettings?.showGoals ?? true,
+      showMilestones: currentSettings?.showMilestones ?? true,
+      habitOnlyMode: currentSettings?.habitOnlyMode ?? false,
       ...updates,
     });
   } catch (error) {

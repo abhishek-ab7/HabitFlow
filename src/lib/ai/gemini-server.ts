@@ -11,6 +11,7 @@ const ENV_KEY_CANDIDATES = [
   'GEMINI_KEY_DASHBOARD_3',
   'GEMINI_KEY_HABITS_1',
   'GEMINI_KEY_HABITS_2',
+  'GEMINI_API_KEY',
 ] as const;
 
 export function resolveGeminiApiKeys(): string[] {

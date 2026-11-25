@@ -8,9 +8,22 @@ import type {
   FinanceSipPlan,
   FinanceTransaction,
   FinancialObligationItem,
+  FitnessDailyLog,
+  FitnessProfile,
+  Habit,
+  HabitCompletion,
+  MealLog,
+  MoodLog,
   MonthlyFinanceSummary,
   NetWorthSummary,
+  SupplementInventory,
+  SupplementLog,
+  WorkoutSession,
 } from '@/lib/types';
+import { addDays, normalizeIsoDate } from '@/lib/finance/credit-card-cycles';
+import { calculate7DayRollingWeight } from '@/lib/fitness/shared-analytics';
+import { computeCrossDomainInsights } from '@/lib/intelligence/cross-domain-insights';
+import { getIstIsoDate } from '@/lib/mcp/config';
 
 function shiftMonthKey(monthKey: string, delta: number): string {
   const [yStr, mStr] = monthKey.split('-');
@@ -228,6 +241,19 @@ export function detectSpendingAnomalies(
  * Builds a privacy-safe aggregated snapshot of local Dexie finance state
  * for the server-side "Ask My Finances" AI Q&A route.
  */
+export interface LifeOsQAContextInput {
+  todayDate?: string;
+  fitnessProfile?: FitnessProfile | null;
+  fitnessDailyLogs?: FitnessDailyLog[];
+  mealLogs?: MealLog[];
+  workoutSessions?: WorkoutSession[];
+  supplementInventory?: SupplementInventory[];
+  supplementLogs?: SupplementLog[];
+  habits?: Habit[];
+  habitCompletions?: HabitCompletion[];
+  moodLogs?: MoodLog[];
+}
+
 export function buildFinanceQAContext(params: {
   selectedMonth: string;
   summary: MonthlyFinanceSummary;
@@ -240,6 +266,7 @@ export function buildFinanceQAContext(params: {
   sipPlans: FinanceSipPlan[];
   debtRecords: DebtRecord[];
   anomalies: FinanceAnomalyAlert[];
+  fitness?: LifeOsQAContextInput;
 }) {
   const {
     selectedMonth,
@@ -253,7 +280,52 @@ export function buildFinanceQAContext(params: {
     sipPlans,
     debtRecords,
     anomalies,
+    fitness,
   } = params;
+
+  const todayIso = normalizeIsoDate(fitness?.todayDate || getIstIsoDate()) || getIstIsoDate();
+  const window14Start = addDays(todayIso, -13);
+  const fLogs = (fitness?.fitnessDailyLogs || []).filter((l) => !l.deletedAt);
+  const fMeals = (fitness?.mealLogs || []).filter((m) => !m.deletedAt);
+  const fWorkouts = (fitness?.workoutSessions || []).filter((w) => !w.deletedAt);
+  const fSupps = (fitness?.supplementInventory || []).filter((s) => !s.deletedAt);
+  const fSuppLogs = (fitness?.supplementLogs || []).filter((l) => !l.deletedAt);
+
+  const logs14d = fLogs.filter((l) => {
+    const d = normalizeIsoDate(l.date);
+    return d >= window14Start && d <= todayIso;
+  });
+  const sleepLogs14d = logs14d.filter((l) => typeof l.sleepHours === 'number' && l.sleepHours > 0);
+  const avgSleepHours14d =
+    sleepLogs14d.length > 0
+      ? Math.round((sleepLogs14d.reduce((s, l) => s + Number(l.sleepHours || 0), 0) / sleepLogs14d.length) * 10) / 10
+      : null;
+  const energyLogs14d = logs14d.filter((l) => typeof l.energyLevel === 'number' && l.energyLevel > 0);
+  const avgEnergy14d =
+    energyLogs14d.length > 0
+      ? Math.round((energyLogs14d.reduce((s, l) => s + Number(l.energyLevel || 0), 0) / energyLogs14d.length) * 10) / 10
+      : null;
+  const stepLogs14d = logs14d.filter((l) => l.steps > 0);
+  const avgSteps14d =
+    stepLogs14d.length > 0
+      ? Math.round(stepLogs14d.reduce((s, l) => s + l.steps, 0) / stepLogs14d.length)
+      : null;
+  const weightTrend = calculate7DayRollingWeight(fLogs);
+
+  const crossDomain = computeCrossDomainInsights({
+    todayDate: todayIso,
+    transactions,
+    categories,
+    debtRecords,
+    mealLogs: fMeals,
+    workoutSessions: fWorkouts,
+    fitnessDailyLogs: fLogs,
+    supplementInventory: fSupps,
+    supplementLogs: fSuppLogs,
+    habits: fitness?.habits || [],
+    habitCompletions: fitness?.habitCompletions || [],
+    moodLogs: fitness?.moodLogs || [],
+  });
 
   const activeTxs = transactions.filter((t) => !t.deletedAt);
   const monthTxs = activeTxs.filter((t) => t.monthKey === selectedMonth);
@@ -394,5 +466,25 @@ export function buildFinanceQAContext(params: {
       title: a.title,
       description: a.description,
     })),
+    lifeOs: {
+      todayDate: todayIso,
+      fitnessTelemetry: {
+        avgSleepHours14d,
+        avgEnergy14d,
+        avgSteps14d,
+        workouts30dCount: crossDomain.gymSupplementRoi.workouts30dCount,
+        rollingWeightKg: weightTrend.latestRollingAvgKg,
+        weeklyWeightDeltaKg: weightTrend.weeklyDeltaKg,
+        calorieTarget: fitness?.fitnessProfile?.calorieTarget ?? null,
+        proteinTargetG: fitness?.fitnessProfile?.proteinTargetG ?? null,
+      },
+      crossDomain: {
+        walletWaistline: crossDomain.walletWaistline,
+        gymSupplementRoi: crossDomain.gymSupplementRoi,
+        triggers: crossDomain.triggers,
+        socialSpendDiet: crossDomain.socialSpendDiet,
+        alerts: crossDomain.alerts,
+      },
+    },
   };
 }

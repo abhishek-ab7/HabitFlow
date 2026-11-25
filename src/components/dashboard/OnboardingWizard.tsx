@@ -21,6 +21,7 @@ import { AVATARS } from '@/lib/avatars';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { updateSettings, getSettings } from '@/lib/db';
 import { getSyncEngine } from '@/lib/sync';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { cn } from '@/lib/utils';
 import type { Category } from '@/lib/types';
 
@@ -113,8 +114,8 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
                       goalCategory === 'personal' ? 'personal_growth' : 
                       goalCategory as any, // maps to health, finance, relationships
           priority: 'high',
-          startDate: new Date().toISOString().split('T')[0],
-          deadline: deadline.toISOString().split('T')[0],
+          startDate: getLocalIsoDate(),
+          deadline: getLocalIsoDate(deadline),
           isFocus: true,
           milestones: [
             'Define key milestones',

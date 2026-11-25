@@ -5,6 +5,7 @@ import {
   resolveGeminiApiKeys,
   runWithGeminiFailover,
 } from '@/lib/ai/gemini-server';
+import { getIstIsoDate } from '@/lib/mcp/config';
 
 interface CategoryInput {
   id: string;
@@ -27,28 +28,25 @@ interface ParsedExpenseResult {
 }
 
 function getTodayIso(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate()
-  ).padStart(2, '0')}`;
+  return getIstIsoDate();
 }
 
 function extractRelativeDate(rawText: string): string {
   const lower = rawText.toLowerCase();
-  const d = new Date();
+  const isoMatch = rawText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  if (isoMatch) return isoMatch[1];
+
+  let daysOffset = 0;
   if (/\byesterday\b/.test(lower)) {
-    d.setDate(d.getDate() - 1);
+    daysOffset = 1;
   } else {
     const daysAgo = lower.match(/\b(\d+)\s*days?\s*ago\b/);
     if (daysAgo) {
-      d.setDate(d.getDate() - parseInt(daysAgo[1], 10));
+      daysOffset = parseInt(daysAgo[1], 10);
     }
   }
-  const isoMatch = rawText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-  if (isoMatch) return isoMatch[1];
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-    d.getDate()
-  ).padStart(2, '0')}`;
+  const target = new Date(Date.now() - daysOffset * 86_400_000);
+  return getIstIsoDate(target);
 }
 
 function parseExpenseDeterministically(rawText: string): ParsedExpenseResult {
@@ -84,7 +82,14 @@ function parseExpenseDeterministically(rawText: string): ParsedExpenseResult {
   let subcategory = '';
   if (type === 'income' || type === 'investment') {
     categorySlug = 'investments-savings';
-  } else if (/\b(zomato|swiggy|food|dinner|lunch|breakfast|coffee|chai|cafe|pizza|burger|restaurant)\b/.test(lower)) {
+  } else if (
+    /\b(momos?|samosa|pakora|chaat|pani\s*puri|golgappa|jalebi|fries|chips|kurkure|lays|ice\s*cream|pastry|brownie|waffle|donut|burger|pizza|dominos|kfc|mcdonald|junk\s*food)\b/.test(
+      lower
+    )
+  ) {
+    categorySlug = 'junk-food';
+    subcategory = 'Fast Food & Street';
+  } else if (/\b(zomato|swiggy|food|dinner|lunch|breakfast|coffee|chai|cafe|restaurant)\b/.test(lower)) {
     categorySlug = 'food-dining';
     subcategory = 'Online Delivery';
   } else if (/\b(zepto|blinkit|instamart|grocery|groceries|bigbasket|dmart|milk|vegetables)\b/.test(lower)) {
@@ -163,7 +168,7 @@ export async function POST(req: NextRequest) {
                 `- slug: "${c.slug}" | name: "${c.name}" | subcategories: [${(c.subcategories || []).join(', ')}]`
             )
             .join('\n')
-        : 'food-dining, groceries-household, medical-supplements, utilities-bills, family-commitments, shopping-personal-care, transport-fuel, emis-debt-repayment, entertainment-subscriptions, investments-savings';
+        : 'junk-food, food-dining, groceries-household, medical-supplements, utilities-bills, family-commitments, shopping-personal-care, transport-fuel, emis-debt-repayment, entertainment-subscriptions, investments-savings';
 
       const todayIso = getTodayIso();
 

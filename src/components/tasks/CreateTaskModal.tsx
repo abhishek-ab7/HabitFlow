@@ -11,6 +11,7 @@ import { Plus, Calendar as CalendarIcon, Flag, Target, Sparkles, X, Loader2 } fr
 import { toast } from "sonner"
 import type { Database } from "@/lib/supabase/types"
 import { useTaskStore } from "@/lib/stores/task-store"
+import { getLocalIsoDate } from "@/lib/finance/credit-card-cycles"
 
 type Goal = Database['public']['Tables']['goals']['Row']
 
@@ -37,7 +38,7 @@ export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOp
     const [title, setTitle] = useState("")
     const [description, setDescription] = useState("")
     const [priority, setPriority] = useState<"low" | "medium" | "high">("medium")
-    const [dueDate, setDueDate] = useState(defaultDate ? defaultDate.toISOString().split('T')[0] : "")
+    const [dueDate, setDueDate] = useState(defaultDate ? getLocalIsoDate(defaultDate) : "")
     const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
     const [isUrgent, setIsUrgent] = useState(false)
     const [isImportant, setIsImportant] = useState(false)

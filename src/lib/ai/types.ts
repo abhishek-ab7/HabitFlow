@@ -44,21 +44,53 @@ export interface AIError {
 
 // Feature-specific types
 
+export interface CoachFitnessTelemetry {
+  avgSleepHours14d?: number | null;
+  avgEnergy14d?: number | null;
+  workouts14dCount?: number;
+  avgSteps14d?: number | null;
+  rollingWeightKg?: number | null;
+  rollingWeightDeltaKg?: number | null;
+  avgProtein14dG?: number | null;
+  proteinTargetG?: number | null;
+  calorieTarget?: number | null;
+  junkSpend14dInr?: number;
+  junkEmptyKcal14d?: number;
+  fatLossDragKg14d?: number;
+}
+
+export interface CoachCrossDomainContext {
+  alerts?: Array<{
+    title: string;
+    description: string;
+    metricBadge?: string;
+  }>;
+  gymCostPerWorkoutInr?: number | null;
+  primaryProteinCostPer25gInr?: number | null;
+  triggerMultiplier?: number | null;
+  topTriggerLabel?: string | null;
+  socialFoodSpend30dInr?: number;
+  savings70PctMonthlyInr?: number;
+}
+
 export interface CoachBriefingInput {
   userData: {
     userName?: string;
     level?: number;
     xp?: number;
-    userId: string;
+    userId?: string;
   };
   context: {
-    unfinishedTasks?: number;
-    todaysHabits?: string;
+    todayIso?: string;
+    unfinishedTasks?: number | string[];
+    todaysHabits?: string | string[];
     mode?: 'briefing' | 'suggestion';
     category?: string;
     burnoutRisk?: number;
     topPriorityTask?: string;
     upcomingDeadlines?: Array<{ title: string; daysLeft: number }>;
+    fitnessTelemetry?: CoachFitnessTelemetry;
+    crossDomainInsights?: CoachCrossDomainContext;
   };
   forceRefresh?: boolean;
 }

@@ -126,4 +126,41 @@ Then:
       };
     }
   );
+
+  // 5. sunday_reset
+  server.registerPrompt(
+    'sunday_reset',
+    {
+      title: '5-Minute Sunday Reset Ritual (4 Truths)',
+      description:
+        'Guides a fast 5-minute weekly Life OS review across Safe-to-Spend/Debt, 7-day Body/Workouts, Junk/Trigger leaks, and pinning Next Week Top 3 MITs.',
+      argsSchema: {
+        targetDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe('Target Monday/Today date YYYY-MM-DD for pinning Top 3 MITs'),
+      },
+    },
+    async (args) => {
+      const today = getIstIsoDate();
+      const targetMitDate = args.targetDate || today;
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Run my HabitFlow 5-Minute Sunday Reset Ritual anchored on IST date ${today}. Review all 4 Truths:
+
+1. Truth 1 (Cashflow & Debt/CC Float): Call get_finance_overview and get_credit_card_cycles to inspect Safe-to-Spend/day, CC float, and debt/EMI payoff progress.
+2. Truth 2 (Body, Workouts & Steps): Call get_fitness_overview to summarize 7-day rolling weight delta, waist trend, workout session count, and average steps.
+3. Truth 3 (Junk Leakage & Triggers): Call get_habit_finance_insights and check crossDomainInsights for 14d/30d Junk Food spend, empty kcal fat-loss drag, and sleep/energy/mood spend triggers.
+4. Truth 4 (Next Week's Top 3 MITs): Call get_tasks and propose up to 3 Must-Do MITs, then ask me to confirm before calling manage_task with metadata: { isMitForDate: "${targetMitDate}", mitRank: 1|2|3 }.`,
+            },
+          },
+        ],
+      };
+    }
+  );
 }

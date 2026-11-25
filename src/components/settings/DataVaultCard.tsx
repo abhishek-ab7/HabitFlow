@@ -31,6 +31,7 @@ import {
 import { toast } from 'sonner';
 import { db } from '@/lib/db';
 import {
+  ALL_WORKSPACE_TABLES,
   exportTransactionsCSV,
   exportFriendsDebtCSV,
   exportHabitsCSV,
@@ -194,7 +195,7 @@ export function DataVaultCard({
           `habitflow-backup-${dateStr}.json`,
           'application/json'
         );
-        toast.success('Generated full 20-table JSON backup');
+        toast.success(`Generated full ${ALL_WORKSPACE_TABLES.length}-table JSON backup`);
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to create database backup');
@@ -439,7 +440,7 @@ export function DataVaultCard({
             Full Database Backup
           </span>
           <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            20 Tables
+            {ALL_WORKSPACE_TABLES.length} Tables
           </span>
         </div>
 

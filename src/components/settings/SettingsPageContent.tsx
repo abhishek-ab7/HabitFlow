@@ -246,6 +246,13 @@ export default function SettingsPageContent() {
         supabase.from('milestones').delete().eq('user_id', uid),
         supabase.from('tasks').delete().eq('user_id', uid),
         supabase.from('mood_logs').delete().eq('user_id', uid),
+        supabase.from('supplement_logs').delete().eq('user_id', uid),
+        supabase.from('supplement_inventory').delete().eq('user_id', uid),
+        supabase.from('workout_sessions').delete().eq('user_id', uid),
+        supabase.from('meal_logs').delete().eq('user_id', uid),
+        supabase.from('meal_templates').delete().eq('user_id', uid),
+        supabase.from('fitness_daily_logs').delete().eq('user_id', uid),
+        supabase.from('fitness_profiles').delete().eq('user_id', uid),
       ]);
 
       await supabase.from('habits').delete().eq('user_id', uid);
@@ -261,6 +268,12 @@ export default function SettingsPageContent() {
         level: 1,
         gems: 0,
         streak_shield: 0,
+        show_tasks: true,
+        show_goals: true,
+        show_milestones: true,
+        show_finance: true,
+        show_fitness: true,
+        habit_only_mode: false,
         stats: {
           vitality: 1,
           intelligence: 1,
@@ -283,6 +296,20 @@ export default function SettingsPageContent() {
       await db.tasks.clear();
       await db.userSettings.clear();
       await db.moodLogs.clear();
+      await db.fitnessProfiles.clear();
+      await db.fitnessDailyLogs.clear();
+      await db.mealTemplates.clear();
+      await db.mealLogs.clear();
+      await db.workoutSessions.clear();
+      await db.supplementInventory.clear();
+      await db.supplementLogs.clear();
+
+      try {
+        const { useFitnessStore } = await import('@/lib/stores/fitness');
+        useFitnessStore.getState().clearFitnessState();
+      } catch {
+        // non-blocking
+      }
 
       // 5. Add default settings locally to ensure hydration sync on reload starts fresh
       const defaultSettings = {
@@ -304,6 +331,8 @@ export default function SettingsPageContent() {
         showTasks: true,
         showGoals: true,
         showMilestones: true,
+        showFinance: true,
+        showFitness: true,
         habitOnlyMode: false,
         stats: {
           vitality: 1,
@@ -879,7 +908,7 @@ export default function SettingsPageContent() {
 
                 <div
                   className={cn(
-                    'flex items-center justify-between gap-3 pt-3 transition-opacity',
+                    'flex items-center justify-between gap-3 py-3 transition-opacity',
                     settings.habitOnlyMode && 'opacity-45 pointer-events-none'
                   )}
                 >
@@ -899,6 +928,56 @@ export default function SettingsPageContent() {
                     className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
                   >
                     {settings.showGoals !== false ? 'Enabled' : 'Hidden'}
+                  </Button>
+                </div>
+
+                <div
+                  className={cn(
+                    'flex items-center justify-between gap-3 py-3 transition-opacity',
+                    settings.habitOnlyMode && 'opacity-45 pointer-events-none'
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      Body &amp; Fitness
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Fuel, weight trends, workouts &amp; supplements
+                    </p>
+                  </div>
+                  <Button
+                    variant={settings.showFitness !== false ? 'default' : 'outline'}
+                    size="sm"
+                    disabled={!!settings.habitOnlyMode}
+                    onClick={() => handleToggleSetting('showFitness')}
+                    className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
+                  >
+                    {settings.showFitness !== false ? 'Enabled' : 'Hidden'}
+                  </Button>
+                </div>
+
+                <div
+                  className={cn(
+                    'flex items-center justify-between gap-3 pt-3 transition-opacity',
+                    settings.habitOnlyMode && 'opacity-45 pointer-events-none'
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      Personal Finance
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Expenses, credit cards, EMIs &amp; cash flow
+                    </p>
+                  </div>
+                  <Button
+                    variant={settings.showFinance !== false ? 'default' : 'outline'}
+                    size="sm"
+                    disabled={!!settings.habitOnlyMode}
+                    onClick={() => handleToggleSetting('showFinance')}
+                    className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
+                  >
+                    {settings.showFinance !== false ? 'Enabled' : 'Hidden'}
                   </Button>
                 </div>
               </div>

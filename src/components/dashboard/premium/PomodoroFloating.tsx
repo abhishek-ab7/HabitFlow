@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
@@ -14,12 +14,127 @@ import {
   Plus,
   Minus,
   Check,
+  ShieldCheck,
+  Dumbbell,
+  Zap,
+  AlertTriangle,
 } from 'lucide-react';
-import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
+import { usePomodoroStore, type PomodoroMode } from '@/lib/stores/pomodoro-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+
+function playOfflineChime() {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioCtx) return;
+
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+    const notes = [587.33, 880]; // D5 -> A5 calm chime
+
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.14);
+      gain.gain.setValueAtTime(0.001, now + idx * 0.14);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + idx * 0.14 + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.14 + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.14);
+      osc.stop(now + idx * 0.14 + 0.48);
+    });
+
+    setTimeout(() => {
+      ctx.close().catch(() => undefined);
+    }, 1200);
+  } catch {
+    // Non-blocking in restricted / headless browsers
+  }
+}
+
+function triggerHapticBuzz() {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    try {
+      navigator.vibrate([200, 100, 200]);
+    } catch {
+      // Non-blocking
+    }
+  }
+}
+
+const MODE_LABELS: Record<PomodoroMode, string> = {
+  focus: 'Focusing',
+  short_break: 'Short Break',
+  long_break: 'Long Break',
+  starter_2m: '2m Starter',
+  urge_10m: '10m Urge Surf',
+  gym_rest: 'Gym Rest',
+};
+
+const MODE_PILL_SHORT: Record<PomodoroMode, string> = {
+  focus: 'Focus',
+  short_break: 'Break',
+  long_break: 'Long',
+  starter_2m: '2m Start',
+  urge_10m: 'Urge',
+  gym_rest: 'Rest',
+};
+
+const MODE_COLORS: Record<
+  PomodoroMode,
+  { text: string; bg: string; border: string; pillBg: string; dot: string }
+> = {
+  focus: {
+    text: 'text-rose-500',
+    bg: 'bg-rose-500/10',
+    border: 'border-rose-500/30',
+    pillBg: 'bg-rose-500',
+    dot: 'bg-rose-500',
+  },
+  short_break: {
+    text: 'text-emerald-500',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/30',
+    pillBg: 'bg-emerald-500',
+    dot: 'bg-emerald-500',
+  },
+  long_break: {
+    text: 'text-sky-500',
+    bg: 'bg-sky-500/10',
+    border: 'border-sky-500/30',
+    pillBg: 'bg-sky-500',
+    dot: 'bg-sky-500',
+  },
+  starter_2m: {
+    text: 'text-amber-500',
+    bg: 'bg-amber-500/10',
+    border: 'border-amber-500/30',
+    pillBg: 'bg-amber-500',
+    dot: 'bg-amber-500',
+  },
+  urge_10m: {
+    text: 'text-violet-500',
+    bg: 'bg-violet-500/10',
+    border: 'border-violet-500/30',
+    pillBg: 'bg-violet-500',
+    dot: 'bg-violet-500',
+  },
+  gym_rest: {
+    text: 'text-cyan-500',
+    bg: 'bg-cyan-500/10',
+    border: 'border-cyan-500/30',
+    pillBg: 'bg-cyan-500',
+    dot: 'bg-cyan-500',
+  },
+};
 
 export function PomodoroFloating() {
   const {
@@ -28,16 +143,20 @@ export function PomodoroFloating() {
     timeLeft,
     isRunning,
     completedSessions,
+    pendingUrgeReflection,
+    urgeHabitName,
     pauseTimer,
     resumeTimer,
     resetTimer,
     tick,
+    syncFromClock,
     setMode,
+    startPresetTimer,
+    resolveUrgeReflection,
     adjustDuration,
   } = usePomodoroStore();
 
   const pathname = usePathname() ?? '';
-  const router = useRouter();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState(25);
@@ -48,7 +167,7 @@ export function PomodoroFloating() {
   // Sync typed minutes when not editing
   useEffect(() => {
     if (!isEditingTime) {
-      setCustomMinutes(Math.floor(timeLeft / 60));
+      setCustomMinutes(Math.max(1, Math.floor(timeLeft / 60)));
     }
   }, [timeLeft, isEditingTime]);
 
@@ -61,23 +180,51 @@ export function PomodoroFloating() {
     return () => clearInterval(interval);
   }, [isRunning, tick]);
 
-  // Audio / notification feedback on completion
+  // Wall-clock resync on mobile screen wake / tab switch
+  useEffect(() => {
+    const handleResync = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        syncFromClock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleResync);
+    window.addEventListener('focus', handleResync);
+    return () => {
+      document.removeEventListener('visibilitychange', handleResync);
+      window.removeEventListener('focus', handleResync);
+    };
+  }, [syncFromClock]);
+
+  // Offline Web Audio chime + haptic vibration + toast on completion
   useEffect(() => {
     const handleComplete = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const finishedMode = customEvent.detail.mode;
+      const customEvent = e as CustomEvent<{
+        mode?: PomodoroMode;
+        taskTitle?: string;
+        habitName?: string;
+      }>;
+      const finishedMode = customEvent.detail?.mode || 'focus';
 
-      try {
-        const audio = new Audio(
-          'https://assets.mixkit.co/active_storage/sfx/2869/2869-600.wav'
-        );
-        audio.volume = 0.5;
-        audio.play();
-      } catch (err) {
-        console.warn('Audio play failed:', err);
-      }
+      playOfflineChime();
+      triggerHapticBuzz();
 
-      if (finishedMode === 'focus') {
+      if (finishedMode === 'urge_10m') {
+        setIsExpanded(true);
+        toast.info('10-Minute Urge Surf Complete', {
+          description: 'How did it go? Log your reflection in the timer card.',
+          duration: 6000,
+        });
+      } else if (finishedMode === 'gym_rest') {
+        toast.success('Rest finished — next working set!', {
+          description: customEvent.detail?.taskTitle || 'Back under the bar!',
+          duration: 4500,
+        });
+      } else if (finishedMode === 'starter_2m') {
+        toast.success('2-Minute Starter complete!', {
+          description: 'Keep going or switch into a 25m Focus session.',
+          duration: 5000,
+        });
+      } else if (finishedMode === 'focus') {
         toast.success('Focus session complete! Take a break.', {
           description: activeTaskTitle
             ? `You finished focusing on: ${activeTaskTitle}`
@@ -106,65 +253,52 @@ export function PomodoroFloating() {
   if (!isAppRoute) return null;
 
   const formatTime = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remainingSecs = secs % 60;
+    const safe = Math.max(0, Math.floor(secs));
+    const mins = Math.floor(safe / 60);
+    const remainingSecs = safe % 60;
     return `${mins.toString().padStart(2, '0')}:${remainingSecs
       .toString()
       .padStart(2, '0')}`;
   };
 
-  const modeColors = {
-    focus: {
-      text: 'text-rose-500',
-      bg: 'bg-rose-500/10',
-      border: 'border-rose-500/25',
-      stroke: 'stroke-rose-500',
-    },
-    short_break: {
-      text: 'text-emerald-500',
-      bg: 'bg-emerald-500/10',
-      border: 'border-emerald-500/25',
-      stroke: 'stroke-emerald-500',
-    },
-    long_break: {
-      text: 'text-sky-500',
-      bg: 'bg-sky-500/10',
-      border: 'border-sky-500/25',
-      stroke: 'stroke-sky-500',
-    },
-  };
+  const activeColor = MODE_COLORS[mode] || MODE_COLORS.focus;
 
-  const activeColor = modeColors[mode];
-
-  const handleMobileAddEntry = () => {
-    if (pathname.startsWith('/finance')) {
-      window.dispatchEvent(new CustomEvent('open-finance-add-entry'));
-    } else {
-      router.push('/finance?add=1');
+  const renderModeIcon = () => {
+    if (mode === 'short_break' || mode === 'long_break') {
+      return <Coffee className={cn('h-4 w-4', activeColor.text)} />;
     }
+    if (mode === 'gym_rest') {
+      return <Dumbbell className={cn('h-4 w-4', activeColor.text)} />;
+    }
+    if (mode === 'urge_10m') {
+      return <ShieldCheck className={cn('h-4 w-4', activeColor.text)} />;
+    }
+    if (mode === 'starter_2m') {
+      return <Zap className={cn('h-4 w-4', activeColor.text)} />;
+    }
+    return <Timer className={cn('h-4 w-4', activeColor.text)} />;
   };
 
   return (
     <>
-      {/* Floating Container — Mobile direct + Add Entry above bottom nav; Desktop single Pomodoro pill at bottom-right */}
+      {/* Floating Container — Mobile bottom-right above MobileNav + Desktop bottom-right */}
       <div className="fixed bottom-[76px] right-4 md:bottom-6 md:right-6 z-50 select-none flex flex-col items-end gap-2.5">
         <AnimatePresence mode="wait">
           {isExpanded ? (
-            /* Expanded Pomodoro Panel (Shared Mobile + Desktop) */
             <motion.div
               key="pomodoro-panel"
               initial={{ opacity: 0, scale: 0.92, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.92, y: 10 }}
               transition={{ duration: 0.18 }}
-              className="w-[min(18rem,calc(100vw-2rem))] bg-card md:bg-card/95 md:backdrop-blur-xl rounded-2xl border border-border shadow-2xl p-4 space-y-4"
+              className="w-[min(19.5rem,calc(100vw-2rem))] bg-card md:bg-card/95 md:backdrop-blur-xl rounded-2xl border border-border shadow-2xl p-4 space-y-3.5"
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-border/70 pb-2.5">
                 <div className="flex items-center gap-1.5">
-                  <Timer className={cn('h-4 w-4', activeColor.text)} />
+                  {renderModeIcon()}
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Focus Timer
+                    {MODE_LABELS[mode]}
                   </span>
                 </div>
                 <Button
@@ -178,16 +312,60 @@ export function PomodoroFloating() {
                 </Button>
               </div>
 
-              {/* Active Task Info */}
-              <div className="bg-muted/50 rounded-xl p-3 border border-border/50">
+              {/* Urge Surfing Reflection Prompt (shown on urge_10m completion) */}
+              {pendingUrgeReflection && (
+                <div className="rounded-xl border border-violet-500/35 bg-violet-500/10 p-3 space-y-2.5">
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="h-4 w-4 text-violet-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-bold text-foreground">
+                        10-Min Urge Timer Done
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {urgeHabitName
+                          ? `Did you hold strong on "${urgeHabitName}"?`
+                          : 'Did the craving pass?'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold gap-1"
+                      onClick={() => {
+                        resolveUrgeReflection('passed');
+                        toast.success('Craving passed! Streak protected.');
+                      }}
+                    >
+                      <Check className="h-3.5 w-3.5" /> Craving Passed
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-semibold gap-1"
+                      onClick={() => {
+                        resolveUrgeReflection('gave_in');
+                        toast.info('Logged honestly — reset and go again.');
+                      }}
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5" /> Gave In
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Active Label Info */}
+              <div className="bg-muted/50 rounded-xl p-2.5 border border-border/50">
                 <div className="flex items-start gap-2">
                   <CheckSquare className="h-4 w-4 mt-0.5 text-primary shrink-0" />
                   <div className="min-w-0">
                     <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
-                      Active Task
+                      Active Session
                     </p>
                     <p className="text-sm font-semibold truncate mt-0.5 text-foreground leading-tight">
-                      {activeTaskTitle || 'General Focus Session'}
+                      {activeTaskTitle || MODE_LABELS[mode]}
                     </p>
                   </div>
                 </div>
@@ -196,7 +374,7 @@ export function PomodoroFloating() {
               {/* Timer Display */}
               <div className="flex flex-col items-center justify-center py-1 relative">
                 {isEditingTime ? (
-                  <div className="flex items-center gap-2 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="flex items-center gap-2">
                     <Input
                       type="number"
                       min="1"
@@ -204,10 +382,10 @@ export function PomodoroFloating() {
                       value={customMinutes}
                       onChange={(e) =>
                         setCustomMinutes(
-                          Math.max(1, Math.min(180, parseInt(e.target.value) || 1))
+                          Math.max(1, Math.min(180, parseInt(e.target.value, 10) || 1))
                         )
                       }
-                      className="w-20 text-center text-2xl font-bold font-mono bg-muted/50 border-border h-10 focus-visible:ring-1 focus-visible:ring-ring"
+                      className="w-20 text-center text-2xl font-bold font-mono bg-muted/50 border-border h-10"
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -222,7 +400,7 @@ export function PomodoroFloating() {
                     />
                     <Button
                       size="icon"
-                      className="h-9 w-9 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg cursor-pointer"
+                      className="h-9 w-9 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg"
                       onClick={() => {
                         const mins = Math.max(1, Math.min(180, customMinutes));
                         adjustDuration(mins * 60 - timeLeft);
@@ -236,7 +414,7 @@ export function PomodoroFloating() {
                     <Button
                       size="icon"
                       variant="outline"
-                      className="h-9 w-9 rounded-lg cursor-pointer"
+                      className="h-9 w-9 rounded-lg"
                       onClick={() => setIsEditingTime(false)}
                       title="Cancel"
                     >
@@ -249,16 +427,17 @@ export function PomodoroFloating() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer"
+                        className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all"
                         onClick={() => {
-                          if (timeLeft > 60) {
-                            adjustDuration(-60);
-                            toast.success('Reduced duration by 1 minute');
+                          const step = mode === 'gym_rest' ? -15 : -60;
+                          const minAllowed = mode === 'gym_rest' ? 15 : 60;
+                          if (timeLeft > minAllowed) {
+                            adjustDuration(step);
                           } else {
-                            toast.error('Minimum duration is 1 minute');
+                            toast.error(`Minimum duration is ${minAllowed}s`);
                           }
                         }}
-                        title="Decrease 1 minute"
+                        title="Decrease duration"
                       >
                         <Minus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                       </Button>
@@ -272,7 +451,7 @@ export function PomodoroFloating() {
                       onClick={() => {
                         if (!isRunning) {
                           setIsEditingTime(true);
-                          setCustomMinutes(Math.floor(timeLeft / 60));
+                          setCustomMinutes(Math.max(1, Math.floor(timeLeft / 60)));
                         }
                       }}
                       title={!isRunning ? 'Click to edit duration' : undefined}
@@ -283,69 +462,65 @@ export function PomodoroFloating() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer"
+                        className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all"
                         onClick={() => {
+                          const step = mode === 'gym_rest' ? 15 : 60;
                           if (timeLeft < 180 * 60) {
-                            adjustDuration(60);
-                            toast.success('Increased duration by 1 minute');
-                          } else {
-                            toast.error('Maximum duration is 180 minutes');
+                            adjustDuration(step);
                           }
                         }}
-                        title="Increase 1 minute"
+                        title="Increase duration"
                       >
                         <Plus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                       </Button>
                     )}
                   </div>
                 )}
-                <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mt-1.5">
-                  {mode === 'focus'
-                    ? 'Focusing'
-                    : mode === 'short_break'
-                    ? 'Short Break'
-                    : 'Long Break'}
+                <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mt-1">
+                  {MODE_LABELS[mode]}
                 </div>
               </div>
 
-              {/* Quick Mode Toggle */}
+              {/* 6-Mode Quick Switcher */}
               <div className="grid grid-cols-3 gap-1 p-1 bg-muted/60 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setMode('focus')}
-                  className={cn(
-                    'py-1.5 text-[11px] font-bold rounded-lg transition-colors',
-                    mode === 'focus'
-                      ? 'bg-rose-500 text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  Focus
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('short_break')}
-                  className={cn(
-                    'py-1.5 text-[11px] font-bold rounded-lg transition-colors',
-                    mode === 'short_break'
-                      ? 'bg-emerald-500 text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  Break
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('long_break')}
-                  className={cn(
-                    'py-1.5 text-[11px] font-bold rounded-lg transition-colors',
-                    mode === 'long_break'
-                      ? 'bg-sky-500 text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  Long
-                </button>
+                {(
+                  [
+                    { id: 'focus', label: 'Focus' },
+                    { id: 'short_break', label: 'Break' },
+                    { id: 'long_break', label: 'Long' },
+                    { id: 'starter_2m', label: '2m Start' },
+                    { id: 'urge_10m', label: '10m Urge' },
+                    { id: 'gym_rest', label: '90s Rest' },
+                  ] as const
+                ).map((item) => {
+                  const itemColor = MODE_COLORS[item.id];
+                  const active = mode === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        if (
+                          item.id === 'starter_2m' ||
+                          item.id === 'urge_10m' ||
+                          item.id === 'gym_rest'
+                        ) {
+                          startPresetTimer(item.id, { openPanel: true });
+                        } else {
+                          setMode(item.id);
+                        }
+                      }}
+                      className={cn(
+                        'py-1.5 text-[11px] font-bold rounded-lg transition-colors',
+                        active
+                          ? cn(itemColor.pillBg, 'text-white shadow-sm')
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Controls */}
@@ -380,14 +555,12 @@ export function PomodoroFloating() {
                       size="sm"
                       className={cn(
                         'h-9 font-semibold gap-1.5 text-white rounded-xl px-3.5',
-                        mode === 'focus'
-                          ? 'bg-rose-500 hover:bg-rose-600'
-                          : 'bg-emerald-500 hover:bg-emerald-600'
+                        activeColor.pillBg
                       )}
                       onClick={resumeTimer}
                     >
                       <Play className="h-4 w-4 fill-current" />
-                      Resume
+                      Start
                     </Button>
                   )}
                 </div>
@@ -395,45 +568,41 @@ export function PomodoroFloating() {
             </motion.div>
           ) : (
             <div key="collapsed-controls" className="flex flex-col items-end gap-2">
-              {/* DESKTOP: Single collapsible Pomodoro pill (Quick Capture lives in top navbar) */}
               <motion.button
                 type="button"
+                data-testid="pomodoro-live-pill"
                 onClick={() => setIsExpanded(true)}
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.96 }}
+                aria-label={
+                  isRunning
+                    ? `${MODE_LABELS[mode]} ${formatTime(timeLeft)} remaining`
+                    : 'Open Focus & Habit Timers'
+                }
                 className={cn(
-                  'hidden md:inline-flex items-center gap-2 h-11 rounded-full border shadow-md bg-card/95 backdrop-blur-xl text-foreground transition-colors hover:border-primary/40',
-                  isRunning ? 'px-3.5' : 'px-3',
+                  'inline-flex items-center gap-2 h-11 rounded-full border shadow-lg bg-card/95 backdrop-blur-xl text-foreground transition-colors hover:border-primary/40',
+                  isRunning ? 'px-3.5 ring-2 ring-primary/15' : 'px-3',
                   activeColor.border
                 )}
-                title={
-                  activeTaskTitle
-                    ? `Focusing: ${activeTaskTitle}`
-                    : 'Focus Timer (Pomodoro)'
-                }
               >
                 <span className="relative flex items-center justify-center">
-                  {mode === 'focus' ? (
-                    <Timer className={cn('h-4 w-4', activeColor.text)} />
-                  ) : (
-                    <Coffee className={cn('h-4 w-4', activeColor.text)} />
+                  {renderModeIcon()}
+                  {isRunning && (
+                    <span
+                      className={cn(
+                        'absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full animate-ping',
+                        activeColor.dot
+                      )}
+                    />
                   )}
                 </span>
                 <span className="text-xs font-semibold font-mono tabular-nums">
-                  {isRunning ? formatTime(timeLeft) : 'Focus'}
+                  {isRunning
+                    ? `${MODE_PILL_SHORT[mode]} ${formatTime(timeLeft)}`
+                    : pendingUrgeReflection
+                      ? 'Reflect'
+                      : 'Timer'}
                 </span>
-              </motion.button>
-
-              {/* MOBILE: Direct single-tap + Add Entry button above bottom navbar */}
-              <motion.button
-                type="button"
-                onClick={handleMobileAddEntry}
-                whileTap={{ scale: 0.95 }}
-                aria-label="Add Entry"
-                className="md:hidden inline-flex items-center gap-1.5 h-12 px-4 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 font-semibold text-sm active:scale-95 transition-transform"
-              >
-                <Plus className="w-4 h-4 stroke-[2.5]" />
-                <span>Add Entry</span>
               </motion.button>
             </div>
           )}

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions, cleanupDuplicateHabits } from '@/lib/db';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { countAllDuplicates } from '@/lib/cleanup';
 import type { Habit, HabitCompletion, Goal, Milestone, MoodLog } from '@/lib/types';
 import { useSyncStatusStore } from '../stores/sync-status-store';
@@ -14,6 +15,8 @@ import { TasksSyncEngine, syncTasksWithRetry, pushTaskToRemote } from './engines
 import { MilestonesSyncEngine, syncMilestonesWithRetry } from './engines/milestones-sync';
 import { UserSettingsSyncEngine, MoodLogsSyncEngine, syncUserSettingsWithRetry, syncMoodLogsWithRetry, pushUserSettingsToRemote } from './engines/settings-sync';
 import { FinanceSyncEngine, syncFinanceWithRetry } from './engines/finance-sync';
+import { FitnessSyncEngine, syncFitnessWithRetry } from './engines/fitness-sync';
+import { upsertRowsWithColumnFallback } from './engines/column-fallback';
 
 const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   habits: syncHabitsWithRetry,
@@ -34,6 +37,13 @@ const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   finance_sip_plans: syncFinanceWithRetry,
   finance_categorization_rules: syncFinanceWithRetry,
   finance_recurring_bills: syncFinanceWithRetry,
+  fitness_profiles: syncFitnessWithRetry,
+  fitness_daily_logs: syncFitnessWithRetry,
+  meal_templates: syncFitnessWithRetry,
+  meal_logs: syncFitnessWithRetry,
+  workout_sessions: syncFitnessWithRetry,
+  supplement_inventory: syncFitnessWithRetry,
+  supplement_logs: syncFitnessWithRetry,
 };
 
 export type SyncStatus =
@@ -63,7 +73,14 @@ export interface PendingOperation {
     | 'emi_trackers'
     | 'finance_sip_plans'
     | 'finance_categorization_rules'
-    | 'finance_recurring_bills';
+    | 'finance_recurring_bills'
+    | 'fitness_profiles'
+    | 'fitness_daily_logs'
+    | 'meal_templates'
+    | 'meal_logs'
+    | 'workout_sessions'
+    | 'supplement_inventory'
+    | 'supplement_logs';
   data: any;
   timestamp: number;
   retryCount: number;
@@ -363,6 +380,7 @@ export class SyncEngine {
         new UserSettingsSyncEngine(),
         new MoodLogsSyncEngine(),
         new FinanceSyncEngine(),
+        new FitnessSyncEngine(),
       ]);
 
       this.log('info', 'Executing isolated sync domains via SyncCoordinator...');
@@ -390,6 +408,14 @@ export class SyncEngine {
         await useFinanceStore.getState().loadFinanceData(this.userId);
       } catch (e) {
         this.log('warn', 'Failed to refresh finance store after syncAll', e);
+      }
+
+      // Reload fitness store so pulled cloud data updates UI immediately
+      try {
+        const { useFitnessStore } = await import('@/lib/stores/fitness');
+        await useFitnessStore.getState().loadFitnessData(this.userId);
+      } catch (e) {
+        this.log('warn', 'Failed to refresh fitness store after syncAll', e);
       }
 
       this.notifyStatus({
@@ -473,7 +499,12 @@ export class SyncEngine {
     switch (op.type) {
       case 'create':
       case 'update': {
-        const { error: upsertErr } = await this.supabase.from(op.table).upsert(op.data);
+        const { error: upsertErr } = await upsertRowsWithColumnFallback(
+          this.supabase,
+          op.table,
+          op.data,
+          op.table === 'completions' ? { onConflict: 'habit_id,date' } : undefined
+        );
         if (upsertErr) throw upsertErr;
         break;
       }
@@ -525,6 +556,13 @@ export class SyncEngine {
           is_quantitative: habit.isQuantitative || false,
           target_value: habit.targetValue || 0,
           unit: habit.unit || '',
+          frequency_type: habit.frequencyType || 'daily',
+          scheduled_days: habit.scheduledDays || null,
+          interval_days: habit.intervalDays || null,
+          auto_track_rule: habit.autoTrackRule || null,
+          polarity: habit.polarity || 'build',
+          anchor_block: habit.anchorBlock || null,
+          metadata: habit.metadata || {},
         },
       });
       return;
@@ -593,9 +631,13 @@ export class SyncEngine {
       habit_id: completion.habitId,
       date: completion.date,
       completed: completion.completed,
-      status: completion.status || 'completed',
+      status: completion.status || (completion.skipped ? 'rest' : completion.completed ? 'completed' : null),
+      skipped: completion.skipped ?? (completion.status === 'rest'),
+      rest_reason: completion.restReason || null,
       notes: completion.note || null,
       value: completion.value || 0,
+      generation_counter: completion.generationCounter || 1,
+      updated_at: completion.updatedAt || new Date().toISOString(),
     };
 
     if (!this.isOnline) {
@@ -603,7 +645,9 @@ export class SyncEngine {
       return;
     }
 
-    await this.supabase.from('completions').upsert(data as any);
+    await upsertRowsWithColumnFallback(this.supabase, 'completions', data, {
+      onConflict: 'habit_id,date',
+    });
   }
 
   async deleteCompletion(completionId: string) {
@@ -628,6 +672,9 @@ export class SyncEngine {
           target_date: goal.deadline,
           is_focus: goal.isFocus,
           is_archived: goal.archived,
+          financial_link: goal.financialLink || null,
+          fitness_link: goal.fitnessLink || null,
+          metadata: goal.metadata || {},
           updated_at: new Date().toISOString(),
         },
       });
@@ -718,6 +765,12 @@ export class SyncEngine {
           gems: settings.gems,
           streak_shield: settings.streakShield,
           motivation_text: settings.motivation_text,
+          show_fitness: settings.showFitness ?? true,
+          show_finance: settings.showFinance ?? true,
+          show_tasks: settings.showTasks ?? true,
+          show_goals: settings.showGoals ?? true,
+          show_milestones: settings.showMilestones ?? true,
+          habit_only_mode: settings.habitOnlyMode ?? false,
           updated_at: new Date().toISOString(),
         },
       });
@@ -743,7 +796,7 @@ export class SyncEngine {
       return;
     }
 
-    await this.supabase.from('mood_logs').upsert(data as any);
+    await this.supabase.from('mood_logs').upsert(data as any, { onConflict: 'user_id,date' } as any);
   }
 
   // ===================
@@ -840,6 +893,41 @@ export class SyncEngine {
         { event: '*', schema: 'public', table: 'finance_recurring_bills', filter: `user_id=eq.${this.userId}` },
         () => this.debouncedSync('finance_recurring_bills')
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fitness_profiles', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('fitness_profiles')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fitness_daily_logs', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('fitness_daily_logs')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'meal_templates', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('meal_templates')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'meal_logs', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('meal_logs')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'workout_sessions', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('workout_sessions')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'supplement_inventory', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('supplement_inventory')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'supplement_logs', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('supplement_logs')
+      )
       .subscribe((status) => {
         this.log('info', `Realtime subscription status: ${status}`);
       });
@@ -861,6 +949,7 @@ export class SyncEngine {
       this.log('info', `Realtime change detected in [${tablesToSync.join(', ')}], syncing...`);
 
       let hasFinanceChange = false;
+      let hasFitnessChange = false;
 
       for (const t of tablesToSync) {
         try {
@@ -878,6 +967,17 @@ export class SyncEngine {
           ) {
             hasFinanceChange = true;
           }
+
+          if (
+            t.startsWith('fitness_') ||
+            t === 'meal_templates' ||
+            t === 'meal_logs' ||
+            t === 'workout_sessions' ||
+            t === 'supplement_inventory' ||
+            t === 'supplement_logs'
+          ) {
+            hasFitnessChange = true;
+          }
         } catch (error) {
           this.log('error', `Realtime sync failed for ${t}`, error);
         }
@@ -889,6 +989,15 @@ export class SyncEngine {
           await useFinanceStore.getState().loadFinanceData(this.userId || undefined);
         } catch (e) {
           this.log('warn', 'Failed to reload finance store after realtime sync', e);
+        }
+      }
+
+      if (hasFitnessChange) {
+        try {
+          const { useFitnessStore } = await import('@/lib/stores/fitness');
+          await useFitnessStore.getState().loadFitnessData(this.userId || undefined);
+        } catch (e) {
+          this.log('warn', 'Failed to reload fitness store after realtime sync', e);
         }
       }
 
@@ -936,6 +1045,45 @@ export class SyncEngine {
     }, 400);
   }
 
+  private fitnessSyncDebounceTimer: NodeJS.Timeout | null = null;
+
+  public triggerFitnessSync(): void {
+    if (this.fitnessSyncDebounceTimer) {
+      clearTimeout(this.fitnessSyncDebounceTimer);
+    }
+
+    this.fitnessSyncDebounceTimer = setTimeout(async () => {
+      await this.authReady;
+      if (!this.userId) {
+        try {
+          const { data: { session } } = await this.supabase.auth.getSession();
+          if (session?.user?.id) {
+            this.userId = session.user.id;
+          }
+        } catch {
+          // offline
+        }
+      }
+
+      if (!this.userId || !this.isOnline) return;
+
+      try {
+        const syncer = new FitnessSyncEngine();
+        const report = await syncer.sync(this.userId);
+        if (report.errors.length === 0) {
+          useSyncStatusStore.getState().setLastSyncTime(new Date());
+          useSyncStatusStore.getState().setSyncError(null);
+        }
+        if (report.pulled > 0) {
+          const { useFitnessStore } = await import('@/lib/stores/fitness');
+          await useFitnessStore.getState().loadFitnessData(this.userId);
+        }
+      } catch (err) {
+        this.log('warn', 'triggerFitnessSync failed', err);
+      }
+    }, 400);
+  }
+
   private cleanupRealtime() {
     if (this.realtimeChannel) {
       this.supabase.removeChannel(this.realtimeChannel);
@@ -950,7 +1098,7 @@ export class SyncEngine {
   public getStartDate(): string {
     const date = new Date();
     date.setDate(date.getDate() - SYNC_WINDOW_DAYS);
-    return date.toISOString().split('T')[0];
+    return getLocalIsoDate(date);
   }
 
   public async batchUpsert(table: string, items: any[]) {

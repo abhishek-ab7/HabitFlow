@@ -10,6 +10,7 @@ import { useHabitStore } from '@/lib/stores/habit-store';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import type { HabitStack } from '@/lib/ai/types';
 
 export function HabitStackSuggestions() {
@@ -43,7 +44,7 @@ export function HabitStackSuggestions() {
         for (let i = 0; i < 30; i++) {
           const checkDate = new Date(now);
           checkDate.setDate(checkDate.getDate() - i);
-          const dateStr = checkDate.toISOString().split('T')[0];
+          const dateStr = getLocalIsoDate(checkDate);
           const completed = habitCompletions.some(c => c.date === dateStr);
           if (completed) {
             currentStreak++;

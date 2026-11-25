@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useGoalStore } from '../goal-store';
+import { useFitnessStore } from '../fitness';
 import type { Goal, Milestone, GoalFormData } from '../../types';
 
 // Mock dependencies
@@ -175,5 +176,56 @@ describe('goal-store', () => {
     
     const state = useGoalStore.getState();
     expect(state.milestones[0].completed).toBe(true);
+  });
+
+  it('getGoalStats computes isOnTrack and projectedCompletion from live fitness progress when milestonesTotal === 0', () => {
+    const now = new Date();
+    const startDate = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const deadline = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const todayIso = now.toISOString().slice(0, 10);
+
+    useFitnessStore.setState({
+      profile: null,
+      dailyLogs: [
+        {
+          id: 'fd-goal-test',
+          userId: 'u1',
+          date: todayIso,
+          weightKg: 80,
+          waterMl: 3000,
+          steps: 8000,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        },
+      ],
+      workoutSessions: [],
+    });
+
+    useGoalStore.setState({
+      goals: [
+        {
+          id: 'g-fit-track',
+          userId: 'u1',
+          title: 'Cut from 85 to 75 kg',
+          areaOfLife: 'health',
+          priority: 'high',
+          status: 'in_progress',
+          startDate,
+          deadline,
+          isFocus: true,
+          archived: false,
+          createdAt: startDate,
+          fitnessLink: { type: 'target_weight', targetValue: 75, startingValue: 85, unit: 'kg' },
+        } as Goal,
+      ],
+      milestones: [],
+    });
+
+    const stats = useGoalStore.getState().getGoalStats('g-fit-track');
+    expect(stats.progress).toBe(50);
+    expect(stats.isOnTrack).toBe(true);
+    expect(stats.projectedCompletion).toBeGreaterThanOrEqual(50);
+    expect(stats.currentFitnessValue).toBe(80);
+    expect(stats.targetFitnessValue).toBe(75);
   });
 });

@@ -47,9 +47,20 @@ export type HabitAutoTrackRule =
   | 'log_expense_today'
   | 'under_daily_safe_spend'
   | 'no_spend_day'
-  | 'sip_completed_month';
+  | 'sip_completed_month'
+  | 'workout_logged'
+  | 'steps_target'
+  | 'protein_target'
+  | 'protein_target_met'
+  | 'sleep_target'
+  | 'no_junk_food'
+  | 'zero_junk_today'
+  | 'supplements_taken_today';
 
 export type AutoTrackHabitRule = HabitAutoTrackRule | 'none';
+
+export type HabitPolarity = 'build' | 'quit';
+export type HabitAnchorBlock = 'morning' | 'work' | 'gym' | 'night';
 
 export interface Habit {
   id: string;
@@ -63,6 +74,8 @@ export interface Habit {
   allowBonusCompletions?: boolean;
   weekStartsOn?: 0 | 1;
   autoTrackRule?: AutoTrackHabitRule;
+  polarity?: HabitPolarity;
+  anchorBlock?: HabitAnchorBlock;
   createdAt: string; // ISO date string or timestamp
   archived: boolean;
   archivedAt?: string; // ISO date string - when habit was archived/deleted
@@ -145,6 +158,22 @@ export interface FinancialGoalLink {
   linkedSipIds?: string[];
 }
 
+export type FitnessGoalLinkType =
+  | 'target_weight'
+  | 'target_waist'
+  | 'monthly_workouts'
+  | 'daily_steps_avg'
+  | 'workout_consistency'
+  | 'protein_streak'
+  | 'custom';
+
+export interface FitnessGoalLink {
+  type: FitnessGoalLinkType;
+  targetValue: number;
+  startingValue?: number;
+  unit?: string;
+}
+
 export interface Goal {
   id: string;
   userId: string; // Added for data isolation
@@ -161,6 +190,7 @@ export interface Goal {
   completedAt?: string;
   archived: boolean;
   financialLink?: FinancialGoalLink;
+  fitnessLink?: FitnessGoalLink;
   metadata?: Record<string, any>;
   generationCounter?: number;
   isDirty?: boolean;
@@ -194,6 +224,9 @@ export interface GoalStats {
   projectedCompletion?: number; // Projected completion % by deadline
   currentFinancialAmount?: number;
   targetFinancialAmount?: number;
+  currentFitnessValue?: number;
+  targetFitnessValue?: number;
+  fitnessUnit?: string;
 }
 
 
@@ -281,6 +314,7 @@ export interface UserSettings {
   showGoals?: boolean;
   showMilestones?: boolean;
   showFinance?: boolean;
+  showFitness?: boolean;
   habitOnlyMode?: boolean;
   generationCounter?: number;
   isDirty?: boolean;
@@ -360,6 +394,8 @@ export interface HabitFormData {
   intervalDays?: number;
   allowBonusCompletions?: boolean;
   autoTrackRule?: AutoTrackHabitRule;
+  polarity?: HabitPolarity;
+  anchorBlock?: HabitAnchorBlock;
   icon?: string;
   isQuantitative?: boolean;
   targetValue?: number;
@@ -379,6 +415,7 @@ export interface GoalFormData {
   milestones: string[]; // Just titles for initial creation
   isFocus?: boolean;
   financialLink?: FinancialGoalLink;
+  fitnessLink?: FitnessGoalLink;
 }
 
 export interface MilestoneFormData {
@@ -1038,6 +1075,381 @@ export interface FinanceFilterState {
   dateTo?: string;
   minAmount?: number;
   maxAmount?: number;
+}
+
+// ============================================
+// PHASE 2 LIFE OS — FITNESS, DIET, BIO & SUPPLEMENTS
+// ============================================
+
+export type FitnessActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'athlete';
+export type FitnessGoalType = 'fat_loss' | 'recomposition' | 'muscle_gain' | 'maintenance';
+export type DietPreference = 'veg' | 'eggetarian' | 'non_veg' | 'vegan';
+
+export interface FitnessProfile {
+  id: string;
+  userId: string;
+  heightCm?: number | null;
+  currentWeightKg?: number | null;
+  targetWeightKg?: number | null;
+  startingWeightKg?: number | null;
+  targetWaistInches?: number | null;
+  calorieTarget: number;
+  proteinTargetG: number;
+  carbsTargetG?: number | null;
+  fatTargetG?: number | null;
+  waterTargetMl: number;
+  stepsTarget: number;
+  sleepTargetHours: number;
+  activityLevel: FitnessActivityLevel;
+  goalType: FitnessGoalType;
+  dietPreference: DietPreference;
+  gymScheduleDays?: number[];
+  lowEnergyCalorieCeiling?: number | null;
+  lowEnergyStepsTarget?: number | null;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FitnessProfileFormData = Partial<
+  Omit<FitnessProfile, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'generationCounter' | 'isDirty'>
+>;
+
+export interface FitnessDailyLog {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  weightKg?: number | null;
+  waistInches?: number | null;
+  waterMl: number;
+  steps: number;
+  sleepHours?: number | null;
+  sleepQuality?: number | null; // 1-5
+  energyLevel?: number | null; // 1-5
+  sorenessLevel?: number | null; // 1-5
+  lowEnergyMode?: boolean;
+  junkFreeOverride?: boolean;
+  restedHabitIds?: string[];
+  notes?: string | null;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FitnessDailyLogPatch = Partial<
+  Omit<FitnessDailyLog, 'id' | 'userId' | 'date' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'generationCounter' | 'isDirty'>
+>;
+
+export type MealType =
+  | 'breakfast'
+  | 'lunch'
+  | 'dinner'
+  | 'snack'
+  | 'pre_workout'
+  | 'post_workout';
+
+export interface MealTemplate {
+  id: string;
+  userId: string;
+  name: string;
+  hindiAliases: string[];
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  fiberG?: number | null;
+  servingLabel: string;
+  mealType?: MealType | null;
+  isJunk: boolean;
+  isPinned: boolean;
+  order: number;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MealTemplateFormData = Omit<
+  MealTemplate,
+  'id' | 'userId' | 'order' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'generationCounter' | 'isDirty'
+> & { order?: number };
+
+export type MealLogSource = 'manual' | 'staple' | 'universal_capture' | 'finance_bridge' | 'mcp';
+
+/**
+ * Note: `calories`, `proteinG`, `carbsG`, `fatG` store the effective logged totals
+ * for this entry. `quantityMultiplier` is descriptive serving scale metadata.
+ */
+export interface MealLog {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  mealType: MealType;
+  name: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  fiberG?: number | null;
+  quantityMultiplier: number;
+  isJunk: boolean;
+  templateId?: string | null;
+  linkedTransactionId?: string | null;
+  source: MealLogSource;
+  notes?: string | null;
+  loggedAt: string;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MealLogFormData {
+  date?: string;
+  mealType?: MealType;
+  name: string;
+  calories: number;
+  proteinG: number;
+  carbsG?: number;
+  fatG?: number;
+  fiberG?: number | null;
+  quantityMultiplier?: number;
+  isJunk?: boolean;
+  templateId?: string | null;
+  linkedTransactionId?: string | null;
+  source?: MealLogSource;
+  notes?: string | null;
+  loggedAt?: string;
+}
+
+export type WorkoutType =
+  | 'push'
+  | 'pull'
+  | 'legs'
+  | 'upper'
+  | 'lower'
+  | 'full_body'
+  | 'cardio'
+  | 'mobility'
+  | 'sports'
+  | 'strength';
+
+export interface WorkoutExerciseSet {
+  reps: number;
+  weightKg: number;
+  rpe?: number;
+  isWarmup?: boolean;
+}
+
+export interface WorkoutExercise {
+  name: string;
+  sets: WorkoutExerciseSet[];
+  notes?: string;
+}
+
+export interface WorkoutSession {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  title: string;
+  workoutType: WorkoutType;
+  durationMinutes: number;
+  estimatedCaloriesBurned?: number | null;
+  exercises: WorkoutExercise[];
+  rpe?: number | null;
+  notes?: string | null;
+  source: string;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkoutSessionFormData {
+  date?: string;
+  title: string;
+  workoutType?: WorkoutType;
+  durationMinutes: number;
+  estimatedCaloriesBurned?: number | null;
+  exercises?: WorkoutExercise[];
+  rpe?: number | null;
+  notes?: string | null;
+  source?: string;
+}
+
+export type SupplementCategory =
+  | 'protein'
+  | 'creatine'
+  | 'vitamin'
+  | 'mineral'
+  | 'omega'
+  | 'pre_workout'
+  | 'other';
+
+export interface SupplementInventory {
+  id: string;
+  userId: string;
+  name: string;
+  brand?: string | null;
+  category: SupplementCategory;
+  unitLabel: string;
+  totalServings: number;
+  remainingServings: number;
+  dailyDosage: number;
+  costInr: number;
+  proteinPerServingG?: number | null;
+  manualAdjustment?: number;
+  anchorBlock?: HabitAnchorBlock | null;
+  lowStockThresholdDays: number;
+  linkedTransactionId?: string | null;
+  lastRestockedAt?: string | null;
+  isActive: boolean;
+  notes?: string | null;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupplementInventoryFormData {
+  name: string;
+  brand?: string | null;
+  category?: SupplementCategory;
+  unitLabel?: string;
+  totalServings: number;
+  remainingServings?: number;
+  dailyDosage?: number;
+  costInr?: number;
+  proteinPerServingG?: number | null;
+  manualAdjustment?: number;
+  anchorBlock?: HabitAnchorBlock | null;
+  lowStockThresholdDays?: number;
+  linkedTransactionId?: string | null;
+  lastRestockedAt?: string | null;
+  isActive?: boolean;
+  notes?: string | null;
+}
+
+export interface SupplementLog {
+  id: string;
+  userId: string;
+  supplementId: string;
+  date: string; // YYYY-MM-DD
+  servingsTaken: number;
+  takenAt: string;
+  notes?: string | null;
+  deletedAt?: string | null;
+  generationCounter?: number;
+  isDirty?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RollingWeightPoint {
+  date: string;
+  weightKg: number;
+  rolling7DayAvg: number;
+}
+
+export interface RollingWeightSummary {
+  points: RollingWeightPoint[];
+  latestWeightKg: number | null;
+  latestRollingAvgKg: number | null;
+  weeklyDeltaKg: number | null;
+}
+
+export interface WaistTrendPoint {
+  weekKey: string;
+  date: string;
+  waistInches: number;
+  deltaFromStart: number;
+}
+
+export interface WeeklyWaistTrendSummary {
+  points: WaistTrendPoint[];
+  latestWaistInches: number | null;
+  startingWaistInches: number | null;
+  totalDeltaInches: number | null;
+}
+
+export interface DailyFuelSummary {
+  date: string;
+  caloriesConsumed: number;
+  calorieTarget: number;
+  caloriesRemaining: number;
+  caloriePct: number;
+  proteinConsumedG: number;
+  proteinTargetG: number;
+  proteinRemainingG: number;
+  proteinPct: number;
+  carbsConsumedG: number;
+  fatConsumedG: number;
+  waterMl: number;
+  waterTargetMl: number;
+  waterPct: number;
+  steps: number;
+  stepsTarget: number;
+  stepsPct: number;
+  sleepHours: number | null;
+  sleepTargetHours: number;
+  energyLevel: number | null;
+  junkMealCount: number;
+  junkCalories: number;
+  mealCount: number;
+  lowEnergyMode?: boolean;
+  baseCalorieTarget?: number;
+  baseStepsTarget?: number;
+  junkFreeOverride?: boolean;
+}
+
+export interface ProgressiveOverloadHint {
+  exerciseName: string;
+  lastDate: string;
+  lastTopWeightKg: number;
+  lastTopReps: number;
+  lastSetsCount: number;
+  lastVolumeKg: number;
+  recommendedWeightKg: number;
+  recommendedReps: number;
+  suggestionText: string;
+}
+
+export interface ProteinFoodBenchmark {
+  id: string;
+  name: string;
+  servingLabel: string;
+  proteinPerServingG: number;
+  costPerServingInr: number;
+  costPer25gProteinInr: number;
+  isSupplement: boolean;
+}
+
+export interface SupplementRoiItem {
+  supplement: SupplementInventory;
+  derivedRemainingServings: number;
+  daysRemaining: number | null;
+  isLowStock: boolean;
+  costPerServingInr: number;
+  proteinPerServingG: number | null;
+  costPer25gProteinInr: number | null;
+  monthlyCostInr: number;
+  adherence30dPct: number;
+  roiStatus: 'high' | 'moderate' | 'wasted' | 'untracked';
+}
+
+export interface SupplementStockAndRoiSummary {
+  items: SupplementRoiItem[];
+  lowStockItems: SupplementRoiItem[];
+  totalMonthlySpendInr: number;
+  proteinBenchmarks: ProteinFoodBenchmark[];
 }
 
 

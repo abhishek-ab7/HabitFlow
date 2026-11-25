@@ -5,5 +5,6 @@ export * from './task-store';
 export * from './mood-store';
 export * from './pomodoro-store';
 export * from './finance-store';
+export { useFitnessStore } from './fitness';
 export { CrossDomainActionMediator } from './mediator';
 

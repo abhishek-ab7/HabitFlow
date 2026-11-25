@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion"
-import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2, ChevronDown, ChevronRight, Edit, StickyNote, Check } from "lucide-react"
+import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2, ChevronDown, ChevronRight, Edit, StickyNote, Check, Zap, Star } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { isAIEnabled } from "@/lib/ai-features-flag"
 import { format } from "date-fns"
@@ -29,6 +29,9 @@ interface TaskCardProps {
     onUpdate?: (task: Task) => void
     isOverlay?: boolean
     compact?: boolean
+    isMit?: boolean
+    mitRank?: number | null
+    onToggleMit?: (task: Task) => void
 }
 
 interface AIPriority {
@@ -37,7 +40,7 @@ interface AIPriority {
   urgencyScore: number;
 }
 
-export function TaskCard({ task, onComplete, onUpdate, compact }: TaskCardProps) {
+export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, onToggleMit }: TaskCardProps) {
     const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
     const [loadingPriority, setLoadingPriority] = useState(false);
     
@@ -90,7 +93,8 @@ export function TaskCard({ task, onComplete, onUpdate, compact }: TaskCardProps)
         activeTaskId, 
         isRunning: isTimerRunning, 
         timeLeft, 
-        startTimer, 
+        startTimer,
+        startPresetTimer,
         pauseTimer, 
         resumeTimer 
     } = usePomodoroStore();
@@ -508,21 +512,71 @@ export function TaskCard({ task, onComplete, onUpdate, compact }: TaskCardProps)
                                             </Button>
                                         )
                                     ) : (
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                startTimer(task.id, task.title);
-                                            }}
-                                            className="h-6 px-2 text-[10px] gap-1 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/5 rounded-md font-medium"
-                                        >
-                                            <Play className="h-3 w-3" />
-                                            <span>Start Focus</span>
-                                        </Button>
+                                        <div className="flex items-center gap-1">
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const starter =
+                                                        startPresetTimer ||
+                                                        usePomodoroStore.getState?.()?.startPresetTimer;
+                                                    if (starter) {
+                                                        starter('starter_2m', {
+                                                            taskId: task.id,
+                                                            title: task.title,
+                                                            durationSecs: 120,
+                                                            openPanel: true,
+                                                        });
+                                                    }
+                                                }}
+                                                data-testid={`task-2m-start-${task.id}`}
+                                                aria-label={`2m Start ${task.title}`}
+                                                className="h-6 px-2 text-[10px] gap-1 text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded-md font-semibold"
+                                            >
+                                                <Zap className="h-3 w-3" />
+                                                <span>2m Start</span>
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    startTimer(task.id, task.title);
+                                                }}
+                                                className="h-6 px-2 text-[10px] gap-1 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/5 rounded-md font-medium"
+                                            >
+                                                <Play className="h-3 w-3" />
+                                                <span>Start Focus</span>
+                                            </Button>
+                                        </div>
                                     )}
                                 </div>
+                            )}
+
+                            {/* MIT Pin Badge / Toggle */}
+                            {(isMit || onToggleMit) && task.status !== 'done' && (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onToggleMit?.(task);
+                                    }}
+                                    aria-label={isMit ? `Unpin MIT ${task.title}` : `Pin MIT ${task.title}`}
+                                    className={cn(
+                                        "h-6 px-2 text-[10px] gap-1 rounded-md font-semibold",
+                                        isMit
+                                            ? "text-primary bg-primary/10 hover:bg-primary/20"
+                                            : "text-muted-foreground hover:text-primary hover:bg-primary/5"
+                                    )}
+                                >
+                                    <Star className={cn("h-3 w-3", isMit && "fill-current")} />
+                                    <span>{isMit ? `MIT #${mitRank ?? ''}`.trim() : 'MIT'}</span>
+                                </Button>
                             )}
 
                             {/* Quick Notes Toggle */}

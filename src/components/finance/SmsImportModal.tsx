@@ -9,6 +9,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
+import {
+  classifyCategoryBridgeKind,
+  estimateDietBridgePreview,
+  executeFinanceFitnessBridge,
+  findMatchingSupplementId,
+} from '@/lib/fitness/finance-bridge';
 import {
   parseSmsOrNotificationBatch,
   type ParsedSmsExpense,
@@ -24,6 +32,8 @@ import {
   Copy,
   Sparkles,
   AlertTriangle,
+  Utensils,
+  Pill,
 } from 'lucide-react';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
@@ -46,6 +56,9 @@ export function SmsImportModal({
   const categorizationRules = useFinanceStore((s) => s.categorizationRules);
   const addTransaction = useFinanceStore((s) => s.addTransaction);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
+  const supplementInventory = useFitnessStore((s) => s.supplementInventory);
+  const fitnessHasLoaded = useFitnessStore((s) => s.hasLoaded);
+  const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -57,12 +70,26 @@ export function SmsImportModal({
   const [showAutomationGuide, setShowAutomationGuide] = useState(false);
   const [editingCategoryItemId, setEditingCategoryItemId] = useState<string | null>(null);
   const [sendToReviewInbox, setSendToReviewInbox] = useState(true);
+  const [bridgeByItemId, setBridgeByItemId] = useState<
+    Record<
+      string,
+      {
+        alsoLogToDiet?: boolean;
+        restockSupplement?: boolean;
+        supplementId?: string;
+        restockServings?: number;
+      }
+    >
+  >({});
 
   useEffect(() => {
     if (open && categories.length === 0) {
       loadFinanceData();
     }
-  }, [open, categories.length, loadFinanceData]);
+    if (open && !fitnessHasLoaded) {
+      loadFitnessData().catch(() => undefined);
+    }
+  }, [open, categories.length, loadFinanceData, fitnessHasLoaded, loadFitnessData]);
 
   const runParse = async (input: string) => {
     const trimmed = input.trim();
@@ -121,7 +148,7 @@ export function SmsImportModal({
                   categorySlug: cat?.slug || 'shopping-personal-care',
                   accountId: acc?.id || '',
                   paymentMethodType: aiData.paymentMethodType || 'upi',
-                  date: aiData.date || new Date().toISOString().split('T')[0],
+                  date: aiData.date || getLocalIsoDate(),
                   isDuplicate: false,
                   confidence: aiData.confidence || 80,
                   selected: true,
@@ -136,6 +163,7 @@ export function SmsImportModal({
       }
 
       setParsedItems(detected);
+      setBridgeByItemId({});
       setHasParsed(true);
       if (detected.length === 0) {
         toast.info('No bank or UPI expense amounts detected in that text');
@@ -226,6 +254,8 @@ export function SmsImportModal({
     setIsImporting(true);
     try {
       let reviewQueued = 0;
+      let dietBridged = 0;
+      let suppRestocked = 0;
       for (const item of selectedItems) {
         const shouldReview = sendToReviewInbox && !item.matchedRuleId;
         if (shouldReview) reviewQueued += 1;
@@ -238,7 +268,7 @@ export function SmsImportModal({
           ])
         );
 
-        await addTransaction({
+        const createdTx = await addTransaction({
           title: item.title.trim() || 'SMS Expense',
           merchantName: item.title.trim() || undefined,
           rawMerchant: item.rawMerchant || undefined,
@@ -251,13 +281,45 @@ export function SmsImportModal({
           notes: `Imported from SMS/Notification: ${item.rawText.slice(0, 160)}`,
           tags: mergedTags,
         });
+
+        const itemCat =
+          categories.find((c) => c.id === (item.categoryId || fallbackCat)) ||
+          (item.categorySlug
+            ? { slug: item.categorySlug, name: item.categorySlug }
+            : null);
+        const bridgeKind = classifyCategoryBridgeKind(itemCat);
+        const itemBridge = bridgeByItemId[item.id];
+        if (bridgeKind !== 'none' && createdTx.type === 'expense') {
+          const res = await executeFinanceFitnessBridge({
+            bridgeKind,
+            transaction: createdTx,
+            alsoLogToDiet: itemBridge?.alsoLogToDiet,
+            restockSupplement: itemBridge?.restockSupplement,
+            supplementId:
+              itemBridge?.supplementId ||
+              findMatchingSupplementId(item.title, supplementInventory),
+            restockServings: itemBridge?.restockServings || 30,
+            newSupplementName: item.title.trim() || undefined,
+          });
+          if (bridgeKind === 'junk' || res.dietLogged) dietBridged += 1;
+          if (res.supplementRestocked) suppRestocked += 1;
+        }
       }
+      const bridgeSummary =
+        dietBridged > 0 || suppRestocked > 0
+          ? ` (${[
+              dietBridged > 0 ? `${dietBridged} meal logged` : '',
+              suppRestocked > 0 ? `${suppRestocked} restocked` : '',
+            ]
+              .filter(Boolean)
+              .join(', ')})`
+          : '';
       toast.success(
         reviewQueued > 0
-          ? `Imported ${selectedItems.length} entries (${reviewQueued} queued for Needs Review)`
+          ? `Imported ${selectedItems.length} entries (${reviewQueued} queued for Needs Review)${bridgeSummary}`
           : `Imported ${selectedItems.length} verified ${
               selectedItems.length === 1 ? 'transaction' : 'transactions'
-            }`
+            }${bridgeSummary}`
       );
       onOpenChange(false);
     } finally {
@@ -422,6 +484,27 @@ export function SmsImportModal({
                 <div className="space-y-2.5">
                   {parsedItems.map((item) => {
                     const cat = categories.find((c) => c.id === item.categoryId);
+                    const bridgeKind =
+                      item.type === 'expense'
+                        ? classifyCategoryBridgeKind(
+                            cat ||
+                              (item.categorySlug
+                                ? { slug: item.categorySlug, name: item.categorySlug }
+                                : null)
+                          )
+                        : 'none';
+                    const itemBridge = bridgeByItemId[item.id] || {};
+                    const dietPreview = estimateDietBridgePreview(
+                      item.title,
+                      item.amount,
+                      bridgeKind === 'junk'
+                    );
+                    const activeSupps = supplementInventory.filter(
+                      (s) => !s.deletedAt && s.isActive
+                    );
+                    const matchedSuppId =
+                      itemBridge.supplementId ||
+                      findMatchingSupplementId(item.title, supplementInventory);
                     return (
                       <div
                         key={item.id}
@@ -530,6 +613,118 @@ export function SmsImportModal({
                             {item.date}
                           </span>
                         </div>
+
+                        {/* Cross-Domain Finance -> Diet / Supplement Bridge */}
+                        {bridgeKind !== 'none' && (
+                          <div className="pl-7 flex flex-wrap items-center gap-2">
+                            {bridgeKind === 'junk' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-[11px] font-medium text-amber-600 dark:text-amber-300">
+                                <Utensils className="w-3 h-3" />
+                                Auto-logs ~{dietPreview.calories} kcal to Diet
+                              </span>
+                            )}
+
+                            {bridgeKind === 'food_dining' && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setBridgeByItemId((prev) => ({
+                                    ...prev,
+                                    [item.id]: {
+                                      ...prev[item.id],
+                                      alsoLogToDiet: !itemBridge.alsoLogToDiet,
+                                    },
+                                  }))
+                                }
+                                aria-pressed={Boolean(itemBridge.alsoLogToDiet)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${
+                                  itemBridge.alsoLogToDiet
+                                    ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300'
+                                    : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                                }`}
+                              >
+                                <Utensils className="w-3 h-3" />
+                                Also log ~{dietPreview.calories} kcal to Diet
+                              </button>
+                            )}
+
+                            {bridgeKind === 'health_supplements' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setBridgeByItemId((prev) => ({
+                                      ...prev,
+                                      [item.id]: {
+                                        ...prev[item.id],
+                                        restockSupplement: !itemBridge.restockSupplement,
+                                        supplementId: matchedSuppId,
+                                        restockServings:
+                                          itemBridge.restockServings || 30,
+                                      },
+                                    }))
+                                  }
+                                  aria-pressed={Boolean(itemBridge.restockSupplement)}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${
+                                    itemBridge.restockSupplement
+                                      ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300'
+                                      : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  <Pill className="w-3 h-3" />
+                                  Restock Supplement
+                                </button>
+
+                                {itemBridge.restockSupplement && (
+                                  <div className="flex items-center gap-1.5">
+                                    <select
+                                      value={matchedSuppId}
+                                      onChange={(e) =>
+                                        setBridgeByItemId((prev) => ({
+                                          ...prev,
+                                          [item.id]: {
+                                            ...prev[item.id],
+                                            supplementId: e.target.value,
+                                          },
+                                        }))
+                                      }
+                                      aria-label="Restock target supplement"
+                                      className="h-7 rounded-md border border-input bg-background px-1.5 text-[11px]"
+                                    >
+                                      {activeSupps.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                          {s.name}
+                                        </option>
+                                      ))}
+                                      <option value="__new__">
+                                        + New ({item.title.trim() || 'Supplement'})
+                                      </option>
+                                    </select>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      value={itemBridge.restockServings || 30}
+                                      onChange={(e) =>
+                                        setBridgeByItemId((prev) => ({
+                                          ...prev,
+                                          [item.id]: {
+                                            ...prev[item.id],
+                                            restockServings: Math.max(
+                                              1,
+                                              Number(e.target.value) || 30
+                                            ),
+                                          },
+                                        }))
+                                      }
+                                      aria-label="Restock servings"
+                                      className="h-7 w-16 text-[11px]"
+                                    />
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
 
                         {/* Duplicate notice */}
                         {item.isDuplicate && (

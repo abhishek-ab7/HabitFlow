@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Task } from '@/lib/types';
 import { TaskCard } from './TaskCard';
 import { useTaskStore } from '@/lib/stores/task-store';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -112,7 +113,7 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const todayEndIso = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalIsoDate();
     return `${today}T23:59:59`;
   }, []);
 

@@ -22,6 +22,7 @@ import {
   Keyboard,
   Wallet,
   Sparkles,
+  Dumbbell,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
@@ -31,11 +32,13 @@ import { SyncStatusBadge } from '@/components/sync/SyncStatusBadge';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
+import { HeaderAlertsBell } from '@/components/alerts/UnifiedAlertManager';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/tasks', label: 'Tasks', icon: ListTodo },
   { href: '/habits', label: 'Habits', icon: CheckSquare },
+  { href: '/fitness', label: 'Fitness', icon: Dumbbell },
   { href: '/goals', label: 'Goals', icon: Target },
   { href: '/finance', label: 'Finance', icon: Wallet },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -53,10 +56,11 @@ export function Header() {
   const { settings } = useGamificationStore();
   const visibleNavItems = navItems.filter(item => {
     if (settings?.habitOnlyMode) {
-      return item.href === '/dashboard' || item.href === '/habits' || item.href === '/finance' || item.href === '/analytics' || item.href === '/settings';
+      return item.href === '/dashboard' || item.href === '/habits' || item.href === '/analytics' || item.href === '/settings';
     }
     if (item.href === '/tasks' && settings?.showTasks === false) return false;
     if (item.href === '/goals' && settings?.showGoals === false) return false;
+    if (item.href === '/fitness' && settings?.showFitness === false) return false;
     if (item.href === '/finance' && settings?.showFinance === false) return false;
     return true;
   });
@@ -215,6 +219,9 @@ export function Header() {
               <SyncStatusBadge />
             </div>
           )}
+
+          {/* Unified 3-Day Alerts Bell Badge & Popover */}
+          <HeaderAlertsBell />
 
           {/* User Menu */}
           {isAuthenticated ? (

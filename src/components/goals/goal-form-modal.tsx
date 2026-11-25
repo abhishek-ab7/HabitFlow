@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { format, addDays } from 'date-fns';
-import { X, Plus, Trash2, Star, Landmark, PiggyBank, ArrowDownRight, TrendingUp } from 'lucide-react';
+import { X, Plus, Trash2, Star, Landmark, PiggyBank, ArrowDownRight, TrendingUp, Dumbbell, Scale, Ruler, Footprints } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,8 +17,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { Goal, GoalFormData, AreaOfLife, Priority, FinancialGoalLink, FinancialGoalLinkType } from '@/lib/types';
+import type { Goal, GoalFormData, AreaOfLife, Priority, FinancialGoalLink, FinancialGoalLinkType, FitnessGoalLink, FitnessGoalLinkType } from '@/lib/types';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import { useFitnessStore } from '@/lib/stores/fitness';
 import { GOAL_TEMPLATES } from '@/lib/goal-templates';
 
 interface GoalFormModalProps {
@@ -53,6 +54,8 @@ export function GoalFormModal({
 }: GoalFormModalProps) {
   const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary } = useFinanceStore();
   const netWorthSummary = getNetWorthSummary();
+  const fitnessProfile = useFitnessStore((s) => s.profile);
+  const fitnessDailyLogs = useFitnessStore((s) => s.dailyLogs);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -73,6 +76,12 @@ export function GoalFormModal({
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [selectedDebtIds, setSelectedDebtIds] = useState<string[]>([]);
   const [selectedSipIds, setSelectedSipIds] = useState<string[]>([]);
+
+  // Fitness Link state
+  const [enableFitnessLink, setEnableFitnessLink] = useState(false);
+  const [fitnessLinkType, setFitnessLinkType] = useState<FitnessGoalLinkType>('target_weight');
+  const [fitnessTargetValue, setFitnessTargetValue] = useState('');
+  const [fitnessStartingValue, setFitnessStartingValue] = useState('');
 
   const isEditing = !!goal;
 
@@ -107,6 +116,21 @@ export function GoalFormModal({
             setSelectedDebtIds([]);
             setSelectedSipIds([]);
           }
+          if (goal.fitnessLink) {
+            setEnableFitnessLink(true);
+            setFitnessLinkType(goal.fitnessLink.type);
+            setFitnessTargetValue(String(goal.fitnessLink.targetValue || ''));
+            setFitnessStartingValue(
+              goal.fitnessLink.startingValue !== undefined
+                ? String(goal.fitnessLink.startingValue)
+                : ''
+            );
+          } else {
+            setEnableFitnessLink(false);
+            setFitnessLinkType('target_weight');
+            setFitnessTargetValue('');
+            setFitnessStartingValue('');
+          }
         } else {
           setTitle('');
           setDescription('');
@@ -123,6 +147,10 @@ export function GoalFormModal({
           setSelectedAccountIds([]);
           setSelectedDebtIds([]);
           setSelectedSipIds([]);
+          setEnableFitnessLink(false);
+          setFitnessLinkType('target_weight');
+          setFitnessTargetValue('');
+          setFitnessStartingValue('');
         }
         setErrors({});
       });
@@ -185,6 +213,22 @@ export function GoalFormModal({
       };
     }
 
+    let fitnessLink: FitnessGoalLink | undefined = undefined;
+    if (enableFitnessLink && Number(fitnessTargetValue) > 0) {
+      const unitMap: Partial<Record<FitnessGoalLinkType, string>> = {
+        target_weight: 'kg',
+        target_waist: 'in',
+        monthly_workouts: 'workouts',
+        daily_steps_avg: 'steps/day',
+      };
+      fitnessLink = {
+        type: fitnessLinkType,
+        targetValue: Math.max(0, Number(fitnessTargetValue) || 0),
+        startingValue: fitnessStartingValue ? Number(fitnessStartingValue) : undefined,
+        unit: unitMap[fitnessLinkType],
+      };
+    }
+
     onSubmit({
       title: title.trim(),
       description: description.trim() || undefined,
@@ -195,6 +239,7 @@ export function GoalFormModal({
       milestones: milestones.filter(m => m.trim() !== ''),
       isFocus,
       financialLink,
+      fitnessLink,
     });
 
     onOpenChange(false);
@@ -641,6 +686,122 @@ export function GoalFormModal({
                         </span>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+              {/* Fitness Link Section */}
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">
+                      <Dumbbell className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="enable-fit-link" className="text-sm font-semibold text-foreground cursor-pointer">
+                          Live Fitness Telemetry Link
+                        </label>
+                        <Badge variant="outline" className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 text-[10px] px-1.5 py-0 font-medium">
+                          Life OS Link
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Auto-calculate progress from weight, waist, workouts, or 14d step average
+                      </p>
+                    </div>
+                  </div>
+                  <Checkbox
+                    id="enable-fit-link"
+                    checked={enableFitnessLink}
+                    onCheckedChange={(c) => setEnableFitnessLink(!!c)}
+                  />
+                </div>
+
+                {enableFitnessLink && (
+                  <div className="space-y-4 pt-2 border-t border-emerald-500/20">
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                        Fitness Metric Type
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: 'target_weight' as const, label: 'Target Weight', icon: Scale, desc: 'Rolling 7d kg' },
+                          { id: 'target_waist' as const, label: 'Target Waist', icon: Ruler, desc: 'Weekly inches' },
+                          { id: 'monthly_workouts' as const, label: 'Monthly Workouts', icon: Dumbbell, desc: 'Gym sessions/mo' },
+                          { id: 'daily_steps_avg' as const, label: 'Daily Steps Avg', icon: Footprints, desc: '14-day step pace' },
+                        ].map((m) => {
+                          const Icon = m.icon;
+                          const isSel = fitnessLinkType === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setFitnessLinkType(m.id)}
+                              className={cn(
+                                "p-2.5 rounded-lg border text-left flex flex-col justify-between transition-all text-xs",
+                                isSel
+                                  ? "border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500"
+                                  : "border-border/60 bg-background/50 hover:bg-muted text-muted-foreground"
+                              )}
+                            >
+                              <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                                <Icon className="h-3.5 w-3.5 text-emerald-500" />
+                                <span>{m.label}</span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground mt-1 line-clamp-1">{m.desc}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="fitness-target-value" className="text-xs font-semibold text-foreground block mb-1">
+                          Target ({fitnessLinkType === 'target_weight' ? 'kg' : fitnessLinkType === 'target_waist' ? 'in' : fitnessLinkType === 'monthly_workouts' ? 'workouts/mo' : 'steps/day'}) *
+                        </label>
+                        <Input
+                          id="fitness-target-value"
+                          type="number"
+                          step="0.1"
+                          placeholder={
+                            fitnessLinkType === 'target_weight'
+                              ? 'e.g. 74'
+                              : fitnessLinkType === 'target_waist'
+                                ? 'e.g. 31'
+                                : fitnessLinkType === 'monthly_workouts'
+                                  ? 'e.g. 16'
+                                  : 'e.g. 9000'
+                          }
+                          value={fitnessTargetValue}
+                          onChange={(e) => setFitnessTargetValue(e.target.value)}
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      {(fitnessLinkType === 'target_weight' || fitnessLinkType === 'target_waist') && (
+                        <div>
+                          <label htmlFor="fitness-starting-value" className="text-xs font-semibold text-foreground block mb-1">
+                            Starting Baseline ({fitnessLinkType === 'target_weight' ? 'kg' : 'in'})
+                          </label>
+                          <Input
+                            id="fitness-starting-value"
+                            type="number"
+                            step="0.1"
+                            placeholder={
+                              fitnessLinkType === 'target_weight' && fitnessProfile?.currentWeightKg
+                                ? `e.g. ${fitnessProfile.currentWeightKg}`
+                                : fitnessLinkType === 'target_waist' && fitnessDailyLogs.find((l) => l.waistInches)?.waistInches
+                                  ? `e.g. ${fitnessDailyLogs.find((l) => l.waistInches)?.waistInches}`
+                                  : 'Optional baseline'
+                            }
+                            value={fitnessStartingValue}
+                            onChange={(e) => setFitnessStartingValue(e.target.value)}
+                            className="font-mono text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

@@ -8,6 +8,7 @@ function tokenizeQuery(question: string): string[] {
     'has', 'was', 'were', 'are', 'is', 'the', 'this', 'that', 'with', 'from', 'for',
     'and', 'about', 'into', 'your', 'mine', 'spent', 'spend', 'money', 'month',
     'show', 'tell', 'give', 'please', 'list', 'all', 'current', 'total',
+    'can', 'per', 'day', 'days', 'safe', 'safely', 'today', 'week', 'rest',
   ]);
   return question
     .toLowerCase()
@@ -31,6 +32,113 @@ export function buildDeterministicFinanceAnswer(question: string, context: any):
   const recentTxs: any[] = Array.isArray(context?.recentTransactions) ? context.recentTransactions : [];
   const trailing: any[] = Array.isArray(context?.trailingMonths) ? context.trailingMonths : [];
   const anomalies: any[] = Array.isArray(context?.anomalies) ? context.anomalies : [];
+  const lifeOs = context?.lifeOs || {};
+  const cd = lifeOs?.crossDomain || {};
+  const ww = cd?.walletWaistline || {};
+  const roi = cd?.gymSupplementRoi || {};
+  const trig = cd?.triggers || {};
+  const social = cd?.socialSpendDiet || {};
+  const fTelemetry = lifeOs?.fitnessTelemetry || {};
+
+  // Life OS 0A. Supplement / Whey / Protein ROI
+  if (/\b(whey|supplements?|creatine|omega|protein\s*roi|scoop|stock|restock|25g)\b/.test(q)) {
+    const breakdown: any[] = Array.isArray(roi?.supplementBreakdown) ? roi.supplementBreakdown : [];
+    if (breakdown.length === 0) {
+      return 'No active supplements are tracked in your inventory yet. Add Whey, Creatine, or vitamins under **Fitness -> Supplements** to compute ₹/scoop, ₹/25g protein grade, and runout days.';
+    }
+    const lines = breakdown.map((item) => {
+      const proteinPart =
+        item.costPer25gProteinInr !== null && item.costPer25gProteinInr !== undefined
+          ? ` · **${fmt(item.costPer25gProteinInr)}/25g protein** (Grade **${item.proteinValueGrade}**)`
+          : '';
+      const stockPart =
+        item.daysRemaining !== null && item.daysRemaining !== undefined
+          ? ` · **${item.daysRemaining}d stock left**`
+          : '';
+      return `- **${item.name}**: **${fmt(item.costPerScoopInr)}/${item.unitLabel}**${proteinPart} · ${item.adherence30dPct}% adherence (${item.roiStatus})${stockPart}`;
+    });
+    return `Supplement ROI & Stock Audit (monthly amortized **${fmt(roi.supplementMonthlyAmortizedInr)}/mo**):\n${lines.join('\n')}`;
+  }
+
+  // Life OS 0B. Gym ROI & Cost per Workout
+  if (/\b(gym|workouts?|sessions?|cost per workout)\b/.test(q)) {
+    const gymSpend = Number(roi?.gymSpend30dInr || 0);
+    const workouts = Number(roi?.workouts30dCount || 0);
+    const targetSessions = Number(roi?.targetWorkoutsAt4PerWeek || 16);
+    if (gymSpend === 0 && workouts === 0) {
+      return 'No gym expenses or workout sessions were logged in the last 30 days. Log sessions in **Fitness -> Gym** or tag gym fees cleanly to track ₹/workout ROI.';
+    }
+    const perWorkoutText =
+      roi?.gymCostPerWorkoutInr !== null && roi?.gymCostPerWorkoutInr !== undefined
+        ? `**${fmt(roi.gymCostPerWorkoutInr)}/workout**`
+        : workouts === 0
+          ? '**No workouts logged yet (Grade F)**'
+          : `**${workouts} sessions logged**`;
+    const targetText =
+      roi?.targetGymCostPerWorkoutInr !== null && roi?.targetGymCostPerWorkoutInr !== undefined
+        ? ` vs target **${fmt(roi.targetGymCostPerWorkoutInr)}/workout** at 4x/week (${targetSessions}/mo)`
+        : '';
+    return `Your 30-day **Gym ROI** is **Grade ${roi.gymRoiGrade || 'N/A'}**: ${perWorkoutText} across **${workouts} workout(s)** on **${fmt(gymSpend)}** gym spend${targetText}.\nCombined Gym + Supplements spend: **${fmt(roi.combinedMonthlyFitnessSpendInr)}/mo**.`;
+  }
+
+  // Life OS 0C. Sleep / Mood / Missed Workout Spending Triggers (check before generic junk so "sleep trigger junk" routes here)
+  if (/\b(sleep|tired|low\s*energy|trigger|stress(?:ed)?|mood|idk)\b/.test(q)) {
+    const triggerDays = Number(trig?.triggerDaysCount || 0);
+    const triggerAvg = Number(trig?.triggerAvgDailySpendInr || 0);
+    const baseAvg = Number(trig?.baselineAvgDailySpendInr || 0);
+    const mult = trig?.overallSpendMultiplier;
+    const sleepText =
+      fTelemetry?.avgSleepHours14d !== null && fTelemetry?.avgSleepHours14d !== undefined
+        ? `14d avg sleep is **${fTelemetry.avgSleepHours14d} hrs**. `
+        : '';
+    if (triggerDays === 0) {
+      return `${sleepText}No low-sleep (<6.5h), low-energy, missed-workout, or stressed/sad mood trigger patterns have triggered extra junk/'idk' spending in the last 30 days.`;
+    }
+    const multText = mult !== null && mult !== undefined ? `**${mult}x higher**` : 'concentrated';
+    return `${sleepText}On your **${triggerDays} trigger day(s)** (${trig.topTriggerLabel || 'low-recovery'}), Junk/'idk' spend averaged **${fmt(triggerAvg)}/day** vs **${fmt(baseAvg)}/day** baseline (${multText} spend, **${fmt(trig.totalTriggerJunkIdkSpend30dInr)}** total triggered).`;
+  }
+
+  // Life OS 0D. Social Hangouts / Outings vs. Diet Balance
+  if (
+    /\b(hangouts?|outings?|social\s*(?:food|spend|diet|splits?|eating)?|friend\s*splits?|diet\s*balance|swaps?)\b/.test(
+      q
+    )
+  ) {
+    const events = Number(social?.socialFoodEventCount30d || 0);
+    const spend30 = Number(social?.socialFoodSpend30dInr || 0);
+    const junkKcal30 = Number(social?.socialJunkCalories30d || 0);
+    const calSpike = Number(social?.hangoutCalorieSpikeKcal || 0);
+    const mult = social?.hangoutSpendMultiplier;
+    const swaps: string[] = Array.isArray(social?.suggestedSwaps) ? social.suggestedSwaps : [];
+    if (events === 0) {
+      return 'No split hangout or outing food spikes detected in the last 30 days. Your social spending is well balanced with your diet targets.';
+    }
+    const multPart =
+      mult !== null && mult !== undefined ? ` (**${mult}x** solo food spend)` : '';
+    const spikePart =
+      calSpike > 0 ? ` with **+${calSpike.toLocaleString('en-IN')} kcal** day spike` : '';
+    const swapPart =
+      swaps.length > 0 ? `\n- Swaps to try: ${swaps.slice(0, 2).join(' | ')}` : '';
+    return `Social Spend vs. Diet Balance (30d): **${events} hangout(s)** totaling **${fmt(spend30)}**${multPart} and **${junkKcal30.toLocaleString('en-IN')} junk kcal**${spikePart}.${swapPart}`;
+  }
+
+  // Life OS 0E. Junk Food Cost, Empty Calories & Fat-Loss Drag
+  if (
+    /\b(junk|empty\s*(?:kcal|calories?)|calories?\s*impact|fat[- ]?loss\s*drag|cheat\s*meal|waistline)\b/.test(
+      q
+    )
+  ) {
+    const s14 = Number(ww?.spend14dInr || 0);
+    const s30 = Number(ww?.spend30dInr || 0);
+    const k14 = Number(ww?.emptyKcal14d || 0);
+    const k30 = Number(ww?.emptyKcal30d || 0);
+    const drag30 = Number(ww?.fatLossDragKg30d || 0);
+    const save70 = Number(ww?.savings70PctMonthlyInr || 0);
+    if (s30 === 0 && k30 === 0) {
+      return 'Zero Junk Food transactions or junk meals detected in the last 30 days. Clean streak intact!';
+    }
+    return `Wallet <-> Waistline Impact:\n- Last 14 days: **${fmt(s14)}** junk spend & **${k14.toLocaleString('en-IN')} empty kcal**\n- Last 30 days: **${fmt(s30)}** junk spend, **${k30.toLocaleString('en-IN')} empty kcal** (**~${drag30} kg** fat-loss drag)\n- Cutting junk by 70% saves **${fmt(save70)}/mo**${ww?.topJunkMerchant ? ` (top source: **${ww.topJunkMerchant}**)` : ''}.`;
+  }
 
   // 1. Specific category match in user question
   const matchedCategory = categories.find((c) => {
@@ -99,7 +207,7 @@ export function buildDeterministicFinanceAnswer(question: string, context: any):
   }
 
   // 3. Affordability / Safe-to-Spend
-  if (/\b(afford|safe|daily|buy|left to spend|remaining budget)\b/.test(q)) {
+  if (/\b(afford|safe(?:ly)?|daily|per\s+day|buy|left to spend|remaining budget)\b/.test(q)) {
     return `You have **${fmt(s.safeToSpendMonthly)}** safe to spend for the rest of **${monthLabel}** (**${fmt(
       s.safeToSpendDaily
     )}/day** across ${s.remainingDaysInMonth || 0} remaining days), backed by **${fmt(

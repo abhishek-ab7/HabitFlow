@@ -29,6 +29,7 @@ import {
 import { FadeIn, StaggerContainer, StaggerItem } from '@/components/motion';
 import { GoalCard, GoalFormModal, EmptyGoals } from '@/components/goals';
 import { useGoalStore } from '@/lib/stores';
+import { useFitnessStore } from '@/lib/stores/fitness';
 import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -99,6 +100,10 @@ function GoalsPageContent() {
       // NOTE: loadGoals() and loadAllMilestones() can be combined into a single Dexie transaction if performance becomes a bottleneck at scale.
       loadGoals();
       loadAllMilestones();
+      const fitState = useFitnessStore.getState();
+      if (!fitState.hasLoaded) {
+        void fitState.loadFitnessData(user.id);
+      }
     }
   }, [isAuthenticated, user?.id, loadGoals, loadAllMilestones]);
 
@@ -156,6 +161,7 @@ function GoalsPageContent() {
         deadline: data.deadline,
         isFocus: data.isFocus,
         financialLink: data.financialLink,
+        fitnessLink: data.fitnessLink,
       });
 
       // Handle milestones - add new ones

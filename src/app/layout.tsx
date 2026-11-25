@@ -9,6 +9,7 @@ import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
 import { QuickCaptureModal } from '@/components/quick-capture/QuickCaptureModal';
+import { UnifiedAlertManager } from '@/components/alerts/UnifiedAlertManager';
 import './globals.css';
 
 const geistSans = Geist({
@@ -89,6 +90,7 @@ export default function RootLayout({
                   <MobileNav />
                 </div>
                 <ShortcutsProvider />
+                <UnifiedAlertManager />
                 <Toaster richColors position="bottom-right" />
                 <PomodoroFloating />
                 <QuickCaptureModal />

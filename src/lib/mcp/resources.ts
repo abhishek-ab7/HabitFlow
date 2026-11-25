@@ -14,17 +14,29 @@ import {
   mapFinanceRecurringBillFromRow,
   mapFinanceSipPlanFromRow,
   mapFinanceTransactionFromRow,
+  mapFitnessDailyLogFromRow,
+  mapFitnessProfileFromRow,
   mapHabitCompletionFromRow,
   mapHabitFromRow,
+  mapMealLogFromRow,
   mapMonthlyCommitmentFromRow,
+  mapSupplementInventoryFromRow,
+  mapSupplementLogFromRow,
+  mapWorkoutSessionFromRow,
 } from './mappers';
 import { calculateHabitStats, getHabitWeekProgress } from '@/lib/calculations';
+import {
+  calculate7DayRollingWeight,
+  calculateDailyFuelSummary,
+  calculateSupplementStockAndRoi,
+  calculateWeeklyWaistTrend,
+} from '@/lib/fitness/shared-analytics';
 import {
   calculateMonthlySummary,
   calculateNetWorthSummary,
   calculateFriendLedgerGroups,
 } from '@/lib/finance/shared-analytics';
-import { computeCreditCardSummary } from '@/lib/finance/credit-card-cycles';
+import { addDays, computeCreditCardSummary } from '@/lib/finance/credit-card-cycles';
 
 export function registerMcpResources(server: McpServer) {
   // 1. habitflow://today
@@ -47,24 +59,37 @@ export function registerMcpResources(server: McpServer) {
       const dateIst = getIstIsoDate();
       const supabase = getSupabaseAdmin();
 
-      const [{ data: habits }, { data: completions }, { data: tasks }, { data: goals }, { data: mood }] =
-        await Promise.all([
-          supabase.from('habits').select('*').eq('user_id', auth.userId).eq('is_archived', false),
-          supabase.from('completions').select('*').eq('user_id', auth.userId).eq('date', dateIst),
-          supabase
-            .from('tasks')
-            .select('*')
-            .eq('user_id', auth.userId)
-            .neq('status', 'archived')
-            .or(`due_date.lte.${dateIst},status.eq.todo,status.eq.in_progress`),
-          supabase
-            .from('goals')
-            .select('*, milestones(*)')
-            .eq('user_id', auth.userId)
-            .eq('is_archived', false)
-            .eq('is_focus', true),
-          supabase.from('mood_logs').select('*').eq('user_id', auth.userId).eq('date', dateIst).maybeSingle(),
-        ]);
+      const [
+        { data: habits },
+        { data: completions },
+        { data: tasks },
+        { data: goals },
+        { data: mood },
+        { data: fitProfileRows },
+        { data: todayBioRow },
+        { data: todayMealRows },
+        { data: todayWorkoutRows },
+      ] = await Promise.all([
+        supabase.from('habits').select('*').eq('user_id', auth.userId).eq('is_archived', false),
+        supabase.from('completions').select('*').eq('user_id', auth.userId).eq('date', dateIst),
+        supabase
+          .from('tasks')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .neq('status', 'archived')
+          .or(`due_date.lte.${dateIst},status.eq.todo,status.eq.in_progress`),
+        supabase
+          .from('goals')
+          .select('*, milestones(*)')
+          .eq('user_id', auth.userId)
+          .eq('is_archived', false)
+          .eq('is_focus', true),
+        supabase.from('mood_logs').select('*').eq('user_id', auth.userId).eq('date', dateIst).maybeSingle(),
+        supabase.from('fitness_profiles').select('*').eq('user_id', auth.userId).is('deleted_at', null).limit(1),
+        supabase.from('fitness_daily_logs').select('*').eq('user_id', auth.userId).eq('date', dateIst).is('deleted_at', null).maybeSingle(),
+        supabase.from('meal_logs').select('*').eq('user_id', auth.userId).eq('date', dateIst).is('deleted_at', null),
+        supabase.from('workout_sessions').select('*').eq('user_id', auth.userId).eq('date', dateIst).is('deleted_at', null),
+      ]);
 
       const compMap = new Map((completions || []).map((c) => [c.habit_id, c]));
       const habitsDue = (habits || []).map((h) => {
@@ -73,6 +98,8 @@ export function registerMcpResources(server: McpServer) {
           id: h.id,
           name: h.name,
           category: h.category,
+          polarity: h.polarity || 'build',
+          anchorBlock: h.anchor_block ?? null,
           isCompleted: comp ? comp.completed : false,
           value: comp?.value ?? null,
           targetValue: h.target_value ?? null,
@@ -86,15 +113,38 @@ export function registerMcpResources(server: McpServer) {
           title: t.title,
           priority: t.priority,
           dueDate: t.due_date,
+          metadata: t.metadata || {},
           isOverdue: t.due_date ? t.due_date < dateIst : false,
         }));
+
+      const mappedProfile = fitProfileRows?.[0] ? mapFitnessProfileFromRow(fitProfileRows[0]) : null;
+      const mappedBio = todayBioRow ? mapFitnessDailyLogFromRow(todayBioRow) : undefined;
+      const mappedMeals = (todayMealRows || []).map(mapMealLogFromRow);
+      const dailyFuel = calculateDailyFuelSummary(mappedMeals, mappedBio, mappedProfile, dateIst);
 
       const payload = {
         dateIst,
         habitsDue,
         pendingTasks,
-        focusGoals: (goals || []).map((g) => ({ id: g.id, title: g.title, progress: g.progress })),
+        focusGoals: (goals || []).map((g) => ({
+          id: g.id,
+          title: g.title,
+          progress: g.progress,
+          financialLink: g.financial_link ?? null,
+          fitnessLink: g.fitness_link ?? null,
+        })),
         todayMood: mood?.mood ?? null,
+        fitnessSummary: {
+          caloriesConsumed: dailyFuel.caloriesConsumed,
+          calorieTarget: dailyFuel.calorieTarget,
+          proteinConsumedG: dailyFuel.proteinConsumedG,
+          proteinTargetG: dailyFuel.proteinTargetG,
+          waterMl: dailyFuel.waterMl,
+          steps: dailyFuel.steps,
+          sleepHours: dailyFuel.sleepHours,
+          lowEnergyMode: dailyFuel.lowEnergyMode ?? false,
+          workoutsTodayCount: (todayWorkoutRows || []).length,
+        },
       };
 
       return { contents: [{ uri: uri.href, text: JSON.stringify(payload, null, 2) }] };
@@ -388,6 +438,95 @@ export function registerMcpResources(server: McpServer) {
       }));
 
       return { contents: [{ uri: uri.href, text: JSON.stringify({ count: simplified.length, friends: simplified }, null, 2) }] };
+    }
+  );
+
+  // 7. habitflow://fitness/today
+  server.registerResource(
+    'fitness_today',
+    'habitflow://fitness/today',
+    {
+      title: "Today's Fitness, Diet & Supplement Telemetry",
+      description:
+        'Live IST body metrics, Big 2 calories/protein fuel progress, 7d rolling weight, waist trend, today meals/workouts, and supplement low-stock alert status.',
+      mimeType: 'application/json',
+    },
+    async (uri) => {
+      const auth = getMcpAuthContext();
+      if (!hasScope(auth, 'habitflow:read')) {
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              text: JSON.stringify({ error: 'Forbidden: Missing habitflow:read scope.' }),
+            },
+          ],
+        };
+      }
+
+      const dateIst = getIstIsoDate();
+      const supabase = getSupabaseAdmin();
+
+      const [
+        { data: profileRows },
+        { data: dailyRows },
+        { data: mealRows },
+        { data: workoutRows },
+        { data: supRows },
+        { data: supLogRows },
+      ] = await Promise.all([
+        supabase.from('fitness_profiles').select('*').eq('user_id', auth.userId).is('deleted_at', null).limit(1),
+        supabase.from('fitness_daily_logs').select('*').eq('user_id', auth.userId).is('deleted_at', null).gte('date', addDays(dateIst, -45)).lte('date', dateIst),
+        supabase.from('meal_logs').select('*').eq('user_id', auth.userId).is('deleted_at', null).eq('date', dateIst),
+        supabase.from('workout_sessions').select('*').eq('user_id', auth.userId).is('deleted_at', null).gte('date', addDays(dateIst, -14)).lte('date', dateIst),
+        supabase.from('supplement_inventory').select('*').eq('user_id', auth.userId).is('deleted_at', null),
+        supabase.from('supplement_logs').select('*').eq('user_id', auth.userId).is('deleted_at', null).gte('date', addDays(dateIst, -30)),
+      ]);
+
+      const profile = profileRows?.[0] ? mapFitnessProfileFromRow(profileRows[0]) : null;
+      const dailyLogs = (dailyRows || []).map(mapFitnessDailyLogFromRow);
+      const todayMeals = (mealRows || []).map(mapMealLogFromRow);
+      const recentWorkouts = (workoutRows || []).map(mapWorkoutSessionFromRow);
+      const supplements = (supRows || []).map(mapSupplementInventoryFromRow);
+      const supLogs = (supLogRows || []).map(mapSupplementLogFromRow);
+
+      const todayLog = dailyLogs.find((d) => d.date === dateIst);
+      const dailyFuel = calculateDailyFuelSummary(todayMeals, todayLog, profile, dateIst);
+      const rollingWeight = calculate7DayRollingWeight(dailyLogs);
+      const waistTrend = calculateWeeklyWaistTrend(dailyLogs);
+      const supRoi = calculateSupplementStockAndRoi(supplements, supLogs, dateIst);
+
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            text: JSON.stringify(
+              {
+                dateIst,
+                dailyFuel,
+                rollingWeight: {
+                  latestWeightKg: rollingWeight.latestWeightKg,
+                  latestRollingAvgKg: rollingWeight.latestRollingAvgKg,
+                  weeklyDeltaKg: rollingWeight.weeklyDeltaKg,
+                },
+                waistTrend: {
+                  latestWaistInches: waistTrend.latestWaistInches,
+                  totalDeltaInches: waistTrend.totalDeltaInches,
+                },
+                todayMeals,
+                recentWorkoutsCount: recentWorkouts.length,
+                lowStockSupplements: supRoi.lowStockItems.map((i) => ({
+                  id: i.supplement.id,
+                  name: i.supplement.name,
+                  daysRemaining: i.daysRemaining,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
     }
   );
 }

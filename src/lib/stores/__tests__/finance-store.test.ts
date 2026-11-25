@@ -30,10 +30,11 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     await useFinanceStore.getState().loadFinanceData(testUserId);
   });
 
-  test('1. Fresh start seeds only 10 categories and 4 clean ₹0 accounts with zero dummy data', async () => {
+  test('1. Fresh start seeds only 11 default categories (including Junk Food) and 4 clean ₹0 accounts with zero dummy data', async () => {
     const store = useFinanceStore.getState();
 
-    expect(store.categories.length).toBe(10);
+    expect(store.categories.length).toBe(11);
+    expect(store.categories.some((c) => c.slug === 'junk-food')).toBe(true);
     expect(store.categories.every((c) => c.monthlyBudgetLimit === 0)).toBe(true);
 
     expect(store.accounts.length).toBe(4);
@@ -143,7 +144,7 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     // Verify resetAllFinanceData keeps categories and resets everything else to ₹0
     await useFinanceStore.getState().resetAllFinanceData(true);
     const afterReset = useFinanceStore.getState();
-    expect(afterReset.categories.length).toBe(10);
+    expect(afterReset.categories.length).toBe(11);
     expect(afterReset.transactions.length).toBe(0);
     expect(afterReset.commitments.length).toBe(0);
     expect(afterReset.accounts.every((a) => a.balance === 0)).toBe(true);

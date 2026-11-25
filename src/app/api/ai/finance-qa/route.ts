@@ -5,6 +5,8 @@ import {
   runWithGeminiFailover,
 } from '@/lib/ai/gemini-server';
 import { buildDeterministicFinanceAnswer } from '@/lib/finance/qa-analyzer';
+import { rateLimit, rateLimitResponse } from '@/lib/security/rate-limit';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 
 interface ChatHistoryMessage {
   role: 'user' | 'assistant';
@@ -13,6 +15,20 @@ interface ChatHistoryMessage {
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const limitResult = await rateLimit(req, { limit: 25, windowMs: 60 * 1000 });
+    if (!limitResult.success) {
+      return rateLimitResponse(limitResult.retryAfter);
+    }
+
     const body = await req.json();
     const question = typeof body?.question === 'string' ? body.question.trim() : '';
     const context = body?.context ?? {};
@@ -41,13 +57,14 @@ export async function POST(req: NextRequest) {
       const response = await runWithGeminiFailover((ai) =>
         ai.models.generateContent({
           model: DEFAULT_GEMINI_MODEL,
-          contents: `You are HabitFlow's concise, high-signal Personal Finance Analyst.
-Answer the user's specific question directly and concisely using ONLY the verified financial snapshot below (currency: INR ₹).
-Do NOT repeat a generic full monthly summary if the user asks a targeted question (e.g. a category, merchant, net worth, bills, or affordability).
-Never invent transactions or balances that are not in the snapshot. If data is missing, state it directly.
+          contents: `You are HabitFlow's concise, high-signal Life OS Analyst (Finance + Fitness + Sleep + Supplements + Mood Triggers).
+Answer the user's specific question directly and concisely using ONLY the verified Life OS & Financial snapshot below (currency: INR ₹).
+When asked about supplements/whey ROI, gym ₹/workout ROI, junk food empty kcal & fat-loss drag (kcal/7700), or sleep/mood spend triggers, cite the exact computed values from lifeOs.crossDomain & lifeOs.fitnessTelemetry.
+Do NOT repeat a generic full monthly summary if the user asks a targeted question.
+Never invent transactions, meals, workouts, or balances that are not in the snapshot. If data is missing, state it directly.
 Keep responses crisp (2–5 short sentences or clean '-' bullets), format numbers in Indian rupee format (e.g. ₹12,450), bold only key totals or section labels sparingly, avoid backticks around transaction names, and end with one concrete next step when helpful.
 
-FINANCIAL SNAPSHOT (JSON):
+LIFE OS & FINANCIAL SNAPSHOT (JSON):
 ${JSON.stringify(context)}
 
 ${conversationHistory ? `RECENT CONVERSATION:\n${conversationHistory}\n` : ''}

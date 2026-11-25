@@ -131,6 +131,7 @@ function extractMerchantOrTitle(text: string, fallbackType: FinanceTransactionTy
   // Common Indian SMS/Notification merchant patterns
   const patterns = [
     /(?:trf\s+to|transferred\s+to|paid\s+to|sent\s+to)\s+([a-z0-9 &._'-]{2,40}?)(?=\s+(?:on|via|ref|utr|upi|from|a\/c|if\s+not|\d{2}[-/])|[.,;]|$)/i,
+    /(?:paid|spent|sent|debited)\s+(?:by\s+|of\s+)?(?:₹|rs\.?|inr)\s*[\d,]+(?:\.\d{1,2})?\s+to\s+([a-z0-9 &._'-]{2,40}?)(?=\s+(?:on|via|ref|utr|upi|from|a\/c|if\s+not|\d{2}[-/])|[.,;]|$)/i,
     /\bat\s+([a-z0-9 &._'-]{2,40}?)(?=\s+(?:on|via|ref|utr|for|avl|bal|\d{2}[-/])|[.,;]|$)/i,
     /\b(?:info|vpa|merchant)\s*[:/-]\s*([a-z0-9@ &._'-]{2,40}?)(?=[.,;\n]|$)/i,
     /\bfrom\s+([a-z0-9 &._'-]{2,40}?)(?=\s+(?:on|via|ref|utr|to\s+a\/c|\d{2}[-/])|[.,;]|$)/i,
@@ -161,7 +162,14 @@ function detectCategorySlug(text: string, type: FinanceTransactionType): string 
   if (type === 'income') {
     return 'investments-savings';
   }
-  if (/\b(zomato|swiggy|restaurant|cafe|coffee|starbucks|dominos|pizza|burger|kfc|mcdonald|biryani|food|dining|chai)\b/.test(lower)) {
+  if (
+    /\b(momos?|samosa|pakora|chaat|pani\s*puri|golgappa|jalebi|fries|chips|kurkure|lays|ice\s*cream|baskin|pastry|brownie|waffle|donut|burger|pizza|dominos|kfc|mcdonald|cold\s*drink|coke|pepsi|junk\s*food)\b/.test(
+      lower
+    )
+  ) {
+    return 'junk-food';
+  }
+  if (/\b(zomato|swiggy|restaurant|cafe|coffee|starbucks|biryani|food|dining|chai)\b/.test(lower)) {
     return 'food-dining';
   }
   if (/\b(blinkit|zepto|instamart|bigbasket|dmart|grocery|groceries|supermarket|vegetables|milk|dairy|mother dairy)\b/.test(lower)) {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useShallow } from 'zustand/react/shallow';
 import {
+  BatteryLow,
   Check,
   Moon,
   Plus,
@@ -16,18 +17,28 @@ import {
   Shield,
   MessageSquareText,
   AlertCircle,
+  Dumbbell,
+  Droplets,
+  Footprints,
+  Zap,
 } from 'lucide-react';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGoalStore } from '@/lib/stores/goal-store';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import { useMoodStore } from '@/lib/stores/mood-store';
+import { calculateDailyFuelSummary } from '@/lib/fitness/shared-analytics';
+import { computeCrossDomainInsights } from '@/lib/intelligence/cross-domain-insights';
 import {
   calculateMomentum,
+  calculateTodayMomentumScore,
   getHabitWeekProgress,
   isHabitAutoRestOnDate,
 } from '@/lib/calculations';
 import { getTimeGreeting } from '@/lib/design-tokens';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { isAIEnabled } from '@/lib/ai-features-flag';
 import {
   HeroSection,
@@ -56,7 +67,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { toast } from 'sonner';
 
-type WorkspaceLens = 'all' | 'habits' | 'finance';
+type WorkspaceLens = 'all' | 'habits' | 'fitness' | 'finance';
 
 function MiniBurnSparkline({
   points,
@@ -220,29 +231,49 @@ export default function DashboardContent() {
   const financeCategories = useFinanceStore((s) => s.categories);
   const financeTransactions = useFinanceStore((s) => s.transactions);
   const financeBudgets = useFinanceStore((s) => s.budgets);
+  const financeDebtRecords = useFinanceStore((s) => s.debtRecords);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
   const getMonthlySummary = useFinanceStore((s) => s.getMonthlySummary);
   const getNetWorthSummary = useFinanceStore((s) => s.getNetWorthSummary);
   const getDailySpendingPace = useFinanceStore((s) => s.getDailySpendingPace);
+  const getSpendingAnomalies = useFinanceStore((s) => s.getSpendingAnomalies);
   const getUpcomingFinancialObligations = useFinanceStore(
     (s) => s.getUpcomingFinancialObligations
   );
+
+  const fitnessProfile = useFitnessStore((s) => s.profile);
+  const fitnessDailyLogs = useFitnessStore((s) => s.dailyLogs);
+  const fitnessMealLogs = useFitnessStore((s) => s.mealLogs);
+  const fitnessWorkoutSessions = useFitnessStore((s) => s.workoutSessions);
+  const fitnessSupplements = useFitnessStore((s) => s.supplementInventory);
+  const fitnessSupplementLogs = useFitnessStore((s) => s.supplementLogs);
+  const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
+  const incrementFitnessWater = useFitnessStore((s) => s.incrementWater);
+  const toggleLowEnergyMode = useFitnessStore((s) => s.toggleLowEnergyMode);
+
+  const moodLogs = useMoodStore((s) => s.moodLogs);
+  const loadMoodLogs = useMoodStore((s) => s.loadMoodLogs);
 
   const [isInitializing, setIsInitializing] = useState(true);
   const isLoading = isInitializing;
   const isGoalsEnabled = !settings?.habitOnlyMode && settings?.showGoals !== false;
   const isFinanceEnabled =
     !settings?.habitOnlyMode && settings?.showFinance !== false;
+  const isFitnessEnabled =
+    !settings?.habitOnlyMode && settings?.showFitness !== false;
   const isTasksEnabled = !settings?.habitOnlyMode && settings?.showTasks !== false;
   const isEmpty =
     habits.length === 0 && (!isGoalsEnabled || goals.length === 0) && !isLoading;
 
-  // Reset lens if finance gets toggled off in settings
+  // Reset lens if finance or fitness gets toggled off in settings
   useEffect(() => {
     if (!isFinanceEnabled && workspaceLens === 'finance') {
       setWorkspaceLens('all');
     }
-  }, [isFinanceEnabled, workspaceLens]);
+    if (!isFitnessEnabled && workspaceLens === 'fitness') {
+      setWorkspaceLens('all');
+    }
+  }, [isFinanceEnabled, isFitnessEnabled, workspaceLens]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -268,6 +299,8 @@ export default function DashboardContent() {
           loadCompletions(start, end),
           loadGamification(),
           loadFinanceData(),
+          loadFitnessData(user.id),
+          loadMoodLogs(start, end),
         ]);
 
         const onboarded = localStorage.getItem('habitflow_onboarded');
@@ -297,6 +330,8 @@ export default function DashboardContent() {
     loadDashboardLayout,
     loadGamification,
     loadFinanceData,
+    loadFitnessData,
+    loadMoodLogs,
   ]);
 
   useEffect(() => {
@@ -418,42 +453,77 @@ export default function DashboardContent() {
     };
   }, [habits, completions]);
 
-  // Unified Today Momentum Score
-  const todayScore = useMemo(() => {
-    const todayCompleted = todayProgress.completed;
-    const todayTotal = todayProgress.total;
-    const habitRate = todayTotal > 0 ? todayCompleted / todayTotal : 1;
+  const todayIsoStr = getLocalIsoDate();
+  const todayFitnessLog = useMemo(
+    () => fitnessDailyLogs.find((d) => d.date === todayIsoStr && !d.deletedAt),
+    [fitnessDailyLogs, todayIsoStr]
+  );
+  const todayFuelSummary = useMemo(
+    () =>
+      calculateDailyFuelSummary(
+        fitnessMealLogs,
+        todayFitnessLog,
+        fitnessProfile,
+        todayIsoStr
+      ),
+    [fitnessMealLogs, todayFitnessLog, fitnessProfile, todayIsoStr]
+  );
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const todayTasksList = tasks.filter((t) => {
-      if (t.status === 'archived') return false;
-      const isDueToday = t.due_date && t.due_date.startsWith(todayStr);
-      const isOverdueTodo =
-        t.status === 'todo' &&
-        t.due_date &&
-        t.due_date <= todayStr + 'T23:59:59';
-      return isDueToday || isOverdueTodo;
-    });
-    const totalTasks = todayTasksList.length;
-    const completedTasks = todayTasksList.filter((t) => t.status === 'done').length;
-    const taskRate = totalTasks > 0 ? completedTasks / totalTasks : 1;
+  // Unified Today Momentum Score (rest/quota-met habits excluded cleanly)
+  const todayScore = useMemo(
+    () =>
+      calculateTodayMomentumScore({
+        habits,
+        completions,
+        tasks,
+        todayStr: todayIsoStr,
+        isTasksEnabled,
+      }),
+    [habits, completions, tasks, todayIsoStr, isTasksEnabled]
+  );
 
-    let score = 100;
-    if (todayTotal > 0 && totalTasks > 0 && isTasksEnabled) {
-      score = Math.round(habitRate * 60 + taskRate * 40);
-    } else if (todayTotal > 0) {
-      score = Math.round(habitRate * 100);
-    } else if (totalTasks > 0 && isTasksEnabled) {
-      score = Math.round(taskRate * 100);
+  // Deterministic Cross-Domain & Finance Anomaly Alerts (always visible even if AI toggle is off)
+  const crossDomainReport = useMemo(() => {
+    if (settings?.habitOnlyMode || (!isFinanceEnabled && !isFitnessEnabled)) {
+      return null;
     }
-    return {
-      score,
-      todayCompleted,
-      todayTotal,
-      completedTasks: isTasksEnabled ? completedTasks : 0,
-      totalTasks: isTasksEnabled ? totalTasks : 0,
-    };
-  }, [todayProgress, tasks, isTasksEnabled]);
+    return computeCrossDomainInsights({
+      todayDate: todayIsoStr,
+      transactions: financeTransactions,
+      categories: financeCategories,
+      debtRecords: financeDebtRecords,
+      mealLogs: fitnessMealLogs,
+      workoutSessions: fitnessWorkoutSessions,
+      fitnessDailyLogs,
+      supplementInventory: fitnessSupplements,
+      supplementLogs: fitnessSupplementLogs,
+      habits,
+      habitCompletions: completions,
+      moodLogs,
+    });
+  }, [
+    settings?.habitOnlyMode,
+    isFinanceEnabled,
+    isFitnessEnabled,
+    todayIsoStr,
+    financeTransactions,
+    financeCategories,
+    financeDebtRecords,
+    fitnessMealLogs,
+    fitnessWorkoutSessions,
+    fitnessDailyLogs,
+    fitnessSupplements,
+    fitnessSupplementLogs,
+    habits,
+    completions,
+    moodLogs,
+  ]);
+
+  const financeAnomalies = useMemo(() => {
+    if (!isFinanceEnabled) return [];
+    return getSpendingAnomalies().slice(0, 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFinanceEnabled, getSpendingAnomalies, financeTransactions]);
 
   const handleToggleMilestone = async (milestoneId: string) => {
     await toggleMilestoneComplete(milestoneId);
@@ -537,13 +607,16 @@ export default function DashboardContent() {
 
   const dueSoonTotal = dueSoonObligations.reduce((s, o) => s + o.amount, 0);
 
-  const showHabitHero = workspaceLens !== 'finance';
-  const showFinanceHero = isFinanceEnabled && workspaceLens !== 'habits';
+  const showHabitHero = workspaceLens === 'all' || workspaceLens === 'habits';
+  const showFitnessHero =
+    isFitnessEnabled && (workspaceLens === 'all' || workspaceLens === 'fitness');
+  const showFinanceHero =
+    isFinanceEnabled && (workspaceLens === 'all' || workspaceLens === 'finance');
   const bothHeroesVisible = showHabitHero && showFinanceHero;
 
   // Layer 3 Balanced Bento Grid Widgets filtered by Workspace Lens & Settings
   const allWidgets: Record<string, React.ReactNode> = {
-    ...(workspaceLens !== 'finance'
+    ...(workspaceLens === 'all' || workspaceLens === 'habits'
       ? {
           'habit-overview': (
             <HabitOverview
@@ -554,7 +627,7 @@ export default function DashboardContent() {
           ),
         }
       : {}),
-    ...(isFinanceEnabled && workspaceLens !== 'habits'
+    ...(isFinanceEnabled && (workspaceLens === 'all' || workspaceLens === 'finance')
       ? {
           'finance-overview': <FinanceOverviewWidget />,
         }
@@ -628,17 +701,22 @@ export default function DashboardContent() {
         </div>
 
         {/* Center: Workspace Lens Switcher */}
-        {isFinanceEnabled && (
+        {(isFinanceEnabled || isFitnessEnabled) && (
           <div
             role="tablist"
             aria-label="Dashboard workspace lens"
-            className="inline-flex items-center gap-1 p-1 rounded-xl bg-muted self-start lg:self-center shrink-0"
+            className="inline-flex items-center gap-1 p-1 rounded-xl bg-muted self-start lg:self-center shrink-0 overflow-x-auto max-w-full"
           >
             {(
               [
                 { id: 'all', label: 'All Life OS' },
                 { id: 'habits', label: 'Habits & Focus' },
-                { id: 'finance', label: 'Finance & Cashflow' },
+                ...(isFitnessEnabled
+                  ? [{ id: 'fitness', label: 'Body & Fitness' } as const]
+                  : []),
+                ...(isFinanceEnabled
+                  ? [{ id: 'finance', label: 'Finance & Cashflow' } as const]
+                  : []),
               ] as const
             ).map((lens) => (
               <button
@@ -1046,6 +1124,250 @@ export default function DashboardContent() {
           </section>
         )}
       </div>
+
+      {/* Hero C: Compact Body & Fuel Summary Strip */}
+      {showFitnessHero && (
+        <section className="surface-hero p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+            <div className="flex items-center gap-2.5">
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0">
+                <Dumbbell className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <span>Body &amp; Fuel Today</span>
+                  {todayFuelSummary.lowEnergyMode && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/30 normal-case tracking-normal">
+                      Low-Energy Day
+                    </span>
+                  )}
+                </p>
+                <p className="text-sm font-bold text-foreground">
+                  {todayFuelSummary.caloriesRemaining >= 0
+                    ? `${todayFuelSummary.caloriesRemaining} kcal left`
+                    : `${Math.abs(todayFuelSummary.caloriesRemaining)} kcal over`}{' '}
+                  <span className="text-muted-foreground font-normal">
+                    ({todayFuelSummary.caloriesConsumed}/{todayFuelSummary.calorieTarget})
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-xs font-mono tabular-nums">
+              <div>
+                <span className="text-muted-foreground font-sans block text-[11px]">
+                  Protein
+                </span>
+                <strong className="text-emerald-600 dark:text-emerald-400 text-sm">
+                  {todayFuelSummary.proteinConsumedG}g
+                </strong>
+                <span className="text-muted-foreground">
+                  /{todayFuelSummary.proteinTargetG}g
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground font-sans flex items-center gap-1 text-[11px]">
+                  <Footprints className="w-3 h-3 text-sky-500" /> Steps
+                </span>
+                <strong className="text-foreground text-sm">
+                  {todayFuelSummary.steps.toLocaleString()}
+                </strong>
+                <span className="text-muted-foreground">
+                  /{todayFuelSummary.stepsTarget.toLocaleString()}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground font-sans flex items-center gap-1 text-[11px]">
+                  <Droplets className="w-3 h-3 text-sky-500" /> Water
+                </span>
+                <strong className="text-foreground text-sm">
+                  {todayFuelSummary.waterMl}ml
+                </strong>
+                <span className="text-muted-foreground">
+                  /{todayFuelSummary.waterTargetMl}ml
+                </span>
+              </div>
+
+              {todayFuelSummary.sleepHours != null && (
+                <div>
+                  <span className="text-muted-foreground font-sans block text-[11px]">
+                    Sleep
+                  </span>
+                  <strong className="text-foreground text-sm">
+                    {todayFuelSummary.sleepHours}h
+                  </strong>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              size="sm"
+              variant={todayFuelSummary.lowEnergyMode ? 'default' : 'secondary'}
+              data-testid="dashboard-low-energy-toggle"
+              onClick={async () => {
+                const next = !todayFuelSummary.lowEnergyMode;
+                const { restedHabitIds } = await toggleLowEnergyMode(
+                  todayIsoStr,
+                  next,
+                  user?.id
+                );
+                if (next) {
+                  toast.success(
+                    restedHabitIds.length > 0
+                      ? `Low-Energy Day ON (${restedHabitIds.length} gym habit rested)`
+                      : 'Minimum Viable Day ON'
+                  );
+                } else {
+                  toast.success('Normal targets restored');
+                }
+              }}
+              className={`h-8 text-xs gap-1 ${
+                todayFuelSummary.lowEnergyMode
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                  : ''
+              }`}
+            >
+              <BatteryLow className="w-3.5 h-3.5" />
+              {todayFuelSummary.lowEnergyMode ? 'Low-Energy ON' : 'Low-Energy'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                incrementFitnessWater(250, todayIsoStr, user?.id);
+                toast.success('+250ml water logged');
+              }}
+              className="h-8 text-xs gap-1"
+            >
+              <Droplets className="w-3.5 h-3.5 text-sky-500" /> +250ml
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => window.dispatchEvent(new Event('open-quick-capture'))}
+              className="h-8 text-xs gap-1"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-500" /> 10s Capture
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => router.push('/fitness')}
+              className="h-8 text-xs gap-1"
+            >
+              Open Fitness <ArrowUpRight className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {/* Deterministic Cross-Domain & Finance Alerts (Always-Visible regardless of AI toggle) */}
+      {((crossDomainReport?.alerts.length ?? 0) > 0 || financeAnomalies.length > 0) && (
+        <section
+          data-testid="dashboard-deterministic-alerts"
+          aria-label="Life OS Cross-Domain Alerts"
+          className="surface-card p-3.5 sm:p-4 space-y-2.5"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/15 text-amber-500">
+                <AlertCircle className="w-3.5 h-3.5" />
+              </span>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Life OS Signals &amp; Wallet Alerts
+              </h2>
+            </div>
+            {isFinanceEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAskAiOpen(true)}
+                className="h-7 px-2.5 text-[11px] gap-1 rounded-lg"
+              >
+                <MessageSquareText className="w-3 h-3 text-primary" />
+                Ask Life OS
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {crossDomainReport?.alerts.slice(0, 4).map((alert) => (
+              <div
+                key={alert.id}
+                className={`rounded-xl border p-3 flex items-start justify-between gap-2.5 text-xs ${
+                  alert.severity === 'critical'
+                    ? 'border-rose-500/30 bg-rose-500/5'
+                    : alert.severity === 'warning'
+                      ? 'border-amber-500/30 bg-amber-500/5'
+                      : 'border-border bg-background/60'
+                }`}
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-semibold text-foreground">{alert.title}</span>
+                    <span className="px-1.5 py-0.5 rounded-md bg-secondary text-[10px] font-mono text-muted-foreground">
+                      {alert.metricBadge}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {alert.description}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      alert.pillar === 'gym_supplement_roi' ? '/fitness' : '/analytics'
+                    )
+                  }
+                  className="text-[11px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5 shrink-0"
+                >
+                  Inspect <ArrowUpRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+            {financeAnomalies.map((anomaly) => (
+              <div
+                key={anomaly.id}
+                className={`rounded-xl border p-3 flex items-start justify-between gap-2.5 text-xs ${
+                  anomaly.severity === 'critical'
+                    ? 'border-rose-500/30 bg-rose-500/5'
+                    : 'border-amber-500/30 bg-amber-500/5'
+                }`}
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <p className="font-semibold text-foreground">{anomaly.title}</p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {anomaly.description}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    router.push(
+                      anomaly.actionTarget === 'finance' ||
+                        anomaly.actionTarget === 'budgets'
+                        ? '/finance'
+                        : `/finance?tab=${anomaly.actionTarget}`
+                    )
+                  }
+                  className="text-[11px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5 shrink-0"
+                >
+                  {anomaly.actionLabel} <ArrowUpRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* LAYER 3: Balanced 12-Col Bento Grid */}
       <BentoGrid widgets={allWidgets} />

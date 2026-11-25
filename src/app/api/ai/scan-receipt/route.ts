@@ -5,6 +5,7 @@ import {
   resolveGeminiApiKeys,
   runWithGeminiFailover,
 } from '@/lib/ai/gemini-server';
+import { getIstIsoDate } from '@/lib/mcp/config';
 
 interface ReceiptImagePayload {
   data: string; // base64 without data: prefix
@@ -34,10 +35,7 @@ export interface ScannedReceiptDraft {
 }
 
 function getTodayIso(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate()
-  ).padStart(2, '0')}`;
+  return getIstIsoDate();
 }
 
 export async function POST(req: NextRequest) {
@@ -67,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     const categorySlugs = categories.length
       ? categories.map((c) => `${c.slug} (${c.name})`).join(', ')
-      : 'food-dining, groceries-household, medical-supplements, utilities-bills, family-commitments, shopping-personal-care, transport-fuel, emis-debt-repayment, entertainment-subscriptions, investments-savings';
+      : 'junk-food, food-dining, groceries-household, medical-supplements, utilities-bills, family-commitments, shopping-personal-care, transport-fuel, emis-debt-repayment, entertainment-subscriptions, investments-savings';
 
     const todayIso = getTodayIso();
 

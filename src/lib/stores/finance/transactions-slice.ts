@@ -1,9 +1,13 @@
 import { toast } from 'sonner';
 import { db } from '@/lib/db';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
+import { classifyCategoryBridgeKind } from '@/lib/fitness/finance-bridge';
+import { estimateHinglishFoodMacros } from '@/lib/fitness/meal-estimator';
 import { CrossDomainActionMediator } from '../mediator';
 import type {
   DebtInstallment,
   DebtRecord,
+  FinanceCategory,
   FinanceTransaction,
 } from '@/lib/types';
 import {
@@ -27,6 +31,86 @@ export type TransactionsSlice = Pick<
   | 'importTransactionsCsv'
   | 'attachTransactionToCommitment'
 >;
+
+async function reconcileFinanceBridgeMealForTransaction(
+  tx: FinanceTransaction,
+  categories: FinanceCategory[]
+) {
+  try {
+    const { useFitnessStore } = await import('../fitness');
+    const fitState = useFitnessStore.getState();
+    const cat = categories.find((c) => c.id === tx.categoryId);
+    const isActiveJunkExpense =
+      !tx.deletedAt &&
+      tx.type === 'expense' &&
+      classifyCategoryBridgeKind(cat) === 'junk';
+
+    const dbLinked = db.mealLogs
+      ? await db.mealLogs.where('linkedTransactionId').equals(tx.id).toArray()
+      : [];
+    const seenIds = new Set<string>();
+    const linkedMeals = [...fitState.mealLogs, ...dbLinked].filter((m) => {
+      if (seenIds.has(m.id)) return false;
+      seenIds.add(m.id);
+      return !m.deletedAt && m.linkedTransactionId === tx.id;
+    });
+
+    if (!isActiveJunkExpense) {
+      for (const m of linkedMeals) {
+        if (m.source === 'finance_bridge') {
+          await fitState.deleteMealLog(m.id);
+        }
+      }
+      return;
+    }
+
+    const bridgeMeals = linkedMeals.filter((m) => m.source === 'finance_bridge');
+    if (bridgeMeals.length > 0) {
+      const estimate = estimateHinglishFoodMacros(tx.title, {
+        amountInr: tx.amount,
+        forceJunk: true,
+      });
+      const now = new Date().toISOString();
+      for (const meal of bridgeMeals) {
+        const updatedMeal = {
+          ...meal,
+          date: tx.date,
+          mealType: estimate.mealType,
+          name: tx.title.trim() || estimate.name,
+          calories: estimate.calories,
+          proteinG: estimate.proteinG,
+          carbsG: estimate.carbsG,
+          fatG: estimate.fatG,
+          isJunk: true,
+          notes: tx.notes || `Auto-logged from Junk Food expense (₹${Math.round(tx.amount)})`,
+          generationCounter: (meal.generationCounter || 1) + 1,
+          isDirty: true,
+          updatedAt: now,
+        };
+        await db.mealLogs.put(updatedMeal);
+        useFitnessStore.setState((state) => ({
+          mealLogs: state.mealLogs
+            .map((m) => (m.id === updatedMeal.id ? updatedMeal : m))
+            .sort(
+              (a, b) =>
+                b.date.localeCompare(a.date) || b.loggedAt.localeCompare(a.loggedAt)
+            ),
+        }));
+      }
+    } else if (linkedMeals.length === 0) {
+      await fitState.ensureMealForJunkTransaction({
+        transactionId: tx.id,
+        userId: tx.userId,
+        date: tx.date,
+        title: tx.title,
+        amountInr: tx.amount,
+        notes: tx.notes,
+      });
+    }
+  } catch {
+    // Non-blocking fitness bridge reconciliation
+  }
+}
 
 export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (_set, get) => ({
   addTransaction: async (data) => {
@@ -138,8 +222,12 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     }
     notifyFinanceSync();
 
+    const txCategory =
+      get().categories.find((c) => c.id === tx.categoryId) ||
+      (await db.financeCategories.get(tx.categoryId));
+
     if (tx.type === 'expense') {
-      const cat = get().categories.find((c) => c.id === tx.categoryId);
+      const cat = txCategory;
       if (cat && cat.monthlyBudgetLimit > 0) {
         const spent = get()
           .transactions.filter(
@@ -183,9 +271,11 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
         type: 'EXPENSE_LOGGED',
         date: tx.date,
         amount: tx.amount,
+        transaction: tx,
+        category: txCategory,
       });
     } catch {
-      // Non-blocking gamification hook
+      // Non-blocking gamification & cross-domain hook
     }
 
     return tx;
@@ -296,9 +386,17 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     }
 
     try {
+      const updatedTx =
+        get().transactions.find((t) => t.id === id) ||
+        (await db.financeTransactions.get(id));
+      if (updatedTx) {
+        await reconcileFinanceBridgeMealForTransaction(updatedTx, get().categories);
+      }
       await CrossDomainActionMediator.evaluateNoSpendDayRules(updatedDate);
+      await CrossDomainActionMediator.evaluateZeroJunkRules(updatedDate);
       if (existing.date && existing.date.slice(0, 10) !== updatedDate.slice(0, 10)) {
         await CrossDomainActionMediator.evaluateNoSpendDayRules(existing.date);
+        await CrossDomainActionMediator.evaluateZeroJunkRules(existing.date);
       }
     } catch {
       // Non-blocking gamification hook
@@ -361,8 +459,32 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     notifyFinanceSync();
 
     try {
+      const { useFitnessStore } = await import('../fitness');
+      const fitState = useFitnessStore.getState();
+      const dbLinked = db.mealLogs
+        ? await db.mealLogs.where('linkedTransactionId').equals(id).toArray()
+        : [];
+      const seenIds = new Set<string>();
+      const linkedAutoMeals = [...fitState.mealLogs, ...dbLinked].filter((m) => {
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+        return (
+          !m.deletedAt &&
+          m.linkedTransactionId === id &&
+          m.source === 'finance_bridge'
+        );
+      });
+      for (const m of linkedAutoMeals) {
+        await fitState.deleteMealLog(m.id);
+      }
+    } catch {
+      // Non-blocking fitness bridge cleanup
+    }
+
+    try {
       if (existing.date) {
         await CrossDomainActionMediator.evaluateNoSpendDayRules(existing.date);
+        await CrossDomainActionMediator.evaluateZeroJunkRules(existing.date);
       }
     } catch {
       // Non-blocking gamification hook
@@ -386,6 +508,11 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
     if (ids.length === 0) return;
     const userId = await resolveCurrentUserId(undefined, get().currentUserId);
     const now = new Date().toISOString();
+    const affectedDates = new Set<string>();
+    for (const id of ids) {
+      const prev = get().transactions.find((t) => t.id === id);
+      if (prev?.date) affectedDates.add(prev.date.slice(0, 10));
+    }
 
     await db.transaction('rw', db.financeTransactions, async () => {
       for (const id of ids) {
@@ -399,6 +526,24 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
 
     await get().loadFinanceData(userId);
     notifyFinanceSync();
+
+    try {
+      const categories = get().categories;
+      for (const id of ids) {
+        const tx =
+          get().transactions.find((t) => t.id === id) ||
+          (await db.financeTransactions.get(id));
+        if (tx) {
+          await reconcileFinanceBridgeMealForTransaction(tx, categories);
+        }
+      }
+      for (const d of affectedDates) {
+        await CrossDomainActionMediator.evaluateNoSpendDayRules(d);
+        await CrossDomainActionMediator.evaluateZeroJunkRules(d);
+      }
+    } catch {
+      // Non-blocking gamification & fitness bridge reconciliation
+    }
   },
 
   bulkDeleteTransactions: async (ids) => {
@@ -591,7 +736,7 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
 
     let importedCount = 0;
     let skippedCount = 0;
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalIsoDate();
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCsvLine(lines[i]);
@@ -619,7 +764,7 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
         } else {
           const d = new Date(candidate);
           if (!isNaN(d.getTime())) {
-            dateStr = d.toISOString().split('T')[0];
+            dateStr = getLocalIsoDate(d);
           }
         }
       }

@@ -5,14 +5,18 @@ import dynamic from 'next/dynamic';
 import { useEffect, useState, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { subDays, subYears, format } from 'date-fns';
-import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile, Brain, Sparkles, AlertCircle, ShoppingBag, Utensils, ShieldCheck, RefreshCw, Loader2 } from 'lucide-react';
+import { BarChart3, TrendingUp, Target, Flame, Calendar, Check, Heart, Coffee, Smile, Brain, Sparkles, AlertCircle, ShoppingBag, Utensils, ShieldCheck, RefreshCw, Loader2, Dumbbell, Moon, Pill } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ui/page-header';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
 import { TimeRangeTabs } from '@/components/analytics';
 import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore, useFinanceStore, formatINR } from '@/lib/stores';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import { useAuth } from '@/providers/auth-provider';
 import { CrossDomainActionMediator } from '@/lib/stores/mediator';
+import { computeCrossDomainInsights } from '@/lib/intelligence/cross-domain-insights';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { toast } from 'sonner';
 import {
   calculateDailyStats,
@@ -87,17 +91,37 @@ export default function AnalyticsPageContent() {
       isLoading: s.isLoading,
     }))
   );
-  const { loadMoodLogs, getMoodForDate } = useMoodStore(
+  const { user } = useAuth();
+  const { moodLogs, loadMoodLogs, getMoodForDate } = useMoodStore(
     useShallow((s) => ({
+      moodLogs: s.moodLogs,
       loadMoodLogs: s.loadMoodLogs,
       getMoodForDate: s.getMoodForDate,
     }))
   );
-  const { transactions, categories, loadFinanceData } = useFinanceStore(
+  const { transactions, categories, debtRecords, loadFinanceData } = useFinanceStore(
     useShallow((s) => ({
       transactions: s.transactions,
       categories: s.categories,
+      debtRecords: s.debtRecords,
       loadFinanceData: s.loadFinanceData,
+    }))
+  );
+  const {
+    dailyLogs: fitnessDailyLogs,
+    mealLogs: fitnessMealLogs,
+    workoutSessions: fitnessWorkouts,
+    supplementInventory: fitnessSupplements,
+    supplementLogs: fitnessSupplementLogs,
+    loadFitnessData,
+  } = useFitnessStore(
+    useShallow((s) => ({
+      dailyLogs: s.dailyLogs,
+      mealLogs: s.mealLogs,
+      workoutSessions: s.workoutSessions,
+      supplementInventory: s.supplementInventory,
+      supplementLogs: s.supplementLogs,
+      loadFitnessData: s.loadFitnessData,
     }))
   );
   const completedSessions = usePomodoroStore((s) => s.completedSessions);
@@ -120,6 +144,7 @@ export default function AnalyticsPageContent() {
     loadGoals();
     loadTasks();
     loadFinanceData();
+    loadFitnessData(user?.id);
 
     const end = new Date();
     const start = subYears(end, 1);
@@ -134,7 +159,7 @@ export default function AnalyticsPageContent() {
     }
     
     loadMoodLogs(startStr, endStr);
-  }, [loadHabits, loadCompletions, loadGoals, loadTasks, loadMoodLogs, loadFinanceData]);
+  }, [loadHabits, loadCompletions, loadGoals, loadTasks, loadMoodLogs, loadFinanceData, loadFitnessData, user?.id]);
 
   // Calculate date range based on selection
   const dateRange = useMemo(() => {
@@ -404,6 +429,35 @@ export default function AnalyticsPageContent() {
       lowHabitDaysCount: lowHabitSpends.length,
     };
   }, [transactions, categories, getMoodForDate, analyticsData.dailyStats, habits, completionsMap, dateRange]);
+
+  const lifeOsCorrelations = useMemo(() => {
+    return computeCrossDomainInsights({
+      todayDate: getLocalIsoDate(),
+      transactions,
+      categories,
+      debtRecords,
+      mealLogs: fitnessMealLogs,
+      workoutSessions: fitnessWorkouts,
+      fitnessDailyLogs,
+      supplementInventory: fitnessSupplements,
+      supplementLogs: fitnessSupplementLogs,
+      habits,
+      habitCompletions: completions,
+      moodLogs,
+    });
+  }, [
+    transactions,
+    categories,
+    debtRecords,
+    fitnessMealLogs,
+    fitnessWorkouts,
+    fitnessDailyLogs,
+    fitnessSupplements,
+    fitnessSupplementLogs,
+    habits,
+    completions,
+    moodLogs,
+  ]);
 
   const handleCreateNoSpendHabit = async () => {
     try {
@@ -1069,6 +1123,139 @@ export default function AnalyticsPageContent() {
                       </div>
                     </>
                   )}
+                </CardContent>
+              </Card>
+            </FadeIn>
+
+            {/* Life OS Correlations: Sleep/Energy vs Junk Spend & Gym/Supplement ROI */}
+            <FadeIn delay={0.58}>
+              <Card className="surface-card overflow-hidden" data-testid="life-os-correlations-card">
+                <CardHeader className="pb-3 border-b border-border/40">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      <Dumbbell className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-bold">
+                        Life OS Correlations: Sleep/Energy vs Junk Spend &amp; Gym/Supplement ROI
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        30-day recovery triggers, wallet-to-waistline leakage, and per-workout/scoop efficiency
+                      </p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Sleep & Energy vs Junk Spend */}
+                    <div className="p-3.5 surface-subtle space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+                          <Moon className="w-3.5 h-3.5 text-indigo-500" />
+                          Sleep/Energy × Junk Spend
+                        </span>
+                        <span className="text-xs font-mono font-semibold text-amber-600 dark:text-amber-400">
+                          {lifeOsCorrelations.triggers.overallSpendMultiplier !== null
+                            ? `${lifeOsCorrelations.triggers.overallSpendMultiplier}x trigger`
+                            : `${lifeOsCorrelations.triggers.triggerDaysCount}d flagged`}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Trigger day avg (&lt;6.5h / low energy):</span>
+                          <span className="font-mono font-bold text-foreground">
+                            {formatINR(lifeOsCorrelations.triggers.triggerAvgDailySpendInr)}/day
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Recovered baseline avg:</span>
+                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {formatINR(lifeOsCorrelations.triggers.baselineAvgDailySpendInr)}/day
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                          <span className="text-muted-foreground">Top trigger:</span>
+                          <span className="font-semibold text-foreground">
+                            {lifeOsCorrelations.triggers.topTriggerLabel || 'None detected'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gym & Supplement ROI Audit */}
+                    <div className="p-3.5 surface-subtle space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+                          <Pill className="w-3.5 h-3.5 text-emerald-500" />
+                          Gym &amp; Supplement ROI
+                        </span>
+                        <span className="text-xs font-mono font-bold text-foreground">
+                          Grade {lifeOsCorrelations.gymSupplementRoi.gymRoiGrade}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Gym cost / workout (30d):</span>
+                          <span className="font-mono font-bold text-foreground">
+                            {lifeOsCorrelations.gymSupplementRoi.gymCostPerWorkoutInr !== null
+                              ? `${formatINR(lifeOsCorrelations.gymSupplementRoi.gymCostPerWorkoutInr)} (${lifeOsCorrelations.gymSupplementRoi.workouts30dCount}x)`
+                              : `${lifeOsCorrelations.gymSupplementRoi.workouts30dCount} workouts`}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Target @ 4x/wk (16/mo):</span>
+                          <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+                            {lifeOsCorrelations.gymSupplementRoi.targetGymCostPerWorkoutInr !== null
+                              ? `${formatINR(lifeOsCorrelations.gymSupplementRoi.targetGymCostPerWorkoutInr)}/session`
+                              : 'Set gym fee to track'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                          <span className="text-muted-foreground">Primary protein / 25g:</span>
+                          <span className="font-mono font-semibold text-foreground">
+                            {lifeOsCorrelations.gymSupplementRoi.primaryCostPer25gProteinInr !== null
+                              ? `${formatINR(lifeOsCorrelations.gymSupplementRoi.primaryCostPer25gProteinInr)} (${lifeOsCorrelations.gymSupplementRoi.primaryProteinGrade})`
+                              : lifeOsCorrelations.gymSupplementRoi.primaryCostPerScoopInr !== null
+                                ? `${formatINR(lifeOsCorrelations.gymSupplementRoi.primaryCostPerScoopInr)}/scoop`
+                                : 'No active whey'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Wallet <-> Waistline & Social Balance */}
+                    <div className="p-3.5 surface-subtle space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+                          <Utensils className="w-3.5 h-3.5 text-rose-500" />
+                          Wallet &harr; Waistline (30d)
+                        </span>
+                        <span className="text-xs font-mono font-semibold text-rose-600 dark:text-rose-400">
+                          {lifeOsCorrelations.walletWaistline.fatLossDragKg30d} kg drag
+                        </span>
+                      </div>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Junk spend (14d / 30d):</span>
+                          <span className="font-mono font-bold text-foreground">
+                            {formatINR(lifeOsCorrelations.walletWaistline.spend14dInr)} / {formatINR(lifeOsCorrelations.walletWaistline.spend30dInr)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Empty kcal (30d):</span>
+                          <span className="font-mono font-semibold text-foreground">
+                            {lifeOsCorrelations.walletWaistline.emptyKcal30d.toLocaleString('en-IN')} kcal
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                          <span className="text-muted-foreground">70% junk-cut savings:</span>
+                          <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {formatINR(lifeOsCorrelations.walletWaistline.savings70PctMonthlyInr)}/mo
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </FadeIn>

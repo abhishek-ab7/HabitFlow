@@ -120,12 +120,14 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
         // STEP 3: Load IndexedDB → Zustand stores
         if (active) setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 80 });
+        const { useFitnessStore } = await import('@/lib/stores/fitness');
         await Promise.all([
           useUserStore.getState().loadUser(),
           useGoalStore.getState().loadGoals(),
           useHabitStore.getState().loadHabits(),
           useTaskStore.getState().loadTasks(),
           useFinanceStore.getState().loadFinanceData(userId),
+          useFitnessStore.getState().loadFitnessData(userId),
         ]);
 
         if (!active) return;

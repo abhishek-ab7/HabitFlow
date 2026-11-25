@@ -166,4 +166,14 @@ describe('SMS & Notification Expense Parser', () => {
     expect(jsonParsed[0].amount).toBe(240);
     expect(jsonParsed[0].categorySlug).toBe('medical-supplements');
   });
+
+  test('routes explicit Junk Food SMS (momos / pizza) to junk-food category', () => {
+    const sms = 'Paid Rs. 80.00 to Gupta Momos via GPay UPI on 24-11-26';
+    const result = parseSingleSmsOrNotification(sms, mockCategories, mockAccounts);
+    expect(result).not.toBeNull();
+    expect(result!.categorySlug).toBe('junk-food');
+    expect(mockCategories.some((c) => c.id === result!.categoryId && c.slug === 'junk-food')).toBe(
+      true
+    );
+  });
 });

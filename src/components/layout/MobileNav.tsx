@@ -17,6 +17,7 @@ import {
   Sparkles,
   ChevronRight,
   X,
+  Dumbbell,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -55,6 +56,13 @@ interface MoreMenuItem {
 
 const MORE_MENU_ITEMS: MoreMenuItem[] = [
   {
+    href: '/habits',
+    label: 'Habits & Routines',
+    description: 'Daily streaks, anti-habits & anchor blocks',
+    icon: CheckSquare,
+    color: 'text-emerald-500 bg-emerald-500/10',
+  },
+  {
     href: '/tasks',
     label: 'Tasks',
     description: 'Priorities, Eisenhower matrix & daily checklist',
@@ -84,8 +92,6 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
   },
 ];
 
-const PRIMARY_SWIPE_ROUTES = ['/dashboard', '/habits', '/finance'];
-
 export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -103,15 +109,19 @@ export function MobileNav() {
   const { addHabit } = useHabitStore();
   const settings = useGamificationStore((s) => s.settings);
 
-  const showFinance = settings?.showFinance !== false;
+  const showFitness = !settings?.habitOnlyMode && settings?.showFitness !== false;
+  const showFinance = !settings?.habitOnlyMode && settings?.showFinance !== false;
   const showTasks = !settings?.habitOnlyMode && settings?.showTasks !== false;
   const showGoals = !settings?.habitOnlyMode && settings?.showGoals !== false;
 
-  const swipeRoutes = showFinance
-    ? ['/dashboard', '/habits', '/finance']
-    : ['/dashboard', '/habits', '/analytics'];
+  const swipeRoutes = [
+    '/dashboard',
+    showFitness ? '/fitness' : '/habits',
+    showFinance ? '/finance' : '/analytics',
+  ];
 
   const visibleMoreItems = MORE_MENU_ITEMS.filter((item) => {
+    if (item.href === '/habits' && !showFitness) return false; // Slot 2 shows Habits when Fitness is disabled
     if (item.href === '/tasks' && !showTasks) return false;
     if (item.href === '/goals' && !showGoals) return false;
     if (!showFinance && item.href === '/analytics') return false; // Promoted to slot 4 when finance is hidden
@@ -208,7 +218,7 @@ export function MobileNav() {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [mounted, pathname, router, showFinance]);
+  }, [mounted, pathname, router, showFinance, showFitness]);
 
   if (pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')) {
     return null;
@@ -302,40 +312,63 @@ export function MobileNav() {
             <span className="text-[10px] font-semibold tracking-tight">Home</span>
           </Link>
 
-          {/* Slot 2: Habits */}
-          <Link
-            href="/habits"
-            className={cn(
-              'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-habits',
-              pathname === '/habits' && 'text-primary'
-            )}
-          >
-            {pathname === '/habits' && (
-              <motion.div
-                layoutId="mobile-nav-pill"
-                className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          {/* Slot 2: Fitness (or Habits fallback when Fitness is disabled) */}
+          {showFitness ? (
+            <Link
+              href="/fitness"
+              className={cn(
+                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors',
+                pathname.startsWith('/fitness') && 'text-primary'
+              )}
+            >
+              {pathname.startsWith('/fitness') && (
+                <motion.div
+                  layoutId="mobile-nav-pill"
+                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                />
+              )}
+              <Dumbbell
+                className={cn('w-5 h-5', pathname.startsWith('/fitness') && 'text-primary')}
+                strokeWidth={pathname.startsWith('/fitness') ? 2.5 : 2}
               />
-            )}
-            <CheckSquare
-              className={cn('w-5 h-5', pathname === '/habits' && 'text-primary')}
-              strokeWidth={pathname === '/habits' ? 2.5 : 2}
-            />
-            <span className="text-[10px] font-semibold tracking-tight">Habits</span>
-          </Link>
+              <span className="text-[10px] font-semibold tracking-tight">Fitness</span>
+            </Link>
+          ) : (
+            <Link
+              href="/habits"
+              className={cn(
+                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-habits',
+                pathname === '/habits' && 'text-primary'
+              )}
+            >
+              {pathname === '/habits' && (
+                <motion.div
+                  layoutId="mobile-nav-pill"
+                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                />
+              )}
+              <CheckSquare
+                className={cn('w-5 h-5', pathname === '/habits' && 'text-primary')}
+                strokeWidth={pathname === '/habits' ? 2.5 : 2}
+              />
+              <span className="text-[10px] font-semibold tracking-tight">Habits</span>
+            </Link>
+          )}
 
-          {/* Slot 3: Center Elevated [ + ] Action Button */}
+          {/* Slot 3: Center Elevated [ + ] 10-Second Universal Capture Button */}
           <div className="relative flex items-center justify-center w-full h-full">
             <button
               type="button"
-              onClick={() => setIsQuickAddOpen(true)}
-              aria-label="Universal Quick Add"
+              onClick={() => window.dispatchEvent(new Event('open-quick-capture'))}
+              aria-label="10-Second Universal Capture"
               className="absolute -top-3.5 w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 flex items-center justify-center border-4 border-background active:scale-90 hover:scale-105 transition-all"
             >
               <Plus className="w-6 h-6 stroke-[2.5]" />
             </button>
             <span className="text-[9px] font-semibold tracking-tight text-muted-foreground pt-7">
-              Add
+              Capture
             </span>
           </div>
 

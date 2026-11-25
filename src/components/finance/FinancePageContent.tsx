@@ -182,10 +182,10 @@ export function FinancePageContent() {
               size="sm"
               onClick={() => setIsAskAiOpen(true)}
               className="h-9 px-2.5 sm:px-3 rounded-xl gap-1.5 whitespace-nowrap"
-              title="Ask AI about your finances"
+              title="Ask Life OS across Finance, Fitness & Habits"
             >
               <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-xs sm:text-sm">Ask AI</span>
+              <span className="text-xs sm:text-sm">Ask Life OS</span>
             </Button>
 
             <Button
@@ -335,10 +335,11 @@ export function FinancePageContent() {
         initialText={sharedSmsText}
       />
 
-      {/* Ask My Finances AI Q&A Drawer */}
+      {/* Ask Life OS Cross-Domain Q&A Drawer */}
       <AskFinancesDrawer
         open={isAskAiOpen}
         onOpenChange={setIsAskAiOpen}
+        userId={user?.id}
       />
     </div>
   );

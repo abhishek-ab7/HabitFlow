@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { logger } from '@/lib/logger';
+import { upsertRowsWithColumnFallback } from './column-fallback';
 import type { ISynchronizer } from '../types';
 
 export class TasksSyncEngine implements ISynchronizer {
@@ -33,6 +34,7 @@ export class TasksSyncEngine implements ISynchronizer {
         parent_task_id: t.parentTaskId || null,
         depth: t.depth || 0,
         tags: t.tags || [],
+        metadata: t.metadata || {},
         recurrence_rule: t.recurrenceRule || '',
         estimated_time: t.estimatedTime || 0,
         actual_time: t.actualTime || 0,
@@ -43,8 +45,12 @@ export class TasksSyncEngine implements ISynchronizer {
         updated_at: new Date().toISOString()
       }));
 
-      const { error } = await (this.supabase.from('tasks') as any)
-        .upsert(payload, { onConflict: 'id' });
+      const { error } = await upsertRowsWithColumnFallback(
+        this.supabase,
+        'tasks',
+        payload,
+        { onConflict: 'id' }
+      );
 
       if (error) throw new Error(`[TasksSyncEngine Bulk Push Failure]: ${error.message}`);
 
@@ -92,6 +98,7 @@ export class TasksSyncEngine implements ISynchronizer {
               parentTaskId: remote.parent_task_id || null,
               depth: remote.depth || 0,
               tags: remote.tags || [],
+              metadata: remote.metadata ?? local?.metadata ?? {},
               recurrenceRule: remote.recurrence_rule || '',
               estimatedTime: remote.estimated_time || 0,
               actualTime: remote.actual_time || 0,
@@ -120,7 +127,7 @@ export async function syncTasksWithRetry(engine: any) {
 
 export async function pushTaskToRemote(engine: any, task: any) {
   const supabase = getSupabaseClient();
-  await (supabase.from('tasks') as any).upsert({
+  const { error } = await upsertRowsWithColumnFallback(supabase, 'tasks', {
     id: task.id,
     user_id: engine.userId,
     title: task.title,
@@ -133,6 +140,7 @@ export async function pushTaskToRemote(engine: any, task: any) {
     parent_task_id: task.parentTaskId || null,
     depth: task.depth || 0,
     tags: task.tags || [],
+    metadata: task.metadata || {},
     recurrence_rule: task.recurrenceRule || '',
     estimated_time: task.estimatedTime || 0,
     actual_time: task.actualTime || 0,
@@ -142,6 +150,9 @@ export async function pushTaskToRemote(engine: any, task: any) {
     created_at: task.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString()
   });
+  if (error) {
+    logger.warn('[TasksSyncEngine] pushTaskToRemote failed:', error.message);
+  }
 }
 
 export async function updateLocalTask(engine: any, remote: any) {
@@ -158,7 +169,7 @@ export async function updateLocalTask(engine: any, remote: any) {
     parentTaskId: remote.parent_task_id || null,
     depth: remote.depth || 0,
     tags: remote.tags || [],
-    metadata: {},
+    metadata: remote.metadata || {},
     created_at: remote.created_at,
     updated_at: remote.updated_at || remote.created_at,
     recurrenceRule: remote.recurrence_rule || '',

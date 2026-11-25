@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { logger } from '@/lib/logger';
+import { upsertRowsWithColumnFallback } from './column-fallback';
 import type { Goal } from '@/lib/types';
 import type { ISynchronizer } from '../types';
 
@@ -32,12 +33,19 @@ export class GoalsSyncEngine implements ISynchronizer {
         target_date: g.deadline,
         is_focus: g.isFocus,
         is_archived: g.archived,
+        financial_link: g.financialLink || null,
+        fitness_link: g.fitnessLink || null,
+        metadata: g.metadata || null,
         generation_counter: g.generationCounter || 1,
         updated_at: new Date().toISOString()
       }));
 
-      const { error } = await (this.supabase.from('goals') as any)
-        .upsert(payload, { onConflict: 'id' });
+      const { error } = await upsertRowsWithColumnFallback(
+        this.supabase,
+        'goals',
+        payload,
+        { onConflict: 'id' }
+      );
 
       if (error) throw new Error(`[GoalsSyncEngine Bulk Push Failure]: ${error.message}`);
 
@@ -83,6 +91,15 @@ export class GoalsSyncEngine implements ISynchronizer {
               deadline: remote.target_date,
               isFocus: remote.is_focus || false,
               archived: remote.is_archived || false,
+              financialLink: Object.prototype.hasOwnProperty.call(remote, 'financial_link')
+                ? (remote.financial_link ?? undefined)
+                : local?.financialLink,
+              fitnessLink: Object.prototype.hasOwnProperty.call(remote, 'fitness_link')
+                ? (remote.fitness_link ?? undefined)
+                : local?.fitnessLink,
+              metadata: Object.prototype.hasOwnProperty.call(remote, 'metadata')
+                ? (remote.metadata ?? undefined)
+                : local?.metadata,
               generationCounter: remote.generation_counter || 1,
               updatedAt: remote.updated_at,
               startDate: remote.created_at || new Date().toISOString(),
@@ -107,7 +124,7 @@ export async function syncGoalsWithRetry(engine: any) {
 
 export async function pushGoalToRemote(engine: any, goal: Goal) {
   const supabase = getSupabaseClient();
-  await (supabase.from('goals') as any).upsert({
+  const { error } = await upsertRowsWithColumnFallback(supabase, 'goals', {
     id: goal.id,
     user_id: engine.userId,
     title: goal.title,
@@ -118,7 +135,13 @@ export async function pushGoalToRemote(engine: any, goal: Goal) {
     target_date: goal.deadline,
     is_focus: goal.isFocus,
     is_archived: goal.archived,
+    financial_link: goal.financialLink || null,
+    fitness_link: goal.fitnessLink || null,
+    metadata: goal.metadata || null,
     generation_counter: goal.generationCounter || 1,
     updated_at: new Date().toISOString()
   });
+  if (error) {
+    logger.warn('[GoalsSyncEngine] pushGoalToRemote failed:', error.message);
+  }
 }

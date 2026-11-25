@@ -11,6 +11,12 @@ const OPTIONAL_SETTINGS_COLUMNS = [
   'stats',
   'unlocked_themes',
   'generation_counter',
+  'show_fitness',
+  'show_finance',
+  'show_tasks',
+  'show_goals',
+  'show_milestones',
+  'habit_only_mode',
   'xp',
   'level',
   'gems',
@@ -109,6 +115,12 @@ export class UserSettingsSyncEngine implements ISynchronizer {
         unlocked_themes: Array.isArray(settings.unlockedThemes) ? settings.unlockedThemes : [],
         motivation_text: settings.motivation_text || null,
         dashboard_layout: settings.dashboardLayout || null,
+        show_fitness: settings.showFitness ?? true,
+        show_finance: settings.showFinance ?? true,
+        show_tasks: settings.showTasks ?? true,
+        show_goals: settings.showGoals ?? true,
+        show_milestones: settings.showMilestones ?? true,
+        habit_only_mode: settings.habitOnlyMode ?? false,
         generation_counter: settings.generationCounter || 1,
         accent: settings.accent || 'mint',
         updated_at: new Date().toISOString(),
@@ -159,6 +171,12 @@ export class UserSettingsSyncEngine implements ISynchronizer {
           unlockedThemes: remoteData.unlocked_themes || [],
           motivation_text: remoteData.motivation_text || '',
           dashboardLayout: remoteData.dashboard_layout || undefined,
+          showFitness: remoteData.show_fitness ?? local?.showFitness ?? true,
+          showFinance: remoteData.show_finance ?? local?.showFinance ?? true,
+          showTasks: remoteData.show_tasks ?? local?.showTasks ?? true,
+          showGoals: remoteData.show_goals ?? local?.showGoals ?? true,
+          showMilestones: remoteData.show_milestones ?? local?.showMilestones ?? true,
+          habitOnlyMode: remoteData.habit_only_mode ?? local?.habitOnlyMode ?? false,
           generationCounter: remoteData.generation_counter || 1,
           createdAt: remoteData.created_at || new Date().toISOString(),
           updatedAt: remoteData.updated_at || new Date().toISOString(),
@@ -207,7 +225,7 @@ export class MoodLogsSyncEngine implements ISynchronizer {
 
       const { error } = await (this.supabase
         .from('mood_logs') as any)
-        .upsert(payload, { onConflict: 'id' });
+        .upsert(payload, { onConflict: 'user_id,date' });
 
       if (error) throw new Error(`[MoodLogsSyncEngine Bulk Push Failure]: ${error.message}`);
 
@@ -239,8 +257,25 @@ export class MoodLogsSyncEngine implements ISynchronizer {
     if (remoteData && remoteData.length > 0) {
       await db.transaction('rw', db.moodLogs, async () => {
         for (const remote of remoteData) {
-          const local = await db.moodLogs.get(remote.id);
-          
+          let local = await db.moodLogs.get(remote.id);
+          if (!local && remote.date) {
+            const sameDate = await db.moodLogs
+              .where('[userId+date]')
+              .equals([remote.user_id, remote.date])
+              .first();
+            if (sameDate && sameDate.id !== remote.id) {
+              const remoteGen = Number(remote.generation_counter || 0);
+              const localGen = Number(sameDate.generationCounter || 0);
+              const remoteTime = new Date(remote.updated_at || 0).getTime();
+              const localTime = new Date(sameDate.updatedAt || 0).getTime();
+              if (remoteGen > localGen || (remoteGen === localGen && remoteTime >= localTime)) {
+                await db.moodLogs.delete(sameDate.id);
+              } else {
+                local = sameDate;
+              }
+            }
+          }
+
           if (!local || (remote.generation_counter || 0) > (local.generationCounter || 0)) {
             await db.moodLogs.put({
               id: remote.id,
@@ -289,6 +324,12 @@ export async function pushUserSettingsToRemote(engine: any, settings: any) {
     unlocked_themes: Array.isArray(settings.unlockedThemes) ? settings.unlockedThemes : [],
     motivation_text: settings.motivation_text || null,
     dashboard_layout: settings.dashboardLayout || null,
+    show_fitness: settings.showFitness ?? true,
+    show_finance: settings.showFinance ?? true,
+    show_tasks: settings.showTasks ?? true,
+    show_goals: settings.showGoals ?? true,
+    show_milestones: settings.showMilestones ?? true,
+    habit_only_mode: settings.habitOnlyMode ?? false,
     generation_counter: settings.generationCounter || 1,
     accent: settings.accent || 'mint',
     updated_at: new Date().toISOString(),

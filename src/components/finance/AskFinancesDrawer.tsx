@@ -8,7 +8,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useFinanceStore } from '@/lib/stores/finance-store';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import { useHabitStore } from '@/lib/stores/habit-store';
+import { useMoodStore } from '@/lib/stores/mood-store';
 import { buildFinanceQAContext } from '@/lib/finance/anomalies';
+import { getIstIsoDate } from '@/lib/mcp/config';
 import { Sparkles, X, Send, Loader2, Bot, User } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -16,6 +20,7 @@ interface AskFinancesDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialPrompt?: string | null;
+  userId?: string | null;
 }
 
 interface ChatMessage {
@@ -26,16 +31,18 @@ interface ChatMessage {
 }
 
 const STARTER_PROMPTS = [
+  'How much did junk food cost me in ₹ and empty kcal this month?',
+  'What is my gym ₹/workout ROI and whey ₹/25g protein value?',
+  'Do low-sleep (<6.5h) or stressed days trigger more junk spending?',
   'How much can I safely spend per day for the rest of this month?',
-  'Where did most of my spending go this month?',
   'Do I have any cash-flow crunch or upcoming bills in the next 14 days?',
-  'What is my current Net Worth breakdown and savings rate?',
 ];
 
 export function AskFinancesDrawer({
   open,
   onOpenChange,
   initialPrompt,
+  userId,
 }: AskFinancesDrawerProps) {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const categories = useFinanceStore((s) => s.categories);
@@ -49,6 +56,16 @@ export function AskFinancesDrawer({
   const getNetWorthSummary = useFinanceStore((s) => s.getNetWorthSummary);
   const getSpendingAnomalies = useFinanceStore((s) => s.getSpendingAnomalies);
 
+  const fitnessProfile = useFitnessStore((s) => s.profile);
+  const fitnessDailyLogs = useFitnessStore((s) => s.dailyLogs);
+  const fitnessMealLogs = useFitnessStore((s) => s.mealLogs);
+  const fitnessWorkoutSessions = useFitnessStore((s) => s.workoutSessions);
+  const fitnessSupplements = useFitnessStore((s) => s.supplementInventory);
+  const fitnessSupplementLogs = useFitnessStore((s) => s.supplementLogs);
+  const habits = useHabitStore((s) => s.habits);
+  const habitCompletions = useHabitStore((s) => s.completions);
+  const moodLogs = useMoodStore((s) => s.moodLogs);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -60,6 +77,41 @@ export function AskFinancesDrawer({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  // Ensure cross-domain stores (Fitness, Habits, Mood) are hydrated when Ask Life OS opens outside Dashboard
+  useEffect(() => {
+    if (!open) return;
+
+    const fitState = useFitnessStore.getState?.();
+    const habitState = useHabitStore.getState?.();
+    const moodState = useMoodStore.getState?.();
+
+    const todayIst = getIstIsoDate();
+    const d = new Date(`${todayIst}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 35);
+    const start35d = d.toISOString().slice(0, 10);
+
+    if (
+      fitState &&
+      typeof fitState.loadFitnessData === 'function' &&
+      (!fitState.hasLoaded || (userId && fitState.currentUserId !== userId))
+    ) {
+      Promise.resolve(fitState.loadFitnessData(userId || undefined)).catch(() => {});
+    }
+    if (habitState && typeof habitState.loadHabits === 'function' && (habitState.habits?.length ?? 0) === 0) {
+      Promise.resolve(habitState.loadHabits()).catch(() => {});
+    }
+    if (
+      habitState &&
+      typeof habitState.loadCompletions === 'function' &&
+      (habitState.completions?.length ?? 0) === 0
+    ) {
+      Promise.resolve(habitState.loadCompletions(start35d, todayIst)).catch(() => {});
+    }
+    if (moodState && typeof moodState.loadMoodLogs === 'function' && (moodState.moodLogs?.length ?? 0) === 0) {
+      Promise.resolve(moodState.loadMoodLogs(start35d, todayIst)).catch(() => {});
+    }
+  }, [open, userId]);
 
   const sendQuestion = async (questionText: string) => {
     const trimmed = questionText.trim();
@@ -93,6 +145,18 @@ export function AskFinancesDrawer({
         sipPlans,
         debtRecords,
         anomalies,
+        fitness: {
+          todayDate: getIstIsoDate(),
+          fitnessProfile,
+          fitnessDailyLogs,
+          mealLogs: fitnessMealLogs,
+          workoutSessions: fitnessWorkoutSessions,
+          supplementInventory: fitnessSupplements,
+          supplementLogs: fitnessSupplementLogs,
+          habits,
+          habitCompletions,
+          moodLogs,
+        },
       });
 
       const res = await fetch('/api/ai/finance-qa', {
@@ -165,10 +229,10 @@ export function AskFinancesDrawer({
             </span>
             <div className="min-w-0">
               <DialogTitle className="text-base font-bold text-foreground truncate">
-                Ask My Finances
+                Ask Life OS
               </DialogTitle>
               <p className="text-xs text-muted-foreground truncate">
-                Private Q&amp;A grounded in your {selectedMonth} ledger &amp; cashflow
+                Cross-domain Q&amp;A across {selectedMonth} ledger, diet, gym ROI &amp; bio triggers
               </p>
             </div>
           </div>
@@ -176,7 +240,7 @@ export function AskFinancesDrawer({
           <button
             type="button"
             onClick={() => onOpenChange(false)}
-            aria-label="Close Ask My Finances"
+            aria-label="Close Ask Life OS"
             className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <X className="w-5 h-5" />
@@ -192,10 +256,10 @@ export function AskFinancesDrawer({
             <div className="space-y-4 py-4">
               <div className="rounded-2xl border border-border bg-card p-4 space-y-1.5">
                 <p className="text-sm font-semibold text-foreground">
-                  Ask anything about your money
+                  Ask anything across money, diet, supplements &amp; bio triggers
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Only aggregated category totals, budgets, upcoming bills, and Net Worth summaries are shared to answer your question—never raw bank account numbers.
+                  Only aggregated totals, supplement/gym ROI metrics, sleep triggers, and Net Worth summaries are shared to answer your question—never raw bank account numbers.
                 </p>
               </div>
 

@@ -64,7 +64,7 @@ describe('HabitStore', () => {
                 { id: '2', name: 'H2', archived: false } as any,
             ],
             completions: [
-                { id: 'c1', habitId: '1', date: new Date().toISOString().split('T')[0], completed: true } as any,
+                { id: 'c1', habitId: '1', date: format(new Date(), 'yyyy-MM-dd'), completed: true } as any,
             ],
         })
 

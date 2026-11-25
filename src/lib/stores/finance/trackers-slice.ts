@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { CrossDomainActionMediator } from '../mediator';
 import type {
   DebtInstallment,
@@ -108,7 +109,7 @@ export const createTrackersSlice: FinanceSliceCreator<TrackersSlice> = (_set, ge
 
     if (!defaultAccount || !familyCat) return null;
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalIsoDate();
     const txDate = todayStr.startsWith(targetMonth) ? todayStr : `${targetMonth}-28`;
 
     const tx = await get().addTransaction({

@@ -1,5 +1,6 @@
 // Prompt Templates for AI Features
 
+import { getIstIsoDate } from '@/lib/mcp/config';
 import type {
   CoachBriefingInput,
   TaskPriorityInput,
@@ -13,6 +14,16 @@ import type {
   ExpenseParseInput,
   ExpenseParseOutput,
 } from '../types';
+
+function getIstHour(): number {
+  const hourStr = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    hour12: false,
+  }).format(new Date());
+  const parsed = parseInt(hourStr, 10);
+  return Number.isNaN(parsed) ? 9 : parsed;
+}
 
 export function buildCoachPrompt(input: CoachBriefingInput): string {
   const { userData, context } = input;
@@ -29,26 +40,57 @@ Return a JSON object with:
 Be specific, actionable, and encouraging.`;
   }
 
-  const timeOfDay = new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening';
-  
-  return `You are an expert Productivity Coach for a user named "${userData?.userName || 'Friend'}". 
-Your goal is to provide a concise, motivating, and actionable daily briefing.
+  const todayIst = context?.todayIso || getIstIsoDate();
+  const istHour = getIstHour();
+  const timeOfDay = istHour < 12 ? 'morning' : istHour < 18 ? 'afternoon' : 'evening';
+
+  const habitsText = Array.isArray(context?.todaysHabits)
+    ? context.todaysHabits.length > 0
+      ? context.todaysHabits.join(', ')
+      : 'No habits tracked yet'
+    : context?.todaysHabits || 'No habits tracked yet';
+
+  const tasksText = Array.isArray(context?.unfinishedTasks)
+    ? context.unfinishedTasks.length > 0
+      ? `${context.unfinishedTasks.length} pending (${context.unfinishedTasks.slice(0, 5).join(', ')})`
+      : '0 pending'
+    : String(context?.unfinishedTasks ?? 0);
+
+  const ft = context?.fitnessTelemetry;
+  const cd = context?.crossDomainInsights;
+
+  const fitnessBlock = ft
+    ? `\n14-Day Fitness, Sleep & Junk Telemetry:
+- Avg Sleep (14d): ${ft.avgSleepHours14d !== null && ft.avgSleepHours14d !== undefined ? `${ft.avgSleepHours14d} hrs` : 'n/a'} | Avg Energy: ${ft.avgEnergy14d !== null && ft.avgEnergy14d !== undefined ? `${ft.avgEnergy14d}/5` : 'n/a'}
+- Workouts (14d): ${ft.workouts14dCount ?? 0} | Avg Steps (14d): ${ft.avgSteps14d ?? 'n/a'}
+- Rolling Weight: ${ft.rollingWeightKg !== null && ft.rollingWeightKg !== undefined ? `${ft.rollingWeightKg} kg` : 'n/a'}${ft.rollingWeightDeltaKg !== null && ft.rollingWeightDeltaKg !== undefined ? ` (${ft.rollingWeightDeltaKg >= 0 ? '+' : ''}${ft.rollingWeightDeltaKg} kg 7d delta)` : ''}
+- Avg Protein (14d): ${ft.avgProtein14dG !== null && ft.avgProtein14dG !== undefined ? `${ft.avgProtein14dG}g` : 'n/a'}${ft.proteinTargetG ? ` / ${ft.proteinTargetG}g target` : ''}
+- 14d Junk Spend & Empty Calories: ₹${ft.junkSpend14dInr ?? 0} (${ft.junkEmptyKcal14d ?? 0} kcal${ft.fatLossDragKg14d ? `, ~${ft.fatLossDragKg14d} kg fat-loss drag` : ''})`
+    : '';
+
+  const crossDomainBlock = cd
+    ? `\nCross-Domain Life OS Insights:
+${cd.gymCostPerWorkoutInr ? `- Gym Cost/Workout (30d): ₹${cd.gymCostPerWorkoutInr}\n` : ''}${cd.primaryProteinCostPer25gInr ? `- Protein Cost/25g: ₹${cd.primaryProteinCostPer25gInr}\n` : ''}${cd.triggerMultiplier ? `- Trigger Pattern: Junk/'idk' spend is ${cd.triggerMultiplier}x higher on ${cd.topTriggerLabel || 'low-recovery'} days\n` : ''}${cd.alerts?.length ? cd.alerts.slice(0, 3).map((a) => `- [${a.metricBadge || 'Alert'}] ${a.title}: ${a.description}`).join('\n') : ''}`
+    : '';
+
+  return `You are an expert HabitFlow Life OS Coach for a user named "${userData?.userName || 'Friend'}". 
+Your goal is to provide a concise, high-signal, motivating, and actionable daily briefing combining Habits, Tasks, Finance, and Fitness/Bio telemetry (currency INR ₹).
 
 Current Context:
-- Time: ${timeOfDay}, ${new Date().toLocaleDateString()}
-- Unfinished Tasks: ${context?.unfinishedTasks || 0}
-- Today's Habits: ${context?.todaysHabits || 'No habits tracked yet'}
+- Date (IST) & Time: ${todayIst} (${timeOfDay})
+- Unfinished Tasks: ${tasksText}
+- Today's Habits: ${habitsText}
 ${context?.burnoutRisk ? `- Burnout Risk: ${context.burnoutRisk}/100` : ''}
 ${context?.topPriorityTask ? `- Top Priority: ${context.topPriorityTask}` : ''}
-${context?.upcomingDeadlines?.length ? `- Upcoming Deadlines: ${context.upcomingDeadlines.map(d => `${d.title} (${d.daysLeft} days)`).join(', ')}` : ''}
+${context?.upcomingDeadlines?.length ? `- Upcoming Deadlines: ${context.upcomingDeadlines.map(d => `${d.title} (${d.daysLeft} days)`).join(', ')}` : ''}${fitnessBlock}${crossDomainBlock}
 
 Instructions:
-1. Start with a personalized greeting that acknowledges their momentum and progress
-2. Give 1 specific, actionable recommendation based on their current context
-3. End with a motivational quote (not generic - tie it to their situation)
-4. Optionally add energyForecast ('low'/'medium'/'high'), streaksAtRisk (array), quickWins (array)
+1. Start with a personalized greeting that acknowledges their momentum and time of day (${timeOfDay})
+2. Give 1-2 ultra-specific, actionable Life OS moves referencing their actual numbers (sleep, protein/workouts, MIT tasks, or junk spend triggers if flagged)
+3. End with a sharp motivational quote (not generic - tie it to their situation)
+4. Set energyForecast ('low'/'medium'/'high'), streaksAtRisk (array), and quickWins (array) grounded in the context.
 
-Be encouraging but honest. If they're behind, motivate them. If they're crushing it, celebrate them.`;
+Be encouraging, grounded in telemetry, and honest.`;
 }
 
 export function buildPrioritizePrompt(input: TaskPriorityInput): string {

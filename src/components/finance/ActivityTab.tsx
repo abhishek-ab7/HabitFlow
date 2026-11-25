@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import { CategoryIcon } from './CategoryIcon';
 import { formatMonthYear } from '@/lib/date-format';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { toast } from 'sonner';
 
 interface ActivityTabProps {
@@ -40,11 +41,11 @@ interface ActivityTabProps {
 }
 
 function formatDateHeading(dateStr: string): string {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalIsoDate();
   if (dateStr === todayStr) return 'Today';
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  if (dateStr === yesterday.toISOString().split('T')[0]) return 'Yesterday';
+  if (dateStr === getLocalIsoDate(yesterday)) return 'Yesterday';
 
   const [y, m, d] = dateStr.split('-').map((n) => parseInt(n, 10));
   if (!y || !m || !d) return dateStr;
@@ -60,7 +61,7 @@ function formatDateHeading(dateStr: string): string {
 function formatDateOffset(daysBack: number): string {
   const d = new Date();
   d.setDate(d.getDate() - daysBack);
-  return d.toISOString().split('T')[0];
+  return getLocalIsoDate(d);
 }
 
 export function ActivityTab({

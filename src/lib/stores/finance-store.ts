@@ -64,7 +64,10 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
   seedInitialFinanceData: async (userId: string) => {
     const existingCats = await db.financeCategories.where('userId').equals(userId).toArray();
     const existingAccs = await db.financeAccounts.where('userId').equals(userId).toArray();
-    if (existingCats.length > 0 && existingAccs.length > 0) return;
+    const hasJunkFoodCategory = existingCats.some(
+      (c) => c.slug === 'junk-food' || /junk\s*food/i.test(c.name)
+    );
+    if (existingCats.length > 0 && existingAccs.length > 0 && hasJunkFoodCategory) return;
 
     const existingSlugs = new Set(existingCats.map((c) => c.slug).filter(Boolean));
     const existingAccKeys = new Set(
@@ -87,6 +90,19 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
       }));
       if (categories.length > 0) {
         await db.financeCategories.bulkAdd(categories);
+      }
+    } else if (!hasJunkFoodCategory) {
+      const junkTemplate = DEFAULT_FINANCE_CATEGORIES.find((c) => c.slug === 'junk-food');
+      if (junkTemplate) {
+        await db.financeCategories.add({
+          ...junkTemplate,
+          id: crypto.randomUUID(),
+          userId,
+          isDirty: true,
+          generationCounter: 1,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
     }
 

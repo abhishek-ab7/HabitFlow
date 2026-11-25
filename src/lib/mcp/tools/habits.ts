@@ -98,6 +98,9 @@ export function registerHabitsTools(server: McpServer) {
           isQuantitative: h.is_quantitative,
           targetValue: h.target_value,
           unit: h.unit,
+          polarity: h.polarity || 'build',
+          anchorBlock: h.anchor_block ?? null,
+          metadata: h.metadata || {},
           isArchived: h.is_archived,
           currentStreak: stats.currentStreak,
           longestStreak: stats.bestStreak,
@@ -147,6 +150,12 @@ export function registerHabitsTools(server: McpServer) {
         is_quantitative: z.boolean().optional().describe('Whether habit tracks a numeric value (e.g. pages, minutes)'),
         target_value: z.number().optional().describe('Numeric daily target value'),
         unit: z.string().optional().describe('Unit of measurement (e.g. pages, km, mins)'),
+        polarity: z.enum(['build', 'quit']).optional().describe('Habit polarity (build positive habit or quit vice)'),
+        anchor_block: z
+          .enum(['morning', 'work', 'gym', 'night'])
+          .nullable()
+          .optional()
+          .describe('Daily routine anchor time-block'),
         order_index: z.number().int().optional(),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
@@ -189,6 +198,8 @@ export function registerHabitsTools(server: McpServer) {
             is_quantitative: args.is_quantitative ?? false,
             target_value: args.target_value ?? null,
             unit: args.unit || null,
+            polarity: args.polarity || 'build',
+            anchor_block: args.anchor_block ?? null,
             order_index: args.order_index ?? 0,
             is_archived: false,
             ...meta,
@@ -298,6 +309,8 @@ export function registerHabitsTools(server: McpServer) {
           if (args.is_quantitative !== undefined) updates.is_quantitative = args.is_quantitative;
           if (args.target_value !== undefined) updates.target_value = args.target_value;
           if (args.unit !== undefined) updates.unit = args.unit;
+          if (args.polarity !== undefined) updates.polarity = args.polarity;
+          if (args.anchor_block !== undefined) updates.anchor_block = args.anchor_block;
           if (args.order_index !== undefined) updates.order_index = args.order_index;
 
           const meta = getUpdateMetadata(existing);

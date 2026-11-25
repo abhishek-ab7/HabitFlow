@@ -15,6 +15,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { toast } from 'sonner';
 
 const ASSET_CLASS_LABELS: Record<SipAssetClass, string> = {
@@ -88,7 +89,7 @@ export function SipsSection() {
       assetClass: sipAssetClass,
       monthlyAmount: monthly,
       sipDayOfMonth: Math.min(31, Math.max(1, parseInt(sipDay, 10) || 5)),
-      startDate: new Date().toISOString().split('T')[0],
+      startDate: getLocalIsoDate(),
       totalInvested: invested,
       currentValue: current,
       expectedReturnAnnual: sipAssetClass === 'equity_mf' ? 12 : 8,

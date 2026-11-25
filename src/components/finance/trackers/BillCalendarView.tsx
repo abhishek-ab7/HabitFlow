@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
@@ -9,8 +9,19 @@ import {
   TrendingUp,
   HeartHandshake,
   CreditCard,
+  Stethoscope,
+  Pill,
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import { useTaskStore } from '@/lib/stores/task-store';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import { useAuth } from '@/providers/auth-provider';
+import { calculateSupplementStockAndRoi } from '@/lib/fitness/shared-analytics';
+import {
+  addDays,
+  getLocalIsoDate,
+  normalizeIsoDate,
+} from '@/lib/finance/credit-card-cycles';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { PayCreditCardModal } from '../credit-cards/PayCreditCardModal';
@@ -22,7 +33,14 @@ interface CalendarEventItem {
   sourceId: string;
   statementId?: string;
   day: number;
-  kind: 'bill' | 'emi' | 'sip' | 'commitment' | 'credit_card';
+  kind:
+    | 'bill'
+    | 'emi'
+    | 'sip'
+    | 'commitment'
+    | 'credit_card'
+    | 'health_task'
+    | 'supplement_refill';
   title: string;
   subtitle: string;
   amount: number;
@@ -45,6 +63,25 @@ export function BillCalendarView() {
   const payMonthlyEmi = useFinanceStore((s) => s.payMonthlyEmi);
   const payMonthlySip = useFinanceStore((s) => s.payMonthlySip);
   const settleCommitmentBalance = useFinanceStore((s) => s.settleCommitmentBalance);
+
+  const { user } = useAuth();
+  const tasks = useTaskStore((s) => s.tasks);
+  const loadTasks = useTaskStore((s) => s.loadTasks);
+  const toggleTaskComplete = useTaskStore((s) => s.toggleTaskComplete);
+  const supplementInventory = useFitnessStore((s) => s.supplementInventory);
+  const supplementLogs = useFitnessStore((s) => s.supplementLogs);
+  const hasLoadedFitness = useFitnessStore((s) => s.hasLoaded);
+  const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
+  const restockSupplement = useFitnessStore((s) => s.restockSupplement);
+
+  useEffect(() => {
+    if (typeof loadTasks === 'function' && tasks.length === 0) {
+      void loadTasks();
+    }
+    if (typeof loadFitnessData === 'function' && !hasLoadedFitness) {
+      void loadFitnessData(user?.id);
+    }
+  }, [loadTasks, tasks.length, loadFitnessData, hasLoadedFitness, user?.id]);
 
   const [payingCardAccount, setPayingCardAccount] = useState<FinanceAccount | null>(null);
   const [payingCardStatement, setPayingCardStatement] = useState<CreditCardStatement | null>(null);
@@ -188,6 +225,59 @@ export function BillCalendarView() {
       });
     }
 
+    // Health-tagged Tasks due in selectedMonth (doctor follow-ups, prescriptions, labs)
+    for (const task of tasks) {
+      if (task.status === 'archived' || !task.due_date) continue;
+      const isHealthTask = (task.tags || []).some(
+        (tag) => tag.trim().toLowerCase() === 'health'
+      );
+      if (!isHealthTask) continue;
+      const dueDateIso = normalizeIsoDate(task.due_date);
+      if (!dueDateIso.startsWith(selectedMonth)) continue;
+      const dayNum = parseInt(dueDateIso.slice(8, 10), 10);
+      if (Number.isNaN(dayNum)) continue;
+
+      pushEvent(dayNum, {
+        id: `health-task-${task.id}`,
+        sourceId: task.id,
+        day: dayNum,
+        kind: 'health_task',
+        title: task.title,
+        subtitle: 'Health Task · Follow-up / Meds',
+        amount: 0,
+        isPaid: task.status === 'done',
+      });
+    }
+
+    // Supplement Refill Dates (projected runout when daysLeft <= 10)
+    const todayIso = getLocalIsoDate();
+    const roiSummary = calculateSupplementStockAndRoi(
+      supplementInventory,
+      supplementLogs,
+      todayIso
+    );
+    for (const item of roiSummary.items) {
+      if (item.daysRemaining === null || item.daysRemaining > 10) continue;
+      const runoutDateIso = addDays(todayIso, Math.max(0, item.daysRemaining));
+      if (!runoutDateIso.startsWith(selectedMonth)) continue;
+      const dayNum = parseInt(runoutDateIso.slice(8, 10), 10);
+      if (Number.isNaN(dayNum)) continue;
+
+      pushEvent(dayNum, {
+        id: `supplement-refill-${item.supplement.id}`,
+        sourceId: item.supplement.id,
+        day: dayNum,
+        kind: 'supplement_refill',
+        title: `${item.supplement.name} Refill`,
+        subtitle:
+          item.daysRemaining <= 0
+            ? 'Stock depleted · Refill needed'
+            : `Runs out in ${item.daysRemaining}d (~${item.derivedRemainingServings} ${item.supplement.unitLabel}s left)`,
+        amount: Math.max(0, Number(item.supplement.costInr || 0)),
+        isPaid: false,
+      });
+    }
+
     return map;
   }, [
     recurringBills,
@@ -197,6 +287,9 @@ export function BillCalendarView() {
     creditCardStatements,
     accounts,
     transactions,
+    tasks,
+    supplementInventory,
+    supplementLogs,
     selectedMonth,
     daysInMonth,
   ]);
@@ -230,6 +323,12 @@ export function BillCalendarView() {
     } else if (ev.kind === 'commitment') {
       const tx = await settleCommitmentBalance(ev.sourceId, undefined, selectedMonth);
       if (tx) toast.success(`Settled ${ev.title}`);
+    } else if (ev.kind === 'health_task') {
+      await toggleTaskComplete(ev.sourceId);
+      toast.success(`Updated health task: ${ev.title}`);
+    } else if (ev.kind === 'supplement_refill') {
+      await restockSupplement(ev.sourceId, {});
+      toast.success(`Restocked ${ev.title.replace(/ Refill$/, '')}`);
     }
   };
 
@@ -238,6 +337,8 @@ export function BillCalendarView() {
     if (kind === 'sip') return <TrendingUp className="w-4 h-4 text-violet-500" />;
     if (kind === 'commitment') return <HeartHandshake className="w-4 h-4 text-rose-500" />;
     if (kind === 'credit_card') return <CreditCard className="w-4 h-4 text-rose-500" />;
+    if (kind === 'health_task') return <Stethoscope className="w-4 h-4 text-sky-500" />;
+    if (kind === 'supplement_refill') return <Pill className="w-4 h-4 text-teal-500" />;
     return <Repeat className="w-4 h-4 text-cyan-500" />;
   };
 
@@ -246,6 +347,8 @@ export function BillCalendarView() {
     if (kind === 'emi' || kind === 'credit_card') return 'bg-rose-500';
     if (kind === 'sip') return 'bg-violet-500';
     if (kind === 'commitment') return 'bg-rose-500';
+    if (kind === 'health_task') return 'bg-sky-500';
+    if (kind === 'supplement_refill') return 'bg-teal-500';
     return 'bg-amber-500';
   };
 
@@ -287,6 +390,14 @@ export function BillCalendarView() {
             <span className="inline-flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-violet-500" />
               SIP
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-sky-500" />
+              Health Task
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-teal-500" />
+              Supplement Refill
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -414,7 +525,7 @@ export function BillCalendarView() {
                   </div>
 
                   <span className="text-xs font-bold font-mono tabular-nums text-foreground shrink-0">
-                    {formatINR(ev.amount)}
+                    {ev.kind === 'health_task' ? 'Health' : formatINR(ev.amount)}
                   </span>
                 </div>
 
@@ -422,7 +533,9 @@ export function BillCalendarView() {
                   {ev.isPaid ? (
                     <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      Settled for {formatMonthYear(selectedMonth)}
+                      {ev.kind === 'health_task'
+                        ? 'Completed'
+                        : `Settled for ${formatMonthYear(selectedMonth)}`}
                     </span>
                   ) : ev.kind === 'credit_card' ? (
                     <Button
@@ -456,6 +569,10 @@ export function BillCalendarView() {
                           ? 'Log SIP Investment'
                           : ev.kind === 'commitment'
                           ? 'Settle Balance'
+                          : ev.kind === 'health_task'
+                          ? 'Mark Health Task Done'
+                          : ev.kind === 'supplement_refill'
+                          ? 'Restock Supplement'
                           : 'Mark Paid'}
                       </span>
                     </Button>

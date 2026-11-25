@@ -195,6 +195,18 @@ export const DEFAULT_FINANCE_CATEGORIES: Array<
     isSystem: true,
     archived: false,
   },
+  {
+    name: 'Junk Food',
+    slug: 'junk-food',
+    type: 'expense',
+    icon: 'Flame',
+    color: '#f43f5e',
+    monthlyBudgetLimit: 0,
+    subcategories: ['Fast Food & Street', 'Desserts & Bakery', 'Sugary Drinks & Snacks'],
+    order: 10,
+    isSystem: true,
+    archived: false,
+  },
 ];
 
 export const INITIAL_FILTERS: FinanceFilterState = {

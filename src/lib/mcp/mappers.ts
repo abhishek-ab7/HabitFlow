@@ -11,6 +11,7 @@ import type {
   DebtRecord,
   DebtRepaymentSchedule,
   DebtStatus,
+  DietPreference,
   EmiStatus,
   EmiTracker,
   FinanceAccount,
@@ -21,12 +22,30 @@ import type {
   FinanceSipPlan,
   FinanceTransaction,
   FinanceTransactionType,
+  FitnessActivityLevel,
+  FitnessDailyLog,
+  FitnessGoalType,
+  FitnessProfile,
   Habit,
+  HabitAnchorBlock,
   HabitCompletion,
   HabitFrequencyType,
+  HabitPolarity,
+  MealLog,
+  MealLogSource,
+  MealTemplate,
+  MealType,
   MonthlyCommitment,
+  MoodLog,
+  MoodType,
   SipAssetClass,
   StatementStatus,
+  SupplementCategory,
+  SupplementInventory,
+  SupplementLog,
+  WorkoutExercise,
+  WorkoutSession,
+  WorkoutType,
 } from '@/lib/types';
 
 function fallbackIsoTimestamp(): string {
@@ -412,12 +431,16 @@ export function mapHabitFromRow(r: Record<string, any>, fallbackDateIso?: string
         : undefined,
     allowBonusCompletions: r.allow_bonus_completions ?? undefined,
     autoTrackRule: r.auto_track_rule ?? undefined,
+    polarity: (r.polarity || 'build') as HabitPolarity,
+    anchorBlock: (r.anchor_block || undefined) as HabitAnchorBlock | undefined,
     isQuantitative: !!r.is_quantitative,
     targetValue:
       r.target_value !== null && r.target_value !== undefined
         ? Number(r.target_value)
         : undefined,
     unit: r.unit ?? undefined,
+    metadata:
+      r.metadata && typeof r.metadata === 'object' ? r.metadata : undefined,
     archived: !!r.is_archived,
     order: Number(r.order_index ?? 0),
     icon: r.icon || undefined,
@@ -448,5 +471,263 @@ export function mapHabitCompletionFromRow(
     createdAt: r.created_at || undefined,
     updatedAt: r.updated_at || undefined,
     generationCounter: Number(r.generation_counter || 1),
+  };
+}
+
+/**
+ * Maps a Supabase `mood_logs` row (`snake_case`) into a `MoodLog`.
+ */
+export function mapMoodLogFromRow(
+  r: Record<string, any>,
+  fallbackUserId = ''
+): MoodLog {
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || fallbackUserId),
+    date: String(r.date || '').slice(0, 10),
+    mood: (r.mood || 'neutral') as MoodType,
+    createdAt: r.created_at || undefined,
+    updatedAt: r.updated_at || undefined,
+    generationCounter: Number(r.generation_counter || 1),
+  };
+}
+
+/**
+ * 1. Maps a Supabase `fitness_profiles` row (`snake_case`) into a `FitnessProfile`.
+ */
+export function mapFitnessProfileFromRow(r: Record<string, any>): FitnessProfile {
+  const now = fallbackIsoTimestamp();
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || ''),
+    heightCm:
+      r.height_cm !== null && r.height_cm !== undefined ? Number(r.height_cm) : null,
+    currentWeightKg:
+      r.current_weight_kg !== null && r.current_weight_kg !== undefined
+        ? Number(r.current_weight_kg)
+        : null,
+    targetWeightKg:
+      r.target_weight_kg !== null && r.target_weight_kg !== undefined
+        ? Number(r.target_weight_kg)
+        : null,
+    startingWeightKg:
+      r.starting_weight_kg !== null && r.starting_weight_kg !== undefined
+        ? Number(r.starting_weight_kg)
+        : null,
+    targetWaistInches:
+      r.target_waist_inches !== null && r.target_waist_inches !== undefined
+        ? Number(r.target_waist_inches)
+        : null,
+    calorieTarget: Number(r.calorie_target ?? 2000),
+    proteinTargetG: Number(r.protein_target_g ?? 130),
+    carbsTargetG:
+      r.carbs_target_g !== null && r.carbs_target_g !== undefined
+        ? Number(r.carbs_target_g)
+        : null,
+    fatTargetG:
+      r.fat_target_g !== null && r.fat_target_g !== undefined ? Number(r.fat_target_g) : null,
+    waterTargetMl: Number(r.water_target_ml ?? 3000),
+    stepsTarget: Number(r.steps_target ?? 8000),
+    sleepTargetHours: Number(r.sleep_target_hours ?? 7.5),
+    activityLevel: (r.activity_level || 'moderate') as FitnessActivityLevel,
+    goalType: (r.goal_type || 'fat_loss') as FitnessGoalType,
+    dietPreference: (r.diet_preference || 'non_veg') as DietPreference,
+    gymScheduleDays: Array.isArray(r.gym_schedule_days)
+      ? r.gym_schedule_days.map(Number)
+      : [1, 2, 3, 4, 5, 6],
+    lowEnergyCalorieCeiling:
+      r.low_energy_calorie_ceiling !== null && r.low_energy_calorie_ceiling !== undefined
+        ? Number(r.low_energy_calorie_ceiling)
+        : null,
+    lowEnergyStepsTarget:
+      r.low_energy_steps_target !== null && r.low_energy_steps_target !== undefined
+        ? Number(r.low_energy_steps_target)
+        : 3500,
+    deletedAt: r.deleted_at || null,
+    generationCounter: Number(r.generation_counter || 1),
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || r.created_at || now,
+  };
+}
+
+/**
+ * 2. Maps a Supabase `fitness_daily_logs` row (`snake_case`) into a `FitnessDailyLog`.
+ */
+export function mapFitnessDailyLogFromRow(r: Record<string, any>): FitnessDailyLog {
+  const now = fallbackIsoTimestamp();
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || ''),
+    date: String(r.date || '').slice(0, 10),
+    weightKg:
+      r.weight_kg !== null && r.weight_kg !== undefined ? Number(r.weight_kg) : null,
+    waistInches:
+      r.waist_inches !== null && r.waist_inches !== undefined
+        ? Number(r.waist_inches)
+        : null,
+    waterMl: Number(r.water_ml ?? 0),
+    steps: Number(r.steps ?? 0),
+    sleepHours:
+      r.sleep_hours !== null && r.sleep_hours !== undefined ? Number(r.sleep_hours) : null,
+    sleepQuality:
+      r.sleep_quality !== null && r.sleep_quality !== undefined
+        ? Number(r.sleep_quality)
+        : null,
+    energyLevel:
+      r.energy_level !== null && r.energy_level !== undefined
+        ? Number(r.energy_level)
+        : null,
+    sorenessLevel:
+      r.soreness_level !== null && r.soreness_level !== undefined
+        ? Number(r.soreness_level)
+        : null,
+    lowEnergyMode: !!r.low_energy_mode,
+    junkFreeOverride: !!r.junk_free_override,
+    restedHabitIds: Array.isArray(r.rested_habit_ids)
+      ? r.rested_habit_ids.map(String)
+      : [],
+    notes: r.notes ?? null,
+    deletedAt: r.deleted_at || null,
+    generationCounter: Number(r.generation_counter || 1),
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || r.created_at || now,
+  };
+}
+
+/**
+ * 3. Maps a Supabase `meal_templates` row (`snake_case`) into a `MealTemplate`.
+ */
+export function mapMealTemplateFromRow(r: Record<string, any>): MealTemplate {
+  const now = fallbackIsoTimestamp();
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || ''),
+    name: String(r.name || ''),
+    hindiAliases: Array.isArray(r.hindi_aliases) ? r.hindi_aliases.map(String) : [],
+    calories: Number(r.calories ?? 0),
+    proteinG: Number(r.protein_g ?? 0),
+    carbsG: Number(r.carbs_g ?? 0),
+    fatG: Number(r.fat_g ?? 0),
+    fiberG: r.fiber_g !== null && r.fiber_g !== undefined ? Number(r.fiber_g) : null,
+    servingLabel: String(r.serving_label || '1 serving'),
+    mealType: (r.meal_type || null) as MealType | null,
+    isJunk: !!r.is_junk,
+    isPinned: r.is_pinned !== false,
+    order: Number(r.order_index ?? 0),
+    deletedAt: r.deleted_at || null,
+    generationCounter: Number(r.generation_counter || 1),
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || r.created_at || now,
+  };
+}
+
+/**
+ * 4. Maps a Supabase `meal_logs` row (`snake_case`) into a `MealLog`.
+ */
+export function mapMealLogFromRow(r: Record<string, any>): MealLog {
+  const now = fallbackIsoTimestamp();
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || ''),
+    date: String(r.date || '').slice(0, 10),
+    mealType: (r.meal_type || 'snack') as MealType,
+    name: String(r.name || ''),
+    calories: Number(r.calories ?? 0),
+    proteinG: Number(r.protein_g ?? 0),
+    carbsG: Number(r.carbs_g ?? 0),
+    fatG: Number(r.fat_g ?? 0),
+    fiberG: r.fiber_g !== null && r.fiber_g !== undefined ? Number(r.fiber_g) : null,
+    quantityMultiplier: Number(r.quantity_multiplier ?? 1),
+    isJunk: !!r.is_junk,
+    templateId: r.template_id ?? null,
+    linkedTransactionId: r.linked_transaction_id ?? null,
+    source: (r.source || 'manual') as MealLogSource,
+    notes: r.notes ?? null,
+    loggedAt: r.logged_at || r.created_at || now,
+    deletedAt: r.deleted_at || null,
+    generationCounter: Number(r.generation_counter || 1),
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || r.created_at || now,
+  };
+}
+
+/**
+ * 5. Maps a Supabase `workout_sessions` row (`snake_case`) into a `WorkoutSession`.
+ */
+export function mapWorkoutSessionFromRow(r: Record<string, any>): WorkoutSession {
+  const now = fallbackIsoTimestamp();
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || ''),
+    date: String(r.date || '').slice(0, 10),
+    title: String(r.title || ''),
+    workoutType: (r.workout_type || 'strength') as WorkoutType,
+    durationMinutes: Number(r.duration_minutes ?? 0),
+    estimatedCaloriesBurned:
+      r.estimated_calories_burned !== null && r.estimated_calories_burned !== undefined
+        ? Number(r.estimated_calories_burned)
+        : null,
+    exercises: Array.isArray(r.exercises) ? (r.exercises as WorkoutExercise[]) : [],
+    rpe: r.rpe !== null && r.rpe !== undefined ? Number(r.rpe) : null,
+    notes: r.notes ?? null,
+    source: String(r.source || 'manual'),
+    deletedAt: r.deleted_at || null,
+    generationCounter: Number(r.generation_counter || 1),
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || r.created_at || now,
+  };
+}
+
+/**
+ * 6. Maps a Supabase `supplement_inventory` row (`snake_case`) into a `SupplementInventory`.
+ */
+export function mapSupplementInventoryFromRow(r: Record<string, any>): SupplementInventory {
+  const now = fallbackIsoTimestamp();
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || ''),
+    name: String(r.name || ''),
+    brand: r.brand ?? null,
+    category: (r.category || 'other') as SupplementCategory,
+    unitLabel: String(r.unit_label || 'scoop'),
+    totalServings: Number(r.total_servings ?? 30),
+    remainingServings: Number(r.remaining_servings ?? 30),
+    dailyDosage: Number(r.daily_dosage ?? 1),
+    costInr: Number(r.cost_inr ?? 0),
+    proteinPerServingG:
+      r.protein_per_serving_g !== null && r.protein_per_serving_g !== undefined
+        ? Number(r.protein_per_serving_g)
+        : null,
+    manualAdjustment: Number(r.manual_adjustment ?? 0),
+    anchorBlock: (r.anchor_block || null) as HabitAnchorBlock | null,
+    lowStockThresholdDays: Number(r.low_stock_threshold_days ?? 7),
+    linkedTransactionId: r.linked_transaction_id ?? null,
+    lastRestockedAt: r.last_restocked_at ? String(r.last_restocked_at).slice(0, 10) : null,
+    isActive: r.is_active !== false,
+    notes: r.notes ?? null,
+    deletedAt: r.deleted_at || null,
+    generationCounter: Number(r.generation_counter || 1),
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || r.created_at || now,
+  };
+}
+
+/**
+ * 7. Maps a Supabase `supplement_logs` row (`snake_case`) into a `SupplementLog`.
+ */
+export function mapSupplementLogFromRow(r: Record<string, any>): SupplementLog {
+  const now = fallbackIsoTimestamp();
+  return {
+    id: String(r.id),
+    userId: String(r.user_id || ''),
+    supplementId: String(r.supplement_id || ''),
+    date: String(r.date || '').slice(0, 10),
+    servingsTaken: Number(r.servings_taken ?? 1),
+    takenAt: r.taken_at || r.created_at || now,
+    notes: r.notes ?? null,
+    deletedAt: r.deleted_at || null,
+    generationCounter: Number(r.generation_counter || 1),
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || r.created_at || now,
   };
 }

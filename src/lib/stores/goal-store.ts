@@ -15,6 +15,9 @@ import {
 import { getSupabaseClient } from '../supabase/client';
 import type { Goal, Milestone, GoalFormData, MilestoneFormData, GoalStatus, AreaOfLife, Priority } from '../types';
 import { calculateGoalStats, getDeadlineStatus } from '../calculations';
+import { calculateFitnessGoalProgress } from '../fitness/shared-analytics';
+import { getLocalIsoDate } from '../finance/credit-card-cycles';
+import { useFitnessStore } from './fitness';
 import { getSyncEngine } from '../sync';
 
 interface GoalState {
@@ -313,7 +316,44 @@ export const useGoalStore = create<GoalState>((set, get) => ({
         isOnTrack: false,
       };
     }
-    return calculateGoalStats(goal, milestones);
+    const baseStats = calculateGoalStats(goal, milestones);
+    if (goal.fitnessLink && goal.fitnessLink.targetValue > 0) {
+      const fitState = useFitnessStore.getState();
+      const fitProgress = calculateFitnessGoalProgress(goal.fitnessLink, {
+        profile: fitState.profile,
+        dailyLogs: fitState.dailyLogs,
+        workoutSessions: fitState.workoutSessions,
+        referenceDate: getLocalIsoDate(),
+      });
+      const effectiveProgress =
+        baseStats.milestonesTotal === 0 ? fitProgress.progressPct : baseStats.progress;
+      const expectedProgress =
+        baseStats.totalDays > 0
+          ? Math.min(100, (baseStats.daysElapsed / baseStats.totalDays) * 100)
+          : 0;
+      const isOnTrack =
+        baseStats.milestonesTotal === 0
+          ? effectiveProgress >= expectedProgress - 10
+          : baseStats.isOnTrack;
+      let projectedCompletion = baseStats.projectedCompletion;
+      if (baseStats.milestonesTotal === 0 && baseStats.daysElapsed > 0 && effectiveProgress > 0) {
+        const progressRate = effectiveProgress / baseStats.daysElapsed;
+        projectedCompletion = Math.min(
+          100,
+          Math.round(progressRate * (baseStats.daysElapsed + baseStats.daysRemaining))
+        );
+      }
+      return {
+        ...baseStats,
+        progress: effectiveProgress,
+        isOnTrack,
+        projectedCompletion,
+        currentFitnessValue: fitProgress.currentValue,
+        targetFitnessValue: fitProgress.targetValue,
+        fitnessUnit: fitProgress.unit,
+      };
+    }
+    return baseStats;
   },
 
   getGoalMilestones: (goalId: string) => {

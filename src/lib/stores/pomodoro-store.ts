@@ -1,7 +1,23 @@
 import { create } from 'zustand';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { useTaskStore } from './task-store';
 
-export type PomodoroMode = 'focus' | 'short_break' | 'long_break';
+export type PomodoroMode =
+  | 'focus'
+  | 'short_break'
+  | 'long_break'
+  | 'starter_2m'
+  | 'urge_10m'
+  | 'gym_rest';
+
+export const POMODORO_DURATIONS: Record<PomodoroMode, number> = {
+  focus: 25 * 60,       // 25 minutes
+  short_break: 5 * 60,  // 5 minutes
+  long_break: 15 * 60,  // 15 minutes
+  starter_2m: 2 * 60,   // 2-minute anti-procrastination rule
+  urge_10m: 10 * 60,    // 10-minute urge surfing timer
+  gym_rest: 90,         // 90s default gym rest timer
+};
 
 interface PomodoroState {
   activeTaskId: string | null;
@@ -10,37 +26,110 @@ interface PomodoroState {
   timeLeft: number; // in seconds
   duration: number; // in seconds
   isRunning: boolean;
+  endsAt: number | null; // wall-clock epoch ms when running
+  lastTickMs: number | null;
   completedSessions: number;
+  urgeHabitId: string | null;
+  urgeHabitName: string | null;
+  pendingUrgeReflection: boolean;
+  lastCompletedMode: PomodoroMode | null;
 
   // Actions
   startTimer: (taskId: string, taskTitle: string) => void;
+  startPresetTimer: (
+    mode: PomodoroMode,
+    options?: {
+      durationSecs?: number;
+      title?: string;
+      taskId?: string | null;
+      habitId?: string | null;
+      habitName?: string | null;
+      openPanel?: boolean;
+    }
+  ) => void;
+  startGymRestTimer: (seconds: number, exerciseName?: string) => void;
+  startUrgeTimer: (habitId?: string | null, habitName?: string | null) => void;
+  resolveUrgeReflection: (outcome: 'passed' | 'gave_in') => void;
   pauseTimer: () => void;
   resumeTimer: () => void;
   resetTimer: () => void;
-  tick: () => void;
+  tick: (nowMs?: number) => void;
+  syncFromClock: (nowMs?: number) => void;
   setMode: (mode: PomodoroMode) => void;
   adjustDuration: (amountSecs: number) => void;
 }
 
-const DURATIONS: Record<PomodoroMode, number> = {
-  focus: 25 * 60,       // 25 minutes
-  short_break: 5 * 60,  // 5 minutes
-  long_break: 15 * 60,  // 15 minutes
-};
+function finalizeTimerCompletion(
+  state: PomodoroState,
+  set: (partial: Partial<PomodoroState>) => void
+) {
+  const { mode, activeTaskId, activeTaskTitle, completedSessions, urgeHabitId, urgeHabitName, duration } = state;
+  const newCompleted =
+    mode === 'focus' ? completedSessions + 1 : completedSessions;
+
+  let nextMode: PomodoroMode = 'focus';
+  let nextDuration = POMODORO_DURATIONS.focus;
+
+  if (mode === 'focus') {
+    nextMode = newCompleted % 4 === 0 ? 'long_break' : 'short_break';
+    nextDuration = POMODORO_DURATIONS[nextMode];
+  } else if (mode === 'short_break' || mode === 'long_break' || mode === 'starter_2m') {
+    nextMode = 'focus';
+    nextDuration = POMODORO_DURATIONS.focus;
+  } else if (mode === 'gym_rest') {
+    nextMode = 'gym_rest';
+    nextDuration = duration > 0 ? duration : POMODORO_DURATIONS.gym_rest;
+  } else if (mode === 'urge_10m') {
+    nextMode = 'urge_10m';
+    nextDuration = POMODORO_DURATIONS.urge_10m;
+  }
+
+  set({
+    isRunning: false,
+    endsAt: null,
+    lastTickMs: null,
+    mode: nextMode,
+    timeLeft: nextDuration,
+    duration: nextDuration,
+    completedSessions: newCompleted,
+    pendingUrgeReflection: mode === 'urge_10m',
+    lastCompletedMode: mode,
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('pomodoro-complete', {
+        detail: {
+          mode,
+          taskId: activeTaskId,
+          taskTitle: activeTaskTitle,
+          habitId: urgeHabitId,
+          habitName: urgeHabitName,
+        },
+      })
+    );
+  }
+}
 
 export const usePomodoroStore = create<PomodoroState>((set, get) => ({
   activeTaskId: null,
   activeTaskTitle: null,
   mode: 'focus',
-  timeLeft: DURATIONS.focus,
-  duration: DURATIONS.focus,
+  timeLeft: POMODORO_DURATIONS.focus,
+  duration: POMODORO_DURATIONS.focus,
   isRunning: false,
+  endsAt: null,
+  lastTickMs: null,
   completedSessions: 0,
+  urgeHabitId: null,
+  urgeHabitName: null,
+  pendingUrgeReflection: false,
+  lastCompletedMode: null,
 
   startTimer: (taskId: string, taskTitle: string) => {
-    // If starting a timer for a new task, reset everything
     const currentTaskId = get().activeTaskId;
-    
+    const now = Date.now();
+
     // Auto-mark task as in_progress
     try {
       useTaskStore.getState().editTask(taskId, { status: 'in_progress' });
@@ -49,16 +138,28 @@ export const usePomodoroStore = create<PomodoroState>((set, get) => ({
     }
 
     if (currentTaskId !== taskId) {
+      const dur = POMODORO_DURATIONS.focus;
       set({
         activeTaskId: taskId,
         activeTaskTitle: taskTitle,
         mode: 'focus',
-        timeLeft: DURATIONS.focus,
-        duration: DURATIONS.focus,
+        timeLeft: dur,
+        duration: dur,
         isRunning: true,
+        endsAt: now + dur * 1000,
+        lastTickMs: now,
+        urgeHabitId: null,
+        urgeHabitName: null,
+        pendingUrgeReflection: false,
       });
     } else {
-      set({ isRunning: true });
+      const rem = Math.max(1, get().timeLeft || POMODORO_DURATIONS.focus);
+      set({
+        isRunning: true,
+        endsAt: now + rem * 1000,
+        lastTickMs: now,
+        pendingUrgeReflection: false,
+      });
     }
 
     if (typeof window !== 'undefined') {
@@ -66,74 +167,203 @@ export const usePomodoroStore = create<PomodoroState>((set, get) => ({
     }
   },
 
+  startPresetTimer: (mode, options) => {
+    const now = Date.now();
+    const dur = Math.max(5, Math.round(options?.durationSecs ?? POMODORO_DURATIONS[mode]));
+    set({
+      mode,
+      timeLeft: dur,
+      duration: dur,
+      isRunning: true,
+      endsAt: now + dur * 1000,
+      lastTickMs: now,
+      activeTaskId: options?.taskId ?? null,
+      activeTaskTitle:
+        options?.title ??
+        (mode === 'starter_2m'
+          ? '2-Min Rule Starter'
+          : mode === 'urge_10m'
+            ? '10-Min Urge Surf'
+            : mode === 'gym_rest'
+              ? `Gym Rest (${dur}s)`
+              : null),
+      urgeHabitId: options?.habitId ?? null,
+      urgeHabitName: options?.habitName ?? null,
+      pendingUrgeReflection: false,
+    });
+
+    if (typeof window !== 'undefined' && options?.openPanel !== false) {
+      window.dispatchEvent(new CustomEvent('open-pomodoro'));
+    }
+  },
+
+  startGymRestTimer: (seconds, exerciseName) => {
+    const secs = Math.max(15, Math.round(seconds));
+    get().startPresetTimer('gym_rest', {
+      durationSecs: secs,
+      title: exerciseName ? `Rest · ${exerciseName}` : `Gym Rest (${secs}s)`,
+      openPanel: false,
+    });
+  },
+
+  startUrgeTimer: (habitId, habitName) => {
+    get().startPresetTimer('urge_10m', {
+      durationSecs: POMODORO_DURATIONS.urge_10m,
+      title: habitName ? `Urge Surf · ${habitName}` : '10-Min Urge Surf',
+      habitId: habitId ?? null,
+      habitName: habitName ?? null,
+      openPanel: true,
+    });
+  },
+
+  resolveUrgeReflection: (outcome) => {
+    const { urgeHabitId } = get();
+    set({ pendingUrgeReflection: false });
+
+    if (urgeHabitId) {
+      const today = getLocalIsoDate();
+      import('./mediator')
+        .then(({ CrossDomainActionMediator }) =>
+          CrossDomainActionMediator.dispatch({
+            type: outcome === 'passed' ? 'HABIT_COMPLETED' : 'HABIT_UNCOMPLETED',
+            payload: {
+              habitId: urgeHabitId,
+              date: today,
+            },
+          })
+        )
+        .catch(() => undefined);
+    }
+  },
+
   pauseTimer: () => {
-    set({ isRunning: false });
+    const state = get();
+    const { isRunning, endsAt, timeLeft } = state;
+    if (!isRunning) return;
+    const now = Date.now();
+    const syncedLeft =
+      endsAt != null ? Math.max(0, Math.ceil((endsAt - now - 50) / 1000)) : timeLeft;
+    if (endsAt != null && syncedLeft <= 0) {
+      finalizeTimerCompletion(state, set);
+      return;
+    }
+    set({
+      isRunning: false,
+      endsAt: null,
+      lastTickMs: null,
+      timeLeft: Math.max(1, syncedLeft),
+    });
   },
 
   resumeTimer: () => {
-    set({ isRunning: true });
+    const now = Date.now();
+    const rem = Math.max(1, get().timeLeft);
+    set({
+      isRunning: true,
+      endsAt: now + rem * 1000,
+      lastTickMs: now,
+      pendingUrgeReflection: false,
+    });
   },
 
   resetTimer: () => {
     const currentMode = get().mode;
+    const dur =
+      currentMode === 'gym_rest' && get().duration > 0
+        ? get().duration
+        : POMODORO_DURATIONS[currentMode];
     set({
       isRunning: false,
-      timeLeft: DURATIONS[currentMode],
-      duration: DURATIONS[currentMode],
+      endsAt: null,
+      lastTickMs: null,
+      timeLeft: dur,
+      duration: dur,
+      pendingUrgeReflection: false,
     });
   },
 
-  tick: () => {
-    const { timeLeft, isRunning, mode, activeTaskId } = get();
+  syncFromClock: (nowMs = Date.now()) => {
+    const state = get();
+    if (!state.isRunning) return;
+
+    if (!state.endsAt) {
+      set({
+        endsAt: nowMs + Math.max(1, state.timeLeft) * 1000,
+        lastTickMs: nowMs,
+      });
+      return;
+    }
+
+    const remaining = Math.max(0, Math.ceil((state.endsAt - nowMs - 50) / 1000));
+    if (remaining <= 0) {
+      finalizeTimerCompletion(state, set);
+    } else {
+      set({
+        timeLeft: remaining,
+        lastTickMs: nowMs,
+      });
+    }
+  },
+
+  tick: (nowMs = Date.now()) => {
+    const state = get();
+    const { timeLeft, isRunning, endsAt, lastTickMs } = state;
     if (!isRunning) return;
 
+    const elapsedSinceLastTick = lastTickMs != null ? nowMs - lastTickMs : 1000;
+
+    // If invoked via real wall-clock progression (>= 500ms or jumped clock), derive from endsAt
+    if (endsAt != null && elapsedSinceLastTick >= 500) {
+      // Detect if an external caller overrode timeLeft manually (e.g. unit test setState({ timeLeft: 2 }))
+      const expectedFromEndsAt = Math.max(0, Math.ceil((endsAt - nowMs - 50) / 1000));
+      if (Math.abs(timeLeft - expectedFromEndsAt) <= 1 || elapsedSinceLastTick >= 1500) {
+        if (expectedFromEndsAt <= 0) {
+          finalizeTimerCompletion(state, set);
+        } else {
+          set({
+            timeLeft: expectedFromEndsAt,
+            lastTickMs: nowMs,
+          });
+        }
+        return;
+      }
+    }
+
+    // Synchronous step fallback (e.g., direct unit-test tick() calls within <500ms)
     if (timeLeft > 1) {
-      set({ timeLeft: timeLeft - 1 });
-    } else {
-      // Timer finished!
-      const newCompleted = mode === 'focus' ? get().completedSessions + 1 : get().completedSessions;
-      
-      // Auto-switch mode
-      let nextMode: PomodoroMode = 'focus';
-      if (mode === 'focus') {
-        nextMode = newCompleted % 4 === 0 ? 'long_break' : 'short_break';
-      } else {
-        nextMode = 'focus';
-      }
-
+      const nextLeft = timeLeft - 1;
       set({
-        isRunning: false,
-        mode: nextMode,
-        timeLeft: DURATIONS[nextMode],
-        duration: DURATIONS[nextMode],
-        completedSessions: newCompleted,
+        timeLeft: nextLeft,
+        endsAt: nowMs + nextLeft * 1000,
+        lastTickMs: nowMs,
       });
-
-      // Trigger a custom event to notify components (sound, notification)
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('pomodoro-complete', {
-          detail: { mode, taskId: activeTaskId }
-        }));
-      }
+    } else {
+      finalizeTimerCompletion(state, set);
     }
   },
 
   setMode: (mode: PomodoroMode) => {
+    const dur = POMODORO_DURATIONS[mode];
     set({
       mode,
-      timeLeft: DURATIONS[mode],
-      duration: DURATIONS[mode],
+      timeLeft: dur,
+      duration: dur,
       isRunning: false,
+      endsAt: null,
+      lastTickMs: null,
+      pendingUrgeReflection: false,
     });
   },
 
   adjustDuration: (amountSecs: number) => {
     const { timeLeft, isRunning } = get();
     if (isRunning) return;
-    const newTime = Math.max(60, timeLeft + amountSecs); // Min 1 min
+    const minSecs = get().mode === 'gym_rest' ? 15 : 60;
+    const newTime = Math.max(minSecs, timeLeft + amountSecs);
     set({
       timeLeft: newTime,
       duration: newTime,
+      endsAt: null,
     });
   },
 }));

@@ -24,6 +24,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { toast } from 'sonner';
 
 interface DebtPayoffItem {
@@ -300,7 +301,7 @@ export function EmisPayoffSection() {
         emiAmount: emi,
         tenureMonths: ten,
         paidMonths: parsedPaid,
-        startDate: new Date().toISOString().split('T')[0],
+        startDate: getLocalIsoDate(),
         billingDayOfMonth: parsedDay,
         categoryId: emiCat?.id || '',
         accountId: emiAccountId || defaultAcc?.id,

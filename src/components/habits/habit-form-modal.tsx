@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronDown, Link2 } from 'lucide-react';
+import { X, ChevronDown, Link2, Shield, Sparkles } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -16,7 +16,15 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { Habit, HabitFormData, Category, HabitFrequencyType, AutoTrackHabitRule } from '@/lib/types';
+import type {
+  Habit,
+  HabitFormData,
+  Category,
+  HabitFrequencyType,
+  AutoTrackHabitRule,
+  HabitPolarity,
+  HabitAnchorBlock,
+} from '@/lib/types';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { HabitTemplates, type TemplateHabit } from './HabitTemplates';
 import { HabitDifficultySelector } from './HabitDifficultySelector';
@@ -89,6 +97,8 @@ export function HabitFormModal({
   const [scheduledDays, setScheduledDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [intervalDays, setIntervalDays] = useState<number>(2);
   const [autoTrackRule, setAutoTrackRule] = useState<AutoTrackHabitRule>('none');
+  const [polarity, setPolarity] = useState<HabitPolarity>('build');
+  const [anchorBlock, setAnchorBlock] = useState<HabitAnchorBlock | ''>('');
   const [icon, setIcon] = useState('');
   const [isQuantitative, setIsQuantitative] = useState(false);
   const [targetValue, setTargetValue] = useState(0);
@@ -118,13 +128,27 @@ export function HabitFormModal({
           setTargetDays(habit.targetDaysPerWeek);
           setScheduledDays(habit.scheduledDays || [1, 2, 3, 4, 5]);
           setIntervalDays(habit.intervalDays || 2);
-          setAutoTrackRule(habit.autoTrackRule || 'none');
+          const normalizedRule: AutoTrackHabitRule =
+            habit.autoTrackRule === 'protein_target'
+              ? 'protein_target_met'
+              : habit.autoTrackRule === 'no_junk_food'
+                ? 'zero_junk_today'
+                : habit.autoTrackRule || 'none';
+          setAutoTrackRule(normalizedRule);
+          setPolarity(habit.polarity || 'build');
+          setAnchorBlock(habit.anchorBlock || '');
           setIcon(habit.icon || '');
           setIsQuantitative(habit.isQuantitative || false);
           setTargetValue(habit.targetValue || 0);
           setUnit(habit.unit || '');
           setDifficulty(habit.difficulty || 'medium');
           setStackAfterHabitId(habit.metadata?.stackTriggerHabitId || '');
+          setShowAdvanced(
+            Boolean(
+              (habit.autoTrackRule && habit.autoTrackRule !== 'none') ||
+                habit.metadata?.stackTriggerHabitId
+            )
+          );
         } else {
           setName('');
           setCategory('personal');
@@ -133,12 +157,15 @@ export function HabitFormModal({
           setScheduledDays([1, 2, 3, 4, 5]);
           setIntervalDays(2);
           setAutoTrackRule('none');
+          setPolarity('build');
+          setAnchorBlock('');
           setIcon('');
           setIsQuantitative(false);
           setTargetValue(0);
           setUnit('');
           setDifficulty('medium');
           setStackAfterHabitId('');
+          setShowAdvanced(false);
         }
         setErrors({});
       });
@@ -184,6 +211,8 @@ export function HabitFormModal({
       scheduledDays: frequencyType === 'specific_days' ? scheduledDays : undefined,
       intervalDays: frequencyType === 'interval' ? intervalDays : undefined,
       autoTrackRule,
+      polarity,
+      anchorBlock: anchorBlock || undefined,
       icon: icon || undefined,
       isQuantitative,
       targetValue: isQuantitative ? targetValue : undefined,
@@ -324,6 +353,82 @@ export function HabitFormModal({
                       {cat.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Polarity (Build vs Quit Anti-Habit) & Anchor Time Block */}
+              <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/20 p-3.5">
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">
+                    Habit Polarity
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      data-testid="habit-polarity-build"
+                      onClick={() => setPolarity('build')}
+                      className={cn(
+                        'py-2 px-3 rounded-lg text-xs font-semibold border transition-all flex items-center justify-center gap-1.5',
+                        polarity === 'build'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-background text-muted-foreground border-border/70 hover:text-foreground'
+                      )}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Build Habit
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="habit-polarity-quit"
+                      onClick={() => setPolarity('quit')}
+                      className={cn(
+                        'py-2 px-3 rounded-lg text-xs font-semibold border transition-all flex items-center justify-center gap-1.5',
+                        polarity === 'quit'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                          : 'bg-background text-muted-foreground border-border/70 hover:text-foreground'
+                      )}
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      Quit / Anti-Habit
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1.5">
+                    {polarity === 'quit'
+                      ? 'Shows clean-streak shield ("Clean so far") and 1-tap 10-Min Urge Timer.'
+                      : 'Standard positive daily habit with completion streaks.'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">
+                    Anchor Time Block (optional)
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        { id: '', label: 'Any Time' },
+                        { id: 'morning', label: 'Morning' },
+                        { id: 'work', label: 'Work' },
+                        { id: 'gym', label: 'Gym' },
+                        { id: 'night', label: 'Night' },
+                      ] as const
+                    ).map((block) => (
+                      <button
+                        key={block.id || 'any'}
+                        type="button"
+                        data-testid={`habit-anchor-${block.id || 'any'}`}
+                        onClick={() => setAnchorBlock(block.id)}
+                        className={cn(
+                          'px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+                          anchorBlock === block.id
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background text-muted-foreground border-border/70 hover:text-foreground'
+                        )}
+                      >
+                        {block.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -512,6 +617,38 @@ export function HabitFormModal({
                 </AnimatePresence>
               </div>
 
+              {/* Cross-Domain Auto-Tracking (Fitness & FlowFinance) */}
+              <div>
+                <label
+                  htmlFor="habit-auto-track-rule"
+                  className="text-sm font-medium mb-1.5 block"
+                >
+                  Auto-Track Rule (Fitness &amp; FlowFinance)
+                </label>
+                <select
+                  id="habit-auto-track-rule"
+                  value={autoTrackRule}
+                  onChange={(e) => setAutoTrackRule(e.target.value as AutoTrackHabitRule)}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="none">Manual check-in only</option>
+                  <optgroup label="Body & Fitness">
+                    <option value="workout_logged">Auto-tick when a workout is logged</option>
+                    <option value="steps_target">Auto-tick when daily steps goal is hit</option>
+                    <option value="sleep_target">Auto-tick when sleep target is met</option>
+                    <option value="protein_target_met">Auto-tick when protein target is met</option>
+                    <option value="supplements_taken_today">Auto-tick when active supplements are taken</option>
+                    <option value="zero_junk_today">Auto-reverse if any Junk Food meal or expense is logged</option>
+                  </optgroup>
+                  <optgroup label="FlowFinance">
+                    <option value="log_expense_today">Auto-tick when I log an expense today</option>
+                    <option value="under_daily_safe_spend">Auto-tick when under Daily Safe-to-Spend</option>
+                    <option value="no_spend_day">Auto-tick on No-Spend Days</option>
+                    <option value="sip_completed_month">Auto-tick when monthly SIP is invested</option>
+                  </optgroup>
+                </select>
+              </div>
+
               {/* Advanced Options */}
               <div className="pt-2 border-t">
                 <button
@@ -533,26 +670,8 @@ export function HabitFormModal({
                       className="overflow-hidden"
                     >
                       <div className="pt-4 space-y-3">
-                        {/* Cross-Domain Finance Auto-Tracking */}
-                        <div>
-                          <label className="text-sm font-medium mb-1.5 block">
-                            Auto-Complete from FlowFinance (optional)
-                          </label>
-                          <select
-                            value={autoTrackRule}
-                            onChange={(e) => setAutoTrackRule(e.target.value as AutoTrackHabitRule)}
-                            className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                          >
-                            <option value="none">Manual check-in only</option>
-                            <option value="log_expense_today">Auto-tick when I log an expense today</option>
-                            <option value="under_daily_safe_spend">Auto-tick when under Daily Safe-to-Spend</option>
-                            <option value="no_spend_day">Auto-tick on No-Spend Days</option>
-                            <option value="sip_completed_month">Auto-tick when monthly SIP is invested</option>
-                          </select>
-                        </div>
-
                         {/* Habit Stacking */}
-                        <div className="pt-2 border-t border-border/40">
+                        <div>
                           <label className="text-sm font-medium mb-2 flex items-center gap-2">
                             <Link2 className="w-4 h-4 text-amber-500" />
                             Stack after Habit (optional)

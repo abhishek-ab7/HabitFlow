@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical, Snowflake, Edit3, MessageSquarePlus, Share2, Moon } from 'lucide-react';
+import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Link2, GripVertical, Snowflake, Edit3, MessageSquarePlus, Share2, Moon, Shield, ShieldCheck, Timer } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StreakRecoveryPrompt } from './StreakRecoveryPrompt';
@@ -24,10 +24,12 @@ import { SuccessRipple } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitCompletion, Category } from '@/lib/types';
 import { getHabitWeekProgress, isHabitAutoRestOnDate } from '@/lib/calculations';
+import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useFeedback } from '@/hooks/use-feedback';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
 import { toast } from 'sonner';
 import { ShareCardModal } from './ShareCardModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
@@ -119,13 +121,13 @@ export function SortableHabitRow({
     const yesterdayStr = useMemo(() => {
         const d = new Date();
         d.setDate(d.getDate() - 1);
-        return d.toISOString().split('T')[0];
+        return getLocalIsoDate(d);
     }, []);
 
     const dayBeforeYesterdayStr = useMemo(() => {
         const d = new Date();
         d.setDate(d.getDate() - 2);
-        return d.toISOString().split('T')[0];
+        return getLocalIsoDate(d);
     }, []);
 
     const completionMap = useMemo(() => {
@@ -155,6 +157,8 @@ export function SortableHabitRow({
 
     const { triggerPop, triggerChime } = useFeedback();
     const { updateNote, updateValue, markRestDay } = useHabitStore();
+    const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
+    const isQuit = habit.polarity === 'quit';
 
     const weekProgress = useMemo(
         () => getHabitWeekProgress(habit, completions, new Date()),
@@ -330,6 +334,14 @@ export function SortableHabitRow({
                         >
                             {habit.category}
                         </Badge>
+                        {habit.anchorBlock && (
+                            <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 h-4 capitalize text-muted-foreground"
+                            >
+                                {habit.anchorBlock}
+                            </Badge>
+                        )}
                         {weekProgress.targetCount < 7 && (
                             <Badge
                                 variant="secondary"
@@ -344,17 +356,50 @@ export function SortableHabitRow({
                                 {weekProgress.completedCount}/{weekProgress.targetCount} wk {weekProgress.quotaMet ? '✓' : ''}
                             </Badge>
                         )}
-                        {streak > 0 && (
-                            <Badge
-                                variant="secondary"
-                                className={cn(
-                                    "text-[10px] px-1.5 py-0 h-4 gap-0.5 font-mono tabular-nums",
-                                    getStreakStyle(streak)
-                                )}
-                            >
-                                <Flame className="h-2.5 w-2.5" />
-                                {streak}
-                            </Badge>
+                        {isQuit ? (
+                            <>
+                                <Badge
+                                    variant="secondary"
+                                    className="text-[10px] px-1.5 py-0 h-4 bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/25 gap-0.5"
+                                >
+                                    <Shield className="h-2.5 w-2.5" />
+                                    Quit
+                                </Badge>
+                                <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                        "text-[10px] px-1.5 py-0 h-4 gap-0.5 font-mono tabular-nums",
+                                        streak > 0
+                                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                                            : "bg-muted text-muted-foreground border border-border/60"
+                                    )}
+                                >
+                                    <ShieldCheck className="h-2.5 w-2.5" />
+                                    {streak > 0 ? `${streak}d · Clean so far` : 'Clean so far'}
+                                </Badge>
+                                <button
+                                    type="button"
+                                    onClick={() => startUrgeTimer(habit.id, habit.name)}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0 h-4 rounded-full border border-violet-500/35 bg-violet-500/10 text-[10px] font-semibold text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 transition-colors"
+                                    title="Launch 10-Min Urge Timer"
+                                >
+                                    <Timer className="h-2.5 w-2.5" />
+                                    10m Urge
+                                </button>
+                            </>
+                        ) : (
+                            streak > 0 && (
+                                <Badge
+                                    variant="secondary"
+                                    className={cn(
+                                        "text-[10px] px-1.5 py-0 h-4 gap-0.5 font-mono tabular-nums",
+                                        getStreakStyle(streak)
+                                    )}
+                                >
+                                    <Flame className="h-2.5 w-2.5" />
+                                    {streak}
+                                </Badge>
+                            )
                         )}
                         {isStreakBrokenYesterday && (
                             <div className="relative">
@@ -375,7 +420,7 @@ export function SortableHabitRow({
                                                 await ensureComplete(habit.id, yesterdayStr);
                                                 await updateNote(habit.id, yesterdayStr, "Recovered via double completion.");
                                                 
-                                                const todayStr = new Date().toISOString().split('T')[0];
+                                                const todayStr = getLocalIsoDate();
                                                 await ensureComplete(habit.id, todayStr);
                                                 if (habit.isQuantitative) {
                                                     const target = habit.targetValue || 1;
@@ -417,6 +462,12 @@ export function SortableHabitRow({
                             <Edit3 className="h-4 w-4 mr-2" />
                             Log Notes / Progress
                         </DropdownMenuItem>
+                        {isQuit && (
+                            <DropdownMenuItem onClick={() => startUrgeTimer(habit.id, habit.name)}>
+                                <Timer className="h-4 w-4 mr-2 text-violet-500" />
+                                Start 10m Urge Timer
+                            </DropdownMenuItem>
+                        )}
                         {weekProgress.restAllowedCount > 0 && (
                             <DropdownMenuItem onClick={() => handleToggleRestDay(format(new Date(), 'yyyy-MM-dd'))}>
                                 <Moon className="h-4 w-4 mr-2 text-teal-500" />
@@ -527,14 +578,14 @@ export function SortableHabitRow({
                             {/* Render quantitative status or default checklist icons */}
                             <AnimatePresence mode="wait">
                                 {isCompleted ? (
-                                    <motion.div
+                                        <motion.div
                                         key="completed"
                                         initial={{ scale: 0, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
                                         exit={{ scale: 0, opacity: 0 }}
                                         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
                                     >
-                                        <Check className="h-4 w-4" />
+                                        {isQuit ? <ShieldCheck className="h-4 w-4" /> : <Check className="h-4 w-4" />}
                                     </motion.div>
                                 ) : isRest ? (
                                     <motion.div
@@ -615,7 +666,7 @@ export function SortableHabitRow({
                                             isFrozen ? "text-sky-500 dark:text-sky-400" : "text-emerald-500 dark:text-emerald-400"
                                         )}
                                     >
-                                        {isFrozen ? "STREAK SAFE" : "Done"}
+                                        {isFrozen ? "STREAK SAFE" : isQuit ? "CLEAN DAY" : "Done"}
                                     </motion.span>
                                 )}
                             </AnimatePresence>

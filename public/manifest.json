@@ -47,6 +47,22 @@
     }
   ],
   "categories": ["productivity", "lifestyle", "health", "finance"],
+  "shortcuts": [
+    {
+      "name": "Universal Capture",
+      "short_name": "Capture",
+      "description": "Log expenses, meals, workouts, steps & tasks in 10 seconds",
+      "url": "/dashboard?capture=1",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Body & Fitness",
+      "short_name": "Fitness",
+      "description": "Calories, protein, steps, weight trend & workouts",
+      "url": "/fitness",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+    }
+  ],
   "share_target": {
     "action": "/finance",
     "method": "GET",

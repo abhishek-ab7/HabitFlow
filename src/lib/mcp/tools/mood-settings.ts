@@ -22,7 +22,10 @@ export function registerMoodSettingsTools(server: McpServer) {
           .describe('Date for mood log (defaults to today in IST)'),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter start date for list action'),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter end date for list action'),
-        mood: z.string().optional().describe('Mood value (e.g. great, good, okay, low, bad, or custom string)'),
+        mood: z
+          .enum(['happy', 'calm', 'neutral', 'sad', 'stressed'])
+          .optional()
+          .describe('Mood state matching MoodType (happy | calm | neutral | sad | stressed)'),
       },
       annotations: {
         readOnlyHint: false,

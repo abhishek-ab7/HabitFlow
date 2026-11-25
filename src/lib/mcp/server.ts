@@ -9,12 +9,13 @@ import { registerFinanceTransactionsTools } from './tools/finance-transactions';
 import { registerFinanceCreditCardsTools } from './tools/finance-credit-cards';
 import { registerFinanceFriendsTools } from './tools/finance-friends';
 import { registerFinanceObligationsTools } from './tools/finance-obligations';
+import { registerFitnessTools } from './tools/fitness';
 import { registerMcpResources } from './resources';
 import { registerMcpPrompts } from './prompts';
 
 /**
- * Initializes and binds all 28 consolidated domain tools, 6 live resources,
- * and 4 workflow prompts to the HabitFlow MCP server instance.
+ * Initializes and binds all 33 consolidated domain tools, 7 live resources,
+ * and 5 workflow prompts to the HabitFlow MCP server instance.
  */
 export async function setupHabitFlowMcpServer(server: McpServer): Promise<void> {
   // 1. Cross-Domain Briefing & Insights
@@ -47,9 +48,12 @@ export async function setupHabitFlowMcpServer(server: McpServer): Promise<void> 
   // 10. Financial Obligations (Bills, EMIs, SIPs, Commitments)
   registerFinanceObligationsTools(server);
 
-  // 11. Live MCP Resources
+  // 11. Body, Fitness, Diet, Workouts & Supplements (Life OS)
+  registerFitnessTools(server);
+
+  // 12. Live MCP Resources
   registerMcpResources(server);
 
-  // 12. Reusable MCP Prompts
+  // 13. Reusable MCP Prompts
   registerMcpPrompts(server);
 }

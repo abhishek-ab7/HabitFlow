@@ -25,6 +25,13 @@ import type {
   FinanceRecurringBill,
   FinanceNetWorthSnapshot,
   CreditCardStatement,
+  FitnessProfile,
+  FitnessDailyLog,
+  MealTemplate,
+  MealLog,
+  WorkoutSession,
+  SupplementInventory,
+  SupplementLog,
 } from './types';
 
 // Domain Type Aliases to resolve Primitive Obsession
@@ -57,6 +64,13 @@ const db = new Dexie('HabitFlowDB') as Dexie & {
   financeRecurringBills: EntityTable<FinanceRecurringBill, 'id'>;
   financeNetWorthSnapshots: EntityTable<FinanceNetWorthSnapshot, 'id'>;
   creditCardStatements: EntityTable<CreditCardStatement, 'id'>;
+  fitnessProfiles: EntityTable<FitnessProfile, 'id'>;
+  fitnessDailyLogs: EntityTable<FitnessDailyLog, 'id'>;
+  mealTemplates: EntityTable<MealTemplate, 'id'>;
+  mealLogs: EntityTable<MealLog, 'id'>;
+  workoutSessions: EntityTable<WorkoutSession, 'id'>;
+  supplementInventory: EntityTable<SupplementInventory, 'id'>;
+  supplementLogs: EntityTable<SupplementLog, 'id'>;
 };
 
 // Schema version 5 - Added HabitRoutines junction table for many-to-many
@@ -351,6 +365,46 @@ db.version(16).stores({
   }
 });
 
+// Schema version 17 - Phase 2 Life OS: Fitness, Diet, Bio Check-Ins, Workouts & Supplement Inventory
+db.version(17).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, isQuantitative, frequencyType, polarity, anchorBlock',
+  fitnessProfiles: 'id, userId, updatedAt, deletedAt',
+  fitnessDailyLogs: 'id, userId, date, [userId+date], updatedAt, deletedAt',
+  mealTemplates: 'id, userId, name, isPinned, order, updatedAt, deletedAt',
+  mealLogs: 'id, userId, date, [userId+date], mealType, linkedTransactionId, templateId, isJunk, updatedAt, deletedAt',
+  workoutSessions: 'id, userId, date, [userId+date], workoutType, updatedAt, deletedAt',
+  supplementInventory: 'id, userId, name, category, isActive, linkedTransactionId, updatedAt, deletedAt',
+  supplementLogs: 'id, userId, supplementId, date, [userId+date], updatedAt, deletedAt',
+});
+
+// Schema version 18 - Phase 2B Life OS: Derived Supplement Stock, Protein ROI, Anchor Block & Low-Energy Mode
+db.version(18).stores({
+  supplementInventory: 'id, userId, name, category, anchorBlock, isActive, linkedTransactionId, updatedAt, deletedAt',
+}).upgrade(async (tx) => {
+  const supplements = await tx.table('supplementInventory').toArray();
+  const logs = await tx.table('supplementLogs').toArray();
+  const activeLogsBySup = new Map<string, number>();
+  for (const log of logs) {
+    if (!log.deletedAt) {
+      activeLogsBySup.set(
+        log.supplementId,
+        (activeLogsBySup.get(log.supplementId) || 0) + Number(log.servingsTaken || 0)
+      );
+    }
+  }
+  for (const s of supplements) {
+    if (s.manualAdjustment === undefined) {
+      const taken = activeLogsBySup.get(s.id) || 0;
+      const expectedWithoutAdj = Math.max(0, Number(s.totalServings || 0) - taken);
+      const currentRem = Number(s.remainingServings ?? expectedWithoutAdj);
+      const inferredAdjustment = Number((currentRem - expectedWithoutAdj).toFixed(2));
+      await tx.table('supplementInventory').update(s.id, {
+        manualAdjustment: inferredAdjustment,
+      });
+    }
+  }
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 
@@ -359,7 +413,9 @@ const syncTables = [
   'financeBudgets', 'monthlyCommitments', 'debtRecords',
   'debtInstallments', 'emiTrackers',
   'financeSipPlans', 'financeCategorizationRules', 'financeRecurringBills',
-  'financeNetWorthSnapshots', 'creditCardStatements'
+  'financeNetWorthSnapshots', 'creditCardStatements',
+  'fitnessProfiles', 'fitnessDailyLogs', 'mealTemplates',
+  'mealLogs', 'workoutSessions', 'supplementInventory', 'supplementLogs'
 ];
 
 syncTables.forEach(tableName => {
@@ -460,6 +516,8 @@ export async function createHabit(data: HabitFormData & { userId: UserId }): Pro
     intervalDays: data.intervalDays,
     allowBonusCompletions: data.allowBonusCompletions ?? true,
     autoTrackRule: data.autoTrackRule,
+    polarity: data.polarity || 'build',
+    anchorBlock: data.anchorBlock,
     archived: false,
     order: await db.habits.where('userId').equals(data.userId).count(),
     createdAt: now,
@@ -574,6 +632,13 @@ export async function clearRestCompletion(
   completion.completed = false;
   completion.status = undefined;
   completion.skipped = false;
+  if (
+    completion.note &&
+    completion.restReason &&
+    completion.note === `Rest Day: ${completion.restReason}`
+  ) {
+    completion.note = undefined;
+  }
   completion.restReason = undefined;
   completion.updatedAt = now;
 
@@ -893,6 +958,12 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: Use
         wealth: 1,
         creativity: 1,
       },
+      showTasks: data.showTasks ?? true,
+      showGoals: data.showGoals ?? true,
+      showMilestones: data.showMilestones ?? true,
+      showFinance: data.showFinance ?? true,
+      showFitness: data.showFitness ?? true,
+      habitOnlyMode: data.habitOnlyMode ?? false,
       unlockedThemes: data.unlockedThemes || [],
       dashboardLayout: data.dashboardLayout || [
         { id: 'metrics', size: 'full', hidden: false, pinned: true },
@@ -960,7 +1031,10 @@ export async function seedDemoData(userId: UserId): Promise<void> {
   for (let i = 0; i < 7; i++) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
 
     demoHabits.forEach((habit, index) => {
       if (Math.random() > 0.3) {
@@ -1000,7 +1074,7 @@ export async function createTask(data: TaskFormData & { userId: UserId }): Promi
     due_date: data.due_date || null,
     goal_id: data.goal_id || null,
     tags: data.tags || [],
-    metadata: {},
+    metadata: data.metadata || {},
     created_at: now,
     updated_at: now,
     recurrenceRule: data.recurrenceRule || '',

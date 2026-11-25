@@ -21,6 +21,7 @@ import type {
   Milestone, 
   HabitStats, 
   GoalStats,
+  Task,
   Trend,
   DailyStats,
   CategoryBreakdown,
@@ -763,4 +764,102 @@ export function generateHeatmapData(
     
     return { date: dateStr, count, level };
   });
+}
+
+export interface TodayMomentumScoreResult {
+  score: number;
+  todayCompleted: number;
+  todayTotal: number;
+  restingCount: number;
+  quotaMetCount: number;
+  completedTasks: number;
+  totalTasks: number;
+}
+
+/**
+ * Computes today's unified momentum score (60% habits, 40% due/overdue tasks).
+ * Habits marked as `rest`, `skipped`, auto-rest, or weekly quota-met are excluded from
+ * `todayTotal` so Low-Energy / guilt-free rest days never lower the score.
+ */
+export function calculateTodayMomentumScore(params: {
+  habits: Habit[];
+  completions: HabitCompletion[];
+  tasks: Task[];
+  todayStr: string;
+  isTasksEnabled?: boolean;
+  referenceDate?: Date;
+}): TodayMomentumScoreResult {
+  const {
+    habits,
+    completions,
+    tasks,
+    todayStr,
+    isTasksEnabled = true,
+    referenceDate = parseISO(todayStr),
+  } = params;
+
+  const activeHabits = habits.filter((h) => !h.archived);
+
+  let todayCompleted = 0;
+  let todayTotal = 0;
+  let restingCount = 0;
+  let quotaMetCount = 0;
+
+  for (const habit of activeHabits) {
+    const todayComp = completions.find((c) => c.habitId === habit.id && c.date === todayStr);
+    const isDoneToday = !!(
+      todayComp &&
+      todayComp.completed &&
+      todayComp.status !== 'rest' &&
+      !todayComp.skipped
+    );
+    const isRestToday = !!(todayComp && (todayComp.status === 'rest' || todayComp.skipped));
+    const weekProg = getHabitWeekProgress(habit, completions, referenceDate);
+
+    if (isDoneToday) {
+      todayCompleted++;
+      todayTotal++;
+    } else if (isRestToday || weekProg.isAutoRestDay) {
+      restingCount++;
+    } else if (weekProg.quotaMet && (habit.targetDaysPerWeek ?? 7) < 7) {
+      quotaMetCount++;
+    } else {
+      todayTotal++;
+    }
+  }
+
+  const habitRate = todayTotal > 0 ? todayCompleted / todayTotal : 1;
+
+  const todayTasksList = tasks.filter((t) => {
+    if (t.status === 'archived') return false;
+    const isDueToday = t.due_date && t.due_date.startsWith(todayStr);
+    const isOverdueTodo =
+      t.status === 'todo' &&
+      t.due_date &&
+      t.due_date <= `${todayStr}T23:59:59`;
+    return isDueToday || isOverdueTodo;
+  });
+
+  const totalTasks = todayTasksList.length;
+  const completedTasks = todayTasksList.filter((t) => t.status === 'done').length;
+  const taskRate = totalTasks > 0 ? completedTasks / totalTasks : 1;
+
+  let score = 100;
+  if (todayTotal > 0 && totalTasks > 0 && isTasksEnabled) {
+    score = Math.round(habitRate * 60 + taskRate * 40);
+  } else if (todayTotal > 0) {
+    score = Math.round(habitRate * 100);
+  } else if (totalTasks > 0 && isTasksEnabled) {
+    score = Math.round(taskRate * 100);
+  }
+
+  return {
+    score,
+    todayCompleted,
+    todayTotal,
+    restingCount,
+    quotaMetCount,
+    completedTasks: isTasksEnabled ? completedTasks : 0,
+    totalTasks: isTasksEnabled ? totalTasks : 0,
+  };
 }

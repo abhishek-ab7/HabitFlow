@@ -105,6 +105,7 @@ describe('Middleware', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(res.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    expect(res.headers.get('Permissions-Policy')).toBe('camera=(self), microphone=(self), geolocation=()');
   });
 
   it('allows unauthenticated users to access login page', async () => {

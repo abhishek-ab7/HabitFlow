@@ -34,8 +34,17 @@ import {
   Send,
   Star,
   CreditCard,
+  Utensils,
+  Pill,
 } from 'lucide-react';
 import { resolveTransactionCycle, getCycleWindowForMonth, getLocalIsoDate, formatShortDate } from '@/lib/finance/credit-card-cycles';
+import { useFitnessStore } from '@/lib/stores/fitness';
+import {
+  classifyCategoryBridgeKind,
+  estimateDietBridgePreview,
+  executeFinanceFitnessBridge,
+  findMatchingSupplementId,
+} from '@/lib/fitness/finance-bridge';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
 import { SmsImportModal } from './SmsImportModal';
@@ -136,6 +145,9 @@ export function AddTransactionModal({
   const addRecurringBill = useFinanceStore((s) => s.addRecurringBill);
   const setDefaultAccount = useFinanceStore((s) => s.setDefaultAccount);
   const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
+  const supplementInventory = useFitnessStore((s) => s.supplementInventory);
+  const fitnessHasLoaded = useFitnessStore((s) => s.hasLoaded);
+  const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
 
   const todayStr = getLocalIsoDate();
 
@@ -176,10 +188,19 @@ export function AddTransactionModal({
   const [scannedBatch, setScannedBatch] = useState<ScannedDraftItem[]>([]);
   const [isSavingBatch, setIsSavingBatch] = useState(false);
 
+  // Finance <-> Diet & Supplement Bridge state
+  const [alsoLogToDiet, setAlsoLogToDiet] = useState(false);
+  const [dietCaloriesOverride, setDietCaloriesOverride] = useState<string>('');
+  const [dietProteinOverride, setDietProteinOverride] = useState<string>('');
+  const [restockSupplementEnabled, setRestockSupplementEnabled] = useState(false);
+  const [selectedSupplementId, setSelectedSupplementId] = useState<string>('__new__');
+  const [restockServingsStr, setRestockServingsStr] = useState<string>('30');
+
   const amountInputRef = useRef<HTMLInputElement>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const initializedSessionRef = useRef<string | null>(null);
+  const hasManuallyPickedSupplementRef = useRef(false);
 
   // Split with Friend state
   const [isSplitEnabled, setIsSplitEnabled] = useState(false);
@@ -224,7 +245,10 @@ export function AddTransactionModal({
     if (open && categories.length === 0) {
       loadFinanceData(user?.id);
     }
-  }, [open, categories.length, loadFinanceData, user?.id]);
+    if (open && !fitnessHasLoaded) {
+      loadFitnessData(user?.id).catch(() => undefined);
+    }
+  }, [open, categories.length, loadFinanceData, fitnessHasLoaded, loadFitnessData, user?.id]);
 
   useEffect(() => {
     if (!open) {
@@ -278,6 +302,13 @@ export function AddTransactionModal({
       setIsRecurringEnabled(false);
       setNlpInput('');
       setScannedBatch([]);
+      setAlsoLogToDiet(false);
+      setDietCaloriesOverride('');
+      setDietProteinOverride('');
+      setRestockSupplementEnabled(false);
+      setSelectedSupplementId('__new__');
+      setRestockServingsStr('30');
+      hasManuallyPickedSupplementRef.current = false;
       return () => clearTimeout(focusTimer);
     }
 
@@ -310,6 +341,13 @@ export function AddTransactionModal({
     setRecurringDueDay(String(new Date().getDate()));
     setNlpInput('');
     setScannedBatch([]);
+    setAlsoLogToDiet(false);
+    setDietCaloriesOverride('');
+    setDietProteinOverride('');
+    setRestockSupplementEnabled(false);
+    setSelectedSupplementId('__new__');
+    setRestockServingsStr('30');
+    hasManuallyPickedSupplementRef.current = false;
 
     return () => clearTimeout(focusTimer);
   }, [
@@ -618,6 +656,29 @@ export function AddTransactionModal({
   const selectedCategory =
     activeCategories.find((c) => c.id === categoryId) || activeCategories[0];
   const numericAmount = parseFloat(amountStr) || 0;
+  const bridgeKind =
+    !editingTransaction && type === 'expense' && !isCategorySplitEnabled
+      ? classifyCategoryBridgeKind(selectedCategory)
+      : 'none';
+  const dietPreview = useMemo(
+    () =>
+      estimateDietBridgePreview(
+        title,
+        numericAmount,
+        bridgeKind === 'junk'
+      ),
+    [title, numericAmount, bridgeKind]
+  );
+  const activeSupplements = useMemo(
+    () => supplementInventory.filter((s) => !s.deletedAt && s.isActive),
+    [supplementInventory]
+  );
+
+  useEffect(() => {
+    if (bridgeKind === 'health_supplements' && !hasManuallyPickedSupplementRef.current) {
+      setSelectedSupplementId(findMatchingSupplementId(title, supplementInventory));
+    }
+  }, [bridgeKind, title, supplementInventory]);
 
   // Multi-Category Split helpers
   const toggleCategorySplit = () => {
@@ -783,9 +844,30 @@ export function AddTransactionModal({
         await updateTransaction(editingTransaction.id, payload);
         toast.success('Updated entry');
       } else {
-        await addTransaction(payload);
+        const createdTx = await addTransaction(payload);
+        const bridgeResult = await executeFinanceFitnessBridge({
+          bridgeKind,
+          transaction: createdTx,
+          userId: user?.id,
+          alsoLogToDiet,
+          dietCalories: dietCaloriesOverride ? Number(dietCaloriesOverride) : undefined,
+          dietProteinG: dietProteinOverride ? Number(dietProteinOverride) : undefined,
+          restockSupplement: restockSupplementEnabled,
+          supplementId: selectedSupplementId,
+          restockServings: Number(restockServingsStr) || 30,
+          newSupplementName: title.trim() || undefined,
+        });
+
         if (isRecurringEnabled) {
           toast.success('Saved entry & added recurring bill reminder');
+        } else if (bridgeKind === 'junk') {
+          toast.success('Junk Food logged to Finance + Diet automatically');
+        } else if (bridgeResult.dietLogged) {
+          toast.success('Saved expense & logged meal to Diet');
+        } else if (bridgeResult.supplementRestocked) {
+          toast.success(
+            `Saved expense & restocked ${bridgeResult.supplementRestocked}`
+          );
         } else if (linkedCommitmentId !== 'none') {
           toast.success('Saved and linked to commitment');
         } else {
@@ -1142,6 +1224,137 @@ export function AddTransactionModal({
                     </div>
                   )}
                 </div>
+
+                {/* Finance <-> Diet & Supplement Bridge Chip */}
+                {bridgeKind !== 'none' && (
+                  <div className="rounded-xl border border-border/80 bg-muted/30 p-3 space-y-2.5">
+                    {bridgeKind === 'junk' && (
+                      <div
+                        data-testid="junk-auto-diet-badge"
+                        className="flex items-center justify-between gap-2 text-xs"
+                      >
+                        <span className="inline-flex items-center gap-1.5 font-medium text-amber-600 dark:text-amber-300">
+                          <Utensils className="w-3.5 h-3.5 shrink-0" />
+                          Auto-logs ~{dietPreview.calories} kcal ({dietPreview.proteinG}g P) to Diet as Junk Food
+                        </span>
+                      </div>
+                    )}
+
+                    {bridgeKind === 'food_dining' && (
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          data-testid="food-diet-bridge-chip"
+                          onClick={() => setAlsoLogToDiet((v) => !v)}
+                          aria-pressed={alsoLogToDiet}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                            alsoLogToDiet
+                              ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-background border-border text-foreground hover:bg-muted'
+                          }`}
+                        >
+                          <Utensils className="w-3.5 h-3.5" />
+                          {alsoLogToDiet
+                            ? `Logging ~${dietCaloriesOverride || dietPreview.calories} kcal to Diet`
+                            : `Also log ~${dietPreview.calories} kcal to Diet`}
+                        </button>
+
+                        {alsoLogToDiet && (
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <div>
+                              <label className="text-[11px] text-muted-foreground">
+                                Calories (kcal)
+                              </label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={dietCaloriesOverride}
+                                onChange={(e) => setDietCaloriesOverride(e.target.value)}
+                                placeholder={String(dietPreview.calories)}
+                                className="h-8 text-xs mt-0.5"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-muted-foreground">
+                                Protein (g)
+                              </label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={dietProteinOverride}
+                                onChange={(e) => setDietProteinOverride(e.target.value)}
+                                placeholder={String(dietPreview.proteinG)}
+                                className="h-8 text-xs mt-0.5"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {bridgeKind === 'health_supplements' && (
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          data-testid="supplement-restock-bridge-chip"
+                          onClick={() => setRestockSupplementEnabled((v) => !v)}
+                          aria-pressed={restockSupplementEnabled}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                            restockSupplementEnabled
+                              ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300'
+                              : 'bg-background border-border text-foreground hover:bg-muted'
+                          }`}
+                        >
+                          <Pill className="w-3.5 h-3.5" />
+                          {restockSupplementEnabled
+                            ? 'Restocking Supplement on Save'
+                            : 'Restock Supplement'}
+                        </button>
+
+                        {restockSupplementEnabled && (
+                          <div className="grid grid-cols-3 gap-2 pt-1">
+                            <div className="col-span-2">
+                              <label className="text-[11px] text-muted-foreground">
+                                Target Supplement
+                              </label>
+                              <select
+                                value={selectedSupplementId}
+                                onChange={(e) => {
+                                  hasManuallyPickedSupplementRef.current = true;
+                                  setSelectedSupplementId(e.target.value);
+                                }}
+                                aria-label="Target Supplement"
+                                className="h-8 w-full mt-0.5 rounded-md border border-input bg-background px-2 text-xs"
+                              >
+                                {activeSupplements.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name} ({s.remainingServings} left)
+                                  </option>
+                                ))}
+                                <option value="__new__">
+                                  + Create new ({title.trim() || 'from title'})
+                                </option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-muted-foreground">
+                                Servings
+                              </label>
+                              <Input
+                                type="number"
+                                min="1"
+                                value={restockServingsStr}
+                                onChange={(e) => setRestockServingsStr(e.target.value)}
+                                aria-label="Restock Servings"
+                                className="h-8 text-xs mt-0.5"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -1763,7 +1976,10 @@ export function AddTransactionModal({
         open={isCategorySheetOpen}
         onOpenChange={setIsCategorySheetOpen}
         selectedCategoryId={categoryId || selectedCategory?.id || ''}
-        onSelectCategory={(id) => setCategoryId(id)}
+        onSelectCategory={(id) => {
+          hasManuallyPickedSupplementRef.current = false;
+          setCategoryId(id);
+        }}
       />
 
       {!onOpenSmsImport && (

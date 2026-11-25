@@ -4,7 +4,7 @@ import { useMemo, useState, useCallback, useEffect, memo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3, Moon } from 'lucide-react';
+import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3, Moon, Shield, ShieldCheck, Timer } from 'lucide-react';
 import { getHabitWeekProgress, isHabitAutoRestOnDate } from '@/lib/calculations';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,7 @@ import { cn } from '@/lib/utils';
 import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
 import type { Habit, HabitCompletion, Category } from '@/lib/types';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
 import { SortableHabitRow } from './SortableHabitRow';
 
 interface HabitGridProps {
@@ -115,6 +116,7 @@ export const HabitGrid = memo(function HabitGrid({
     toast.success('Progress log updated');
   };
   const { reorder, freezeHabit, markRestDay } = useHabitStore();
+  const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
 
   const handleMobileRest = async (habitId: string, dateStr: string) => {
     try {
@@ -345,6 +347,7 @@ export const HabitGrid = memo(function HabitGrid({
           const streak = streaks.get(habit.id) || 0;
           const habitsCompletionsMap = completionsMapByHabit.get(habit.id) || new Map();
           const weekProg = getHabitWeekProgress(habit, completions, new Date());
+          const isQuit = habit.polarity === 'quit';
 
           return (
             <motion.div
@@ -372,6 +375,14 @@ export const HabitGrid = memo(function HabitGrid({
                       >
                         {habit.category}
                       </Badge>
+                      {habit.anchorBlock && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] px-1.5 py-0 h-4 capitalize text-muted-foreground"
+                        >
+                          {habit.anchorBlock}
+                        </Badge>
+                      )}
                       {weekProg.targetCount < 7 && (
                         <Badge
                           variant="secondary"
@@ -385,17 +396,49 @@ export const HabitGrid = memo(function HabitGrid({
                           {weekProg.completedCount}/{weekProg.targetCount} wk {weekProg.quotaMet ? '✓' : ''}
                         </Badge>
                       )}
-                      {streak > 0 && (
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            "text-[9px] px-1.5 py-0 h-4 font-bold gap-0.5 font-mono tabular-nums",
-                            getStreakStyle(streak)
-                          )}
-                        >
-                          <Flame className="h-2.5 w-2.5 fill-current" />
-                          {streak}d
-                        </Badge>
+                      {isQuit ? (
+                        <>
+                          <Badge
+                            variant="secondary"
+                            className="text-[9px] px-1.5 py-0 h-4 font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/25 gap-0.5"
+                          >
+                            <Shield className="h-2.5 w-2.5" />
+                            Quit
+                          </Badge>
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              "text-[9px] px-1.5 py-0 h-4 font-bold gap-0.5 font-mono tabular-nums",
+                              streak > 0
+                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            <ShieldCheck className="h-2.5 w-2.5" />
+                            {streak > 0 ? `${streak}d · Clean so far` : 'Clean so far'}
+                          </Badge>
+                          <button
+                            type="button"
+                            onClick={() => startUrgeTimer(habit.id, habit.name)}
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0 h-4 rounded-full border border-violet-500/35 bg-violet-500/10 text-[9px] font-bold text-violet-600 dark:text-violet-400"
+                          >
+                            <Timer className="h-2.5 w-2.5" />
+                            10m Urge
+                          </button>
+                        </>
+                      ) : (
+                        streak > 0 && (
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              "text-[9px] px-1.5 py-0 h-4 font-bold gap-0.5 font-mono tabular-nums",
+                              getStreakStyle(streak)
+                            )}
+                          >
+                            <Flame className="h-2.5 w-2.5 fill-current" />
+                            {streak}d
+                          </Badge>
+                        )
                       )}
                     </div>
                   </div>
@@ -417,6 +460,12 @@ export const HabitGrid = memo(function HabitGrid({
                       <Edit3 className="h-4 w-4 mr-2 text-amber-500" />
                       Log Notes / Progress
                     </DropdownMenuItem>
+                    {isQuit && (
+                      <DropdownMenuItem onClick={() => startUrgeTimer(habit.id, habit.name)}>
+                        <Timer className="h-4 w-4 mr-2 text-violet-500" />
+                        Start 10m Urge Timer
+                      </DropdownMenuItem>
+                    )}
                     {weekProg.restAllowedCount > 0 && (
                       <DropdownMenuItem onClick={() => handleMobileRest(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
                         <Moon className="h-4 w-4 mr-2 text-teal-500" />
@@ -491,7 +540,11 @@ export const HabitGrid = memo(function HabitGrid({
                         {dayLabel}
                       </span>
                       {isCompleted ? (
-                        <Check className="h-3.5 w-3.5 stroke-[3]" />
+                        isQuit ? (
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                        ) : (
+                          <Check className="h-3.5 w-3.5 stroke-[3]" />
+                        )
                       ) : isRest || isAutoRest ? (
                         <Moon className="h-3.5 w-3.5" />
                       ) : isFrozen ? (

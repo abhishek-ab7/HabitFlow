@@ -5,6 +5,34 @@ import { getSupabaseAdmin } from '../supabase-admin';
 import { getInsertMetadata, getUpdateMetadata } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
 
+const FINANCIAL_LINK_SCHEMA = z
+  .object({
+    type: z.enum(['savings_target', 'debt_payoff', 'net_worth', 'sip_corpus']),
+    targetAmount: z.number().min(0),
+    startingAmount: z.number().optional(),
+    linkedAccountIds: z.array(z.string()).optional(),
+    linkedDebtIds: z.array(z.string()).optional(),
+    linkedSipIds: z.array(z.string()).optional(),
+  })
+  .nullable();
+
+const FITNESS_LINK_SCHEMA = z
+  .object({
+    type: z.enum([
+      'target_weight',
+      'target_waist',
+      'monthly_workouts',
+      'daily_steps_avg',
+      'workout_consistency',
+      'protein_streak',
+      'custom',
+    ]),
+    targetValue: z.number().min(0),
+    startingValue: z.number().optional(),
+    unit: z.string().optional(),
+  })
+  .nullable();
+
 export function registerGoalsTools(server: McpServer) {
   // 8. get_goals
   server.registerTool(
@@ -66,6 +94,8 @@ export function registerGoalsTools(server: McpServer) {
         targetDate: g.target_date,
         isFocus: g.is_focus,
         isArchived: g.is_archived,
+        financialLink: g.financial_link ?? null,
+        fitnessLink: g.fitness_link ?? null,
         milestones: ((g.milestones as any[]) || [])
           .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
           .map((m) => ({
@@ -103,6 +133,8 @@ export function registerGoalsTools(server: McpServer) {
         targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('Target deadline (YYYY-MM-DD)'),
         progress: z.number().int().min(0).max(100).optional().describe('Progress percentage (0-100)'),
         isFocus: z.boolean().optional().describe('Set as top-focus goal (max 2 active)'),
+        financialLink: FINANCIAL_LINK_SCHEMA.optional().describe('Optional live financial telemetry link'),
+        fitnessLink: FITNESS_LINK_SCHEMA.optional().describe('Optional live fitness telemetry link (target_weight, target_waist, monthly_workouts, daily_steps_avg)'),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
       annotations: {
@@ -161,6 +193,8 @@ export function registerGoalsTools(server: McpServer) {
             progress: args.progress ?? 0,
             is_focus: args.isFocus ?? false,
             is_archived: false,
+            financial_link: args.financialLink ?? null,
+            fitness_link: args.fitnessLink ?? null,
             ...meta,
           };
 
@@ -307,6 +341,8 @@ export function registerGoalsTools(server: McpServer) {
           if (args.status !== undefined) updates.status = args.status;
           if (args.targetDate !== undefined) updates.target_date = args.targetDate;
           if (args.progress !== undefined) updates.progress = args.progress;
+          if (args.financialLink !== undefined) updates.financial_link = args.financialLink;
+          if (args.fitnessLink !== undefined) updates.fitness_link = args.fitnessLink;
 
           if (args.isFocus !== undefined) {
             if (args.isFocus && !existing.is_focus) {

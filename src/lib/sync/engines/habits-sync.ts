@@ -1,5 +1,7 @@
 import { db } from '@/lib/db';
 import { getSupabaseClient } from '@/lib/supabase/client';
+import { logger } from '@/lib/logger';
+import { upsertRowsWithColumnFallback } from './column-fallback';
 import type { Habit } from '@/lib/types';
 import type { ISynchronizer } from '../types';
 
@@ -32,6 +34,9 @@ export class HabitsSyncEngine implements ISynchronizer {
         interval_days: h.intervalDays || null,
         allow_bonus_completions: h.allowBonusCompletions ?? true,
         auto_track_rule: h.autoTrackRule || null,
+        polarity: h.polarity || 'build',
+        anchor_block: h.anchorBlock || null,
+        metadata: h.metadata || null,
         is_archived: h.archived,
         order_index: h.order,
         is_quantitative: h.isQuantitative || false,
@@ -41,11 +46,15 @@ export class HabitsSyncEngine implements ISynchronizer {
         updated_at: new Date().toISOString()
       }));
 
-      const { error } = await (this.supabase.from('habits') as any)
-        .upsert(payload, { onConflict: 'id' });
+      const { error } = await upsertRowsWithColumnFallback(
+        this.supabase,
+        'habits',
+        payload,
+        { onConflict: 'id' }
+      );
 
       if (error) {
-        // Fallback if remote schema hasn't added V2 columns yet
+        // Fallback if remote schema has unresolvable schema cache errors on legacy V1 tables
         const legacyPayload = batch.map((h) => ({
           id: h.id,
           user_id: userId,
@@ -111,11 +120,26 @@ export class HabitsSyncEngine implements ISynchronizer {
                 remote.frequency_type ||
                 local?.frequencyType ||
                 (targetDays < 7 ? 'weekly_flexible' : 'daily'),
-              scheduledDays: remote.scheduled_days ?? local?.scheduledDays,
-              intervalDays: remote.interval_days ?? local?.intervalDays,
+              scheduledDays: Object.prototype.hasOwnProperty.call(remote, 'scheduled_days')
+                ? (remote.scheduled_days ?? undefined)
+                : local?.scheduledDays,
+              intervalDays: Object.prototype.hasOwnProperty.call(remote, 'interval_days')
+                ? (remote.interval_days ?? undefined)
+                : local?.intervalDays,
               allowBonusCompletions:
                 remote.allow_bonus_completions ?? local?.allowBonusCompletions ?? true,
-              autoTrackRule: remote.auto_track_rule ?? local?.autoTrackRule,
+              autoTrackRule: Object.prototype.hasOwnProperty.call(remote, 'auto_track_rule')
+                ? (remote.auto_track_rule ?? undefined)
+                : local?.autoTrackRule,
+              polarity: Object.prototype.hasOwnProperty.call(remote, 'polarity')
+                ? (remote.polarity ?? 'build')
+                : (local?.polarity ?? 'build'),
+              anchorBlock: Object.prototype.hasOwnProperty.call(remote, 'anchor_block')
+                ? (remote.anchor_block ?? undefined)
+                : local?.anchorBlock,
+              metadata: Object.prototype.hasOwnProperty.call(remote, 'metadata')
+                ? (remote.metadata ?? undefined)
+                : local?.metadata,
               archived: remote.is_archived,
               order: remote.order_index,
               isQuantitative: remote.is_quantitative,
@@ -230,7 +254,9 @@ export class CompletionsSyncEngine implements ISynchronizer {
               completed: remote.completed,
               status: remote.status || (isRest ? 'rest' : remote.completed ? 'completed' : undefined),
               skipped: isRest,
-              restReason: remote.rest_reason || local?.restReason || undefined,
+              restReason: Object.prototype.hasOwnProperty.call(remote, 'rest_reason')
+                ? (remote.rest_reason ?? undefined)
+                : local?.restReason || undefined,
               note: remote.notes || undefined,
               value: remote.value || 0,
               generationCounter: remote.generation_counter || 1,
@@ -272,6 +298,9 @@ export async function pushHabitToRemote(engine: any, habit: Habit) {
     interval_days: habit.intervalDays || null,
     allow_bonus_completions: habit.allowBonusCompletions ?? true,
     auto_track_rule: habit.autoTrackRule || null,
+    polarity: habit.polarity || 'build',
+    anchor_block: habit.anchorBlock || null,
+    metadata: habit.metadata || null,
     is_archived: habit.archived,
     order_index: habit.order,
     is_quantitative: habit.isQuantitative || false,
@@ -280,8 +309,11 @@ export async function pushHabitToRemote(engine: any, habit: Habit) {
     generation_counter: habit.generationCounter || 1,
     updated_at: new Date().toISOString()
   };
-  const { error } = await (supabase.from('habits') as any).upsert(payload);
+  const { error } = await upsertRowsWithColumnFallback(supabase, 'habits', payload, {
+    onConflict: 'id',
+  });
   if (error) {
+    logger.warn('[HabitsSyncEngine] pushHabitToRemote fallback:', error.message);
     await (supabase.from('habits') as any).upsert({
       id: habit.id,
       user_id: engine.userId,
