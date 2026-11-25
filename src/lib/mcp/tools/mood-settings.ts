@@ -12,9 +12,10 @@ export function registerMoodSettingsTools(server: McpServer) {
     'manage_mood',
     {
       title: 'Manage Mood Logs',
-      description: 'List historical mood entries or log a mood check-in for a specific IST date.',
+      description: 'List historical mood entries, log/update a mood check-in for a specific IST date, or delete a mood entry (delete requires confirm: true).',
       inputSchema: {
-        action: z.enum(['list', 'log']).describe('Action: list historical moods or log a new mood'),
+        action: z.enum(['list', 'log', 'delete']).describe('Action: list historical moods, log a mood, or delete a mood entry'),
+        moodId: z.string().uuid().optional().describe('Mood entry UUID (optional for delete)'),
         date: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD')
@@ -26,6 +27,7 @@ export function registerMoodSettingsTools(server: McpServer) {
           .enum(['happy', 'calm', 'neutral', 'sad', 'stressed'])
           .optional()
           .describe('Mood state matching MoodType (happy | calm | neutral | sad | stressed)'),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
       },
       annotations: {
         readOnlyHint: false,
@@ -128,6 +130,60 @@ export function registerMoodSettingsTools(server: McpServer) {
         }
       }
 
+      if (args.action === 'delete') {
+        if (!hasScope(auth, 'habitflow:write')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:write scope.' }] };
+        }
+        if (!args.confirm) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: 'Confirmation Required: Deleting a mood log requires confirm: true.' }],
+          };
+        }
+
+        const start = Date.now();
+        try {
+          let query = supabase.from('mood_logs').select('*').eq('user_id', auth.userId);
+          if (args.moodId) {
+            query = query.eq('id', args.moodId);
+          } else {
+            query = query.eq('date', args.date || getIstIsoDate());
+          }
+          const { data: existing, error: fetchErr } = await query.maybeSingle();
+          if (fetchErr) throw fetchErr;
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: 'Mood log entry not found.' }] };
+          }
+
+          const { error: delErr } = await supabase
+            .from('mood_logs')
+            .delete()
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id);
+          if (delErr) throw delErr;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_mood',
+            action: 'delete',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'deleted', deletedEntry: existing }, null, 2) }] };
+        } catch (err: any) {
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_mood',
+            action: 'delete',
+            input: args,
+            status: 'error',
+            errorMessage: err.message,
+            durationMs: Date.now() - start,
+          });
+          return { isError: true, content: [{ type: 'text', text: `Failed to delete mood: ${err.message}` }] };
+        }
+      }
+
       return { isError: true, content: [{ type: 'text', text: `Unknown action: ${args.action}` }] };
     }
   );
@@ -184,12 +240,21 @@ export function registerMoodSettingsTools(server: McpServer) {
         accent: settings.accent,
         motivationText: settings.motivation_text,
         dashboardLayout: settings.dashboard_layout,
+        modules: {
+          showFitness: settings.show_fitness ?? true,
+          showFinance: settings.show_finance ?? true,
+          showTasks: settings.show_tasks ?? true,
+          showGoals: settings.show_goals ?? true,
+          showMilestones: settings.show_milestones ?? true,
+          habitOnlyMode: settings.habit_only_mode ?? false,
+        },
         gamification: {
           xp: settings.xp,
           level: settings.level,
           gems: settings.gems,
           streakShield: settings.streak_shield,
           stats: settings.stats,
+          unlockedThemes: settings.unlocked_themes || [],
         },
       };
 
@@ -203,15 +268,22 @@ export function registerMoodSettingsTools(server: McpServer) {
     {
       title: 'Update User Settings',
       description:
-        'Updates user profile configuration, week start day, default habit category, motivation text, or dashboard layout.',
+        'Updates user profile configuration, workspace module visibility toggles (showFitness, showFinance, showTasks, showGoals, showMilestones, habitOnlyMode), week start day, accent theme, motivation text, or dashboard layout. XP/gems/level remain read-only.',
       inputSchema: {
         userName: z.string().min(1).max(50).optional().describe('User display name'),
         avatarId: z.string().optional().describe('Avatar identifier'),
         weekStartDay: z.number().int().min(0).max(6).optional().describe('Week start day (0=Sunday, 1=Monday)'),
         defaultCategory: z.string().optional().describe('Default category for new habits'),
-        accent: z.string().optional().describe('Theme accent name'),
+        accent: z.string().optional().describe('Theme accent name (mint, cobalt, forest, ink)'),
         motivationText: z.string().optional().describe('Custom dashboard motivation text'),
         dashboardLayout: z.any().optional().describe('Dashboard card arrangement JSON'),
+        showFitness: z.boolean().optional().describe('Toggle Body & Fitness module visibility'),
+        showFinance: z.boolean().optional().describe('Toggle FlowFinance module visibility'),
+        showTasks: z.boolean().optional().describe('Toggle Tasks module visibility'),
+        showGoals: z.boolean().optional().describe('Toggle Goals module visibility'),
+        showMilestones: z.boolean().optional().describe('Toggle Milestones module visibility'),
+        habitOnlyMode: z.boolean().optional().describe('Toggle minimal Habit-Only Mode'),
+        streakShield: z.number().int().min(0).max(99).optional().describe('Adjust available streak shields'),
       },
       annotations: {
         readOnlyHint: false,
@@ -244,6 +316,13 @@ export function registerMoodSettingsTools(server: McpServer) {
         if (args.accent !== undefined) updates.accent = args.accent;
         if (args.motivationText !== undefined) updates.motivation_text = args.motivationText;
         if (args.dashboardLayout !== undefined) updates.dashboard_layout = args.dashboardLayout;
+        if (args.showFitness !== undefined) updates.show_fitness = args.showFitness;
+        if (args.showFinance !== undefined) updates.show_finance = args.showFinance;
+        if (args.showTasks !== undefined) updates.show_tasks = args.showTasks;
+        if (args.showGoals !== undefined) updates.show_goals = args.showGoals;
+        if (args.showMilestones !== undefined) updates.show_milestones = args.showMilestones;
+        if (args.habitOnlyMode !== undefined) updates.habit_only_mode = args.habitOnlyMode;
+        if (args.streakShield !== undefined) updates.streak_shield = args.streakShield;
 
         let result = null;
 

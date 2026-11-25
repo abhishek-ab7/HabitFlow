@@ -3,8 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import {
-  MCP_BASE_URL,
-  MCP_ENDPOINT,
+  ACCEPTED_MCP_RESOURCES,
   OAUTH_PRM_URL,
   MCP_SCOPES,
   type McpScope,
@@ -120,7 +119,7 @@ export async function authenticateMcpRequest(
 
     if (!error && oauthToken) {
       // Validate RFC 8707 Resource Indicator / Audience Binding
-      if (oauthToken.resource && oauthToken.resource !== MCP_ENDPOINT && oauthToken.resource !== MCP_BASE_URL) {
+      if (oauthToken.resource && !ACCEPTED_MCP_RESOURCES.includes(oauthToken.resource)) {
         return {
           auth: null,
           errorResponse: create401Response('Token resource indicator mismatch.'),

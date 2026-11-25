@@ -14,7 +14,7 @@ import { registerMcpResources } from './resources';
 import { registerMcpPrompts } from './prompts';
 
 /**
- * Initializes and binds all 33 consolidated domain tools, 7 live resources,
+ * Initializes and binds all 36 consolidated domain tools, 7 live resources,
  * and 5 workflow prompts to the HabitFlow MCP server instance.
  */
 export async function setupHabitFlowMcpServer(server: McpServer): Promise<void> {

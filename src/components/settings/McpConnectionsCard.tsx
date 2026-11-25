@@ -34,7 +34,7 @@ interface ConnectedApp {
 }
 
 export function McpConnectionsCard() {
-  const endpointUrl = 'https://habit-flow-ochre-two.vercel.app/api/mcp';
+  const [endpointUrl, setEndpointUrl] = useState('https://habitflow.tech/api/mcp');
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
@@ -51,6 +51,7 @@ export function McpConnectionsCard() {
       const res = await fetch('/api/mcp/connections');
       if (res.ok) {
         const data = await res.json();
+        if (data.endpointUrl) setEndpointUrl(data.endpointUrl);
         setAuditLogs(data.auditLogs || []);
         setConnectedApps(data.connectedApps || []);
         setUserId(data.userId || '');
@@ -110,10 +111,10 @@ export function McpConnectionsCard() {
   const snippets = {
     gemini: `# Gemini App (Developer Mode) Settings:
 1. Open Gemini -> Settings -> Developer / Extensions -> Custom MCP
-2. URL: https://habit-flow-ochre-two.vercel.app/api/mcp
+2. URL: ${endpointUrl}
 3. Auth: Select OAuth 2.1 (recommended) or Bearer Token`,
     claude_code: `# Claude Code CLI:
-claude mcp add --transport http habitflow https://habit-flow-ochre-two.vercel.app/api/mcp`,
+claude mcp add --transport http habitflow ${endpointUrl}`,
     claude_desktop: `// claude_desktop_config.json:
 {
   "mcpServers": {
@@ -122,7 +123,7 @@ claude mcp add --transport http habitflow https://habit-flow-ochre-two.vercel.ap
       "args": [
         "-y",
         "mcp-remote",
-        "https://habit-flow-ochre-two.vercel.app/api/mcp",
+        "${endpointUrl}",
         "--header",
         "Authorization: Bearer \${HABITFLOW_MCP_SECRET}"
       ],
@@ -136,7 +137,7 @@ claude mcp add --transport http habitflow https://habit-flow-ochre-two.vercel.ap
 {
   "mcpServers": {
     "habitflow": {
-      "url": "https://habit-flow-ochre-two.vercel.app/api/mcp",
+      "url": "${endpointUrl}",
       "headers": {
         "Authorization": "Bearer <YOUR_SECRET>"
       }

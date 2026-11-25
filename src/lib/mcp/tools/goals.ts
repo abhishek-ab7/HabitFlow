@@ -96,6 +96,7 @@ export function registerGoalsTools(server: McpServer) {
         isArchived: g.is_archived,
         financialLink: g.financial_link ?? null,
         fitnessLink: g.fitness_link ?? null,
+        metadata: g.metadata ?? {},
         milestones: ((g.milestones as any[]) || [])
           .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
           .map((m) => ({
@@ -135,6 +136,7 @@ export function registerGoalsTools(server: McpServer) {
         isFocus: z.boolean().optional().describe('Set as top-focus goal (max 2 active)'),
         financialLink: FINANCIAL_LINK_SCHEMA.optional().describe('Optional live financial telemetry link'),
         fitnessLink: FITNESS_LINK_SCHEMA.optional().describe('Optional live fitness telemetry link (target_weight, target_waist, monthly_workouts, daily_steps_avg)'),
+        metadata: z.record(z.string(), z.any()).optional().describe('Custom goal metadata JSON'),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
       annotations: {
@@ -195,6 +197,7 @@ export function registerGoalsTools(server: McpServer) {
             is_archived: false,
             financial_link: args.financialLink ?? null,
             fitness_link: args.fitnessLink ?? null,
+            metadata: args.metadata ?? {},
             ...meta,
           };
 
@@ -343,6 +346,7 @@ export function registerGoalsTools(server: McpServer) {
           if (args.progress !== undefined) updates.progress = args.progress;
           if (args.financialLink !== undefined) updates.financial_link = args.financialLink;
           if (args.fitnessLink !== undefined) updates.fitness_link = args.fitnessLink;
+          if (args.metadata !== undefined) updates.metadata = args.metadata;
 
           if (args.isFocus !== undefined) {
             if (args.isFocus && !existing.is_focus) {
@@ -407,9 +411,9 @@ export function registerGoalsTools(server: McpServer) {
     {
       title: 'Manage Milestone',
       description:
-        'Create, update, toggle completion status, or delete a milestone under a goal. Automatically recalculates parent goal progress.',
+        'List, create, update, toggle completion status, or delete a milestone under a goal. Automatically recalculates parent goal progress.',
       inputSchema: {
-        action: z.enum(['create', 'update', 'toggle_complete', 'delete']).describe('Action to perform'),
+        action: z.enum(['list', 'create', 'update', 'toggle_complete', 'delete']).describe('Action to perform'),
         goalId: z.string().uuid().describe('Parent Goal UUID'),
         milestoneId: z.string().uuid().optional().describe('Milestone UUID (required for update, toggle_complete, delete)'),
         title: z.string().min(1).max(255).optional().describe('Milestone title'),
@@ -426,12 +430,31 @@ export function registerGoalsTools(server: McpServer) {
     },
     async (args) => {
       const auth = getMcpAuthContext();
+      const supabase = getSupabaseAdmin();
+
+      if (args.action === 'list') {
+        if (!hasScope(auth, 'habitflow:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:read scope.' }] };
+        }
+        const { data, error } = await supabase
+          .from('milestones')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .eq('goal_id', args.goalId)
+          .order('order_index', { ascending: true });
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to fetch milestones: ${error.message}` }] };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ goalId: args.goalId, count: (data || []).length, milestones: data || [] }, null, 2) }],
+        };
+      }
+
       if (!hasScope(auth, 'habitflow:write')) {
         return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:write scope.' }] };
       }
 
       const start = Date.now();
-      const supabase = getSupabaseAdmin();
 
       try {
         // Verify parent goal

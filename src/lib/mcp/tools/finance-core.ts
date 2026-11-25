@@ -201,6 +201,7 @@ export function registerFinanceCoreTools(server: McpServer) {
         isDefault: z.boolean().optional(),
         icon: z.string().optional(),
         color: z.string().optional(),
+        includeArchived: z.boolean().optional().default(false).describe('Include archived/deleted accounts when listing'),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
       annotations: {
@@ -218,12 +219,15 @@ export function registerFinanceCoreTools(server: McpServer) {
         if (!hasScope(auth, 'habitflow:finance:read')) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
-        const { data, error } = await supabase
+        let query = supabase
           .from('finance_accounts')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
-          .order('name');
+          .eq('user_id', auth.userId);
+
+        if (!args.includeArchived) {
+          query = query.is('deleted_at', null).eq('is_archived', false);
+        }
+        const { data, error } = await query.order('name');
 
         if (error) {
           return { isError: true, content: [{ type: 'text', text: `Failed to fetch accounts: ${error.message}` }] };
@@ -256,6 +260,8 @@ export function registerFinanceCoreTools(server: McpServer) {
             grace_period_days: args.gracePeriodDays ?? 20,
             include_in_net_worth: args.includeInNetWorth ?? true,
             currency: args.currency || 'INR',
+            icon: args.icon || 'Landmark',
+            color: args.color || '#10b981',
             is_default: args.isDefault ?? false,
             is_archived: false,
             ...meta,
@@ -408,6 +414,9 @@ export function registerFinanceCoreTools(server: McpServer) {
           if (args.dueDay !== undefined) updates.due_day = args.dueDay;
           if (args.gracePeriodDays !== undefined) updates.grace_period_days = args.gracePeriodDays;
           if (args.includeInNetWorth !== undefined) updates.include_in_net_worth = args.includeInNetWorth;
+          if (args.currency !== undefined) updates.currency = args.currency;
+          if (args.icon !== undefined) updates.icon = args.icon;
+          if (args.color !== undefined) updates.color = args.color;
           if (args.isDefault !== undefined) updates.is_default = args.isDefault;
 
           const meta = getUpdateMetadata(existing);
@@ -453,20 +462,23 @@ export function registerFinanceCoreTools(server: McpServer) {
     {
       title: 'Manage Finance Category & Rules',
       description:
-        'List categories, create, update, or archive expense/income categories, and manage automatic merchant categorization rules.',
+        'List, create, update, archive, or restore expense/income categories, and manage automatic merchant categorization rules.',
       inputSchema: {
         action: z
-          .enum(['list', 'create', 'update', 'archive', 'list_rules', 'upsert_rule', 'delete_rule'])
+          .enum(['list', 'create', 'update', 'archive', 'restore', 'list_rules', 'upsert_rule', 'delete_rule', 'restore_rule'])
           .describe('Action to perform'),
-        categoryId: z.string().uuid().optional().describe('Category UUID (required for update, archive)'),
+        categoryId: z.string().uuid().optional().describe('Category UUID (required for update, archive, restore)'),
         name: z.string().min(1).max(100).optional().describe('Category name'),
         slug: z.string().optional().describe('Unique category slug'),
         type: z.enum(['expense', 'income', 'both']).optional().describe('Category flow type'),
         monthlyBudgetLimit: z.number().min(0).optional().describe('Default monthly budget limit for this category'),
         rolloverEnabled: z.boolean().optional().describe('Whether unspent budget rolls over to next month'),
         subcategories: z.array(z.string()).optional().describe('Subcategories list'),
+        orderIndex: z.number().int().optional().describe('Display sort order index'),
         icon: z.string().optional(),
         color: z.string().optional(),
+        includeArchived: z.boolean().optional().default(false).describe('Include archived/deleted categories when listing'),
+        includeInactive: z.boolean().optional().default(false).describe('Include deleted/inactive rules when listing rules'),
         // Rule specific fields
         rulePattern: z.string().optional().describe('Merchant matching pattern string'),
         cleanMerchantName: z.string().optional().describe('Clean normalized merchant name'),
@@ -474,7 +486,7 @@ export function registerFinanceCoreTools(server: McpServer) {
         ruleSubcategory: z.string().optional(),
         defaultTags: z.array(z.string()).optional().describe('Default tags applied by this rule'),
         ruleId: z.string().uuid().optional(),
-        confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
+        confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive or delete_rule'),
       },
       annotations: {
         readOnlyHint: false,
@@ -491,12 +503,14 @@ export function registerFinanceCoreTools(server: McpServer) {
         if (!hasScope(auth, 'habitflow:finance:read')) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
-        const { data, error } = await supabase
+        let query = supabase
           .from('finance_categories')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
-          .order('order_index');
+          .eq('user_id', auth.userId);
+        if (!args.includeArchived) {
+          query = query.is('deleted_at', null).eq('is_archived', false);
+        }
+        const { data, error } = await query.order('order_index');
 
         if (error) {
           return { isError: true, content: [{ type: 'text', text: `Failed to fetch categories: ${error.message}` }] };
@@ -508,12 +522,14 @@ export function registerFinanceCoreTools(server: McpServer) {
         if (!hasScope(auth, 'habitflow:finance:read')) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
-        const { data, error } = await supabase
+        let query = supabase
           .from('finance_categorization_rules')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false });
+          .eq('user_id', auth.userId);
+        if (!args.includeInactive) {
+          query = query.is('deleted_at', null).eq('is_active', true);
+        }
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
           return { isError: true, content: [{ type: 'text', text: `Failed to fetch rules: ${error.message}` }] };
@@ -545,6 +561,7 @@ export function registerFinanceCoreTools(server: McpServer) {
             monthly_budget_limit: args.monthlyBudgetLimit ?? 0,
             rollover_enabled: args.rolloverEnabled ?? false,
             subcategories: args.subcategories || [],
+            order_index: args.orderIndex ?? 0,
             is_system: false,
             is_archived: false,
             ...meta,
@@ -609,6 +626,40 @@ export function registerFinanceCoreTools(server: McpServer) {
           });
 
           return { content: [{ type: 'text', text: JSON.stringify({ action: 'archived', category: data }, null, 2) }] };
+        }
+
+        if (args.action === 'restore') {
+          if (!args.categoryId) {
+            return { isError: true, content: [{ type: 'text', text: 'Validation Error: categoryId is required.' }] };
+          }
+          const { data: existing } = await supabase
+            .from('finance_categories')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.categoryId)
+            .single();
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: 'Category not found.' }] };
+          }
+
+          const meta = getUpdateMetadata(existing);
+          const { data, error } = await supabase
+            .from('finance_categories')
+            .update({ is_archived: false, deleted_at: null, ...meta })
+            .eq('user_id', auth.userId)
+            .eq('id', args.categoryId)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_finance_category',
+            action: 'restore',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', category: data }, null, 2) }] };
         }
 
         if (args.action === 'upsert_rule') {
@@ -721,6 +772,40 @@ export function registerFinanceCoreTools(server: McpServer) {
           return { content: [{ type: 'text', text: JSON.stringify({ action: 'rule_deleted', ruleId: args.ruleId }, null, 2) }] };
         }
 
+        if (args.action === 'restore_rule') {
+          if (!args.ruleId) {
+            return { isError: true, content: [{ type: 'text', text: 'Validation Error: ruleId is required for restore_rule.' }] };
+          }
+          const { data: existing } = await supabase
+            .from('finance_categorization_rules')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.ruleId)
+            .single();
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: 'Categorization rule not found.' }] };
+          }
+
+          const meta = getUpdateMetadata(existing);
+          const { data, error } = await supabase
+            .from('finance_categorization_rules')
+            .update({ is_active: true, deleted_at: null, ...meta })
+            .eq('user_id', auth.userId)
+            .eq('id', args.ruleId)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_finance_category',
+            action: 'restore_rule',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'rule_restored', rule: data }, null, 2) }] };
+        }
+
         if (args.action === 'update') {
           if (!args.categoryId) {
             return { isError: true, content: [{ type: 'text', text: 'Validation Error: categoryId is required.' }] };
@@ -743,6 +828,7 @@ export function registerFinanceCoreTools(server: McpServer) {
           if (args.monthlyBudgetLimit !== undefined) updates.monthly_budget_limit = args.monthlyBudgetLimit;
           if (args.rolloverEnabled !== undefined) updates.rollover_enabled = args.rolloverEnabled;
           if (args.subcategories !== undefined) updates.subcategories = args.subcategories;
+          if (args.orderIndex !== undefined) updates.order_index = args.orderIndex;
           if (args.icon !== undefined) updates.icon = args.icon;
           if (args.color !== undefined) updates.color = args.color;
 
@@ -789,14 +875,17 @@ export function registerFinanceCoreTools(server: McpServer) {
     {
       title: 'Manage Finance Budget',
       description:
-        'Get or configure monthly spending caps, expected income, planned SIP allocation, and per-category budget limits for any month.',
+        'Get, list, upsert, delete (soft-delete), or restore monthly spending caps, expected income, planned SIP allocation, and per-category budget limits.',
       inputSchema: {
-        action: z.enum(['get', 'upsert']).describe('Action: get or upsert budget'),
+        action: z.enum(['get', 'list', 'upsert', 'delete', 'restore']).describe('Action to perform'),
+        budgetId: z.string().uuid().optional().describe('Optional budget UUID for delete/restore'),
         monthKey: z
           .string()
           .regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM')
           .optional()
           .describe('Month key (defaults to current month in IST)'),
+        limit: z.number().int().min(1).max(24).optional().default(12).describe('Number of months for list'),
+        includeDeleted: z.boolean().optional().default(false),
         totalBudget: z.number().min(0).optional().describe('Overall monthly spending limit'),
         expectedIncome: z.number().min(0).optional().describe('Expected monthly salary/inflows'),
         plannedSipAmount: z.number().min(0).optional().describe('Planned monthly SIP investment goal'),
@@ -812,11 +901,12 @@ export function registerFinanceCoreTools(server: McpServer) {
           )
           .optional()
           .describe('Optional batch updates to individual category monthly budget limits'),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
       },
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
+        destructiveHint: true,
+        idempotentHint: false,
         openWorldHint: false,
       },
     },
@@ -824,6 +914,19 @@ export function registerFinanceCoreTools(server: McpServer) {
       const auth = getMcpAuthContext();
       const monthKey = args.monthKey || getIstMonthKey();
       const supabase = getSupabaseAdmin();
+
+      if (args.action === 'list') {
+        if (!hasScope(auth, 'habitflow:finance:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
+        }
+        let query = supabase.from('finance_budgets').select('*').eq('user_id', auth.userId);
+        if (!args.includeDeleted) query = query.is('deleted_at', null);
+        const { data, error } = await query.order('month_key', { ascending: false }).limit(args.limit || 12);
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to list budgets: ${error.message}` }] };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify({ count: (data || []).length, budgets: data || [] }, null, 2) }] };
+      }
 
       if (args.action === 'get') {
         if (!hasScope(auth, 'habitflow:finance:read')) {
@@ -976,6 +1079,59 @@ export function registerFinanceCoreTools(server: McpServer) {
         }
       }
 
+      if (args.action === 'delete' || args.action === 'restore') {
+        if (!hasScope(auth, 'habitflow:finance:write')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:write scope.' }] };
+        }
+        if (args.action === 'delete' && !args.confirm) {
+          return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: Deleting a budget requires confirm: true.' }] };
+        }
+
+        const start = Date.now();
+        try {
+          let query = supabase.from('finance_budgets').select('*').eq('user_id', auth.userId);
+          query = args.budgetId ? query.eq('id', args.budgetId) : query.eq('month_key', monthKey);
+          const { data: existing, error: fetchErr } = await query.maybeSingle();
+          if (fetchErr) throw fetchErr;
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: `Budget not found for ${args.budgetId || monthKey}` }] };
+          }
+
+          const patch =
+            args.action === 'delete'
+              ? getSoftDeleteMetadata(existing)
+              : { deleted_at: null, ...getUpdateMetadata(existing) };
+
+          const { data, error } = await supabase
+            .from('finance_budgets')
+            .update(patch)
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_finance_budget',
+            action: args.action,
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: args.action === 'delete' ? 'deleted' : 'restored', budget: data }, null, 2) }] };
+        } catch (err: any) {
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_finance_budget',
+            action: args.action,
+            input: args,
+            status: 'error',
+            errorMessage: err.message,
+            durationMs: Date.now() - start,
+          });
+          return { isError: true, content: [{ type: 'text', text: `Failed to ${args.action} budget: ${err.message}` }] };
+        }
+      }
+
       return { isError: true, content: [{ type: 'text', text: `Unknown action: ${args.action}` }] };
     }
   );
@@ -986,20 +1142,33 @@ export function registerFinanceCoreTools(server: McpServer) {
     {
       title: 'Manage Net Worth Snapshots',
       description:
-        'List historical monthly net worth snapshots or capture a fresh net worth snapshot for the current IST month.',
+        'List historical monthly net worth snapshots, capture a fresh snapshot for any month, manually update a snapshot, soft-delete, or restore a snapshot.',
       inputSchema: {
-        action: z.enum(['list', 'capture']).describe('Action: list historical snapshots or capture a new snapshot'),
+        action: z.enum(['list', 'capture', 'update', 'delete', 'restore']).describe('Action to perform'),
+        snapshotId: z.string().uuid().optional().describe('Optional snapshot UUID for update/delete/restore'),
         months: z.number().int().min(1).max(24).optional().default(6).describe('Number of historical months for list'),
+        includeDeleted: z.boolean().optional().default(false),
         monthKey: z
           .string()
           .regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM')
           .optional()
-          .describe('Month key to capture (defaults to current month in IST)'),
+          .describe('Month key (defaults to current month in IST)'),
+        snapshotDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Override snapshot date (YYYY-MM-DD)'),
+        totalAssets: z.number().optional(),
+        totalLiabilities: z.number().optional(),
+        netWorth: z.number().optional(),
+        liquidAssets: z.number().optional(),
+        investmentAssets: z.number().optional(),
+        creditCardLiabilities: z.number().optional(),
+        emiRemainingPrincipal: z.number().optional(),
+        friendReceivables: z.number().optional(),
+        friendPayables: z.number().optional(),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
       },
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
+        destructiveHint: true,
+        idempotentHint: false,
         openWorldHint: false,
       },
     },
@@ -1012,11 +1181,14 @@ export function registerFinanceCoreTools(server: McpServer) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
 
-        const { data, error } = await supabase
+        let query = supabase
           .from('finance_net_worth_snapshots')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
+          .eq('user_id', auth.userId);
+        if (!args.includeDeleted) {
+          query = query.is('deleted_at', null);
+        }
+        const { data, error } = await query
           .order('month_key', { ascending: false })
           .limit(args.months || 6);
 
@@ -1027,14 +1199,14 @@ export function registerFinanceCoreTools(server: McpServer) {
         return { content: [{ type: 'text', text: JSON.stringify({ count: (data || []).length, snapshots: data }, null, 2) }] };
       }
 
+      if (!hasScope(auth, 'habitflow:finance:write')) {
+        return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:write scope.' }] };
+      }
+
+      const start = Date.now();
+      const monthKey = args.monthKey || getIstMonthKey();
+
       if (args.action === 'capture') {
-        if (!hasScope(auth, 'habitflow:finance:write')) {
-          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:write scope.' }] };
-        }
-
-        const start = Date.now();
-        const monthKey = args.monthKey || getIstMonthKey();
-
         try {
           const [{ data: accounts }, { data: sips }, { data: debts }, { data: emis }] = await Promise.all([
             supabase.from('finance_accounts').select('*').eq('user_id', auth.userId).is('deleted_at', null),
@@ -1050,13 +1222,14 @@ export function registerFinanceCoreTools(server: McpServer) {
             emiTrackers: (emis || []).map(mapEmiTrackerFromRow),
           });
 
+          const snapshotDate = args.snapshotDate || getIstIsoDate();
+
           // Check if snapshot exists for (user_id, month_key)
           const { data: existing } = await supabase
             .from('finance_net_worth_snapshots')
             .select('*')
             .eq('user_id', auth.userId)
             .eq('month_key', monthKey)
-            .is('deleted_at', null)
             .maybeSingle();
 
           let savedSnapshot = null;
@@ -1066,13 +1239,15 @@ export function registerFinanceCoreTools(server: McpServer) {
             const { data, error } = await supabase
               .from('finance_net_worth_snapshots')
               .update({
+                snapshot_date: snapshotDate,
+                deleted_at: null,
                 total_assets: nw.totalAssets,
                 total_liabilities: nw.totalLiabilities,
                 net_worth: nw.netWorth,
                 liquid_assets: nw.liquidAssets,
                 investment_assets: nw.investmentAssets,
                 credit_card_liabilities: nw.creditCardLiabilities,
-                emi_liabilities: nw.emiRemainingPrincipal,
+                emi_remaining_principal: nw.emiRemainingPrincipal,
                 friend_receivables: nw.friendReceivables,
                 friend_payables: nw.friendPayables,
                 ...meta,
@@ -1090,13 +1265,14 @@ export function registerFinanceCoreTools(server: McpServer) {
               .insert({
                 user_id: auth.userId,
                 month_key: monthKey,
+                snapshot_date: snapshotDate,
                 total_assets: nw.totalAssets,
                 total_liabilities: nw.totalLiabilities,
                 net_worth: nw.netWorth,
                 liquid_assets: nw.liquidAssets,
                 investment_assets: nw.investmentAssets,
                 credit_card_liabilities: nw.creditCardLiabilities,
-                emi_liabilities: nw.emiRemainingPrincipal,
+                emi_remaining_principal: nw.emiRemainingPrincipal,
                 friend_receivables: nw.friendReceivables,
                 friend_payables: nw.friendPayables,
                 ...meta,
@@ -1130,7 +1306,81 @@ export function registerFinanceCoreTools(server: McpServer) {
         }
       }
 
-      return { isError: true, content: [{ type: 'text', text: `Unknown action: ${args.action}` }] };
+      try {
+        let query = supabase.from('finance_net_worth_snapshots').select('*').eq('user_id', auth.userId);
+        query = args.snapshotId ? query.eq('id', args.snapshotId) : query.eq('month_key', monthKey);
+        const { data: existing, error: fetchErr } = await query.maybeSingle();
+        if (fetchErr) throw fetchErr;
+        if (!existing) {
+          return { isError: true, content: [{ type: 'text', text: `Net worth snapshot not found for ${args.snapshotId || monthKey}` }] };
+        }
+
+        if (args.action === 'delete') {
+          if (!args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: Deleting snapshot requires confirm: true.' }] };
+          }
+          const { data, error } = await supabase
+            .from('finance_net_worth_snapshots')
+            .update(getSoftDeleteMetadata(existing))
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_net_worth_snapshot', action: 'delete', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'deleted', snapshot: data }, null, 2) }] };
+        }
+
+        if (args.action === 'restore') {
+          const { data, error } = await supabase
+            .from('finance_net_worth_snapshots')
+            .update({ deleted_at: null, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_net_worth_snapshot', action: 'restore', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', snapshot: data }, null, 2) }] };
+        }
+
+        if (args.action === 'update') {
+          const updates: Record<string, any> = {};
+          if (args.snapshotDate !== undefined) updates.snapshot_date = args.snapshotDate;
+          if (args.totalAssets !== undefined) updates.total_assets = args.totalAssets;
+          if (args.totalLiabilities !== undefined) updates.total_liabilities = args.totalLiabilities;
+          if (args.netWorth !== undefined) updates.net_worth = args.netWorth;
+          if (args.liquidAssets !== undefined) updates.liquid_assets = args.liquidAssets;
+          if (args.investmentAssets !== undefined) updates.investment_assets = args.investmentAssets;
+          if (args.creditCardLiabilities !== undefined) updates.credit_card_liabilities = args.creditCardLiabilities;
+          if (args.emiRemainingPrincipal !== undefined) updates.emi_remaining_principal = args.emiRemainingPrincipal;
+          if (args.friendReceivables !== undefined) updates.friend_receivables = args.friendReceivables;
+          if (args.friendPayables !== undefined) updates.friend_payables = args.friendPayables;
+
+          const { data, error } = await supabase
+            .from('finance_net_worth_snapshots')
+            .update({ ...updates, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_net_worth_snapshot', action: 'update', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'updated', snapshot: data }, null, 2) }] };
+        }
+
+        return { isError: true, content: [{ type: 'text', text: `Unknown action: ${args.action}` }] };
+      } catch (err: any) {
+        await logMcpToolInvocation(auth, {
+          toolName: 'manage_net_worth_snapshot',
+          action: args.action,
+          input: args,
+          status: 'error',
+          errorMessage: err.message,
+          durationMs: Date.now() - start,
+        });
+        return { isError: true, content: [{ type: 'text', text: `Failed to manage net worth snapshot: ${err.message}` }] };
+      }
     }
   );
 }

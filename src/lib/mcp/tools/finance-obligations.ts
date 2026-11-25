@@ -8,6 +8,7 @@ import {
   getUpdateMetadata,
   getSoftDeleteMetadata,
   applyAccountBalanceDelta,
+  resolveFallbackFinanceCategoryId,
 } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
 import { mapFinanceTransactionFromRow, mapMonthlyCommitmentFromRow } from '../mappers';
@@ -19,18 +20,20 @@ export function registerFinanceObligationsTools(server: McpServer) {
     'manage_recurring_bill',
     {
       title: 'Manage Recurring Bills',
-      description: 'List, create, update, mark as paid (creates expense + updates account balance), or archive recurring utility/subscription bills.',
+      description: 'List, create, update, mark as paid (creates expense + updates account balance), archive, or restore recurring utility/subscription bills.',
       inputSchema: {
-        action: z.enum(['list', 'create', 'update', 'mark_paid', 'archive']).describe('Action to execute'),
-        billId: z.string().uuid().optional().describe('Bill UUID (required for update, mark_paid, archive)'),
+        action: z.enum(['list', 'create', 'update', 'mark_paid', 'archive', 'restore']).describe('Action to execute'),
+        billId: z.string().uuid().optional().describe('Bill UUID (required for update, mark_paid, archive, restore)'),
         name: z.string().min(1).max(100).optional().describe('Bill name (e.g. Electricity, Netflix, Wifi)'),
         amount: z.number().positive().optional().describe('Bill amount in INR'),
         cadence: z.enum(['monthly', 'quarterly', 'yearly']).optional().default('monthly'),
         dueDayOfMonth: z.number().int().min(1).max(31).optional().describe('Day of month payment is due'),
         categoryId: z.string().uuid().optional(),
         accountId: z.string().uuid().optional().describe('Account used for payment'),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Payment date override for mark_paid (defaults to IST today)'),
         autoLog: z.boolean().optional(),
         isActive: z.boolean().optional(),
+        includeArchived: z.boolean().optional().default(false).describe('Include archived/soft-deleted bills in list'),
         color: z.string().optional(),
         icon: z.string().optional(),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
@@ -50,12 +53,12 @@ export function registerFinanceObligationsTools(server: McpServer) {
         if (!hasScope(auth, 'habitflow:finance:read')) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
-        const { data, error } = await supabase
+        let query = supabase
           .from('finance_recurring_bills')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
-          .order('due_day_of_month');
+          .eq('user_id', auth.userId);
+        if (!args.includeArchived) query = query.is('deleted_at', null);
+        const { data, error } = await query.order('due_day_of_month');
 
         if (error) {
           return { isError: true, content: [{ type: 'text', text: `Failed to fetch bills: ${error.message}` }] };
@@ -78,6 +81,8 @@ export function registerFinanceObligationsTools(server: McpServer) {
           }
 
           const meta = getInsertMetadata();
+          const fallbackCategoryId =
+            args.categoryId || (await resolveFallbackFinanceCategoryId(supabase, auth.userId, ['bills-utilities', 'other']));
           const newBill = {
             user_id: auth.userId,
             name: args.name.trim(),
@@ -85,7 +90,7 @@ export function registerFinanceObligationsTools(server: McpServer) {
             previous_amount: Number(args.amount),
             cadence: args.cadence || 'monthly',
             due_day_of_month: args.dueDayOfMonth || 1,
-            category_id: args.categoryId || null,
+            category_id: fallbackCategoryId,
             account_id: args.accountId || null,
             auto_log: args.autoLog ?? false,
             is_active: args.isActive ?? true,
@@ -152,22 +157,40 @@ export function registerFinanceObligationsTools(server: McpServer) {
           return { content: [{ type: 'text', text: JSON.stringify({ action: 'archived', bill: data }, null, 2) }] };
         }
 
+        if (args.action === 'restore') {
+          const { data, error } = await supabase
+            .from('finance_recurring_bills')
+            .update({ is_active: true, deleted_at: null, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', args.billId)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_recurring_bill', action: 'restore', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', bill: data }, null, 2) }] };
+        }
+
         if (args.action === 'mark_paid') {
           const accountIdToUse = args.accountId || existing.account_id;
+          const payDate = args.date || dateIst;
+          const payMonthKey = payDate.substring(0, 7);
+          const payAmount = args.amount !== undefined ? Number(args.amount) : Number(existing.amount);
           let createdTx = null;
 
           if (accountIdToUse) {
+            const txCategoryId =
+              existing.category_id || (await resolveFallbackFinanceCategoryId(supabase, auth.userId, ['bills-utilities', 'other']));
             const txMeta = getInsertMetadata();
             const txPayload = {
               user_id: auth.userId,
               title: `Bill: ${existing.name}`,
               merchant_name: existing.name,
-              amount: existing.amount,
+              amount: payAmount,
               type: 'expense',
-              category_id: existing.category_id,
+              category_id: txCategoryId,
               account_id: accountIdToUse,
-              date: dateIst,
-              month_key: monthKey,
+              date: payDate,
+              month_key: payMonthKey,
               is_recurring: true,
               tags: ['recurring_bill'],
               notes: `Paid recurring bill "${existing.name}"`,
@@ -178,14 +201,14 @@ export function registerFinanceObligationsTools(server: McpServer) {
             createdTx = tx;
 
             await applyAccountBalanceDelta(supabase, auth.userId, [
-              { accountId: accountIdToUse, delta: -existing.amount },
+              { accountId: accountIdToUse, delta: -payAmount },
             ]);
           }
 
           const meta = getUpdateMetadata(existing);
           const { data: updatedBill } = await supabase
             .from('finance_recurring_bills')
-            .update({ last_paid_month_key: monthKey, ...meta })
+            .update({ last_paid_month_key: payMonthKey, ...meta })
             .eq('id', args.billId)
             .select()
             .single();
@@ -221,6 +244,8 @@ export function registerFinanceObligationsTools(server: McpServer) {
           if (args.accountId !== undefined) updates.account_id = args.accountId;
           if (args.autoLog !== undefined) updates.auto_log = args.autoLog;
           if (args.isActive !== undefined) updates.is_active = args.isActive;
+          if (args.color !== undefined) updates.color = args.color;
+          if (args.icon !== undefined) updates.icon = args.icon;
 
           const meta = getUpdateMetadata(existing);
           const { data, error } = await supabase
@@ -264,23 +289,27 @@ export function registerFinanceObligationsTools(server: McpServer) {
     {
       title: 'Manage EMI Trackers',
       description:
-        'List loan EMIs, create new loan trackers, log monthly installments (creates expense + advances paid months), or foreclose a loan.',
+        'List loan EMIs, create/update loan trackers, log monthly installments (creates expense + advances paid months), foreclose, archive (soft-delete), or restore an EMI.',
       inputSchema: {
-        action: z.enum(['list', 'create', 'update', 'log_payment', 'foreclose']).describe('Action to execute'),
+        action: z.enum(['list', 'create', 'update', 'log_payment', 'foreclose', 'archive', 'restore']).describe('Action to execute'),
         emiId: z.string().uuid().optional().describe('EMI Tracker UUID'),
         loanName: z.string().min(1).max(100).optional().describe('Loan name (e.g. Home Loan, Car Loan, MacBook EMI)'),
         lenderName: z.string().optional().describe('Bank or Lender (e.g. HDFC Bank, Bajaj Finserv)'),
         principalAmount: z.number().positive().optional().describe('Total original loan amount'),
         interestRateAnnual: z.number().min(0).optional().describe('Annual interest percentage (e.g. 8.5)'),
         emiAmount: z.number().positive().optional().describe('Monthly EMI installment amount'),
+        amount: z.number().positive().optional().describe('Override installment payment amount for log_payment'),
         tenureMonths: z.number().int().positive().optional().describe('Total tenure in months'),
         paidMonths: z.number().int().min(0).optional().describe('Months already paid'),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Payment date override for log_payment (defaults to IST today)'),
         billingDayOfMonth: z.number().int().min(1).max(31).optional(),
         accountId: z.string().uuid().optional().describe('Account EMI is auto-debited from'),
         categoryId: z.string().uuid().optional(),
+        status: z.enum(['active', 'completed', 'foreclosed', 'archived']).optional(),
+        includeArchived: z.boolean().optional().default(false),
         notes: z.string().optional(),
-        confirm: z.boolean().optional().describe('Confirmation flag required for foreclose'),
+        confirm: z.boolean().optional().describe('Confirmation flag required for foreclose or archive'),
       },
       annotations: {
         readOnlyHint: false,
@@ -297,11 +326,12 @@ export function registerFinanceObligationsTools(server: McpServer) {
         if (!hasScope(auth, 'habitflow:finance:read')) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
-        const { data, error } = await supabase
+        let query = supabase
           .from('emi_trackers')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
+          .eq('user_id', auth.userId);
+        if (!args.includeArchived) query = query.is('deleted_at', null);
+        const { data, error } = await query
           .order('status')
           .order('billing_day_of_month');
 
@@ -410,22 +440,57 @@ export function registerFinanceObligationsTools(server: McpServer) {
           return { content: [{ type: 'text', text: JSON.stringify({ action: 'foreclosed', emi: data }, null, 2) }] };
         }
 
+        if (args.action === 'archive') {
+          if (!args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: Archiving an EMI requires confirm: true.' }] };
+          }
+          const { data, error } = await supabase
+            .from('emi_trackers')
+            .update({ status: 'archived', ...getSoftDeleteMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', args.emiId)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_emi', action: 'archive', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'archived', emi: data }, null, 2) }] };
+        }
+
+        if (args.action === 'restore') {
+          const nextStatus = existing.paid_months >= existing.tenure_months ? 'completed' : 'active';
+          const { data, error } = await supabase
+            .from('emi_trackers')
+            .update({ deleted_at: null, status: nextStatus, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', args.emiId)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_emi', action: 'restore', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', emi: data }, null, 2) }] };
+        }
+
         if (args.action === 'log_payment') {
           const accountIdToUse = args.accountId || existing.account_id;
+          const payDate = args.date || dateIst;
+          const payMonthKey = payDate.substring(0, 7);
+          const payAmount = args.amount !== undefined ? Number(args.amount) : Number(existing.emi_amount);
           let createdTx = null;
 
           if (accountIdToUse) {
+            const txCategoryId =
+              existing.category_id || (await resolveFallbackFinanceCategoryId(supabase, auth.userId, ['emis-debt-repayment', 'other']));
             const txMeta = getInsertMetadata();
             const txPayload = {
               user_id: auth.userId,
               title: `EMI: ${existing.loan_name} (${existing.paid_months + 1}/${existing.tenure_months})`,
               merchant_name: existing.lender_name,
-              amount: existing.emi_amount,
+              amount: payAmount,
               type: 'expense',
-              category_id: existing.category_id,
+              category_id: txCategoryId,
               account_id: accountIdToUse,
-              date: dateIst,
-              month_key: monthKey,
+              date: payDate,
+              month_key: payMonthKey,
               linked_emi_id: existing.id,
               tags: ['emi_payment'],
               notes: `Monthly EMI installment for ${existing.loan_name}`,
@@ -436,7 +501,7 @@ export function registerFinanceObligationsTools(server: McpServer) {
             createdTx = tx;
 
             await applyAccountBalanceDelta(supabase, auth.userId, [
-              { accountId: accountIdToUse, delta: -existing.emi_amount },
+              { accountId: accountIdToUse, delta: -payAmount },
             ]);
           }
 
@@ -449,7 +514,7 @@ export function registerFinanceObligationsTools(server: McpServer) {
             .update({
               paid_months: nextPaidMonths,
               status,
-              last_paid_month_key: monthKey,
+              last_paid_month_key: payMonthKey,
               ...meta,
             })
             .eq('id', args.emiId)
@@ -478,11 +543,17 @@ export function registerFinanceObligationsTools(server: McpServer) {
           const updates: Record<string, any> = {};
           if (args.loanName !== undefined) updates.loan_name = args.loanName.trim();
           if (args.lenderName !== undefined) updates.lender_name = args.lenderName.trim();
+          if (args.principalAmount !== undefined) updates.principal_amount = args.principalAmount;
+          if (args.interestRateAnnual !== undefined) updates.interest_rate_annual = args.interestRateAnnual;
           if (args.emiAmount !== undefined) updates.emi_amount = args.emiAmount;
+          if (args.tenureMonths !== undefined) updates.tenure_months = args.tenureMonths;
           if (args.paidMonths !== undefined) updates.paid_months = args.paidMonths;
+          if (args.startDate !== undefined) updates.start_date = args.startDate;
           if (args.billingDayOfMonth !== undefined) updates.billing_day_of_month = args.billingDayOfMonth;
           if (args.accountId !== undefined) updates.account_id = args.accountId;
           if (args.categoryId !== undefined) updates.category_id = args.categoryId;
+          if (args.status !== undefined) updates.status = args.status;
+          if (args.notes !== undefined) updates.notes = args.notes;
 
           const meta = getUpdateMetadata(existing);
           const { data, error } = await supabase
@@ -526,23 +597,28 @@ export function registerFinanceObligationsTools(server: McpServer) {
     {
       title: 'Manage SIP Investment Plans',
       description:
-        'List SIP plans, create new monthly SIP investments, log installments (creates investment transaction + updates total invested), or update latest portfolio valuation.',
+        'List SIP plans, create/update/archive/restore monthly SIP investments, log installments (creates investment transaction + updates total invested), or update latest portfolio valuation.',
       inputSchema: {
         action: z
-          .enum(['list', 'create', 'update', 'log_installment', 'update_valuation', 'archive'])
+          .enum(['list', 'create', 'update', 'log_installment', 'update_valuation', 'archive', 'restore'])
           .describe('Action to execute'),
         sipId: z.string().uuid().optional().describe('SIP Plan UUID'),
         name: z.string().min(1).max(100).optional().describe('SIP fund/asset name (e.g. Parag Parikh Flexi Cap)'),
         platform: z.string().optional().describe('Platform name (e.g. Zerodha Coin, Groww, INDmoney)'),
         assetClass: z.enum(['equity', 'debt', 'hybrid', 'gold', 'crypto', 'other']).optional(),
         monthlyAmount: z.number().positive().optional().describe('Monthly SIP installment amount in INR'),
+        amount: z.number().positive().optional().describe('Installment amount override for log_installment'),
         sipDayOfMonth: z.number().int().min(1).max(31).optional(),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Installment date override for log_installment'),
         totalInvested: z.number().min(0).optional(),
         currentValue: z.number().min(0).optional().describe('Current portfolio valuation in INR'),
         expectedReturnAnnual: z.number().min(0).optional().describe('Expected CAGR annual return percentage'),
         accountId: z.string().uuid().optional().describe('Source bank/investment account UUID'),
         categoryId: z.string().uuid().optional(),
+        isActive: z.boolean().optional(),
+        includeArchived: z.boolean().optional().default(false),
+        color: z.string().optional(),
         notes: z.string().optional(),
         confirm: z.boolean().optional().describe('Confirmation flag required for archive'),
       },
@@ -561,12 +637,12 @@ export function registerFinanceObligationsTools(server: McpServer) {
         if (!hasScope(auth, 'habitflow:finance:read')) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
-        const { data, error } = await supabase
+        let query = supabase
           .from('finance_sip_plans')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
-          .order('sip_day_of_month');
+          .eq('user_id', auth.userId);
+        if (!args.includeArchived) query = query.is('deleted_at', null);
+        const { data, error } = await query.order('sip_day_of_month');
 
         if (error) {
           return { isError: true, content: [{ type: 'text', text: `Failed to fetch SIP plans: ${error.message}` }] };
@@ -668,6 +744,19 @@ export function registerFinanceObligationsTools(server: McpServer) {
           return { content: [{ type: 'text', text: JSON.stringify({ action: 'archived', sip: data }, null, 2) }] };
         }
 
+        if (args.action === 'restore') {
+          const { data, error } = await supabase
+            .from('finance_sip_plans')
+            .update({ is_active: true, deleted_at: null, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', args.sipId)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_sip_plan', action: 'restore', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', sip: data }, null, 2) }] };
+        }
+
         if (args.action === 'update_valuation') {
           if (args.currentValue === undefined) {
             return {
@@ -699,20 +788,25 @@ export function registerFinanceObligationsTools(server: McpServer) {
 
         if (args.action === 'log_installment') {
           const accountIdToUse = args.accountId || existing.account_id;
+          const instDate = args.date || dateIst;
+          const instMonthKey = instDate.substring(0, 7);
+          const instAmount = args.amount !== undefined ? Number(args.amount) : Number(existing.monthly_amount);
           let createdTx = null;
 
           if (accountIdToUse) {
+            const txCategoryId =
+              existing.category_id || (await resolveFallbackFinanceCategoryId(supabase, auth.userId, ['investments', 'other']));
             const txMeta = getInsertMetadata();
             const txPayload = {
               user_id: auth.userId,
               title: `SIP: ${existing.name}`,
               merchant_name: existing.platform,
-              amount: existing.monthly_amount,
+              amount: instAmount,
               type: 'investment',
-              category_id: existing.category_id,
+              category_id: txCategoryId,
               account_id: accountIdToUse,
-              date: dateIst,
-              month_key: monthKey,
+              date: instDate,
+              month_key: instMonthKey,
               linked_sip_id: existing.id,
               tags: ['sip_installment', existing.asset_class],
               notes: `Monthly SIP installment for ${existing.name}`,
@@ -723,12 +817,12 @@ export function registerFinanceObligationsTools(server: McpServer) {
             createdTx = tx;
 
             await applyAccountBalanceDelta(supabase, auth.userId, [
-              { accountId: accountIdToUse, delta: -existing.monthly_amount },
+              { accountId: accountIdToUse, delta: -instAmount },
             ]);
           }
 
-          const newTotalInvested = Math.round((Number(existing.total_invested || 0) + existing.monthly_amount) * 100) / 100;
-          const newCurrentValue = Math.round((Number(existing.current_value || 0) + existing.monthly_amount) * 100) / 100;
+          const newTotalInvested = Math.round((Number(existing.total_invested || 0) + instAmount) * 100) / 100;
+          const newCurrentValue = Math.round((Number(existing.current_value || 0) + instAmount) * 100) / 100;
 
           const meta = getUpdateMetadata(existing);
           const { data: updatedSip } = await supabase
@@ -736,7 +830,7 @@ export function registerFinanceObligationsTools(server: McpServer) {
             .update({
               total_invested: newTotalInvested,
               current_value: newCurrentValue,
-              last_invested_month_key: monthKey,
+              last_invested_month_key: instMonthKey,
               ...meta,
             })
             .eq('id', args.sipId)
@@ -771,7 +865,12 @@ export function registerFinanceObligationsTools(server: McpServer) {
           if (args.totalInvested !== undefined) updates.total_invested = args.totalInvested;
           if (args.currentValue !== undefined) updates.current_value = args.currentValue;
           if (args.expectedReturnAnnual !== undefined) updates.expected_return_annual = args.expectedReturnAnnual;
+          if (args.startDate !== undefined) updates.start_date = args.startDate;
           if (args.accountId !== undefined) updates.account_id = args.accountId;
+          if (args.categoryId !== undefined) updates.category_id = args.categoryId;
+          if (args.isActive !== undefined) updates.is_active = args.isActive;
+          if (args.color !== undefined) updates.color = args.color;
+          if (args.notes !== undefined) updates.notes = args.notes;
 
           const meta = getUpdateMetadata(existing);
           const { data, error } = await supabase
@@ -815,9 +914,9 @@ export function registerFinanceObligationsTools(server: McpServer) {
     {
       title: 'Manage Monthly Commitments (Family/Personal Allowances)',
       description:
-        'List commitments, create monthly target obligations (parents allowance, house rent, etc.), log contributions (direct payments or offset expenses), or archive commitments.',
+        'List commitments, inspect monthly commitment ledger with rollover, create/update/archive/restore monthly obligations (parents allowance, house rent, etc.), or log contributions.',
       inputSchema: {
-        action: z.enum(['list', 'create', 'update', 'log_contribution', 'archive']).describe('Action to execute'),
+        action: z.enum(['list', 'get_ledger', 'create', 'update', 'log_contribution', 'archive', 'restore']).describe('Action to execute'),
         commitmentId: z.string().uuid().optional().describe('Commitment UUID'),
         title: z.string().min(1).max(100).optional().describe('Commitment title (e.g. Parents Support, Home Rent)'),
         recipientName: z.string().min(1).max(100).optional().describe('Recipient name (e.g. Mom & Dad, Landlord)'),
@@ -828,6 +927,12 @@ export function registerFinanceObligationsTools(server: McpServer) {
         contributionAmount: z.number().positive().optional().describe('Contribution amount in INR for log_contribution'),
         contributionType: z.enum(['direct_payment', 'offset_expense']).optional().default('direct_payment'),
         accountId: z.string().uuid().optional().describe('Account used for payment'),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Contribution date override (defaults to IST today)'),
+        monthKey: z.string().regex(/^\d{4}-\d{2}$/).optional().describe('Target month key (YYYY-MM) for get_ledger'),
+        isActive: z.boolean().optional(),
+        includeArchived: z.boolean().optional().default(false),
+        icon: z.string().optional(),
+        color: z.string().optional(),
         notes: z.string().optional(),
         confirm: z.boolean().optional().describe('Confirmation flag required for archive'),
       },
@@ -846,17 +951,48 @@ export function registerFinanceObligationsTools(server: McpServer) {
         if (!hasScope(auth, 'habitflow:finance:read')) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
-        const { data, error } = await supabase
+        let query = supabase
           .from('monthly_commitments')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null)
-          .order('due_day_of_month');
+          .eq('user_id', auth.userId);
+        if (!args.includeArchived) query = query.is('deleted_at', null);
+        const { data, error } = await query.order('due_day_of_month');
 
         if (error) {
           return { isError: true, content: [{ type: 'text', text: `Failed to fetch commitments: ${error.message}` }] };
         }
         return { content: [{ type: 'text', text: JSON.stringify({ count: (data || []).length, commitments: data }, null, 2) }] };
+      }
+
+      if (args.action === 'get_ledger') {
+        if (!hasScope(auth, 'habitflow:finance:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
+        }
+        if (!args.commitmentId) {
+          return { isError: true, content: [{ type: 'text', text: 'Validation Error: commitmentId is required for get_ledger.' }] };
+        }
+        const { data: commitment, error: cErr } = await supabase
+          .from('monthly_commitments')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .eq('id', args.commitmentId)
+          .single();
+        if (cErr || !commitment) {
+          return { isError: true, content: [{ type: 'text', text: `Commitment not found: ${args.commitmentId}` }] };
+        }
+        const { data: txs } = await supabase
+          .from('finance_transactions')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .eq('linked_commitment_id', commitment.id)
+          .is('deleted_at', null);
+        const targetMonth = args.monthKey || getIstMonthKey();
+        const ledger = calculateCommitmentLedger(
+          mapMonthlyCommitmentFromRow(commitment),
+          targetMonth,
+          (txs || []).map(mapFinanceTransactionFromRow)
+        );
+        return { content: [{ type: 'text', text: JSON.stringify({ monthKey: targetMonth, ledger }, null, 2) }] };
       }
 
       if (!hasScope(auth, 'habitflow:finance:write')) {
@@ -953,6 +1089,19 @@ export function registerFinanceObligationsTools(server: McpServer) {
           return { content: [{ type: 'text', text: JSON.stringify({ action: 'archived', commitment: data }, null, 2) }] };
         }
 
+        if (args.action === 'restore') {
+          const { data, error } = await supabase
+            .from('monthly_commitments')
+            .update({ is_active: true, deleted_at: null, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', args.commitmentId)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_monthly_commitment', action: 'restore', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', commitment: data }, null, 2) }] };
+        }
+
         if (args.action === 'log_contribution') {
           if (!args.contributionAmount || !args.accountId) {
             return {
@@ -967,6 +1116,10 @@ export function registerFinanceObligationsTools(server: McpServer) {
           }
 
           const amount = Number(args.contributionAmount);
+          const contribDate = args.date || dateIst;
+          const contribMonthKey = contribDate.substring(0, 7);
+          const txCategoryId =
+            existing.default_category_id || (await resolveFallbackFinanceCategoryId(supabase, auth.userId, ['family-support', 'other']));
           const txMeta = getInsertMetadata();
           const txPayload = {
             user_id: auth.userId,
@@ -974,9 +1127,10 @@ export function registerFinanceObligationsTools(server: McpServer) {
             merchant_name: existing.recipient_name,
             amount,
             type: 'expense',
+            category_id: txCategoryId,
             account_id: args.accountId,
-            date: dateIst,
-            month_key: monthKey,
+            date: contribDate,
+            month_key: contribMonthKey,
             linked_commitment_id: existing.id,
             commitment_contribution_type: args.contributionType || 'direct_payment',
             tags: ['commitment_contribution'],
@@ -999,7 +1153,7 @@ export function registerFinanceObligationsTools(server: McpServer) {
 
           const ledger = calculateCommitmentLedger(
             mapMonthlyCommitmentFromRow(existing),
-            monthKey,
+            contribMonthKey,
             (txs || []).map(mapFinanceTransactionFromRow)
           );
 
@@ -1031,6 +1185,10 @@ export function registerFinanceObligationsTools(server: McpServer) {
           if (args.autoRolloverOverpayment !== undefined) {
             updates.auto_rollover_overpayment = args.autoRolloverOverpayment;
           }
+          if (args.isActive !== undefined) updates.is_active = args.isActive;
+          if (args.icon !== undefined) updates.icon = args.icon;
+          if (args.color !== undefined) updates.color = args.color;
+          if (args.notes !== undefined) updates.notes = args.notes;
 
           const meta = getUpdateMetadata(existing);
           const { data, error } = await supabase

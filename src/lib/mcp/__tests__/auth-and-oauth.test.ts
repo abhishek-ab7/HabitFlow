@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { timingSafeCheck, hashToken, hasScope, create401Response, create403Response } from '../auth';
 import { verifyPkce, isPrivateOrReservedIp } from '../oauth';
-import { OAUTH_PRM_URL } from '../config';
+import { OAUTH_PRM_URL, ACCEPTED_MCP_RESOURCES, DEFAULT_ALLOWED_ORIGINS, MCP_BASE_URL } from '../config';
 import crypto from 'crypto';
 
 describe('MCP Authentication & PKCE Security', () => {
@@ -69,5 +69,16 @@ describe('MCP Authentication & PKCE Security', () => {
     expect(isPrivateOrReservedIp('8.8.8.8')).toBe(false);
     expect(isPrivateOrReservedIp('1.1.1.1')).toBe(false);
     expect(isPrivateOrReservedIp('76.76.21.21')).toBe(false);
+  });
+
+  it('accepts both habitflow.tech and legacy vercel.app domains in MCP resource & CORS configs', () => {
+    expect(MCP_BASE_URL).toBe('https://habitflow.tech');
+    expect(ACCEPTED_MCP_RESOURCES).toContain('https://habitflow.tech');
+    expect(ACCEPTED_MCP_RESOURCES).toContain('https://habitflow.tech/api/mcp');
+    expect(ACCEPTED_MCP_RESOURCES).toContain('https://habit-flow-ochre-two.vercel.app');
+    expect(ACCEPTED_MCP_RESOURCES).toContain('https://habit-flow-ochre-two.vercel.app/api/mcp');
+    expect(DEFAULT_ALLOWED_ORIGINS).toContain('https://habitflow.tech');
+    expect(DEFAULT_ALLOWED_ORIGINS).toContain('https://habit-flow-ochre-two.vercel.app');
+    expect(DEFAULT_ALLOWED_ORIGINS).toContain('https://gemini.google.com');
   });
 });

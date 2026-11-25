@@ -5,8 +5,10 @@ import { getSupabaseAdmin } from '../supabase-admin';
 import { getIstIsoDate } from '../config';
 import {
   getInsertMetadata,
+  getSoftDeleteMetadata,
   getUpdateMetadata,
   applyAccountBalanceDelta,
+  resolveFallbackFinanceCategoryId,
 } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
 import {
@@ -116,33 +118,63 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
     {
       title: 'Manage Credit Card Statement & Bill Payment',
       description:
-        'Pay credit card bills (with waterfall statement allocation and account balance transfers), reconcile a statement cycle total, or update notes.',
+        'List persisted statements, pay credit card bills (with waterfall statement allocation and account balance transfers), reconcile a statement cycle total, update statement fields/notes, soft-delete, or restore.',
       inputSchema: {
-        action: z.enum(['pay_bill', 'reconcile_statement', 'update_notes']).describe('Action to execute'),
-        cardAccountId: z.string().uuid().describe('Target Credit Card account UUID'),
+        action: z
+          .enum(['list_statements', 'pay_bill', 'reconcile_statement', 'update', 'update_notes', 'delete', 'restore'])
+          .describe('Action to execute'),
+        cardAccountId: z.string().uuid().optional().describe('Target Credit Card account UUID (required for all actions except list_statements across all cards)'),
         fromAccountId: z.string().uuid().optional().describe('Source Bank/UPI account UUID paying the bill (required for pay_bill)'),
         amount: z.number().positive().optional().describe('Payment amount in INR (required for pay_bill)'),
-        statementId: z.string().optional().describe('Optional specific statement ID being paid'),
-        cycleKey: z.string().regex(/^\d{4}-\d{2}$/).optional().describe('Statement cycle key (YYYY-MM) for reconcile'),
+        statementId: z.string().optional().describe('Specific statement ID (e.g. "<accountId>_YYYY-MM")'),
+        cycleKey: z.string().regex(/^\d{4}-\d{2}$/).optional().describe('Statement cycle key (YYYY-MM)'),
         billedTotal: z.number().min(0).optional().describe('Total amount billed from official bank statement'),
+        periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        carriedForwardAmount: z.number().min(0).optional(),
+        paidAmount: z.number().min(0).optional(),
+        remainingDue: z.number().min(0).optional(),
+        manualAdjustment: z.number().optional(),
+        status: z.enum(['billed', 'partial', 'paid', 'overdue']).optional(),
+        includeDeleted: z.boolean().optional().default(false),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Payment or reconcile date (defaults to IST today)'),
         notes: z.string().optional(),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
       },
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: false,
       },
     },
     async (args) => {
       const auth = getMcpAuthContext();
+      const supabase = getSupabaseAdmin();
+
+      if (args.action === 'list_statements') {
+        if (!hasScope(auth, 'habitflow:finance:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
+        }
+        let query = supabase.from('credit_card_statements').select('*').eq('user_id', auth.userId);
+        if (args.cardAccountId) query = query.eq('account_id', args.cardAccountId);
+        if (!args.includeDeleted) query = query.is('deleted_at', null);
+        const { data, error } = await query.order('period_end', { ascending: false });
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to list statements: ${error.message}` }] };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify({ count: (data || []).length, statements: data || [] }, null, 2) }] };
+      }
+
       if (!hasScope(auth, 'habitflow:finance:write')) {
         return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:write scope.' }] };
       }
+      if (!args.cardAccountId) {
+        return { isError: true, content: [{ type: 'text', text: 'Validation Error: cardAccountId is required.' }] };
+      }
 
       const start = Date.now();
-      const supabase = getSupabaseAdmin();
       const dateIst = args.date || getIstIsoDate();
 
       try {
@@ -185,6 +217,7 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
           const allocated = allocatePaymentToStatements(mappedStatements, paymentAmount, targetStatementId);
 
           // 1. Create transfer payment transaction
+          const categoryId = await resolveFallbackFinanceCategoryId(supabase, auth.userId, ['credit-card-payment', 'emis-debt-repayment', 'other']);
           const meta = getInsertMetadata();
           const paymentTx = {
             user_id: auth.userId,
@@ -192,6 +225,7 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
             merchant_name: cardAccount.name,
             amount: paymentAmount,
             type: 'transfer',
+            category_id: categoryId,
             account_id: args.fromAccountId,
             to_account_id: args.cardAccountId,
             date: dateIst,
@@ -462,6 +496,81 @@ export function registerFinanceCreditCardsTools(server: McpServer) {
               },
             ],
           };
+        }
+
+        if (args.action === 'update' || args.action === 'delete' || args.action === 'restore') {
+          const targetId = args.statementId || (args.cycleKey ? `${args.cardAccountId}_${args.cycleKey}` : null);
+          if (!targetId) {
+            return {
+              isError: true,
+              content: [{ type: 'text', text: `Validation Error: statementId or cycleKey is required for ${args.action}.` }],
+            };
+          }
+
+          const { data: existing, error: fetchErr } = await supabase
+            .from('credit_card_statements')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('account_id', args.cardAccountId)
+            .eq('id', targetId)
+            .single();
+
+          if (fetchErr || !existing) {
+            return { isError: true, content: [{ type: 'text', text: `Statement not found: ${targetId}` }] };
+          }
+
+          if (args.action === 'delete') {
+            if (!args.confirm) {
+              return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: Deleting statement requires confirm: true.' }] };
+            }
+            const { data, error } = await supabase
+              .from('credit_card_statements')
+              .update(getSoftDeleteMetadata(existing))
+              .eq('user_id', auth.userId)
+              .eq('id', existing.id)
+              .select()
+              .single();
+            if (error) throw error;
+            await logMcpToolInvocation(auth, { toolName: 'manage_credit_card_statement', action: 'delete', input: args, status: 'ok', durationMs: Date.now() - start });
+            return { content: [{ type: 'text', text: JSON.stringify({ action: 'deleted', statement: data }, null, 2) }] };
+          }
+
+          if (args.action === 'restore') {
+            const { data, error } = await supabase
+              .from('credit_card_statements')
+              .update({ deleted_at: null, ...getUpdateMetadata(existing) })
+              .eq('user_id', auth.userId)
+              .eq('id', existing.id)
+              .select()
+              .single();
+            if (error) throw error;
+            await logMcpToolInvocation(auth, { toolName: 'manage_credit_card_statement', action: 'restore', input: args, status: 'ok', durationMs: Date.now() - start });
+            return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', statement: data }, null, 2) }] };
+          }
+
+          // action === 'update'
+          const updates: Record<string, any> = {};
+          if (args.periodStart !== undefined) updates.period_start = args.periodStart;
+          if (args.periodEnd !== undefined) updates.period_end = args.periodEnd;
+          if (args.dueDate !== undefined) updates.due_date = args.dueDate;
+          if (args.carriedForwardAmount !== undefined) updates.carried_forward_amount = args.carriedForwardAmount;
+          if (args.paidAmount !== undefined) updates.paid_amount = args.paidAmount;
+          if (args.remainingDue !== undefined) updates.remaining_due = args.remainingDue;
+          if (args.manualAdjustment !== undefined) updates.manual_adjustment = args.manualAdjustment;
+          if (args.status !== undefined) updates.status = args.status;
+          if (args.notes !== undefined) updates.notes = args.notes;
+
+          const { data: updated, error: updErr } = await supabase
+            .from('credit_card_statements')
+            .update({ ...updates, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (updErr) throw updErr;
+
+          await logMcpToolInvocation(auth, { toolName: 'manage_credit_card_statement', action: 'update', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'updated', statement: updated }, null, 2) }] };
         }
 
         return { isError: true, content: [{ type: 'text', text: `Unknown action: ${args.action}` }] };

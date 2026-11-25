@@ -1,12 +1,26 @@
 /**
  * HabitFlow Universal MCP Server Configuration & Timezone Utilities
- * Canonical Production Base URL: https://habit-flow-ochre-two.vercel.app
+ * Canonical Production Base URL: https://habitflow.tech (with legacy Vercel alias supported)
  */
 
-export const MCP_BASE_URL = 'https://habit-flow-ochre-two.vercel.app';
+export const LEGACY_MCP_BASE_URL = 'https://habit-flow-ochre-two.vercel.app';
+export const MCP_BASE_URL = (process.env.NEXT_PUBLIC_APP_URL || 'https://habitflow.tech').replace(/\/$/, '');
 export const MCP_ENDPOINT = `${MCP_BASE_URL}/api/mcp`;
 export const OAUTH_PRM_URL = `${MCP_BASE_URL}/.well-known/oauth-protected-resource`;
 export const OAUTH_AS_URL = `${MCP_BASE_URL}/.well-known/oauth-authorization-server`;
+
+export const ACCEPTED_MCP_RESOURCES = Array.from(
+  new Set([
+    MCP_BASE_URL,
+    MCP_ENDPOINT,
+    'https://habitflow.tech',
+    'https://habitflow.tech/api/mcp',
+    'https://www.habitflow.tech',
+    'https://www.habitflow.tech/api/mcp',
+    LEGACY_MCP_BASE_URL,
+    `${LEGACY_MCP_BASE_URL}/api/mcp`,
+  ])
+);
 
 export const MCP_SCOPES = [
   'habitflow:read',
@@ -18,16 +32,22 @@ export const MCP_SCOPES = [
 export type McpScope = (typeof MCP_SCOPES)[number];
 
 export const SCOPE_DESCRIPTIONS: Record<McpScope, string> = {
-  'habitflow:read': 'Read habits, streaks, tasks, goals, milestones, mood logs, and user settings.',
-  'habitflow:write': 'Create, edit, complete, and soft-delete/archive habits, tasks, goals, milestones, mood, and settings.',
-  'habitflow:finance:read': 'Read finance accounts, balances, budgets, categories, transactions, credit cards, and friend ledgers.',
-  'habitflow:finance:write': 'Create, edit, pay, split, reconcile, and soft-delete/archive transactions, statements, and financial obligations.',
+  'habitflow:read':
+    'Read habits, completions, stacks, tasks, goals, milestones, mood logs, fitness telemetry (profile, body metrics, meals, workouts, supplements), and user settings.',
+  'habitflow:write':
+    'Create, edit, complete, delete, and restore habits, completions, stacks, tasks, goals, milestones, mood logs, fitness logs/meals/workouts/supplements, and settings.',
+  'habitflow:finance:read':
+    'Read finance accounts, balances, budgets, categories, rules, net worth snapshots, transactions, credit cards, obligations, and friend ledgers.',
+  'habitflow:finance:write':
+    'Create, edit, pay, split, reconcile, delete/archive, and restore transactions, statements, friend debts/installments, budgets, and financial obligations.',
 };
 
 /**
  * Default CORS allowed origins. Additional comma-separated origins can be supplied via HABITFLOW_MCP_ALLOWED_ORIGINS.
  */
 export const DEFAULT_ALLOWED_ORIGINS = [
+  'https://habitflow.tech',
+  'https://www.habitflow.tech',
   'https://habit-flow-ochre-two.vercel.app',
   'https://gemini.google.com',
   'https://claude.ai',

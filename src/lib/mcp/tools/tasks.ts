@@ -148,6 +148,7 @@ export function registerTasksTools(server: McpServer) {
           .record(z.string(), z.any())
           .optional()
           .describe('Custom metadata payload (supports MIT pinning: { isMitForDate: "YYYY-MM-DD", mitRank: 1|2|3 })'),
+        restoreSubtasks: z.boolean().optional().default(false).describe('When restoring, also restore archived descendant subtasks'),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
       annotations: {
@@ -247,21 +248,29 @@ export function registerTasksTools(server: McpServer) {
             };
           }
 
-          // Fetch all child subtasks recursively or directly
-          const { data: subtasks } = await supabase
-            .from('tasks')
-            .select('id, generation_counter')
-            .eq('user_id', auth.userId)
-            .eq('parent_task_id', args.taskId);
-
+          // Breadth-first cascade to all descendant subtasks (depths 1-3)
           const affectedSubtaskIds: string[] = [];
-          for (const sub of subtasks || []) {
-            const subMeta = getUpdateMetadata(sub);
-            await supabase
+          let frontierIds: string[] = [args.taskId];
+          while (frontierIds.length > 0) {
+            const { data: children } = await supabase
               .from('tasks')
-              .update({ status: 'archived', ...subMeta })
-              .eq('id', sub.id);
-            affectedSubtaskIds.push(sub.id);
+              .select('id, generation_counter')
+              .eq('user_id', auth.userId)
+              .in('parent_task_id', frontierIds);
+
+            const nextFrontier: string[] = [];
+            for (const sub of children || []) {
+              if (affectedSubtaskIds.includes(sub.id)) continue;
+              const subMeta = getUpdateMetadata(sub);
+              await supabase
+                .from('tasks')
+                .update({ status: 'archived', ...subMeta })
+                .eq('user_id', auth.userId)
+                .eq('id', sub.id);
+              affectedSubtaskIds.push(sub.id);
+              nextFrontier.push(sub.id);
+            }
+            frontierIds = nextFrontier;
           }
 
           const meta = getUpdateMetadata(existing);
@@ -294,6 +303,34 @@ export function registerTasksTools(server: McpServer) {
         }
 
         if (args.action === 'restore') {
+          const restoredSubtaskIds: string[] = [];
+          if (args.restoreSubtasks) {
+            let frontierIds: string[] = [args.taskId];
+            while (frontierIds.length > 0) {
+              const { data: children } = await supabase
+                .from('tasks')
+                .select('id, status, generation_counter')
+                .eq('user_id', auth.userId)
+                .in('parent_task_id', frontierIds);
+
+              const nextFrontier: string[] = [];
+              for (const sub of children || []) {
+                if (restoredSubtaskIds.includes(sub.id)) continue;
+                if (sub.status === 'archived') {
+                  const subMeta = getUpdateMetadata(sub);
+                  await supabase
+                    .from('tasks')
+                    .update({ status: 'todo', ...subMeta })
+                    .eq('user_id', auth.userId)
+                    .eq('id', sub.id);
+                  restoredSubtaskIds.push(sub.id);
+                }
+                nextFrontier.push(sub.id);
+              }
+              frontierIds = nextFrontier;
+            }
+          }
+
           const meta = getUpdateMetadata(existing);
           const { data, error } = await supabase
             .from('tasks')
@@ -313,7 +350,14 @@ export function registerTasksTools(server: McpServer) {
             durationMs: Date.now() - start,
           });
 
-          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', task: data }, null, 2) }] };
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ action: 'restored', task: data, restoredSubtaskIds }, null, 2),
+              },
+            ],
+          };
         }
 
         if (args.action === 'toggle_status') {

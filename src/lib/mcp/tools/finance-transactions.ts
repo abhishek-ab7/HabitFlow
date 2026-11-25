@@ -10,6 +10,7 @@ import {
   applyAccountBalanceDelta,
   calculateTransactionBalanceDeltas,
   calculateReversedTransactionBalanceDeltas,
+  resolveFallbackFinanceCategoryId,
 } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
 import { resolveTransactionCycle } from '@/lib/finance/credit-card-cycles';
@@ -34,6 +35,7 @@ export function registerFinanceTransactionsTools(server: McpServer) {
         needsReview: z.boolean().optional(),
         splitGroupId: z.string().uuid().optional(),
         statementCycleKey: z.string().optional(),
+        includeDeleted: z.boolean().optional().default(false).describe('Include soft-deleted transactions'),
         limit: z.number().int().min(1).max(100).optional().default(50),
         offset: z.number().int().min(0).optional().default(0),
       },
@@ -54,8 +56,10 @@ export function registerFinanceTransactionsTools(server: McpServer) {
       let query = supabase
         .from('finance_transactions')
         .select('*', { count: 'exact' })
-        .eq('user_id', auth.userId)
-        .is('deleted_at', null);
+        .eq('user_id', auth.userId);
+      if (!args.includeDeleted) {
+        query = query.is('deleted_at', null);
+      }
 
       if (args.startDate) query = query.gte('date', args.startDate);
       if (args.endDate) query = query.lte('date', args.endDate);
@@ -112,12 +116,12 @@ export function registerFinanceTransactionsTools(server: McpServer) {
     {
       title: 'Manage Transaction',
       description:
-        'Create, update, delete (soft-delete), resolve review flag, or split an expense transaction with a friend. Automatically updates affected account balances and credit card cycles.',
+        'Create, update, delete (soft-delete), restore, resolve review flag, or split an expense transaction with a friend. Automatically updates affected account balances and credit card cycles.',
       inputSchema: {
         action: z
-          .enum(['create', 'update', 'delete', 'split_with_friend', 'resolve_review'])
+          .enum(['create', 'update', 'delete', 'restore', 'split_with_friend', 'resolve_review'])
           .describe('Action to execute'),
-        transactionId: z.string().uuid().optional().describe('Transaction UUID (required for update, delete, split, resolve)'),
+        transactionId: z.string().uuid().optional().describe('Transaction UUID (required for update, delete, restore, split, resolve)'),
         title: z.string().min(1).max(255).optional().describe('Transaction title or description'),
         merchantName: z.string().optional().describe('Clean merchant/store name'),
         amount: z.number().positive().optional().describe('Transaction amount in INR'),
@@ -130,9 +134,15 @@ export function registerFinanceTransactionsTools(server: McpServer) {
         notes: z.string().optional(),
         tags: z.array(z.string()).optional(),
         isRecurring: z.boolean().optional(),
+        recurrenceRule: z.string().nullable().optional(),
         needsReview: z.boolean().optional(),
         linkedCommitmentId: z.string().uuid().nullable().optional(),
         commitmentContributionType: z.enum(['direct_payment', 'offset_expense']).nullable().optional(),
+        linkedDebtId: z.string().uuid().nullable().optional(),
+        linkedEmiId: z.string().uuid().nullable().optional(),
+        linkedSipId: z.string().uuid().nullable().optional(),
+        isCreditCardPayment: z.boolean().optional(),
+        paidStatementId: z.string().nullable().optional(),
         // Split with friend fields
         friendName: z.string().optional().describe('Friend name for split'),
         friendShareAmount: z.number().positive().optional().describe('Amount friend owes for their share'),
@@ -187,6 +197,10 @@ export function registerFinanceTransactionsTools(server: McpServer) {
             statementCycleKey = resolveTransactionCycle(txDate, billingDay, dueDay);
           }
 
+          const categoryId =
+            args.categoryId ||
+            (await resolveFallbackFinanceCategoryId(supabase, auth.userId, ['other', 'miscellaneous', 'food-dining']));
+
           const meta = getInsertMetadata();
           const newTx = {
             user_id: auth.userId,
@@ -195,7 +209,7 @@ export function registerFinanceTransactionsTools(server: McpServer) {
             raw_merchant: args.merchantName || null,
             amount: Number(args.amount),
             type: args.type,
-            category_id: args.categoryId || null,
+            category_id: categoryId,
             subcategory: args.subcategory || null,
             account_id: args.accountId,
             to_account_id: args.type === 'transfer' ? args.toAccountId || null : null,
@@ -204,9 +218,15 @@ export function registerFinanceTransactionsTools(server: McpServer) {
             notes: args.notes || null,
             tags: args.tags || [],
             is_recurring: args.isRecurring ?? false,
+            recurrence_rule: args.recurrenceRule || null,
             needs_review: args.needsReview ?? false,
             linked_commitment_id: args.linkedCommitmentId || null,
             commitment_contribution_type: args.commitmentContributionType || null,
+            linked_debt_id: args.linkedDebtId || null,
+            linked_emi_id: args.linkedEmiId || null,
+            linked_sip_id: args.linkedSipId || null,
+            is_credit_card_payment: args.isCreditCardPayment ?? false,
+            paid_statement_id: args.paidStatementId || null,
             statement_cycle_key: statementCycleKey,
             ...meta,
           };
@@ -243,6 +263,56 @@ export function registerFinanceTransactionsTools(server: McpServer) {
 
         if (!args.transactionId) {
           return { isError: true, content: [{ type: 'text', text: 'Validation Error: transactionId is required.' }] };
+        }
+
+        if (args.action === 'restore') {
+          const { data: deletedTx, error: delFetchErr } = await supabase
+            .from('finance_transactions')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.transactionId)
+            .maybeSingle();
+
+          if (delFetchErr || !deletedTx) {
+            return { isError: true, content: [{ type: 'text', text: `Transaction not found: ${args.transactionId}` }] };
+          }
+          if (!deletedTx.deleted_at) {
+            return { content: [{ type: 'text', text: JSON.stringify({ action: 'already_active', transaction: deletedTx }, null, 2) }] };
+          }
+
+          const restoreDeltas = calculateTransactionBalanceDeltas({
+            amount: deletedTx.amount,
+            type: deletedTx.type,
+            account_id: deletedTx.account_id,
+            to_account_id: deletedTx.to_account_id,
+          });
+          const updatedAccounts = await applyAccountBalanceDelta(supabase, auth.userId, restoreDeltas);
+
+          const meta = getUpdateMetadata(deletedTx);
+          const { data, error } = await supabase
+            .from('finance_transactions')
+            .update({ deleted_at: null, ...meta })
+            .eq('user_id', auth.userId)
+            .eq('id', args.transactionId)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_transaction',
+            action: 'restore',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ action: 'restored', transaction: data, updatedAccounts }, null, 2),
+              },
+            ],
+          };
         }
 
         const { data: existing, error: fetchErr } = await supabase
@@ -517,11 +587,17 @@ export function registerFinanceTransactionsTools(server: McpServer) {
           if (args.notes !== undefined) updates.notes = args.notes;
           if (args.tags !== undefined) updates.tags = args.tags;
           if (args.isRecurring !== undefined) updates.is_recurring = args.isRecurring;
+          if (args.recurrenceRule !== undefined) updates.recurrence_rule = args.recurrenceRule;
           if (args.needsReview !== undefined) updates.needs_review = args.needsReview;
           if (args.linkedCommitmentId !== undefined) updates.linked_commitment_id = args.linkedCommitmentId;
           if (args.commitmentContributionType !== undefined) {
             updates.commitment_contribution_type = args.commitmentContributionType;
           }
+          if (args.linkedDebtId !== undefined) updates.linked_debt_id = args.linkedDebtId;
+          if (args.linkedEmiId !== undefined) updates.linked_emi_id = args.linkedEmiId;
+          if (args.linkedSipId !== undefined) updates.linked_sip_id = args.linkedSipId;
+          if (args.isCreditCardPayment !== undefined) updates.is_credit_card_payment = args.isCreditCardPayment;
+          if (args.paidStatementId !== undefined) updates.paid_statement_id = args.paidStatementId;
 
           let updatedAccounts: any[] = [];
           const amountChanged = args.amount !== undefined && args.amount !== existing.amount;
@@ -562,6 +638,25 @@ export function registerFinanceTransactionsTools(server: McpServer) {
           if (args.date !== undefined) {
             updates.date = args.date;
             updates.month_key = args.date.substring(0, 7);
+          }
+
+          if (args.date !== undefined || accountChanged) {
+            const targetAccId = args.accountId ?? existing.account_id;
+            const targetDate = args.date ?? existing.date;
+            const { data: targetAcc } = await supabase
+              .from('finance_accounts')
+              .select('type, billing_day, statement_day, due_day')
+              .eq('user_id', auth.userId)
+              .eq('id', targetAccId)
+              .maybeSingle();
+
+            if (targetAcc?.type === 'credit_card') {
+              const billingDay = targetAcc.billing_day || targetAcc.statement_day || 15;
+              const dueDay = targetAcc.due_day || 5;
+              updates.statement_cycle_key = resolveTransactionCycle(targetDate, billingDay, dueDay);
+            } else {
+              updates.statement_cycle_key = null;
+            }
           }
 
           const meta = getUpdateMetadata(existing);

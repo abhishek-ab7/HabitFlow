@@ -156,6 +156,8 @@ export function registerHabitsTools(server: McpServer) {
           .nullable()
           .optional()
           .describe('Daily routine anchor time-block'),
+        difficulty: z.enum(['easy', 'medium', 'hard']).optional().describe('Habit difficulty level'),
+        metadata: z.record(z.string(), z.any()).optional().describe('Custom habit metadata JSON'),
         order_index: z.number().int().optional(),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
@@ -200,6 +202,8 @@ export function registerHabitsTools(server: McpServer) {
             unit: args.unit || null,
             polarity: args.polarity || 'build',
             anchor_block: args.anchor_block ?? null,
+            difficulty: args.difficulty || 'medium',
+            metadata: args.metadata || {},
             order_index: args.order_index ?? 0,
             is_archived: false,
             ...meta,
@@ -311,6 +315,8 @@ export function registerHabitsTools(server: McpServer) {
           if (args.unit !== undefined) updates.unit = args.unit;
           if (args.polarity !== undefined) updates.polarity = args.polarity;
           if (args.anchor_block !== undefined) updates.anchor_block = args.anchor_block;
+          if (args.difficulty !== undefined) updates.difficulty = args.difficulty;
+          if (args.metadata !== undefined) updates.metadata = args.metadata;
           if (args.order_index !== undefined) updates.order_index = args.order_index;
 
           const meta = getUpdateMetadata(existing);
@@ -490,6 +496,444 @@ export function registerHabitsTools(server: McpServer) {
           durationMs: Date.now() - start,
         });
         return { isError: true, content: [{ type: 'text', text: `Failed to log completion: ${err.message}` }] };
+      }
+    }
+  );
+
+  // manage_habit_completions — full CRUD for completions (list, log/upsert, delete)
+  server.registerTool(
+    'manage_habit_completions',
+    {
+      title: 'Manage Habit Completions',
+      description:
+        'List historical habit completions/rest/frozen entries, upsert a completion entry, or delete an accidental completion entry (delete requires confirm: true).',
+      inputSchema: {
+        action: z.enum(['list', 'log', 'delete']).describe('Action to execute'),
+        completionId: z.string().uuid().optional().describe('Completion UUID (optional for delete)'),
+        habitId: z.string().uuid().optional().describe('Target habit UUID'),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Target date (YYYY-MM-DD, defaults to IST today for log/delete)'),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter start date (YYYY-MM-DD) for list'),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter end date (YYYY-MM-DD) for list'),
+        status: z.enum(['completed', 'uncompleted', 'rest', 'frozen']).optional().describe('Filter (list) or target status (log)'),
+        value: z.number().optional().describe('Quantitative value logged'),
+        restReason: z.string().optional(),
+        notes: z.string().optional(),
+        limit: z.number().int().min(1).max(200).optional().default(100),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async (args) => {
+      const auth = getMcpAuthContext();
+      const supabase = getSupabaseAdmin();
+
+      if (args.action === 'list') {
+        if (!hasScope(auth, 'habitflow:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:read scope.' }] };
+        }
+
+        let query = supabase.from('completions').select('*').eq('user_id', auth.userId);
+        if (args.habitId) query = query.eq('habit_id', args.habitId);
+        if (args.date) query = query.eq('date', args.date);
+        if (args.startDate) query = query.gte('date', args.startDate);
+        if (args.endDate) query = query.lte('date', args.endDate);
+        if (args.status) query = query.eq('status', args.status);
+        query = query.order('date', { ascending: false }).limit(args.limit || 100);
+
+        const { data, error } = await query;
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to fetch completions: ${error.message}` }] };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ count: (data || []).length, completions: data || [] }, null, 2) }],
+        };
+      }
+
+      if (!hasScope(auth, 'habitflow:write')) {
+        return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:write scope.' }] };
+      }
+
+      const start = Date.now();
+      const dateIst = args.date || getIstIsoDate();
+
+      try {
+        if (args.action === 'delete') {
+          if (!args.confirm) {
+            return {
+              isError: true,
+              content: [{ type: 'text', text: 'Confirmation Required: Deleting a completion requires confirm: true.' }],
+            };
+          }
+
+          let existing: Record<string, any> | null = null;
+          if (args.completionId) {
+            const { data } = await supabase
+              .from('completions')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('id', args.completionId)
+              .maybeSingle();
+            existing = data;
+          } else if (args.habitId && args.date) {
+            const { data } = await supabase
+              .from('completions')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('habit_id', args.habitId)
+              .eq('date', args.date)
+              .maybeSingle();
+            existing = data;
+          } else {
+            return {
+              isError: true,
+              content: [{ type: 'text', text: 'Validation Error: Provide completionId or both habitId and date for delete.' }],
+            };
+          }
+
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: 'Completion record not found.' }] };
+          }
+
+          const { error: delErr } = await supabase
+            .from('completions')
+            .delete()
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id);
+          if (delErr) throw delErr;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_habit_completions',
+            action: 'delete',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ action: 'deleted', deletedCompletion: existing }, null, 2) }],
+          };
+        }
+
+        // action === 'log'
+        if (!args.habitId || !args.status) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: 'Validation Error: habitId and status are required for log.' }],
+          };
+        }
+
+        const { data: habit, error: habitErr } = await supabase
+          .from('habits')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .eq('id', args.habitId)
+          .single();
+
+        if (habitErr || !habit) {
+          return { isError: true, content: [{ type: 'text', text: `Habit not found: ${args.habitId}` }] };
+        }
+
+        const isCompleted = args.status === 'completed';
+        const isSkipped = args.status === 'rest' || args.status === 'frozen';
+
+        const { data: existing } = await supabase
+          .from('completions')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .eq('habit_id', args.habitId)
+          .eq('date', dateIst)
+          .maybeSingle();
+
+        let savedCompletion = null;
+        if (existing) {
+          const meta = getUpdateMetadata(existing);
+          const { data, error } = await supabase
+            .from('completions')
+            .update({
+              completed: isCompleted,
+              skipped: isSkipped,
+              status: args.status,
+              rest_reason: args.restReason !== undefined ? args.restReason : existing.rest_reason,
+              notes: args.notes !== undefined ? args.notes : existing.notes,
+              value: args.value !== undefined ? args.value : existing.value,
+              ...meta,
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          savedCompletion = data;
+        } else {
+          const meta = getInsertMetadata();
+          const { data, error } = await supabase
+            .from('completions')
+            .insert({
+              user_id: auth.userId,
+              habit_id: args.habitId,
+              date: dateIst,
+              completed: isCompleted,
+              skipped: isSkipped,
+              status: args.status,
+              rest_reason: args.restReason || null,
+              notes: args.notes || null,
+              value: args.value ?? null,
+              ...meta,
+            })
+            .select()
+            .single();
+          if (error) throw error;
+          savedCompletion = data;
+        }
+
+        await logMcpToolInvocation(auth, {
+          toolName: 'manage_habit_completions',
+          action: 'log',
+          input: args,
+          status: 'ok',
+          durationMs: Date.now() - start,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ action: existing ? 'updated' : 'created', dateIst, completion: savedCompletion }, null, 2),
+            },
+          ],
+        };
+      } catch (err: any) {
+        await logMcpToolInvocation(auth, {
+          toolName: 'manage_habit_completions',
+          action: args.action,
+          input: args,
+          status: 'error',
+          errorMessage: err.message,
+          durationMs: Date.now() - start,
+        });
+        return { isError: true, content: [{ type: 'text', text: `Failed to manage habit completions: ${err.message}` }] };
+      }
+    }
+  );
+
+  // manage_habit_stacks — full CRUD for habit_stacks
+  server.registerTool(
+    'manage_habit_stacks',
+    {
+      title: 'Manage Habit Stacks',
+      description:
+        'List, create, update, activate/deactivate, or delete Habit Stacks (chained habit routines triggered after an anchor habit).',
+      inputSchema: {
+        action: z.enum(['list', 'create', 'update', 'activate', 'delete']).describe('Action to perform'),
+        stackId: z.string().uuid().optional().describe('Habit Stack UUID (required for update, activate, delete)'),
+        activeOnly: z.boolean().optional().default(false).describe('Filter only active stacks for list'),
+        name: z.string().min(1).max(160).optional().describe('Stack name'),
+        description: z.string().nullable().optional(),
+        triggerHabitId: z.string().uuid().nullable().optional().describe('Trigger/anchor habit UUID'),
+        stackedHabitIds: z.array(z.string().uuid()).optional().describe('Ordered UUIDs of stacked habits'),
+        suggestedOrder: z.array(z.string()).optional(),
+        aiReasoning: z.string().nullable().optional(),
+        difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+        estimatedTimeMinutes: z.number().int().min(1).max(600).optional(),
+        expectedSuccessRate: z.number().int().min(0).max(100).optional(),
+        isActive: z.boolean().optional(),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async (args) => {
+      const auth = getMcpAuthContext();
+      const supabase = getSupabaseAdmin();
+
+      if (args.action === 'list') {
+        if (!hasScope(auth, 'habitflow:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:read scope.' }] };
+        }
+
+        let query = supabase.from('habit_stacks').select('*').eq('user_id', auth.userId);
+        if (args.activeOnly) {
+          query = query.eq('is_active', true);
+        }
+        query = query.order('created_at', { ascending: false });
+
+        const { data, error } = await query;
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to fetch habit stacks: ${error.message}` }] };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ count: (data || []).length, stacks: data || [] }, null, 2) }],
+        };
+      }
+
+      if (!hasScope(auth, 'habitflow:write')) {
+        return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:write scope.' }] };
+      }
+
+      const start = Date.now();
+      const nowIso = new Date().toISOString();
+
+      try {
+        if (args.action === 'create') {
+          if (!args.name || !args.stackedHabitIds || args.stackedHabitIds.length === 0) {
+            return {
+              isError: true,
+              content: [{ type: 'text', text: 'Validation Error: name and stackedHabitIds (non-empty) are required.' }],
+            };
+          }
+
+          const { data, error } = await supabase
+            .from('habit_stacks')
+            .insert({
+              id: crypto.randomUUID(),
+              user_id: auth.userId,
+              name: args.name.trim(),
+              description: args.description ?? null,
+              trigger_habit_id: args.triggerHabitId ?? null,
+              stacked_habit_ids: args.stackedHabitIds,
+              suggested_order: args.suggestedOrder ?? null,
+              ai_reasoning: args.aiReasoning ?? null,
+              difficulty: args.difficulty ?? 'medium',
+              estimated_time_minutes: args.estimatedTimeMinutes ?? null,
+              expected_success_rate: args.expectedSuccessRate ?? null,
+              is_active: args.isActive ?? false,
+              is_ai_generated: false,
+              activation_count: args.isActive ? 1 : 0,
+              last_activated_at: args.isActive ? nowIso : null,
+              created_at: nowIso,
+              updated_at: nowIso,
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_habit_stacks',
+            action: 'create',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'created', stack: data }, null, 2) }] };
+        }
+
+        if (!args.stackId) {
+          return { isError: true, content: [{ type: 'text', text: 'Validation Error: stackId is required.' }] };
+        }
+
+        const { data: existing, error: fetchErr } = await supabase
+          .from('habit_stacks')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .eq('id', args.stackId)
+          .single();
+
+        if (fetchErr || !existing) {
+          return { isError: true, content: [{ type: 'text', text: `Habit stack not found: ${args.stackId}` }] };
+        }
+
+        if (args.action === 'delete') {
+          if (!args.confirm) {
+            return {
+              isError: true,
+              content: [{ type: 'text', text: 'Confirmation Required: Deleting a habit stack requires confirm: true.' }],
+            };
+          }
+
+          const { error: delErr } = await supabase
+            .from('habit_stacks')
+            .delete()
+            .eq('user_id', auth.userId)
+            .eq('id', args.stackId);
+          if (delErr) throw delErr;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_habit_stacks',
+            action: 'delete',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ action: 'deleted', stackId: args.stackId }, null, 2) }],
+          };
+        }
+
+        if (args.action === 'activate') {
+          const nextActive = args.isActive !== undefined ? args.isActive : !existing.is_active;
+          const { data, error } = await supabase
+            .from('habit_stacks')
+            .update({
+              is_active: nextActive,
+              activation_count: nextActive ? Number(existing.activation_count || 0) + 1 : existing.activation_count,
+              last_activated_at: nextActive ? nowIso : existing.last_activated_at,
+              updated_at: nowIso,
+            })
+            .eq('user_id', auth.userId)
+            .eq('id', args.stackId)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'manage_habit_stacks',
+            action: 'activate',
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'activated', stack: data }, null, 2) }] };
+        }
+
+        // action === 'update'
+        const updates: Record<string, any> = { updated_at: nowIso };
+        if (args.name !== undefined) updates.name = args.name.trim();
+        if (args.description !== undefined) updates.description = args.description;
+        if (args.triggerHabitId !== undefined) updates.trigger_habit_id = args.triggerHabitId;
+        if (args.stackedHabitIds !== undefined) updates.stacked_habit_ids = args.stackedHabitIds;
+        if (args.suggestedOrder !== undefined) updates.suggested_order = args.suggestedOrder;
+        if (args.aiReasoning !== undefined) updates.ai_reasoning = args.aiReasoning;
+        if (args.difficulty !== undefined) updates.difficulty = args.difficulty;
+        if (args.estimatedTimeMinutes !== undefined) updates.estimated_time_minutes = args.estimatedTimeMinutes;
+        if (args.expectedSuccessRate !== undefined) updates.expected_success_rate = args.expectedSuccessRate;
+        if (args.isActive !== undefined) updates.is_active = args.isActive;
+
+        const { data, error } = await supabase
+          .from('habit_stacks')
+          .update(updates)
+          .eq('user_id', auth.userId)
+          .eq('id', args.stackId)
+          .select()
+          .single();
+        if (error) throw error;
+
+        await logMcpToolInvocation(auth, {
+          toolName: 'manage_habit_stacks',
+          action: 'update',
+          input: args,
+          status: 'ok',
+          durationMs: Date.now() - start,
+        });
+        return { content: [{ type: 'text', text: JSON.stringify({ action: 'updated', stack: data }, null, 2) }] };
+      } catch (err: any) {
+        await logMcpToolInvocation(auth, {
+          toolName: 'manage_habit_stacks',
+          action: args.action,
+          input: args,
+          status: 'error',
+          errorMessage: err.message,
+          durationMs: Date.now() - start,
+        });
+        return { isError: true, content: [{ type: 'text', text: `Failed to manage habit stack: ${err.message}` }] };
       }
     }
   );

@@ -4,6 +4,7 @@ import { getMcpAuthContext, hasScope } from '../auth';
 import { getSupabaseAdmin } from '../supabase-admin';
 import { getIstIsoDate } from '../config';
 import {
+  createLinkedFinanceExpense,
   getInsertMetadata,
   getSoftDeleteMetadata,
   getUpdateMetadata,
@@ -45,6 +46,215 @@ const EXERCISE_SCHEMA = z.object({
 });
 
 export function registerFitnessTools(server: McpServer) {
+  // manage_fitness_profile — full CRUD for fitness_profiles
+  server.registerTool(
+    'manage_fitness_profile',
+    {
+      title: 'Manage Fitness & Nutrition Profile',
+      description:
+        'Get, create/update (upsert), soft-delete, or restore the user fitness profile (calorie/protein/macro targets, weight & waist goals, steps/water/sleep targets, gym schedule, and low-energy mode ceilings).',
+      inputSchema: {
+        action: z.enum(['get', 'upsert', 'delete', 'restore']).describe('Profile action'),
+        includeDeleted: z.boolean().optional().default(false).describe('Include soft-deleted profile when getting'),
+        heightCm: z.number().min(80).max(260).nullable().optional(),
+        currentWeightKg: z.number().min(20).max(350).nullable().optional(),
+        targetWeightKg: z.number().min(20).max(350).nullable().optional(),
+        startingWeightKg: z.number().min(20).max(350).nullable().optional(),
+        targetWaistInches: z.number().min(15).max(80).nullable().optional(),
+        calorieTarget: z.number().int().min(800).max(8000).optional(),
+        proteinTargetG: z.number().int().min(20).max(500).optional(),
+        carbsTargetG: z.number().int().min(0).max(1000).nullable().optional(),
+        fatTargetG: z.number().int().min(0).max(400).nullable().optional(),
+        waterTargetMl: z.number().int().min(500).max(12000).optional(),
+        stepsTarget: z.number().int().min(1000).max(50000).optional(),
+        sleepTargetHours: z.number().min(3).max(16).optional(),
+        activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active', 'very_active']).optional(),
+        goalType: z.enum(['fat_loss', 'muscle_gain', 'recomp', 'maintenance']).optional(),
+        dietPreference: z.enum(['non_veg', 'eggetarian', 'veg', 'vegan']).optional(),
+        gymScheduleDays: z.array(z.number().int().min(0).max(6)).optional(),
+        lowEnergyCalorieCeiling: z.number().int().min(800).max(6000).nullable().optional(),
+        lowEnergyStepsTarget: z.number().int().min(500).max(20000).optional(),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    async (args) => {
+      const auth = getMcpAuthContext();
+      const supabase = getSupabaseAdmin();
+
+      if (args.action === 'get') {
+        if (!hasScope(auth, 'habitflow:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:read scope.' }] };
+        }
+        let query = supabase.from('fitness_profiles').select('*').eq('user_id', auth.userId);
+        if (!args.includeDeleted) query = query.is('deleted_at', null);
+        const { data, error } = await query.maybeSingle();
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to fetch fitness profile: ${error.message}` }] };
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                { profile: data ? mapFitnessProfileFromRow(data) : null },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      if (!hasScope(auth, 'habitflow:write')) {
+        return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:write scope.' }] };
+      }
+
+      const start = Date.now();
+      try {
+        const { data: existing, error: fetchErr } = await supabase
+          .from('fitness_profiles')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .maybeSingle();
+        if (fetchErr) throw fetchErr;
+
+        if (args.action === 'delete') {
+          if (!args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: delete requires confirm: true.' }] };
+          }
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: 'Fitness profile not found.' }] };
+          }
+          const { data, error } = await supabase
+            .from('fitness_profiles')
+            .update(getSoftDeleteMetadata(existing))
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_fitness_profile', action: 'delete', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'deleted', profile: mapFitnessProfileFromRow(data) }, null, 2) }] };
+        }
+
+        if (args.action === 'restore') {
+          if (!existing) {
+            return { isError: true, content: [{ type: 'text', text: 'Fitness profile not found.' }] };
+          }
+          const { data, error } = await supabase
+            .from('fitness_profiles')
+            .update({ deleted_at: null, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_fitness_profile', action: 'restore', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'restored', profile: mapFitnessProfileFromRow(data) }, null, 2) }] };
+        }
+
+        // action === 'upsert'
+        let savedRow: Record<string, any>;
+        if (existing) {
+          const updates: Record<string, any> = { deleted_at: null };
+          if (args.heightCm !== undefined) updates.height_cm = args.heightCm;
+          if (args.currentWeightKg !== undefined) updates.current_weight_kg = args.currentWeightKg;
+          if (args.targetWeightKg !== undefined) updates.target_weight_kg = args.targetWeightKg;
+          if (args.startingWeightKg !== undefined) updates.starting_weight_kg = args.startingWeightKg;
+          if (args.targetWaistInches !== undefined) updates.target_waist_inches = args.targetWaistInches;
+          if (args.calorieTarget !== undefined) updates.calorie_target = args.calorieTarget;
+          if (args.proteinTargetG !== undefined) updates.protein_target_g = args.proteinTargetG;
+          if (args.carbsTargetG !== undefined) updates.carbs_target_g = args.carbsTargetG;
+          if (args.fatTargetG !== undefined) updates.fat_target_g = args.fatTargetG;
+          if (args.waterTargetMl !== undefined) updates.water_target_ml = args.waterTargetMl;
+          if (args.stepsTarget !== undefined) updates.steps_target = args.stepsTarget;
+          if (args.sleepTargetHours !== undefined) updates.sleep_target_hours = args.sleepTargetHours;
+          if (args.activityLevel !== undefined) updates.activity_level = args.activityLevel;
+          if (args.goalType !== undefined) updates.goal_type = args.goalType;
+          if (args.dietPreference !== undefined) updates.diet_preference = args.dietPreference;
+          if (args.gymScheduleDays !== undefined) updates.gym_schedule_days = args.gymScheduleDays;
+          if (args.lowEnergyCalorieCeiling !== undefined) updates.low_energy_calorie_ceiling = args.lowEnergyCalorieCeiling;
+          if (args.lowEnergyStepsTarget !== undefined) updates.low_energy_steps_target = args.lowEnergyStepsTarget;
+
+          const { data, error } = await supabase
+            .from('fitness_profiles')
+            .update({ ...updates, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (error) throw error;
+          savedRow = data;
+        } else {
+          const { data, error } = await supabase
+            .from('fitness_profiles')
+            .insert({
+              user_id: auth.userId,
+              height_cm: args.heightCm ?? null,
+              current_weight_kg: args.currentWeightKg ?? null,
+              target_weight_kg: args.targetWeightKg ?? null,
+              starting_weight_kg: args.startingWeightKg ?? args.currentWeightKg ?? null,
+              target_waist_inches: args.targetWaistInches ?? null,
+              calorie_target: args.calorieTarget ?? 2000,
+              protein_target_g: args.proteinTargetG ?? 130,
+              carbs_target_g: args.carbsTargetG ?? null,
+              fat_target_g: args.fatTargetG ?? null,
+              water_target_ml: args.waterTargetMl ?? 3000,
+              steps_target: args.stepsTarget ?? 8000,
+              sleep_target_hours: args.sleepTargetHours ?? 7.5,
+              activity_level: args.activityLevel || 'moderate',
+              goal_type: args.goalType || 'fat_loss',
+              diet_preference: args.dietPreference || 'non_veg',
+              gym_schedule_days: args.gymScheduleDays ?? [1, 2, 3, 4, 5, 6],
+              low_energy_calorie_ceiling: args.lowEnergyCalorieCeiling ?? null,
+              low_energy_steps_target: args.lowEnergyStepsTarget ?? 3500,
+              ...getInsertMetadata(),
+            })
+            .select()
+            .single();
+          if (error) throw error;
+          savedRow = data;
+        }
+
+        await logMcpToolInvocation(auth, {
+          toolName: 'manage_fitness_profile',
+          action: existing ? 'update' : 'create',
+          input: args,
+          status: 'ok',
+          durationMs: Date.now() - start,
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                { action: existing ? 'updated' : 'created', profile: mapFitnessProfileFromRow(savedRow) },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      } catch (err: any) {
+        await logMcpToolInvocation(auth, {
+          toolName: 'manage_fitness_profile',
+          action: args.action,
+          input: args,
+          status: 'error',
+          errorMessage: err.message,
+          durationMs: Date.now() - start,
+        });
+        return { isError: true, content: [{ type: 'text', text: `Failed to manage fitness profile: ${err.message}` }] };
+      }
+    }
+  );
+
   // 29. get_fitness_overview
   server.registerTool(
     'get_fitness_overview',
@@ -198,19 +408,25 @@ export function registerFitnessTools(server: McpServer) {
     }
   );
 
-  // 30. log_daily_body_metrics (field-merged upsert without null clobber)
+  // 30. log_daily_body_metrics (full CRUD: upsert, list, delete, restore + Low-Energy gym auto-rest hook)
   server.registerTool(
     'log_daily_body_metrics',
     {
-      title: 'Log Daily Body Metrics',
+      title: 'Manage Daily Body Metrics',
       description:
-        'Field-merged upsert on (user_id, date) for fitness_daily_logs without clobbering unspecified columns. Updates weightKg, waistInches, waterMl/addWaterMl, steps, sleepHours, energyLevel, sorenessLevel, lowEnergyMode, junkFreeOverride, and notes.',
+        'List, upsert (field-merged without null clobber), soft-delete, or restore fitness_daily_logs. Supports weightKg, waistInches, waterMl/addWaterMl, steps, sleepHours, energyLevel, sorenessLevel, lowEnergyMode (+ optional autoRestGymHabits), junkFreeOverride, and notes.',
       inputSchema: {
+        action: z.enum(['upsert', 'list', 'delete', 'restore']).optional().default('upsert').describe('Action to perform (defaults to upsert)'),
+        logId: z.string().uuid().optional().describe('Daily log UUID (optional for delete/restore)'),
         date: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD')
           .optional()
           .describe('IST date YYYY-MM-DD (defaults to today in IST)'),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter start date for list'),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter end date for list'),
+        limit: z.number().int().min(1).max(90).optional().default(30).describe('Max rows for list'),
+        includeDeleted: z.boolean().optional().default(false),
         weightKg: z.number().min(20).max(350).nullable().optional(),
         waistInches: z.number().min(15).max(80).nullable().optional(),
         waterMl: z.number().int().min(0).max(20000).optional().describe('Set exact daily water ml'),
@@ -221,19 +437,41 @@ export function registerFitnessTools(server: McpServer) {
         energyLevel: z.number().int().min(1).max(5).nullable().optional(),
         sorenessLevel: z.number().int().min(1).max(5).nullable().optional(),
         lowEnergyMode: z.boolean().optional(),
+        autoRestGymHabits: z.boolean().optional().describe('When lowEnergyMode is true, automatically mark gym-anchored habits as rest for this date'),
         junkFreeOverride: z.boolean().optional(),
         restedHabitIds: z.array(z.string()).optional(),
         notes: z.string().nullable().optional(),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
       },
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
+        destructiveHint: true,
+        idempotentHint: false,
         openWorldHint: false,
       },
     },
     async (args) => {
       const auth = getMcpAuthContext();
+      const supabase = getSupabaseAdmin();
+      const action = args.action || 'upsert';
+
+      if (action === 'list') {
+        if (!hasScope(auth, 'habitflow:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:read scope.' }] };
+        }
+        let query = supabase.from('fitness_daily_logs').select('*').eq('user_id', auth.userId);
+        if (!args.includeDeleted) query = query.is('deleted_at', null);
+        if (args.date) query = query.eq('date', args.date);
+        if (args.startDate) query = query.gte('date', args.startDate);
+        if (args.endDate) query = query.lte('date', args.endDate);
+        const { data, error } = await query.order('date', { ascending: false }).limit(args.limit || 30);
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to list daily body metrics: ${error.message}` }] };
+        }
+        const logs = (data || []).map(mapFitnessDailyLogFromRow);
+        return { content: [{ type: 'text', text: JSON.stringify({ count: logs.length, logs }, null, 2) }] };
+      }
+
       if (!hasScope(auth, 'habitflow:write')) {
         return {
           isError: true,
@@ -243,9 +481,100 @@ export function registerFitnessTools(server: McpServer) {
 
       const start = Date.now();
       const dateIst = args.date || getIstIsoDate();
-      const supabase = getSupabaseAdmin();
 
       try {
+        if (action === 'delete' || action === 'restore') {
+          if (action === 'delete' && !args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: delete requires confirm: true.' }] };
+          }
+          let query = supabase.from('fitness_daily_logs').select('*').eq('user_id', auth.userId);
+          query = args.logId ? query.eq('id', args.logId) : query.eq('date', dateIst);
+          const { data: existingLog, error: fetchErr } = await query.maybeSingle();
+          if (fetchErr) throw fetchErr;
+          if (!existingLog) {
+            return { isError: true, content: [{ type: 'text', text: `Daily log not found for ${args.logId || dateIst}` }] };
+          }
+
+          const patch =
+            action === 'delete'
+              ? getSoftDeleteMetadata(existingLog)
+              : { deleted_at: null, ...getUpdateMetadata(existingLog) };
+          const { data, error } = await supabase
+            .from('fitness_daily_logs')
+            .update(patch)
+            .eq('user_id', auth.userId)
+            .eq('id', existingLog.id)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, {
+            toolName: 'log_daily_body_metrics',
+            action,
+            input: args,
+            status: 'ok',
+            durationMs: Date.now() - start,
+          });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  { action: action === 'delete' ? 'deleted' : 'restored', dailyLog: mapFitnessDailyLogFromRow(data) },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        // Cross-domain hook: auto-rest gym-anchored habits when entering Low-Energy Mode
+        let autoRestedIds: string[] = [];
+        if (args.lowEnergyMode && args.autoRestGymHabits) {
+          const { data: gymHabits } = await supabase
+            .from('habits')
+            .select('id')
+            .eq('user_id', auth.userId)
+            .eq('is_archived', false)
+            .eq('anchor_block', 'gym');
+
+          for (const h of gymHabits || []) {
+            const { data: existingComp } = await supabase
+              .from('completions')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('habit_id', h.id)
+              .eq('date', dateIst)
+              .maybeSingle();
+
+            if (existingComp) {
+              await supabase
+                .from('completions')
+                .update({
+                  completed: false,
+                  skipped: true,
+                  status: 'rest',
+                  rest_reason: 'Low-Energy Mode',
+                  ...getUpdateMetadata(existingComp),
+                })
+                .eq('id', existingComp.id);
+            } else {
+              await supabase.from('completions').insert({
+                user_id: auth.userId,
+                habit_id: h.id,
+                date: dateIst,
+                completed: false,
+                skipped: true,
+                status: 'rest',
+                rest_reason: 'Low-Energy Mode',
+                ...getInsertMetadata(),
+              });
+            }
+            autoRestedIds.push(h.id);
+          }
+        }
+
         const { data: existing, error: fetchErr } = await supabase
           .from('fitness_daily_logs')
           .select('*')
@@ -274,7 +603,11 @@ export function registerFitnessTools(server: McpServer) {
           if (args.lowEnergyMode !== undefined) updates.low_energy_mode = args.lowEnergyMode;
           if (args.junkFreeOverride !== undefined)
             updates.junk_free_override = args.junkFreeOverride;
-          if (args.restedHabitIds !== undefined) updates.rested_habit_ids = args.restedHabitIds;
+          if (args.restedHabitIds !== undefined || autoRestedIds.length > 0) {
+            const existingRested = Array.isArray(existing.rested_habit_ids) ? existing.rested_habit_ids : [];
+            const baseList = args.restedHabitIds !== undefined ? args.restedHabitIds : existingRested;
+            updates.rested_habit_ids = Array.from(new Set([...baseList, ...autoRestedIds]));
+          }
           if (args.notes !== undefined) updates.notes = args.notes;
 
           const meta = getUpdateMetadata(existing);
@@ -308,7 +641,7 @@ export function registerFitnessTools(server: McpServer) {
             soreness_level: args.sorenessLevel ?? null,
             low_energy_mode: args.lowEnergyMode ?? false,
             junk_free_override: args.junkFreeOverride ?? false,
-            rested_habit_ids: args.restedHabitIds ?? [],
+            rested_habit_ids: Array.from(new Set([...(args.restedHabitIds ?? []), ...autoRestedIds])),
             notes: args.notes ?? null,
             ...meta,
           };
@@ -359,6 +692,7 @@ export function registerFitnessTools(server: McpServer) {
               text: JSON.stringify(
                 {
                   action: existing ? 'merged_updated' : 'created',
+                  autoRestedHabitIds: autoRestedIds,
                   dailyLog: mapFitnessDailyLogFromRow(savedRow),
                 },
                 null,
@@ -370,7 +704,7 @@ export function registerFitnessTools(server: McpServer) {
       } catch (err: any) {
         await logMcpToolInvocation(auth, {
           toolName: 'log_daily_body_metrics',
-          action: 'upsert',
+          action: action,
           input: args,
           status: 'error',
           errorMessage: err.message,
@@ -390,16 +724,27 @@ export function registerFitnessTools(server: McpServer) {
     {
       title: 'Manage Meals & Saved Templates',
       description:
-        'List meals, log a meal entry, list/upsert Indian staple meal templates, or soft-delete a meal log (delete requires confirm: true).',
+        'Full CRUD for meal logs and Indian staple meal templates: list, log (optionally creating a linked finance expense when expenseAmount + accountId are provided), update, soft-delete, restore, list_templates, upsert_template, delete_template, restore_template.',
       inputSchema: {
         action: z
-          .enum(['list', 'log', 'list_templates', 'upsert_template', 'delete'])
+          .enum([
+            'list',
+            'log',
+            'update',
+            'delete',
+            'restore',
+            'list_templates',
+            'upsert_template',
+            'delete_template',
+            'restore_template',
+          ])
           .describe('Meal management action'),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        mealId: z.string().uuid().optional().describe('Meal log UUID for delete'),
-        templateId: z.string().uuid().optional().describe('Template UUID for upsert or template lookup'),
+        includeDeleted: z.boolean().optional().default(false),
+        mealId: z.string().uuid().optional().describe('Meal log UUID for update, delete, restore'),
+        templateId: z.string().uuid().optional().describe('Template UUID for upsert, delete_template, restore_template, or template lookup'),
         name: z.string().min(1).max(160).optional(),
         mealType: z
           .enum(['breakfast', 'lunch', 'dinner', 'snack', 'pre_workout', 'post_workout'])
@@ -415,8 +760,13 @@ export function registerFitnessTools(server: McpServer) {
         hindiAliases: z.array(z.string()).optional(),
         isPinned: z.boolean().optional(),
         linkedTransactionId: z.string().uuid().nullable().optional(),
+        // Optional compound Finance hook when logging a paid meal
+        expenseAmount: z.number().positive().optional().describe('Optional INR amount spent to auto-create a linked expense transaction (requires accountId & habitflow:finance:write)'),
+        accountId: z.string().uuid().optional().describe('Source finance account UUID for compound paid-meal logging'),
+        expenseCategoryId: z.string().uuid().optional().describe('Optional finance category UUID for compound meal expense'),
+        merchantName: z.string().optional().describe('Optional restaurant/merchant name for compound meal expense'),
         notes: z.string().nullable().optional(),
-        confirm: z.boolean().optional().describe('Required for delete'),
+        confirm: z.boolean().optional().describe('Required for delete and delete_template'),
       },
       annotations: {
         readOnlyHint: false,
@@ -438,12 +788,9 @@ export function registerFitnessTools(server: McpServer) {
         }
 
         if (args.action === 'list_templates') {
-          const { data, error } = await supabase
-            .from('meal_templates')
-            .select('*')
-            .eq('user_id', auth.userId)
-            .is('deleted_at', null)
-            .order('order_index', { ascending: true });
+          let tQuery = supabase.from('meal_templates').select('*').eq('user_id', auth.userId);
+          if (!args.includeDeleted) tQuery = tQuery.is('deleted_at', null);
+          const { data, error } = await tQuery.order('order_index', { ascending: true });
           if (error) {
             return {
               isError: true,
@@ -462,11 +809,8 @@ export function registerFitnessTools(server: McpServer) {
         }
 
         const dateIst = args.date || getIstIsoDate();
-        let query = supabase
-          .from('meal_logs')
-          .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null);
+        let query = supabase.from('meal_logs').select('*').eq('user_id', auth.userId);
+        if (!args.includeDeleted) query = query.is('deleted_at', null);
 
         if (args.startDate || args.endDate) {
           if (args.startDate) query = query.gte('date', args.startDate);
@@ -501,20 +845,12 @@ export function registerFitnessTools(server: McpServer) {
       const start = Date.now();
 
       try {
-        if (args.action === 'delete') {
+        if (args.action === 'delete' || args.action === 'restore') {
           if (!args.mealId) {
-            return {
-              isError: true,
-              content: [{ type: 'text', text: 'Validation Error: mealId is required.' }],
-            };
+            return { isError: true, content: [{ type: 'text', text: `Validation Error: mealId is required for ${args.action}.` }] };
           }
-          if (!args.confirm) {
-            return {
-              isError: true,
-              content: [
-                { type: 'text', text: 'Confirmation Required: delete requires confirm: true.' },
-              ],
-            };
+          if (args.action === 'delete' && !args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: delete requires confirm: true.' }] };
           }
 
           const { data: existing, error: fetchErr } = await supabase
@@ -522,19 +858,20 @@ export function registerFitnessTools(server: McpServer) {
             .select('*')
             .eq('user_id', auth.userId)
             .eq('id', args.mealId)
-            .is('deleted_at', null)
             .single();
 
           if (fetchErr || !existing) {
-            return {
-              isError: true,
-              content: [{ type: 'text', text: `Meal log not found: ${args.mealId}` }],
-            };
+            return { isError: true, content: [{ type: 'text', text: `Meal log not found: ${args.mealId}` }] };
           }
+
+          const patch =
+            args.action === 'delete'
+              ? getSoftDeleteMetadata(existing)
+              : { deleted_at: null, ...getUpdateMetadata(existing) };
 
           const { data, error } = await supabase
             .from('meal_logs')
-            .update(getSoftDeleteMetadata(existing))
+            .update(patch)
             .eq('user_id', auth.userId)
             .eq('id', args.mealId)
             .select()
@@ -543,7 +880,7 @@ export function registerFitnessTools(server: McpServer) {
 
           await logMcpToolInvocation(auth, {
             toolName: 'manage_meals',
-            action: 'delete',
+            action: args.action,
             input: args,
             status: 'ok',
             durationMs: Date.now() - start,
@@ -553,7 +890,95 @@ export function registerFitnessTools(server: McpServer) {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify({ action: 'deleted', meal: mapMealLogFromRow(data) }, null, 2),
+                text: JSON.stringify({ action: args.action === 'delete' ? 'deleted' : 'restored', meal: mapMealLogFromRow(data) }, null, 2),
+              },
+            ],
+          };
+        }
+
+        if (args.action === 'update') {
+          if (!args.mealId) {
+            return { isError: true, content: [{ type: 'text', text: 'Validation Error: mealId is required for update.' }] };
+          }
+          const { data: existing, error: fetchErr } = await supabase
+            .from('meal_logs')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.mealId)
+            .is('deleted_at', null)
+            .single();
+          if (fetchErr || !existing) {
+            return { isError: true, content: [{ type: 'text', text: `Meal log not found: ${args.mealId}` }] };
+          }
+
+          const updates: Record<string, unknown> = {};
+          if (args.date !== undefined) updates.date = args.date;
+          if (args.name !== undefined) updates.name = args.name.trim();
+          if (args.mealType !== undefined) updates.meal_type = args.mealType;
+          if (args.calories !== undefined) updates.calories = Math.round(args.calories);
+          if (args.proteinG !== undefined) updates.protein_g = args.proteinG;
+          if (args.carbsG !== undefined) updates.carbs_g = args.carbsG;
+          if (args.fatG !== undefined) updates.fat_g = args.fatG;
+          if (args.fiberG !== undefined) updates.fiber_g = args.fiberG;
+          if (args.quantityMultiplier !== undefined) updates.quantity_multiplier = args.quantityMultiplier;
+          if (args.isJunk !== undefined) updates.is_junk = args.isJunk;
+          if (args.linkedTransactionId !== undefined) updates.linked_transaction_id = args.linkedTransactionId;
+          if (args.notes !== undefined) updates.notes = args.notes;
+
+          const { data, error } = await supabase
+            .from('meal_logs')
+            .update({ ...updates, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', args.mealId)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, { toolName: 'manage_meals', action: 'update', input: args, status: 'ok', durationMs: Date.now() - start });
+          return { content: [{ type: 'text', text: JSON.stringify({ action: 'updated', meal: mapMealLogFromRow(data) }, null, 2) }] };
+        }
+
+        if (args.action === 'delete_template' || args.action === 'restore_template') {
+          if (!args.templateId) {
+            return { isError: true, content: [{ type: 'text', text: `Validation Error: templateId is required for ${args.action}.` }] };
+          }
+          if (args.action === 'delete_template' && !args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: delete_template requires confirm: true.' }] };
+          }
+          const { data: existing, error: fetchErr } = await supabase
+            .from('meal_templates')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.templateId)
+            .single();
+          if (fetchErr || !existing) {
+            return { isError: true, content: [{ type: 'text', text: `Meal template not found: ${args.templateId}` }] };
+          }
+
+          const patch =
+            args.action === 'delete_template'
+              ? getSoftDeleteMetadata(existing)
+              : { deleted_at: null, ...getUpdateMetadata(existing) };
+
+          const { data, error } = await supabase
+            .from('meal_templates')
+            .update(patch)
+            .eq('user_id', auth.userId)
+            .eq('id', args.templateId)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, { toolName: 'manage_meals', action: args.action, input: args, status: 'ok', durationMs: Date.now() - start });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  { action: args.action === 'delete_template' ? 'template_deleted' : 'template_restored', template: mapMealTemplateFromRow(data) },
+                  null,
+                  2
+                ),
               },
             ],
           };
@@ -690,6 +1115,36 @@ export function registerFitnessTools(server: McpServer) {
 
         const mult = Math.max(0.1, Number(args.quantityMultiplier ?? 1));
         const dateIst = args.date || getIstIsoDate();
+        const isJunkMeal = args.isJunk !== undefined ? args.isJunk : Boolean(templateRow?.is_junk);
+
+        let linkedTxResult: { transaction: Record<string, any>; updatedAccounts: { id: string; newBalance: number }[] } | null = null;
+        if (args.expenseAmount && args.expenseAmount > 0) {
+          if (!args.accountId) {
+            return {
+              isError: true,
+              content: [{ type: 'text', text: 'Validation Error: accountId is required when expenseAmount is provided.' }],
+            };
+          }
+          if (!hasScope(auth, 'habitflow:finance:write')) {
+            return {
+              isError: true,
+              content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:write scope for compound meal expense logging.' }],
+            };
+          }
+          linkedTxResult = await createLinkedFinanceExpense(supabase, auth.userId, {
+            title: mealName,
+            merchantName: args.merchantName || mealName,
+            amount: args.expenseAmount,
+            accountId: args.accountId,
+            categoryId: args.expenseCategoryId,
+            preferredCategorySlugs: ['food-dining', 'other'],
+            subcategory: isJunkMeal ? 'Junk Food' : 'Healthy Meal',
+            date: dateIst,
+            notes: args.notes ?? `Logged via meal: ${mealName}`,
+            tags: ['fitness_meal', ...(isJunkMeal ? ['junk_food'] : [])],
+          });
+        }
+
         const insertPayload = {
           user_id: auth.userId,
           date: dateIst,
@@ -714,9 +1169,9 @@ export function registerFitnessTools(server: McpServer) {
                 ? Number(templateRow.fiber_g) * mult
                 : null,
           quantity_multiplier: mult,
-          is_junk: args.isJunk !== undefined ? args.isJunk : Boolean(templateRow?.is_junk),
+          is_junk: isJunkMeal,
           template_id: args.templateId ?? null,
-          linked_transaction_id: args.linkedTransactionId ?? null,
+          linked_transaction_id: linkedTxResult?.transaction.id ?? args.linkedTransactionId ?? null,
           source: 'mcp',
           notes: args.notes ?? null,
           logged_at: new Date().toISOString(),
@@ -742,7 +1197,20 @@ export function registerFitnessTools(server: McpServer) {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ action: 'logged', meal: mapMealLogFromRow(data) }, null, 2),
+              text: JSON.stringify(
+                {
+                  action: 'logged',
+                  meal: mapMealLogFromRow(data),
+                  ...(linkedTxResult
+                    ? {
+                        linkedTransaction: linkedTxResult.transaction,
+                        updatedAccounts: linkedTxResult.updatedAccounts,
+                      }
+                    : {}),
+                },
+                null,
+                2
+              ),
             },
           ],
         };
@@ -769,15 +1237,16 @@ export function registerFitnessTools(server: McpServer) {
     {
       title: 'Manage Workout Sessions & Overload Hints',
       description:
-        'List workout sessions, log a gym/cardio session with exercises & sets JSONB, compute progressive overload hints, or soft-delete a session (confirm: true required).',
+        'Full CRUD for workouts: list sessions, log a gym/cardio session with exercises & sets JSONB, update an existing session, compute progressive overload hints, soft-delete (confirm: true), or restore.',
       inputSchema: {
         action: z
-          .enum(['list', 'log', 'get_overload_hints', 'delete'])
+          .enum(['list', 'log', 'update', 'get_overload_hints', 'delete', 'restore'])
           .describe('Workout action'),
-        workoutId: z.string().uuid().optional().describe('Workout session UUID for delete'),
+        workoutId: z.string().uuid().optional().describe('Workout session UUID for update, delete, or restore'),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        includeDeleted: z.boolean().optional().default(false),
         title: z.string().min(1).max(160).optional(),
         workoutType: z
           .enum([
@@ -826,8 +1295,10 @@ export function registerFitnessTools(server: McpServer) {
         let query = supabase
           .from('workout_sessions')
           .select('*')
-          .eq('user_id', auth.userId)
-          .is('deleted_at', null);
+          .eq('user_id', auth.userId);
+        if (!args.includeDeleted || args.action === 'get_overload_hints') {
+          query = query.is('deleted_at', null);
+        }
 
         if (args.startDate) query = query.gte('date', args.startDate);
         if (args.endDate) query = query.lte('date', args.endDate);
@@ -890,14 +1361,14 @@ export function registerFitnessTools(server: McpServer) {
 
       const start = Date.now();
       try {
-        if (args.action === 'delete') {
+        if (args.action === 'delete' || args.action === 'restore') {
           if (!args.workoutId) {
             return {
               isError: true,
-              content: [{ type: 'text', text: 'Validation Error: workoutId is required.' }],
+              content: [{ type: 'text', text: `Validation Error: workoutId is required for ${args.action}.` }],
             };
           }
-          if (!args.confirm) {
+          if (args.action === 'delete' && !args.confirm) {
             return {
               isError: true,
               content: [
@@ -911,7 +1382,6 @@ export function registerFitnessTools(server: McpServer) {
             .select('*')
             .eq('user_id', auth.userId)
             .eq('id', args.workoutId)
-            .is('deleted_at', null)
             .single();
 
           if (fetchErr || !existing) {
@@ -921,9 +1391,14 @@ export function registerFitnessTools(server: McpServer) {
             };
           }
 
+          const patch =
+            args.action === 'delete'
+              ? getSoftDeleteMetadata(existing)
+              : { deleted_at: null, ...getUpdateMetadata(existing) };
+
           const { data, error } = await supabase
             .from('workout_sessions')
-            .update(getSoftDeleteMetadata(existing))
+            .update(patch)
             .eq('user_id', auth.userId)
             .eq('id', args.workoutId)
             .select()
@@ -932,7 +1407,7 @@ export function registerFitnessTools(server: McpServer) {
 
           await logMcpToolInvocation(auth, {
             toolName: 'manage_workouts',
-            action: 'delete',
+            action: args.action,
             input: args,
             status: 'ok',
             durationMs: Date.now() - start,
@@ -942,11 +1417,53 @@ export function registerFitnessTools(server: McpServer) {
               {
                 type: 'text',
                 text: JSON.stringify(
-                  { action: 'deleted', workout: mapWorkoutSessionFromRow(data) },
+                  { action: args.action === 'delete' ? 'deleted' : 'restored', workout: mapWorkoutSessionFromRow(data) },
                   null,
                   2
                 ),
               },
+            ],
+          };
+        }
+
+        if (args.action === 'update') {
+          if (!args.workoutId) {
+            return { isError: true, content: [{ type: 'text', text: 'Validation Error: workoutId is required for update.' }] };
+          }
+          const { data: existing, error: fetchErr } = await supabase
+            .from('workout_sessions')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.workoutId)
+            .is('deleted_at', null)
+            .single();
+          if (fetchErr || !existing) {
+            return { isError: true, content: [{ type: 'text', text: `Workout session not found: ${args.workoutId}` }] };
+          }
+
+          const updates: Record<string, unknown> = {};
+          if (args.date !== undefined) updates.date = args.date;
+          if (args.title !== undefined) updates.title = args.title.trim();
+          if (args.workoutType !== undefined) updates.workout_type = args.workoutType;
+          if (args.durationMinutes !== undefined) updates.duration_minutes = args.durationMinutes;
+          if (args.estimatedCaloriesBurned !== undefined) updates.estimated_calories_burned = args.estimatedCaloriesBurned;
+          if (args.exercises !== undefined) updates.exercises = args.exercises;
+          if (args.rpe !== undefined) updates.rpe = args.rpe;
+          if (args.notes !== undefined) updates.notes = args.notes;
+
+          const { data, error } = await supabase
+            .from('workout_sessions')
+            .update({ ...updates, ...getUpdateMetadata(existing) })
+            .eq('user_id', auth.userId)
+            .eq('id', args.workoutId)
+            .select()
+            .single();
+          if (error) throw error;
+
+          await logMcpToolInvocation(auth, { toolName: 'manage_workouts', action: 'update', input: args, status: 'ok', durationMs: Date.now() - start });
+          return {
+            content: [
+              { type: 'text', text: JSON.stringify({ action: 'updated', workout: mapWorkoutSessionFromRow(data) }, null, 2) },
             ],
           };
         }
@@ -1021,14 +1538,27 @@ export function registerFitnessTools(server: McpServer) {
   server.registerTool(
     'manage_supplements',
     {
-      title: 'Manage Supplements & ROI Audit',
+      title: 'Manage Supplements, Dose Logs & ROI Audit',
       description:
-        'List supplement inventory with derived runout dates, upsert inventory items (with proteinPerServingG & anchorBlock), log daily doses (recomputing remaining servings), or compute full Gym & Supplement ROI audit.',
+        'Full CRUD for supplement inventory and dose logs: list_inventory, upsert_item, restock_item (optionally creating a linked finance expense), delete_item, restore_item, log_dose, list_logs, update_log, delete_log, restore_log, and get_roi_audit.',
       inputSchema: {
         action: z
-          .enum(['list_inventory', 'upsert_item', 'log_dose', 'get_roi_audit'])
+          .enum([
+            'list_inventory',
+            'upsert_item',
+            'restock_item',
+            'delete_item',
+            'restore_item',
+            'log_dose',
+            'list_logs',
+            'update_log',
+            'delete_log',
+            'restore_log',
+            'get_roi_audit',
+          ])
           .describe('Supplement action'),
         supplementId: z.string().uuid().optional(),
+        logId: z.string().uuid().optional().describe('Supplement dose log UUID for update_log, delete_log, restore_log'),
         name: z.string().min(1).max(120).optional(),
         brand: z.string().nullable().optional(),
         category: z
@@ -1036,6 +1566,7 @@ export function registerFitnessTools(server: McpServer) {
           .optional(),
         unitLabel: z.string().optional(),
         totalServings: z.number().min(1).optional(),
+        addedServings: z.number().min(1).optional().describe('Additional servings when restocking'),
         remainingServings: z.number().min(0).optional(),
         dailyDosage: z.number().min(0.1).optional(),
         costInr: z.number().min(0).optional(),
@@ -1044,12 +1575,19 @@ export function registerFitnessTools(server: McpServer) {
         lowStockThresholdDays: z.number().int().min(1).max(60).optional(),
         isActive: z.boolean().optional(),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        includeDeleted: z.boolean().optional().default(false),
         servingsTaken: z.number().min(0.1).optional(),
+        expenseAmount: z.number().positive().optional().describe('Optional INR amount spent when restocking to auto-create linked finance expense'),
+        accountId: z.string().uuid().optional().describe('Source finance account UUID for compound restock expense'),
+        expenseCategoryId: z.string().uuid().optional(),
         notes: z.string().nullable().optional(),
+        confirm: z.boolean().optional().describe('Confirmation flag required for delete_item and delete_log'),
       },
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: false,
       },
@@ -1059,6 +1597,47 @@ export function registerFitnessTools(server: McpServer) {
       const supabase = getSupabaseAdmin();
       const todayIst = getIstIsoDate();
 
+      const recomputeInventoryRemaining = async (supRow: Record<string, any>) => {
+        const mappedSup = mapSupplementInventoryFromRow(supRow);
+        const { data: allLogs } = await supabase
+          .from('supplement_logs')
+          .select('*')
+          .eq('user_id', auth.userId)
+          .eq('supplement_id', mappedSup.id)
+          .is('deleted_at', null);
+        const nextRemaining = deriveSupplementRemainingServings(
+          mappedSup,
+          (allLogs || []).map(mapSupplementLogFromRow)
+        );
+        await supabase
+          .from('supplement_inventory')
+          .update({
+            remaining_servings: nextRemaining,
+            ...getUpdateMetadata(supRow),
+          })
+          .eq('user_id', auth.userId)
+          .eq('id', mappedSup.id);
+        return nextRemaining;
+      };
+
+      if (args.action === 'list_logs') {
+        if (!hasScope(auth, 'habitflow:read')) {
+          return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:read scope.' }] };
+        }
+        let lQuery = supabase.from('supplement_logs').select('*').eq('user_id', auth.userId);
+        if (args.supplementId) lQuery = lQuery.eq('supplement_id', args.supplementId);
+        if (args.date) lQuery = lQuery.eq('date', args.date);
+        if (args.startDate) lQuery = lQuery.gte('date', args.startDate);
+        if (args.endDate) lQuery = lQuery.lte('date', args.endDate);
+        if (!args.includeDeleted) lQuery = lQuery.is('deleted_at', null);
+        const { data, error } = await lQuery.order('date', { ascending: false }).order('taken_at', { ascending: false });
+        if (error) {
+          return { isError: true, content: [{ type: 'text', text: `Failed to list supplement logs: ${error.message}` }] };
+        }
+        const logs = (data || []).map(mapSupplementLogFromRow);
+        return { content: [{ type: 'text', text: JSON.stringify({ count: logs.length, logs }, null, 2) }] };
+      }
+
       if (args.action === 'list_inventory' || args.action === 'get_roi_audit') {
         if (!hasScope(auth, 'habitflow:read')) {
           return {
@@ -1067,13 +1646,14 @@ export function registerFitnessTools(server: McpServer) {
           };
         }
 
+        let invQuery = supabase.from('supplement_inventory').select('*').eq('user_id', auth.userId);
+        if (!args.includeDeleted || args.action === 'get_roi_audit') {
+          invQuery = invQuery.is('deleted_at', null);
+        }
+
         const [{ data: supRows, error: supErr }, { data: logRows, error: logErr }] =
           await Promise.all([
-            supabase
-              .from('supplement_inventory')
-              .select('*')
-              .eq('user_id', auth.userId)
-              .is('deleted_at', null),
+            invQuery,
             supabase
               .from('supplement_logs')
               .select('*')
@@ -1186,6 +1766,225 @@ export function registerFitnessTools(server: McpServer) {
 
       const start = Date.now();
       try {
+        if (args.action === 'delete_item' || args.action === 'restore_item') {
+          if (!args.supplementId) {
+            return { isError: true, content: [{ type: 'text', text: `Validation Error: supplementId is required for ${args.action}.` }] };
+          }
+          if (args.action === 'delete_item' && !args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: delete_item requires confirm: true.' }] };
+          }
+          const { data: existing, error: fetchErr } = await supabase
+            .from('supplement_inventory')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.supplementId)
+            .single();
+          if (fetchErr || !existing) {
+            return { isError: true, content: [{ type: 'text', text: `Supplement not found: ${args.supplementId}` }] };
+          }
+
+          const patch =
+            args.action === 'delete_item'
+              ? { is_active: false, ...getSoftDeleteMetadata(existing) }
+              : { is_active: true, deleted_at: null, ...getUpdateMetadata(existing) };
+
+          const { data, error } = await supabase
+            .from('supplement_inventory')
+            .update(patch)
+            .eq('user_id', auth.userId)
+            .eq('id', args.supplementId)
+            .select()
+            .single();
+          if (error) throw error;
+          await logMcpToolInvocation(auth, { toolName: 'manage_supplements', action: args.action, input: args, status: 'ok', durationMs: Date.now() - start });
+          return {
+            content: [
+              { type: 'text', text: JSON.stringify({ action: args.action === 'delete_item' ? 'item_deleted' : 'item_restored', item: mapSupplementInventoryFromRow(data) }, null, 2) },
+            ],
+          };
+        }
+
+        if (args.action === 'restock_item') {
+          if (!args.supplementId) {
+            return { isError: true, content: [{ type: 'text', text: 'Validation Error: supplementId is required for restock_item.' }] };
+          }
+          const { data: existing, error: fetchErr } = await supabase
+            .from('supplement_inventory')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.supplementId)
+            .is('deleted_at', null)
+            .single();
+          if (fetchErr || !existing) {
+            return { isError: true, content: [{ type: 'text', text: `Supplement not found: ${args.supplementId}` }] };
+          }
+
+          let linkedTxResult: { transaction: Record<string, any>; updatedAccounts: { id: string; newBalance: number }[] } | null = null;
+          if (args.expenseAmount && args.expenseAmount > 0) {
+            if (!args.accountId) {
+              return { isError: true, content: [{ type: 'text', text: 'Validation Error: accountId is required when expenseAmount is provided.' }] };
+            }
+            if (!hasScope(auth, 'habitflow:finance:write')) {
+              return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:write scope for compound restock expense.' }] };
+            }
+            linkedTxResult = await createLinkedFinanceExpense(supabase, auth.userId, {
+              title: `Restock: ${existing.name}`,
+              merchantName: existing.brand || existing.name,
+              amount: args.expenseAmount,
+              accountId: args.accountId,
+              categoryId: args.expenseCategoryId,
+              preferredCategorySlugs: ['health-fitness', 'other'],
+              subcategory: 'Supplements',
+              date: args.date || todayIst,
+              notes: args.notes ?? `Restocked ${existing.name}`,
+              tags: ['supplement_restock', 'fitness'],
+            });
+          }
+
+          const { data: supLogs } = await supabase
+            .from('supplement_logs')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('supplement_id', existing.id)
+            .is('deleted_at', null);
+          const takenSum = (supLogs || []).reduce((s, l) => s + Math.max(0, Number(l.servings_taken || 0)), 0);
+
+          const currentRem = Number(existing.remaining_servings ?? 0);
+          const nextTotal =
+            args.totalServings !== undefined
+              ? Number(args.totalServings)
+              : Number(existing.total_servings || 30) + Number(args.addedServings || 30);
+          const targetRemaining =
+            args.remainingServings !== undefined
+              ? Math.max(0, Number(args.remainingServings))
+              : Number((currentRem + Number(args.addedServings ?? args.totalServings ?? existing.total_servings ?? 30)).toFixed(2));
+          const nextManualAdj = Number((targetRemaining + takenSum - nextTotal).toFixed(2));
+
+          const { data: updated, error: updErr } = await supabase
+            .from('supplement_inventory')
+            .update({
+              total_servings: nextTotal,
+              remaining_servings: targetRemaining,
+              manual_adjustment: nextManualAdj,
+              cost_inr: args.costInr !== undefined ? args.costInr : args.expenseAmount ?? existing.cost_inr,
+              last_restocked_at: args.date || todayIst,
+              linked_transaction_id: linkedTxResult?.transaction.id ?? existing.linked_transaction_id ?? null,
+              is_active: true,
+              notes: args.notes !== undefined ? args.notes : existing.notes,
+              ...getUpdateMetadata(existing),
+            })
+            .eq('user_id', auth.userId)
+            .eq('id', existing.id)
+            .select()
+            .single();
+          if (updErr) throw updErr;
+
+          await logMcpToolInvocation(auth, { toolName: 'manage_supplements', action: 'restock_item', input: args, status: 'ok', durationMs: Date.now() - start });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    action: 'restocked',
+                    item: mapSupplementInventoryFromRow(updated),
+                    ...(linkedTxResult
+                      ? {
+                          linkedTransaction: linkedTxResult.transaction,
+                          updatedAccounts: linkedTxResult.updatedAccounts,
+                        }
+                      : {}),
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        if (args.action === 'update_log' || args.action === 'delete_log' || args.action === 'restore_log') {
+          if (!args.logId) {
+            return { isError: true, content: [{ type: 'text', text: `Validation Error: logId is required for ${args.action}.` }] };
+          }
+          if (args.action === 'delete_log' && !args.confirm) {
+            return { isError: true, content: [{ type: 'text', text: 'Confirmation Required: delete_log requires confirm: true.' }] };
+          }
+          const { data: existingLog, error: logErr } = await supabase
+            .from('supplement_logs')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', args.logId)
+            .single();
+          if (logErr || !existingLog) {
+            return { isError: true, content: [{ type: 'text', text: `Supplement log not found: ${args.logId}` }] };
+          }
+
+          let updatedLog: Record<string, any>;
+          if (args.action === 'delete_log') {
+            const { data, error } = await supabase
+              .from('supplement_logs')
+              .update(getSoftDeleteMetadata(existingLog))
+              .eq('user_id', auth.userId)
+              .eq('id', args.logId)
+              .select()
+              .single();
+            if (error) throw error;
+            updatedLog = data;
+          } else if (args.action === 'restore_log') {
+            const { data, error } = await supabase
+              .from('supplement_logs')
+              .update({ deleted_at: null, ...getUpdateMetadata(existingLog) })
+              .eq('user_id', auth.userId)
+              .eq('id', args.logId)
+              .select()
+              .single();
+            if (error) throw error;
+            updatedLog = data;
+          } else {
+            const updates: Record<string, unknown> = {};
+            if (args.date !== undefined) updates.date = args.date;
+            if (args.servingsTaken !== undefined) updates.servings_taken = args.servingsTaken;
+            if (args.notes !== undefined) updates.notes = args.notes;
+            const { data, error } = await supabase
+              .from('supplement_logs')
+              .update({ ...updates, ...getUpdateMetadata(existingLog) })
+              .eq('user_id', auth.userId)
+              .eq('id', args.logId)
+              .select()
+              .single();
+            if (error) throw error;
+            updatedLog = data;
+          }
+
+          const { data: parentSup } = await supabase
+            .from('supplement_inventory')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('id', existingLog.supplement_id)
+            .maybeSingle();
+
+          const remainingServings = parentSup ? await recomputeInventoryRemaining(parentSup) : null;
+
+          await logMcpToolInvocation(auth, { toolName: 'manage_supplements', action: args.action, input: args, status: 'ok', durationMs: Date.now() - start });
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    action: args.action,
+                    log: mapSupplementLogFromRow(updatedLog),
+                    remainingServings,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
         if (args.action === 'log_dose') {
           if (!args.supplementId) {
             return {
