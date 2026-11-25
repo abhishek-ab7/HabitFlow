@@ -154,21 +154,23 @@ claude mcp add --transport http habitflow ${endpointUrl}`,
   };
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-6 space-y-6">
+    <section className="rounded-2xl border border-border bg-card p-5 sm:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 pb-5 border-b border-border">
-        <div className="flex items-start gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-border">
+        <div className="flex items-start gap-3 min-w-0">
           <div className="p-2.5 rounded-xl bg-primary/10 text-primary shrink-0">
             <Server className="h-5 w-5" />
           </div>
-          <div>
-            <h2 className="text-base font-semibold text-foreground tracking-tight flex items-center gap-2">
-              Model Context Protocol (MCP) Server
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground tracking-tight">
+                Model Context Protocol (MCP) Server
+              </h2>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
                 Live Remote
               </span>
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
               Connect external AI agents (Gemini App, Claude Desktop, Cursor, Antigravity) to query and edit your HabitFlow data.
             </p>
           </div>
@@ -177,223 +179,230 @@ claude mcp add --transport http habitflow ${endpointUrl}`,
           variant="outline"
           size="sm"
           onClick={fetchConnectionsData}
-          className="h-8 px-2.5 text-xs gap-1.5 shrink-0"
+          className="h-8 px-3 text-xs gap-1.5 shrink-0 self-start sm:self-center"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
 
-      {/* Production Endpoint Display */}
-      <div className="space-y-2">
-        <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Canonical Streamable HTTP Endpoint
-        </label>
-        <div className="flex items-center gap-2 bg-muted/40 border border-border rounded-xl p-2.5">
-          <code className="text-xs font-mono text-foreground flex-1 truncate select-all">
-            {endpointUrl}
-          </code>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCopyEndpoint}
-            className="h-8 px-3 text-xs gap-1.5 shrink-0"
-          >
-            {copiedEndpoint ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-            {copiedEndpoint ? 'Copied' : 'Copy URL'}
-          </Button>
-        </div>
-      </div>
-
-      {/* Client Configuration Tabs */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Client Connection Setup
-          </label>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCopySnippet}
-            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
-          >
-            {copiedSnippet ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-            Copy Snippet
-          </Button>
-        </div>
-
-        <div className="flex items-center gap-1.5 p-1 bg-muted/30 border border-border rounded-xl text-xs overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('gemini')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-              activeTab === 'gemini' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Gemini App
-          </button>
-          <button
-            onClick={() => setActiveTab('claude_code')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-              activeTab === 'claude_code' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Claude Code
-          </button>
-          <button
-            onClick={() => setActiveTab('claude_desktop')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-              activeTab === 'claude_desktop' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Claude Desktop
-          </button>
-          <button
-            onClick={() => setActiveTab('cursor')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
-              activeTab === 'cursor' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Cursor / Antigravity
-          </button>
-        </div>
-
-        <pre className="p-3.5 bg-zinc-950 border border-border/80 rounded-xl text-xs font-mono text-zinc-300 overflow-x-auto whitespace-pre-wrap leading-relaxed">
-          {snippets[activeTab]}
-        </pre>
-      </div>
-
-      {/* Secret Token Generator Helper */}
-      <div className="bg-muted/20 border border-border rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4 text-primary" />
-            <span className="text-xs font-semibold text-foreground">Personal Token Generator (Vercel Env Vars)</span>
+      {/* 2-Column Desktop Grid: Connection Setup (Left) + Connected Apps & Audit Log (Right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="lg:col-span-7 space-y-5 min-w-0">
+          {/* Production Endpoint Display */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Canonical Streamable HTTP Endpoint
+            </label>
+            <div className="flex items-center gap-2 bg-muted/40 border border-border rounded-xl p-2.5">
+              <code className="text-xs font-mono text-foreground flex-1 truncate select-all">
+                {endpointUrl}
+              </code>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyEndpoint}
+                className="h-8 px-3 text-xs gap-1.5 shrink-0"
+              >
+                {copiedEndpoint ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedEndpoint ? 'Copied' : 'Copy URL'}
+              </Button>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGenerateSecret}
-            className="h-8 px-3 text-xs gap-1.5"
-          >
-            Generate New Token
-          </Button>
-        </div>
 
-        <p className="text-[11px] text-muted-foreground leading-normal">
-          For fast-track Bearer token auth, generate a 256-bit random secret below, then copy and paste it into your{' '}
-          <strong>Vercel Project Settings → Environment Variables</strong> as <code className="text-foreground">HABITFLOW_MCP_SECRET</code>, alongside{' '}
-          <code className="text-foreground">HABITFLOW_MCP_USER_ID={userId || '<your-user-id>'}</code>.
-        </p>
+          {/* Client Configuration Tabs */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Client Connection Setup
+              </label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopySnippet}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1 shrink-0"
+              >
+                {copiedSnippet ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                Copy Snippet
+              </Button>
+            </div>
 
-        {generatedSecret && (
-          <div className="flex items-center gap-2 bg-background border border-border rounded-lg p-2">
-            <code className="text-xs font-mono text-emerald-500 flex-1 truncate select-all">
-              {generatedSecret}
-            </code>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopySecret}
-              className="h-7 px-2.5 text-xs gap-1"
-            >
-              {copiedSecret ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-              Copy
-            </Button>
+            <div className="flex items-center gap-1.5 p-1 bg-muted/30 border border-border rounded-xl text-xs overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('gemini')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  activeTab === 'gemini' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Gemini App
+              </button>
+              <button
+                onClick={() => setActiveTab('claude_code')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  activeTab === 'claude_code' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Claude Code
+              </button>
+              <button
+                onClick={() => setActiveTab('claude_desktop')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  activeTab === 'claude_desktop' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Claude Desktop
+              </button>
+              <button
+                onClick={() => setActiveTab('cursor')}
+                className={`px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  activeTab === 'cursor' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Cursor / Antigravity
+              </button>
+            </div>
+
+            <pre className="p-3.5 bg-zinc-950 border border-border/80 rounded-xl text-xs font-mono text-zinc-300 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+              {snippets[activeTab]}
+            </pre>
           </div>
-        )}
-      </div>
 
-      {/* Connected OAuth Applications */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-emerald-500" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Connected OAuth Applications
-          </h3>
-        </div>
+          {/* Secret Token Generator Helper */}
+          <div className="bg-muted/20 border border-border rounded-xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <KeyRound className="h-4 w-4 text-primary shrink-0" />
+                <span className="text-xs font-semibold text-foreground">Personal Token Generator (Vercel Env Vars)</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGenerateSecret}
+                className="h-8 px-3 text-xs gap-1.5 shrink-0"
+              >
+                Generate New Token
+              </Button>
+            </div>
 
-        {connectedApps.length === 0 ? (
-          <div className="p-4 border border-dashed border-border rounded-xl text-center text-xs text-muted-foreground">
-            No external OAuth applications currently connected.
-          </div>
-        ) : (
-          <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
-            {connectedApps.map((app) => (
-              <div key={app.clientId} className="p-3.5 flex items-center justify-between gap-3 bg-muted/10">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-foreground truncate">{app.clientId}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate font-mono">
-                    Scopes: {app.scopes.join(', ')}
-                  </p>
-                </div>
+            <p className="text-[11px] text-muted-foreground leading-normal">
+              For fast-track Bearer token auth, generate a 256-bit random secret below, then copy and paste it into your{' '}
+              <strong>Vercel Project Settings → Environment Variables</strong> as <code className="text-foreground">HABITFLOW_MCP_SECRET</code>, alongside{' '}
+              <code className="text-foreground break-all">HABITFLOW_MCP_USER_ID={userId || '<your-user-id>'}</code>.
+            </p>
+
+            {generatedSecret && (
+              <div className="flex items-center gap-2 bg-background border border-border rounded-lg p-2">
+                <code className="text-xs font-mono text-emerald-500 flex-1 truncate select-all">
+                  {generatedSecret}
+                </code>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  onClick={() => handleRevokeApp(app.clientId)}
-                  className="h-8 px-2.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-500/20 shrink-0 gap-1.5"
+                  onClick={handleCopySecret}
+                  className="h-7 px-2.5 text-xs gap-1 shrink-0"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Revoke
+                  {copiedSecret ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  Copy
                 </Button>
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
-
-      {/* Redacted Audit Logs Table */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-primary" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent MCP Tool Activity (Redacted Audit Trail)
-          </h3>
         </div>
 
-        {auditLogs.length === 0 ? (
-          <div className="p-4 border border-dashed border-border rounded-xl text-center text-xs text-muted-foreground">
-            No write operations logged yet. Invocations of write tools will automatically appear here.
-          </div>
-        ) : (
-          <div className="border border-border rounded-xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/40 border-b border-border text-muted-foreground font-medium">
-                <tr>
-                  <th className="py-2.5 px-3">Tool</th>
-                  <th className="py-2.5 px-3">Action</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Duration</th>
-                  <th className="py-2.5 px-3 text-right">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border font-mono">
-                {auditLogs.slice(0, 10).map((log) => (
-                  <tr key={log.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="py-2 px-3 font-semibold text-foreground">{log.tool_name}</td>
-                    <td className="py-2 px-3 text-muted-foreground">{log.action || '-'}</td>
-                    <td className="py-2 px-3">
-                      <span
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          log.status === 'ok'
-                            ? 'bg-emerald-500/10 text-emerald-500'
-                            : 'bg-red-500/10 text-red-400'
-                        }`}
-                      >
-                        {log.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-right text-muted-foreground tabular-nums">
-                      {log.duration_ms}ms
-                    </td>
-                    <td className="py-2 px-3 text-right text-muted-foreground text-[11px] tabular-nums">
-                      {new Date(log.created_at).toLocaleTimeString()}
-                    </td>
-                  </tr>
+        <div className="lg:col-span-5 space-y-5 min-w-0">
+          {/* Connected OAuth Applications */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-emerald-500 shrink-0" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Connected OAuth Applications
+              </h3>
+            </div>
+
+            {connectedApps.length === 0 ? (
+              <div className="p-4 border border-dashed border-border rounded-xl text-center text-xs text-muted-foreground">
+                No external OAuth applications currently connected.
+              </div>
+            ) : (
+              <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
+                {connectedApps.map((app) => (
+                  <div key={app.clientId} className="p-3.5 flex items-center justify-between gap-3 bg-muted/10">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-foreground truncate">{app.clientId}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate font-mono">
+                        Scopes: {app.scopes.join(', ')}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRevokeApp(app.clientId)}
+                      className="h-8 px-2.5 text-xs text-red-500 hover:text-red-400 hover:bg-red-500/10 border-red-500/20 shrink-0 gap-1.5"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Revoke
+                    </Button>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Redacted Audit Logs Table */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary shrink-0" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Recent MCP Tool Activity
+              </h3>
+            </div>
+
+            {auditLogs.length === 0 ? (
+              <div className="p-4 border border-dashed border-border rounded-xl text-center text-xs text-muted-foreground">
+                No write operations logged yet. Invocations of write tools will automatically appear here.
+              </div>
+            ) : (
+              <div className="border border-border rounded-xl overflow-hidden">
+                <div className="overflow-x-auto max-h-[340px] overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/40 border-b border-border text-muted-foreground font-medium sticky top-0 backdrop-blur-sm">
+                      <tr>
+                        <th className="py-2 px-3">Tool</th>
+                        <th className="py-2 px-3">Action</th>
+                        <th className="py-2 px-3">Status</th>
+                        <th className="py-2 px-3 text-right">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border font-mono">
+                      {auditLogs.slice(0, 8).map((log) => (
+                        <tr key={log.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="py-2 px-3 font-semibold text-foreground max-w-[140px] truncate" title={log.tool_name}>
+                            {log.tool_name}
+                          </td>
+                          <td className="py-2 px-3 text-muted-foreground max-w-[90px] truncate">{log.action || '-'}</td>
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                log.status === 'ok'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                  : 'bg-red-500/10 text-red-500'
+                              }`}
+                            >
+                              {log.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-right text-muted-foreground text-[11px] tabular-nums whitespace-nowrap">
+                            {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );

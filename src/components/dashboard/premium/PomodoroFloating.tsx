@@ -570,6 +570,17 @@ export function PomodoroFloating() {
             <div key="collapsed-controls" className="flex flex-col items-end gap-2">
               <motion.button
                 type="button"
+                data-testid="quick-expense-lightning-pill"
+                onClick={() => window.dispatchEvent(new Event('open-quick-capture'))}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.94 }}
+                aria-label="Quick expense capture"
+                className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-amber-500/35 shadow-lg bg-card/95 backdrop-blur-xl text-amber-500 transition-colors hover:border-amber-500/60 hover:bg-amber-500/10"
+              >
+                <Zap className="h-4 w-4 fill-amber-500/20" />
+              </motion.button>
+              <motion.button
+                type="button"
                 data-testid="pomodoro-live-pill"
                 onClick={() => setIsExpanded(true)}
                 whileHover={{ scale: 1.03 }}

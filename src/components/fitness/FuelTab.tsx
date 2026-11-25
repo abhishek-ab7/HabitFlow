@@ -532,45 +532,51 @@ export function FuelTab({ selectedDate, userId }: FuelTabProps) {
             </span>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-muted-foreground w-12">Sleep:</span>
-              {SLEEP_PRESETS.map((hrs) => (
-                <button
-                  key={hrs}
-                  type="button"
-                  onClick={() => upsertDailyLog(selectedDate, { sleepHours: hrs }, userId)}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors',
-                    summary.sleepHours === hrs
-                      ? 'bg-indigo-500 text-white border-indigo-500'
-                      : 'bg-background border-border hover:bg-muted'
-                  )}
-                >
-                  {hrs}h
-                </button>
-              ))}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground block">
+                Sleep Duration
+              </span>
+              <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-1.5">
+                {SLEEP_PRESETS.map((hrs) => (
+                  <button
+                    key={hrs}
+                    type="button"
+                    onClick={() => upsertDailyLog(selectedDate, { sleepHours: hrs }, userId)}
+                    className={cn(
+                      'px-2.5 py-1.5 sm:py-1 rounded-lg text-xs font-medium border transition-colors text-center',
+                      summary.sleepHours === hrs
+                        ? 'bg-indigo-500 text-white border-indigo-500'
+                        : 'bg-background border-border hover:bg-muted'
+                    )}
+                  >
+                    {hrs}h
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-muted-foreground w-12 flex items-center gap-1">
-                <Zap className="h-3 w-3 text-amber-500" /> Enrg:
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                <Zap className="h-3 w-3 text-amber-500" /> Energy Level
               </span>
-              {ENERGY_PRESETS.map((p) => (
-                <button
-                  key={p.val}
-                  type="button"
-                  onClick={() => upsertDailyLog(selectedDate, { energyLevel: p.val }, userId)}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors',
-                    summary.energyLevel === p.val
-                      ? 'bg-amber-500 text-white border-amber-500'
-                      : 'bg-background border-border hover:bg-muted'
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                {ENERGY_PRESETS.map((p) => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    onClick={() => upsertDailyLog(selectedDate, { energyLevel: p.val }, userId)}
+                    className={cn(
+                      'px-2 py-1.5 sm:py-1 rounded-lg text-xs font-medium border transition-colors text-center truncate',
+                      summary.energyLevel === p.val
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'bg-background border-border hover:bg-muted'
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

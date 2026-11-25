@@ -1089,11 +1089,11 @@ export default function SettingsPageContent() {
               handleCleanupDuplicates={handleCleanupDuplicates}
               isCleaning={isCleaning}
             />
-
-            {/* MODEL CONTEXT PROTOCOL (MCP) CONNECTIONS */}
-            <McpConnectionsCard />
           </div>
         </div>
+
+        {/* MODEL CONTEXT PROTOCOL (MCP) CONNECTIONS — FULL WIDTH */}
+        <McpConnectionsCard />
 
         {/* BOTTOM UTILITY ROW */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
