@@ -883,20 +883,33 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
               const candidateMatch = !meal.linkedTransactionId
                 ? candidateTxByMealId.get(meal.id)
                 : undefined;
+              const showQuickLinkChip =
+                Boolean(candidateMatch) &&
+                (candidateMatch?.confidence === 'high' || meal.isJunk);
+              const handleLinkCandidate = async (e: React.MouseEvent) => {
+                e.stopPropagation();
+                if (!candidateMatch) return;
+                feedback.complete();
+                const tx = candidateMatch.transaction;
+                await linkMealToTransaction(meal.id, tx.id);
+                toast.success(
+                  `Linked "${meal.name}" to ₹${tx.amount} ${tx.merchantName || tx.title}`
+                );
+              };
               return (
                 <div key={meal.id} className="cv-auto py-2.5 first:pt-0 last:pb-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setExpandedMealId(isExpanded ? null : meal.id)
-                      }
-                      className="flex-1 text-left min-w-0 flex items-center justify-between gap-3 py-1"
-                    >
-                      <div className="min-w-0 flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-foreground truncate">
-                          {meal.name}
-                        </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedMealId(isExpanded ? null : meal.id)
+                    }
+                    className="w-full text-left flex items-start justify-between gap-3 py-1"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {meal.name}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <Badge variant="outline" className="text-[10px] capitalize shrink-0">
                           {meal.mealType.replace('_', ' ')}
                         </Badge>
@@ -914,47 +927,41 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                           </Badge>
                         )}
                       </div>
+                    </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
-                          {meal.calories} kcal
-                        </span>
-                        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 w-14 text-right">
-                          {meal.proteinG}g P
-                        </span>
-                        {isExpanded ? (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </div>
-                    </button>
+                    <div className="flex items-center gap-2.5 shrink-0 pt-0.5">
+                      <span className="text-sm font-semibold tabular-nums whitespace-nowrap text-amber-600 dark:text-amber-400">
+                        {meal.calories} kcal
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums whitespace-nowrap text-emerald-600 dark:text-emerald-400 min-w-[3.25rem] text-right">
+                        {meal.proteinG}g P
+                      </span>
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                      )}
+                    </div>
+                  </button>
 
-                    {candidateMatch && (
+                  {showQuickLinkChip && candidateMatch && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          feedback.complete();
-                          const tx = candidateMatch.transaction;
-                          await linkMealToTransaction(meal.id, tx.id);
-                          toast.success(
-                            `Linked "${meal.name}" to ₹${tx.amount} ${tx.merchantName || tx.title}`
-                          );
-                        }}
-                        className="h-7 px-2 text-[11px] rounded-full gap-1 shrink-0 border-primary/40 text-primary hover:bg-primary/10"
+                        onClick={handleLinkCandidate}
+                        className="h-7 max-w-full px-2.5 text-[11px] rounded-full gap-1.5 border-primary/40 text-primary hover:bg-primary/10"
                       >
-                        <Wallet className="h-3 w-3" />
-                        Link to ₹{candidateMatch.transaction.amount}{' '}
-                        {(
-                          candidateMatch.transaction.merchantName ||
-                          candidateMatch.transaction.title
-                        ).slice(0, 14)}
+                        <Wallet className="h-3 w-3 shrink-0" />
+                        <span className="truncate">
+                          Link to ₹{candidateMatch.transaction.amount}{' '}
+                          {candidateMatch.transaction.merchantName ||
+                            candidateMatch.transaction.title}
+                        </span>
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {isExpanded && (
                     <div className="mt-2 rounded-xl bg-muted/35 p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -974,7 +981,19 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                         {meal.notes && <span>Notes: {meal.notes}</span>}
                       </div>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {candidateMatch && !showQuickLinkChip && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={handleLinkCandidate}
+                            className="h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                          >
+                            <Wallet className="h-3 w-3" /> Link ₹
+                            {candidateMatch.transaction.amount}
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           size="sm"
