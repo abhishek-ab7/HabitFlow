@@ -40,10 +40,8 @@ import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { db, getSettings, updateSettings } from '@/lib/db';
 import {
-  getSensoryDiagnostics,
   setSensoryPreferences,
   syncSensoryPrefsFromSettings,
-  type SensoryDiagnostics,
 } from '@/lib/feedback/sensory-engine';
 import { useFeedback } from '@/hooks/use-feedback';
 import { cleanupAllDuplicates, countAllDuplicates, clearAllLocalData } from '@/lib/cleanup';
@@ -117,11 +115,6 @@ export default function SettingsPageContent() {
   const { displayName, email, setDisplayName, saveDisplayNameToServer, loadUser } = useUserStore();
   const { streakShield, loadGamification, setStreakShields, updateUserSettings } = useGamificationStore();
   const feedback = useFeedback();
-  const [sensoryDiag, setSensoryDiag] = useState<SensoryDiagnostics | null>(null);
-
-  useEffect(() => {
-    setSensoryDiag(getSensoryDiagnostics());
-  }, []);
 
   const handleReplayTour = () => {
     localStorage.removeItem('habitflow_dashboard_tutorial_completed');
@@ -172,7 +165,6 @@ export default function SettingsPageContent() {
       }
 
       syncSensoryPrefsFromSettings(s);
-      setSensoryDiag(getSensoryDiagnostics());
       setSettings(s);
 
       // Check for duplicates
@@ -236,7 +228,6 @@ export default function SettingsPageContent() {
       feedback.toggle(true);
     }
     setSettings({ ...settings, soundEnabled: newValue });
-    setSensoryDiag(getSensoryDiagnostics());
     await updateUserSettings({ soundEnabled: newValue });
     toast.success(newValue ? 'Sound enabled' : 'Sound disabled');
   };
@@ -249,7 +240,6 @@ export default function SettingsPageContent() {
       feedback.haptic('toggle');
     }
     setSettings({ ...settings, hapticsEnabled: newValue });
-    setSensoryDiag(getSensoryDiagnostics());
     await updateUserSettings({ hapticsEnabled: newValue });
     toast.success(newValue ? 'Haptics enabled' : 'Haptics disabled');
   };
@@ -814,39 +804,6 @@ export default function SettingsPageContent() {
                         })}
                       </div>
                     </div>
-
-                    {/* 4. Non-interactive Theme Token Preview */}
-                    <div
-                      aria-label="Theme color preview"
-                      className="rounded-xl bg-background border border-border p-3 space-y-2 select-none pointer-events-none"
-                    >
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                        <span>Palette Preview</span>
-                        <span>Sample only</span>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
-                            <span className="w-3.5 h-3.5 rounded bg-success/15 text-success flex items-center justify-center shrink-0">
-                              <Check className="w-2.5 h-2.5 stroke-[2.5]" />
-                            </span>
-                            <span className="font-medium text-foreground">Streak</span>
-                            <span className="font-mono tabular-nums text-muted-foreground">5/6</span>
-                          </div>
-
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border text-xs">
-                            <span className="text-muted-foreground">Surface</span>
-                            <span className="font-mono font-semibold tabular-nums text-foreground">
-                              ₹420
-                            </span>
-                          </div>
-                        </div>
-
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-medium whitespace-nowrap">
-                          <span>Primary Accent</span>
-                        </span>
-                      </div>
-                    </div>
                   </div>
                 );
               })()}
@@ -1097,73 +1054,6 @@ export default function SettingsPageContent() {
                   >
                     {settings.hapticsEnabled !== false ? 'On' : 'Off'}
                   </Button>
-                </div>
-
-                <div className="pt-3 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-foreground">Test Feedback</span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 px-2.5 text-[11px] rounded-full"
-                        onClick={() => {
-                          feedback.tap();
-                          setSensoryDiag(getSensoryDiagnostics());
-                        }}
-                      >
-                        Test Tap
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 px-2.5 text-[11px] rounded-full"
-                        onClick={() => {
-                          feedback.complete();
-                          setSensoryDiag(getSensoryDiagnostics());
-                        }}
-                      >
-                        Test Complete
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 px-2.5 text-[11px] rounded-full"
-                        onClick={() => {
-                          feedback.coin();
-                          setSensoryDiag(getSensoryDiagnostics());
-                        }}
-                      >
-                        Test Pay
-                      </Button>
-                    </div>
-                  </div>
-                  {mounted && sensoryDiag && (
-                    <p className="text-[11px] text-muted-foreground leading-snug">
-                      Audio:{' '}
-                      <span className="font-medium text-foreground">
-                        {sensoryDiag.audioContextState === 'running'
-                          ? 'Ready'
-                          : sensoryDiag.audioContextState === 'suspended'
-                            ? 'Tap to unlock'
-                            : sensoryDiag.audioContextState}
-                      </span>{' '}
-                      · Haptics:{' '}
-                      <span className="font-medium text-foreground">
-                        {sensoryDiag.hasNativeBridge
-                          ? `${sensoryDiag.nativeBridgeName} bridge`
-                          : sensoryDiag.hasVibrateApi
-                            ? 'Vibration API'
-                            : 'Unavailable on this browser'}
-                      </span>
-                      {!sensoryDiag.hasNativeBridge && !sensoryDiag.hasVibrateApi && (
-                        <span> (iOS Safari disables web vibration; Chrome Android supports it)</span>
-                      )}
-                    </p>
-                  )}
                 </div>
               </div>
             </section>

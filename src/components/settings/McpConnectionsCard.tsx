@@ -5,10 +5,8 @@ import {
   Server,
   Copy,
   Check,
-  KeyRound,
   ExternalLink,
   Shield,
-  Activity,
   Trash2,
   RefreshCw,
   Terminal,
@@ -16,16 +14,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-
-interface AuditLog {
-  id: string;
-  tool_name: string;
-  action: string | null;
-  status: string;
-  duration_ms: number;
-  created_at: string;
-  input_summary: string;
-}
 
 interface ConnectedApp {
   clientId: string;
@@ -36,13 +24,9 @@ interface ConnectedApp {
 export function McpConnectionsCard() {
   const [endpointUrl, setEndpointUrl] = useState('https://habitflow.tech/api/mcp');
   const [copiedEndpoint, setCopiedEndpoint] = useState(false);
-  const [copiedSecret, setCopiedSecret] = useState(false);
   const [copiedSnippet, setCopiedSnippet] = useState(false);
-  const [generatedSecret, setGeneratedSecret] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'gemini' | 'claude_code' | 'claude_desktop' | 'cursor'>('gemini');
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [connectedApps, setConnectedApps] = useState<ConnectedApp[]>([]);
-  const [userId, setUserId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchConnectionsData = async () => {
@@ -52,9 +36,7 @@ export function McpConnectionsCard() {
       if (res.ok) {
         const data = await res.json();
         if (data.endpointUrl) setEndpointUrl(data.endpointUrl);
-        setAuditLogs(data.auditLogs || []);
         setConnectedApps(data.connectedApps || []);
-        setUserId(data.userId || '');
       }
     } catch (err) {
       console.warn('Failed to fetch MCP connection info:', err);
@@ -72,22 +54,6 @@ export function McpConnectionsCard() {
     setCopiedEndpoint(true);
     toast.success('MCP Endpoint copied to clipboard');
     setTimeout(() => setCopiedEndpoint(false), 2000);
-  };
-
-  const handleGenerateSecret = () => {
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    const hex = Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
-    setGeneratedSecret(hex);
-    toast.success('Generated 256-bit random secret');
-  };
-
-  const handleCopySecret = () => {
-    if (!generatedSecret) return;
-    navigator.clipboard.writeText(generatedSecret);
-    setCopiedSecret(true);
-    toast.success('Secret copied to clipboard');
-    setTimeout(() => setCopiedSecret(false), 2000);
   };
 
   const handleRevokeApp = async (clientId: string) => {
@@ -266,47 +232,6 @@ claude mcp add --transport http habitflow ${endpointUrl}`,
               {snippets[activeTab]}
             </pre>
           </div>
-
-          {/* Secret Token Generator Helper */}
-          <div className="bg-muted/20 border border-border rounded-xl p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <KeyRound className="h-4 w-4 text-primary shrink-0" />
-                <span className="text-xs font-semibold text-foreground">Personal Token Generator (Vercel Env Vars)</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGenerateSecret}
-                className="h-8 px-3 text-xs gap-1.5 shrink-0"
-              >
-                Generate New Token
-              </Button>
-            </div>
-
-            <p className="text-[11px] text-muted-foreground leading-normal">
-              For fast-track Bearer token auth, generate a 256-bit random secret below, then copy and paste it into your{' '}
-              <strong>Vercel Project Settings → Environment Variables</strong> as <code className="text-foreground">HABITFLOW_MCP_SECRET</code>, alongside{' '}
-              <code className="text-foreground break-all">HABITFLOW_MCP_USER_ID={userId || '<your-user-id>'}</code>.
-            </p>
-
-            {generatedSecret && (
-              <div className="flex items-center gap-2 bg-background border border-border rounded-lg p-2">
-                <code className="text-xs font-mono text-emerald-500 flex-1 truncate select-all">
-                  {generatedSecret}
-                </code>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCopySecret}
-                  className="h-7 px-2.5 text-xs gap-1 shrink-0"
-                >
-                  {copiedSecret ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                  Copy
-                </Button>
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="lg:col-span-5 space-y-5 min-w-0">
@@ -344,61 +269,6 @@ claude mcp add --transport http habitflow ${endpointUrl}`,
                     </Button>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-
-          {/* Redacted Audit Logs Table */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary shrink-0" />
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Recent MCP Tool Activity
-              </h3>
-            </div>
-
-            {auditLogs.length === 0 ? (
-              <div className="p-4 border border-dashed border-border rounded-xl text-center text-xs text-muted-foreground">
-                No write operations logged yet. Invocations of write tools will automatically appear here.
-              </div>
-            ) : (
-              <div className="border border-border rounded-xl overflow-hidden">
-                <div className="overflow-x-auto max-h-[340px] overflow-y-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-muted/40 border-b border-border text-muted-foreground font-medium sticky top-0 backdrop-blur-sm">
-                      <tr>
-                        <th className="py-2 px-3">Tool</th>
-                        <th className="py-2 px-3">Action</th>
-                        <th className="py-2 px-3">Status</th>
-                        <th className="py-2 px-3 text-right">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border font-mono">
-                      {auditLogs.slice(0, 8).map((log) => (
-                        <tr key={log.id} className="hover:bg-muted/20 transition-colors">
-                          <td className="py-2 px-3 font-semibold text-foreground max-w-[140px] truncate" title={log.tool_name}>
-                            {log.tool_name}
-                          </td>
-                          <td className="py-2 px-3 text-muted-foreground max-w-[90px] truncate">{log.action || '-'}</td>
-                          <td className="py-2 px-3 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                                log.status === 'ok'
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-red-500/10 text-red-500'
-                              }`}
-                            >
-                              {log.status.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 text-right text-muted-foreground text-[11px] tabular-nums whitespace-nowrap">
-                            {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             )}
           </div>
