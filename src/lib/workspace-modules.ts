@@ -5,3 +5,9 @@ export function isFitnessModuleEnabled(
 ): boolean {
   return !settings?.habitOnlyMode && settings?.showFitness !== false;
 }
+
+export function isFinanceModuleEnabled(
+  settings?: Pick<UserSettings, 'habitOnlyMode' | 'showFinance'> | null
+): boolean {
+  return !settings?.habitOnlyMode && settings?.showFinance !== false;
+}

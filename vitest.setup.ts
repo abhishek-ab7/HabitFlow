@@ -4,6 +4,34 @@ import { vi, beforeEach } from 'vitest';
 
 // Set up mock window APIs for JSDOM
 if (typeof window !== 'undefined') {
+  if (!window.localStorage || typeof window.localStorage.getItem !== 'function') {
+    const store = new Map<string, string>();
+    const memoryStorage: Storage = {
+      get length() {
+        return store.size;
+      },
+      clear: () => store.clear(),
+      getItem: (key: string) => store.get(String(key)) ?? null,
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+      removeItem: (key: string) => {
+        store.delete(String(key));
+      },
+      setItem: (key: string, value: string) => {
+        store.set(String(key), String(value));
+      },
+    };
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: memoryStorage,
+    });
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      writable: true,
+      value: memoryStorage,
+    });
+  }
+
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation(query => ({

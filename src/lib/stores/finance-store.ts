@@ -266,7 +266,7 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
         migratedDemoFinanceUsers.add(userId);
       }
 
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && typeof window.localStorage?.getItem === 'function') {
         const migrationKey = `flowfinance_fresh_start_v2_${userId}`;
         if (!window.localStorage.getItem(migrationKey)) {
           const existingCats = await db.financeCategories.where('userId').equals(userId).count();

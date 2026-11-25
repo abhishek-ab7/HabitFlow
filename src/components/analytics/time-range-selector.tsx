@@ -1,80 +1,72 @@
 'use client';
 
-import { motion } from 'framer-motion';
-import { Calendar } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import React from 'react';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  ANALYTICS_RANGE_OPTIONS,
+  type AnalyticsRangeKey,
+  toAnalyticsRangeKey,
+  toLegacyTimeRange,
+} from '@/lib/analytics/life-os-aggregator';
+import { TimeRange } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import type { TimeRange } from '@/lib/types';
 
-interface TimeRangeSelectorProps {
-  value: TimeRange;
-  onChange: (range: TimeRange) => void;
+interface TimeRangePillProps {
+  value: AnalyticsRangeKey;
+  onChange: (range: AnalyticsRangeKey) => void;
+  className?: string;
 }
 
-const TIME_RANGES: { value: TimeRange; label: string }[] = [
-  { value: 'week', label: 'Last 7 days' },
-  { value: 'month', label: 'Last 30 days' },
-  { value: 'quarter', label: 'Last 90 days' },
-  { value: 'year', label: 'Last 365 days' },
-];
-
-export function TimeRangeSelector({ value, onChange }: TimeRangeSelectorProps) {
-  const selectedLabel = TIME_RANGES.find(r => r.value === value)?.label || 'Select range';
-
+export function TimeRangePillSelector({ value, onChange, className }: TimeRangePillProps) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="gap-2">
-          <Calendar className="h-4 w-4" />
-          {selectedLabel}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {TIME_RANGES.map(range => (
-          <DropdownMenuCheckboxItem
-            key={range.value}
-            checked={value === range.value}
-            onCheckedChange={() => onChange(range.value)}
+    <div
+      role="group"
+      aria-label="Analytics time range"
+      className={cn(
+        'inline-flex items-center gap-1 rounded-xl border border-border bg-muted/40 p-1 shrink-0',
+        className
+      )}
+    >
+      {ANALYTICS_RANGE_OPTIONS.map((option) => {
+        const isActive = value === option.key;
+        return (
+          <button
+            key={option.key}
+            type="button"
+            aria-pressed={isActive}
+            title={option.label}
+            onClick={() => onChange(option.key)}
+            className={cn(
+              'px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+              isActive
+                ? 'bg-background text-foreground border border-border/80 shadow-xs font-semibold'
+                : 'border border-transparent text-muted-foreground hover:text-foreground'
+            )}
           >
-            {range.label}
-          </DropdownMenuCheckboxItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// Tab-style variant for inline selection
-export function TimeRangeTabs({ value, onChange }: TimeRangeSelectorProps) {
-  return (
-    <div className="flex rounded-lg bg-muted p-1">
-      {TIME_RANGES.map(range => (
-        <button
-          key={range.value}
-          onClick={() => onChange(range.value)}
-          className={cn(
-            "relative px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-            value === range.value
-              ? "text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {value === range.value && (
-            <motion.div
-              layoutId="activeTimeRange"
-              className="absolute inset-0 bg-background rounded-md shadow-sm"
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-            />
-          )}
-          <span className="relative z-10">{range.value.charAt(0).toUpperCase() + range.value.slice(1)}</span>
-        </button>
-      ))}
+            {option.shortLabel}
+          </button>
+        );
+      })}
     </div>
   );
+}
+
+interface LegacyTimeRangeSelectorProps {
+  value: TimeRange;
+  onChange: (range: TimeRange) => void;
+  className?: string;
+}
+
+export function TimeRangeTabs({ value, onChange, className }: LegacyTimeRangeSelectorProps) {
+  const normalized = toAnalyticsRangeKey(value);
+  return (
+    <TimeRangePillSelector
+      value={normalized}
+      onChange={(next) => onChange(toLegacyTimeRange(next))}
+      className={className}
+    />
+  );
+}
+
+export function TimeRangeSelector({ value, onChange, className }: LegacyTimeRangeSelectorProps) {
+  return <TimeRangeTabs value={value} onChange={onChange} className={className} />;
 }

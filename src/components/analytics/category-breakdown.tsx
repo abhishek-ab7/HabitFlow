@@ -1,18 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-} from 'recharts';
-import { motion } from 'framer-motion';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import type { CategoryBreakdown, Category } from '@/lib/types';
+import React, { useMemo } from 'react';
+import { AnalyticsChartCard } from '@/components/analytics/shared/AnalyticsChartCard';
+import type { Category, CategoryBreakdown } from '@/lib/types';
 import { CATEGORY_LABELS } from '@/lib/types';
 
 interface CategoryBreakdownChartProps {
@@ -20,125 +10,80 @@ interface CategoryBreakdownChartProps {
 }
 
 const CATEGORY_COLORS: Record<Category, string> = {
-  health: 'hsl(142, 71%, 45%)',
-  work: 'hsl(217, 91%, 60%)',
-  learning: 'hsl(280, 87%, 65%)',
-  personal: 'hsl(334, 86%, 67%)',
-  finance: 'hsl(43, 96%, 56%)',
-  relationships: 'hsl(12, 76%, 61%)',
+  health: '#10b981',
+  work: '#3b82f6',
+  learning: '#8b5cf6',
+  personal: '#ec4899',
+  finance: '#f59e0b',
+  relationships: '#f97316',
 };
 
-export function CategoryBreakdownChart({ data }: CategoryBreakdownChartProps) {
-  const chartData = useMemo(() => {
-    return data
-      .filter(d => d.count > 0)
-      .map(d => ({
-        ...d,
-        name: CATEGORY_LABELS[d.category],
-        color: CATEGORY_COLORS[d.category],
-      }));
-  }, [data]);
+function CategoryBreakdownChartInner({ data }: CategoryBreakdownChartProps) {
+  const categories = useMemo(
+    () =>
+      data
+        .filter((d) => d.count > 0)
+        .map((d) => ({
+          ...d,
+          name: CATEGORY_LABELS[d.category],
+          color: CATEGORY_COLORS[d.category],
+        }))
+        .sort((a, b) => b.completionRate - a.completionRate || b.count - a.count),
+    [data]
+  );
 
-  const totalHabits = data.reduce((sum, d) => sum + d.count, 0);
-
-  if (chartData.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">Habit Categories</CardTitle>
-          <CardDescription>Distribution of your habits</CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center justify-center h-[300px]">
-          <p className="text-muted-foreground">No habit data available</p>
-        </CardContent>
-      </Card>
-    );
-  }
+  const totalHabits = useMemo(
+    () => categories.reduce((sum, item) => sum + item.count, 0),
+    [categories]
+  );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">Habit Categories</CardTitle>
-        <CardDescription>
-          {totalHabits} habit{totalHabits !== 1 ? 's' : ''} across {chartData.length} categor{chartData.length !== 1 ? 'ies' : 'y'}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="h-[300px]"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={chartData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={2}
-                dataKey="count"
-              >
-                {chartData.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={entry.color}
-                    stroke="var(--background)"
-                    strokeWidth={2}
-                  />
-                ))}
-              </Pie>
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload;
-                    return (
-                      <div className="bg-popover border border-border rounded-lg shadow-lg p-3">
-                        <p className="text-sm font-medium">{data.name}</p>
-                        <p className="text-lg font-bold">{data.count} habit{data.count !== 1 ? 's' : ''}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {data.completionRate.toFixed(0)}% completion rate
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Legend
-                verticalAlign="bottom"
-                height={36}
-                formatter={(value, entry: any) => (
-                  <span className="text-sm text-foreground">{value}</span>
-                )}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </motion.div>
-
-        {/* Category completion rates */}
-        <div className="grid grid-cols-2 gap-2 mt-4">
-          {chartData.map(cat => (
-            <div 
-              key={cat.category}
-              className="flex items-center justify-between p-2 rounded-lg bg-muted/50"
-            >
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full"
+    <AnalyticsChartCard
+      title="Category Consistency"
+      subtitle={
+        categories.length > 0
+          ? `${totalHabits} habit${totalHabits === 1 ? '' : 's'} across ${categories.length} area${categories.length === 1 ? '' : 's'}`
+          : 'Completion rate by life area'
+      }
+      isEmpty={categories.length === 0}
+      emptyTitle="No active habit categories"
+      emptyDescription="Create or activate a habit to track category distribution and adherence."
+      emptyActionLabel="Add Habit"
+      emptyActionHref="/habits"
+    >
+      <div className="space-y-3">
+        {categories.map((cat) => (
+          <div key={cat.category} className="space-y-1.5 rounded-xl bg-muted/35 p-3">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className="h-2.5 w-2.5 rounded-full shrink-0"
                   style={{ backgroundColor: cat.color }}
+                  aria-hidden="true"
                 />
-                <span className="text-sm">{cat.name}</span>
+                <span className="font-semibold text-foreground truncate">{cat.name}</span>
+                <span className="rounded-md bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground border border-border/60 tabular-nums shrink-0">
+                  {cat.count} {cat.count === 1 ? 'habit' : 'habits'}
+                </span>
               </div>
-              <span className="text-sm font-medium">
-                {cat.completionRate.toFixed(0)}%
+              <span className="font-bold text-foreground tabular-nums shrink-0">
+                {Math.round(cat.completionRate)}%
               </span>
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, Math.max(2, Math.round(cat.completionRate)))}%`,
+                  backgroundColor: cat.color,
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </AnalyticsChartCard>
   );
 }
+
+export const CategoryBreakdownChart = React.memo(CategoryBreakdownChartInner);

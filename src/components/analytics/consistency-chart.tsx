@@ -1,21 +1,22 @@
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import {
-  LineChart,
+  CartesianGrid,
   Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
 } from 'recharts';
-import { motion } from 'framer-motion';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { AnalyticsChartCard } from '@/components/analytics/shared/AnalyticsChartCard';
+import { AnalyticsChartTooltip } from '@/components/analytics/shared/AnalyticsChartTooltip';
+import { formatHumanDate } from '@/lib/date-format';
 import type { DailyStats, Trend } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 interface ConsistencyChartProps {
   data: DailyStats[];
@@ -23,145 +24,159 @@ interface ConsistencyChartProps {
   averageRate: number;
 }
 
-export function ConsistencyChart({ data, trend, averageRate }: ConsistencyChartProps) {
+const CHART_MARGIN = { top: 8, right: 12, left: -16, bottom: 2 };
+
+function ConsistencyChartInner({ data, trend, averageRate }: ConsistencyChartProps) {
+  const [mode, setMode] = useState<'daily' | 'rolling'>('daily');
+
   const chartData = useMemo(() => {
-    return data.map(day => ({
-      ...day,
-      dateLabel: new Date(day.date).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric'
-      }),
-    }));
+    return data.map((day, idx) => {
+      const sliceStart = Math.max(0, idx - 6);
+      const windowSlice = data.slice(sliceStart, idx + 1);
+      const rollingAvg =
+        windowSlice.length > 0
+          ? Math.round(
+              windowSlice.reduce((sum, item) => sum + item.completionRate, 0) /
+                windowSlice.length
+            )
+          : day.completionRate;
+
+      return {
+        ...day,
+        dateLabel: formatHumanDate(day.date),
+        rollingAvg,
+      };
+    });
   }, [data]);
 
-  const getTrendInfo = () => {
-    switch (trend) {
-      case 'up':
-        return {
-          icon: TrendingUp,
-          label: 'Improving',
-          color: 'text-emerald-600 dark:text-emerald-400',
-        };
-      case 'down':
-        return {
-          icon: TrendingDown,
-          label: 'Declining',
-          color: 'text-rose-600 dark:text-rose-400',
-        };
-      default:
-        return {
-          icon: Minus,
-          label: 'Stable',
-          color: 'text-muted-foreground',
-        };
-    }
-  };
+  const hasSignal = useMemo(
+    () => data.filter((d) => d.totalHabits > 0).length >= 2 && data.some((d) => d.completedHabits > 0),
+    [data]
+  );
 
-  const trendInfo = getTrendInfo();
-  const TrendIcon = trendInfo.icon;
+  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
+  const trendLabel = trend === 'up' ? 'Improving' : trend === 'down' ? 'Declining' : 'Steady';
+  const trendClass =
+    trend === 'up'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : trend === 'down'
+        ? 'text-rose-600 dark:text-rose-400'
+        : 'text-muted-foreground';
 
   return (
-    <Card className="col-span-full lg:col-span-2 rounded-2xl border border-border/80 shadow-none">
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 space-y-0 pb-3">
-        <div>
-          <CardTitle className="text-base sm:text-lg font-semibold">Consistency Over Time</CardTitle>
-          <CardDescription>Your daily habit completion rate</CardDescription>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-mono tabular-nums">
-          <span className="font-semibold text-foreground">
-            {averageRate.toFixed(0)}% avg
+    <AnalyticsChartCard
+      title="Consistency Trend"
+      subtitle="Completion rate across active habits"
+      badge={
+        <span className={cn('inline-flex items-center gap-1 text-xs font-semibold', trendClass)}>
+          <TrendIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>{trendLabel}</span>
+          <span className="text-muted-foreground font-normal tabular-nums">
+            · {Math.round(averageRate)}% avg
           </span>
-          <span className="text-muted-foreground" aria-hidden="true">·</span>
-          <span className={cn('inline-flex items-center gap-1 font-sans font-semibold', trendInfo.color)}>
-            <TrendIcon className="h-3.5 w-3.5" />
-            {trendInfo.label}
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.4 }}
-          className="h-[280px] sm:h-[300px]"
+        </span>
+      }
+      headerRight={
+        <div
+          role="group"
+          aria-label="Consistency smoothing mode"
+          className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-[11px]"
         >
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 8, right: 12, left: -8, bottom: 5 }}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="var(--border)"
-                strokeOpacity={0.7}
-                vertical={false}
-              />
-              <XAxis
-                dataKey="dateLabel"
-                stroke="var(--muted-foreground)"
-                fontSize={11}
-                tickLine={false}
-                axisLine={false}
-                dy={8}
-                interval="preserveStartEnd"
-                tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
-              />
-              <YAxis
-                stroke="var(--muted-foreground)"
-                fontSize={11}
-                tickLine={false}
-                axisLine={false}
-                domain={[0, 100]}
-                tickFormatter={value => `${value}%`}
-                dx={-4}
-                tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
-              />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const point = payload[0].payload;
-                    return (
-                      <div className="bg-popover text-popover-foreground border border-border rounded-xl shadow-lg p-3">
-                        <p className="text-xs font-semibold text-foreground">{point.dateLabel}</p>
-                        <p className="text-xs text-muted-foreground font-mono tabular-nums mt-0.5">
-                          {point.completedHabits}/{point.totalHabits} habits
-                        </p>
-                        <p className="text-base font-bold font-mono tabular-nums text-primary mt-0.5">
-                          {point.completionRate.toFixed(0)}%
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <ReferenceLine
-                y={averageRate}
-                stroke="var(--muted-foreground)"
-                strokeOpacity={0.65}
-                strokeDasharray="5 5"
-                label={{
-                  value: 'Avg',
-                  position: 'right',
-                  fill: 'var(--muted-foreground)',
-                  fontSize: 11,
-                  fontWeight: 500,
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="completionRate"
-                stroke="var(--primary)"
-                strokeWidth={2.25}
-                dot={false}
-                activeDot={{
-                  r: 5,
-                  fill: 'var(--primary)',
-                  stroke: 'var(--background)',
-                  strokeWidth: 2,
-                }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </motion.div>
-      </CardContent>
-    </Card>
+          <button
+            type="button"
+            aria-pressed={mode === 'daily'}
+            onClick={() => setMode('daily')}
+            className={cn(
+              'rounded-md px-2 py-1 font-medium transition-colors',
+              mode === 'daily'
+                ? 'bg-background text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            Daily
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'rolling'}
+            onClick={() => setMode('rolling')}
+            className={cn(
+              'rounded-md px-2 py-1 font-medium transition-colors',
+              mode === 'rolling'
+                ? 'bg-background text-foreground shadow-xs font-semibold'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+          >
+            7D Rolling
+          </button>
+        </div>
+      }
+      isEmpty={!hasSignal}
+      emptyTitle="Too few check-ins for a consistency curve"
+      emptyDescription="Complete habits on at least 2 days in this range to plot your daily and 7-day rolling curve."
+      emptyActionLabel="Log Habits"
+      emptyActionHref="/habits"
+    >
+      <div className="h-[210px] sm:h-[245px] w-full">
+        <ResponsiveContainer width="100%" height="100%" debounce={150}>
+          <LineChart data={chartData} margin={CHART_MARGIN}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="var(--border)"
+              strokeOpacity={0.65}
+              vertical={false}
+            />
+            <XAxis
+              dataKey="dateLabel"
+              stroke="var(--muted-foreground)"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={32}
+              dy={6}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
+            />
+            <YAxis
+              stroke="var(--muted-foreground)"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+              domain={[0, 100]}
+              tickFormatter={(value) => `${value}%`}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
+            />
+            <Tooltip
+              content={
+                <AnalyticsChartTooltip
+                  valueFormatter={(val) => `${Math.round(val)}%`}
+                />
+              }
+            />
+            <ReferenceLine
+              y={averageRate}
+              stroke="var(--muted-foreground)"
+              strokeOpacity={0.55}
+              strokeDasharray="4 4"
+            />
+            <Line
+              type="monotone"
+              dataKey={mode === 'rolling' ? 'rollingAvg' : 'completionRate'}
+              name={mode === 'rolling' ? '7D Rolling' : 'Daily Rate'}
+              stroke="var(--primary)"
+              strokeWidth={2.25}
+              dot={false}
+              isAnimationActive={false}
+              activeDot={{
+                r: 4,
+                fill: 'var(--primary)',
+                stroke: 'var(--background)',
+                strokeWidth: 2,
+              }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </AnalyticsChartCard>
   );
 }
+
+export const ConsistencyChart = React.memo(ConsistencyChartInner);

@@ -1,122 +1,117 @@
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
 } from 'recharts';
-import { motion } from 'framer-motion';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import type { WeekdayStats } from '@/lib/types';
-import { DAYS_OF_WEEK_SHORT } from '@/lib/types';
+import { AnalyticsChartCard } from '@/components/analytics/shared/AnalyticsChartCard';
+import { AnalyticsChartTooltip } from '@/components/analytics/shared/AnalyticsChartTooltip';
+import { DAYS_OF_WEEK_SHORT, type WeekdayStats } from '@/lib/types';
 
 interface WeekdayChartProps {
   data: WeekdayStats[];
 }
 
-export function WeekdayChart({ data }: WeekdayChartProps) {
-  const chartData = useMemo(() => {
-    return data.map(day => ({
-      ...day,
-      name: DAYS_OF_WEEK_SHORT[day.dayOfWeek],
-    }));
+const CHART_MARGIN = { top: 8, right: 8, left: -16, bottom: 2 };
+
+function getBarColor(rate: number): string {
+  if (rate >= 75) return '#10b981';
+  if (rate >= 50) return '#0ea5e9';
+  if (rate >= 25) return '#f59e0b';
+  return 'var(--muted-foreground)';
+}
+
+function WeekdayChartInner({ data }: WeekdayChartProps) {
+  const chartData = useMemo(
+    () =>
+      data.map((day) => ({
+        ...day,
+        name: DAYS_OF_WEEK_SHORT[day.dayOfWeek],
+      })),
+    [data]
+  );
+
+  const totalCompletions = useMemo(
+    () => data.reduce((sum, d) => sum + d.totalCompletions, 0),
+    [data]
+  );
+
+  const { bestDay, worstDay } = useMemo(() => {
+    if (data.length === 0) return { bestDay: null, worstDay: null };
+    const sorted = [...data].sort(
+      (a, b) => b.averageCompletionRate - a.averageCompletionRate
+    );
+    return { bestDay: sorted[0], worstDay: sorted[sorted.length - 1] };
   }, [data]);
 
-  // Find best and worst days
-  const sortedByRate = [...data].sort((a, b) => b.averageCompletionRate - a.averageCompletionRate);
-  const bestDay = sortedByRate[0];
-  const worstDay = sortedByRate[sortedByRate.length - 1];
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">Weekday Performance</CardTitle>
-        <CardDescription>
-          Best: {bestDay?.dayName} ({bestDay?.averageCompletionRate.toFixed(0)}%) | 
-          Lowest: {worstDay?.dayName} ({worstDay?.averageCompletionRate.toFixed(0)}%)
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="h-[250px]"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                stroke="#e2e8f0"
-                vertical={false}
-              />
-              <XAxis 
-                dataKey="name"
-                stroke="#94a3b8"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-              />
-              <YAxis
-                stroke="#94a3b8"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                domain={[0, 100]}
-                tickFormatter={value => `${value}%`}
-                tick={{ fill: '#94a3b8', fontSize: 12 }}
-              />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload;
-                    return (
-                      <div className="bg-popover border border-border rounded-lg shadow-lg p-3">
-                        <p className="text-sm font-medium">{data.dayName}</p>
-                        <p className="text-lg font-bold text-primary">
-                          {data.averageCompletionRate.toFixed(0)}%
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {data.totalCompletions} completions
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Bar 
-                dataKey="averageCompletionRate" 
-                radius={[4, 4, 0, 0]}
-              >
-                {chartData.map((entry, index) => {
-                  // Color based on performance
-                  const rate = entry.averageCompletionRate;
-                  let color = '#94a3b8'; // muted-foreground
-                  if (rate >= 80) color = '#8b5cf6'; // chart-1
-                  else if (rate >= 60) color = '#10b981'; // chart-2
-                  else if (rate >= 40) color = '#f59e0b'; // chart-3
-                  else if (rate >= 20) color = '#ec4899'; // chart-4
-                  
-                  return (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={color}
-                    />
-                  );
-                })}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </motion.div>
-      </CardContent>
-    </Card>
+    <AnalyticsChartCard
+      title="Weekday Performance"
+      subtitle={
+        bestDay && worstDay && totalCompletions > 0
+          ? `Best: ${bestDay.dayName} (${Math.round(bestDay.averageCompletionRate)}%) · Lowest: ${worstDay.dayName} (${Math.round(worstDay.averageCompletionRate)}%)`
+          : 'Average habit adherence by day of week'
+      }
+      isEmpty={totalCompletions === 0}
+      emptyTitle="No weekday pattern yet"
+      emptyDescription="Check off habits across a few days to identify your strongest and weakest weekdays."
+    >
+      <div className="h-[210px] sm:h-[235px] w-full">
+        <ResponsiveContainer width="100%" height="100%" debounce={150}>
+          <BarChart data={chartData} margin={CHART_MARGIN}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="var(--border)"
+              strokeOpacity={0.65}
+              vertical={false}
+            />
+            <XAxis
+              dataKey="name"
+              stroke="var(--muted-foreground)"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
+            />
+            <YAxis
+              stroke="var(--muted-foreground)"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+              domain={[0, 100]}
+              tickFormatter={(value) => `${value}%`}
+              tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
+            />
+            <Tooltip
+              content={
+                <AnalyticsChartTooltip valueFormatter={(val) => `${Math.round(val)}%`} />
+              }
+            />
+            <Bar
+              dataKey="averageCompletionRate"
+              name="Completion"
+              radius={[6, 6, 0, 0]}
+              isAnimationActive={false}
+            >
+              {chartData.map((entry) => (
+                <Cell
+                  key={entry.dayOfWeek}
+                  fill={getBarColor(entry.averageCompletionRate)}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </AnalyticsChartCard>
   );
 }
+
+export const WeekdayChart = React.memo(WeekdayChartInner);

@@ -17,7 +17,9 @@ import {
   RotateCcw,
   CheckCircle,
   TrendingUp,
-  Brain
+  Brain,
+  Wallet,
+  Dumbbell
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useHabitStore } from '@/lib/stores/habit-store';
@@ -26,7 +28,30 @@ import { useTaskStore } from '@/lib/stores/task-store';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-export function YearInReview() {
+export interface YearInReviewFinanceProps {
+  enabled: boolean;
+  totalIncome: number;
+  totalExpense: number;
+  totalInvestment: number;
+  savingsRatePct: number;
+  netWorthInr: number;
+}
+
+export interface YearInReviewFitnessProps {
+  enabled: boolean;
+  workoutCount: number;
+  totalVolumeKg: number;
+  avgProteinG: number;
+  latestWeightKg: number | null;
+  junkFreeStreakDays: number;
+}
+
+interface YearInReviewProps {
+  financeSummary?: YearInReviewFinanceProps;
+  fitnessSummary?: YearInReviewFitnessProps;
+}
+
+export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewProps = {}) {
   const { habits, completions } = useHabitStore();
   const { goals } = useGoalStore();
   const { tasks } = useTaskStore();
@@ -452,6 +477,18 @@ export function YearInReview() {
               <span>Tasks &amp; Goals Completed:</span>
               <span className="font-bold text-emerald-400 text-sm">{stats2026.completedTasks} Tasks · {stats2026.completedGoals} Goals</span>
             </div>
+            {financeSummary?.enabled && (
+              <div className="flex justify-between items-center py-1 border-t border-white/5">
+                <span>2026 Savings Rate:</span>
+                <span className="font-bold text-sky-400 text-sm tabular-nums">{financeSummary.savingsRatePct}%</span>
+              </div>
+            )}
+            {fitnessSummary?.enabled && (
+              <div className="flex justify-between items-center py-1 border-t border-white/5">
+                <span>Workouts Logged:</span>
+                <span className="font-bold text-orange-400 text-sm tabular-nums">{fitnessSummary.workoutCount} sessions</span>
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2 w-full mt-2 pointer-events-auto hide-in-share">
@@ -474,8 +511,94 @@ export function YearInReview() {
           </div>
         </div>
       )
-    }
+    },
+    ...(financeSummary?.enabled
+      ? [
+          {
+            id: 'finance-wrapped',
+            title: 'Wealth & Discipline',
+            subtitle: '2026 Finance Wrapped',
+            gradient: 'from-sky-950 via-slate-900 to-zinc-900',
+            content: (
+              <div className="flex flex-col items-center justify-center text-center h-full space-y-6 px-4">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-400 p-0.5 flex items-center justify-center shadow-[0_0_40px_rgba(14,165,233,0.3)]">
+                  <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+                    <Wallet className="h-12 w-12 text-sky-400" />
+                  </div>
+                </div>
+                <div className="space-y-2 w-full max-w-xs">
+                  <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">
+                    Savings &amp; Net Worth
+                  </h3>
+                  <h2 className="text-4xl font-black text-white tabular-nums">
+                    {financeSummary.savingsRatePct}%{' '}
+                    <span className="text-lg text-sky-400 font-semibold">Saved</span>
+                  </h2>
+                  <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
+                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                      <span className="block text-muted-foreground">Invested</span>
+                      <span className="font-bold text-white tabular-nums">
+                        ₹{financeSummary.totalInvestment.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                      <span className="block text-muted-foreground">Net Worth</span>
+                      <span className="font-bold text-emerald-400 tabular-nums">
+                        ₹{Math.round(financeSummary.netWorthInr).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ),
+          },
+        ]
+      : []),
+    ...(fitnessSummary?.enabled
+      ? [
+          {
+            id: 'fitness-wrapped',
+            title: 'Body & Iron',
+            subtitle: '2026 Fitness Wrapped',
+            gradient: 'from-orange-950 via-slate-900 to-zinc-900',
+            content: (
+              <div className="flex flex-col items-center justify-center text-center h-full space-y-6 px-4">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-orange-500 to-amber-400 p-0.5 flex items-center justify-center shadow-[0_0_40px_rgba(249,115,22,0.3)]">
+                  <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+                    <Dumbbell className="h-12 w-12 text-orange-400" />
+                  </div>
+                </div>
+                <div className="space-y-2 w-full max-w-xs">
+                  <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">
+                    Training Output
+                  </h3>
+                  <h2 className="text-4xl font-black text-white tabular-nums">
+                    {fitnessSummary.workoutCount}{' '}
+                    <span className="text-lg text-orange-400 font-semibold">Workouts</span>
+                  </h2>
+                  <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
+                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                      <span className="block text-muted-foreground">Avg Protein</span>
+                      <span className="font-bold text-white tabular-nums">
+                        {fitnessSummary.avgProteinG}g / day
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                      <span className="block text-muted-foreground">Total Volume</span>
+                      <span className="font-bold text-orange-300 tabular-nums">
+                        {fitnessSummary.totalVolumeKg.toLocaleString('en-IN')} kg
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ),
+          },
+        ]
+      : []),
   ];
+
+  const totalSlides = slides.length;
 
   // Auto-advance logic
   useEffect(() => {
@@ -486,7 +609,7 @@ export function YearInReview() {
         setProgress(prev => {
           if (prev >= 100) {
             setCurrentSlide(curr => {
-              if (curr === slides.length - 1) {
+              if (curr >= totalSlides - 1) {
                 setIsPlaying(false);
                 return curr;
               }
@@ -499,7 +622,7 @@ export function YearInReview() {
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, currentSlide]);
+  }, [isPlaying, currentSlide, totalSlides]);
 
   const handleNext = () => {
     if (currentSlide < slides.length - 1) {
