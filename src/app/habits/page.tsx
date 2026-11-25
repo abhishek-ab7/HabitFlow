@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { HabitsPageContent } from '@/components/habits';
+import HabitsPageContent from '@/components/habits/HabitsPageContent';
 import { HabitListSkeleton } from '@/components/ui/Skeletons';
 import { Skeleton } from '@/components/ui/skeleton';
 

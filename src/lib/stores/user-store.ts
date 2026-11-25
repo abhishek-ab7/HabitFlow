@@ -11,12 +11,14 @@ interface UserState {
     realtimeChannel: RealtimeChannel | null;
 
     // Actions
-    loadUser: () => Promise<void>;
+    loadUser: (force?: boolean) => Promise<void>;
     setDisplayName: (name: string) => void; // LOCAL ONLY - synchronous
     saveDisplayNameToServer: () => Promise<void>; // EXPLICIT SAVE - async
     setupRealtimeSubscription: () => void;
     cleanupRealtimeSubscription: () => void;
 }
+
+let loadedUserStoreId: string | null = null;
 
 export const useUserStore = create<UserState>((set, get) => ({
     displayName: '',
@@ -24,18 +26,43 @@ export const useUserStore = create<UserState>((set, get) => ({
     isLoading: false,
     realtimeChannel: null,
 
-    loadUser: async () => {
-        set({ isLoading: true });
+    loadUser: async (force = false) => {
         try {
             const supabase = getSupabaseClient();
             const { data: { session } } = await supabase.auth.getSession();
 
-            if (session?.user) {
-                set({ email: session.user.email ?? null });
+            if (!session?.user) {
+                loadedUserStoreId = null;
+                set({ displayName: '', email: null, isLoading: false });
+                return;
+            }
 
-                // NEW: Try to fetch from remote first (latest data across devices)
-                let displayNameLoaded = false;
+            if (!force && loadedUserStoreId === session.user.id && get().displayName) {
+                return;
+            }
 
+            set({ isLoading: true, email: session.user.email ?? null });
+
+            // Read local Dexie first for instant zero-network display
+            const localSettings = await getSettings(session.user.id);
+            if (localSettings?.userName) {
+                set({ displayName: localSettings.userName });
+            } else {
+                const metaName = session.user.user_metadata?.full_name as string | undefined;
+                if (metaName) {
+                    set({ displayName: metaName });
+                    await updateSettings({
+                        userId: session.user.id,
+                        userName: metaName
+                    });
+                }
+            }
+
+            loadedUserStoreId = session.user.id;
+            set({ isLoading: false });
+
+            // Silently revalidate remote user_name in background without blocking cold start
+            void (async () => {
                 try {
                     const { data: remoteSettings, error } = await supabase
                         .from('user_settings')
@@ -43,104 +70,27 @@ export const useUserStore = create<UserState>((set, get) => ({
                         .eq('user_id', session.user.id)
                         .single();
 
-                    if (!error && remoteSettings && (remoteSettings as any).user_name) {
-                        const userName = (remoteSettings as any).user_name as string;
-                        console.log('[UserStore] Loaded display name from Supabase:', userName);
-                        set({ displayName: userName });
-
-                        // Also update local DB to keep in sync
-                        await updateSettings({
-                            userId: session.user.id,
-                            userName: userName
-                        });
-                        displayNameLoaded = true;
+                    const remoteName = (remoteSettings as any)?.user_name as string | undefined;
+                    if (!error && remoteName && remoteName !== get().displayName) {
+                        set({ displayName: remoteName });
+                        const { db } = await import('../db');
+                        const existing = await db.userSettings.where('userId').equals(session.user.id).first();
+                        if (existing) {
+                            await db.userSettings.update(existing.id, { userName: remoteName, isDirty: false });
+                        }
                     }
-                } catch (error) {
-                    console.warn('[UserStore] Failed to fetch from remote, falling back to local:', error);
+                } catch {
+                    // Offline or transient network error
                 }
-
-                // Fallback 2: local DB
-                if (!displayNameLoaded) {
-                    const settings = await getSettings(session.user.id);
-                    if (settings?.userName) {
-                        console.log('[UserStore] Loaded display name from local DB:', settings.userName);
-                        set({ displayName: settings.userName });
-                        displayNameLoaded = true;
-                    }
-                }
-
-                // Fallback 3: Supabase auth metadata (set at signup via options.data.full_name)
-                if (!displayNameLoaded) {
-                    const metaName = session.user.user_metadata?.full_name as string | undefined;
-                    if (metaName) {
-                        console.log('[UserStore] Loaded display name from auth metadata:', metaName);
-                        set({ displayName: metaName });
-
-                        // Persist into local + remote DB so subsequent loads hit Fallback 1/2
-                        await updateSettings({
-                            userId: session.user.id,
-                            userName: metaName
-                        });
-                    }
-                }
-
-                // NEW: Setup realtime subscription for cross-device sync
-                get().setupRealtimeSubscription();
-            }
+            })();
         } catch (error) {
             console.error('[UserStore] Failed to load user data:', error);
-        } finally {
             set({ isLoading: false });
         }
     },
 
     setupRealtimeSubscription: () => {
-        const supabase = getSupabaseClient();
-
-        // Clean up existing subscription first
-        get().cleanupRealtimeSubscription();
-
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (!session?.user) {
-                console.log('[UserStore] No session, skipping realtime setup');
-                return;
-            }
-
-            console.log('[UserStore] Setting up realtime subscription for user:', session.user.id);
-
-            const channel = supabase
-                .channel('user_settings_realtime')
-                .on('postgres_changes', {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'user_settings',
-                    filter: `user_id=eq.${session.user.id}`
-                }, async (payload) => {
-                    console.log('[UserStore] 🔔 Realtime update detected:', payload.new);
-                    const newName = (payload.new as any).user_name;
-
-                    if (newName && newName !== get().displayName) {
-                        console.log('[UserStore] Updating display name from realtime:', newName);
-                        set({ displayName: newName });
-
-                        // Update local DB to keep in sync
-                        try {
-                            await updateSettings({
-                                userId: session.user.id,
-                                userName: newName
-                            });
-                            console.log('[UserStore] ✅ Display name synced via realtime');
-                        } catch (error) {
-                            console.error('[UserStore] Failed to update local DB:', error);
-                        }
-                    }
-                })
-                .subscribe((status) => {
-                    console.log('[UserStore] Realtime subscription status:', status);
-                });
-
-            set({ realtimeChannel: channel });
-        });
+        // Consolidated under SyncEngine global realtime channel
     },
 
     cleanupRealtimeSubscription: () => {

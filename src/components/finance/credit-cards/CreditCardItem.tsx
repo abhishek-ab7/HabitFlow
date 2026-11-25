@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,9 +9,20 @@ import { formatINR } from '@/lib/stores/finance/helpers';
 import { useFinanceStore } from '@/lib/stores/finance-store';
 import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
 import { formatOrdinal, formatShortDate } from '@/lib/finance/credit-card-cycles';
-import { PayCreditCardModal } from './PayCreditCardModal';
-import { ReconcileStatementModal } from './ReconcileStatementModal';
-import { StatementHistoryModal, type StatementHistoryTab } from './StatementHistoryModal';
+import type { StatementHistoryTab } from './StatementHistoryModal';
+
+const PayCreditCardModal = dynamic(
+  () => import('./PayCreditCardModal').then((m) => ({ default: m.PayCreditCardModal })),
+  { ssr: false }
+);
+const ReconcileStatementModal = dynamic(
+  () => import('./ReconcileStatementModal').then((m) => ({ default: m.ReconcileStatementModal })),
+  { ssr: false }
+);
+const StatementHistoryModal = dynamic(
+  () => import('./StatementHistoryModal').then((m) => ({ default: m.StatementHistoryModal })),
+  { ssr: false }
+);
 import {
   CreditCard,
   Calendar,
@@ -29,7 +41,7 @@ interface CreditCardItemProps {
   onSetDefault?: (cardId: string) => void;
 }
 
-export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemProps) {
+export const CreditCardItem = React.memo(function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemProps) {
   const getCreditCardSummary = useFinanceStore((s) => s.getCreditCardSummary);
   const summary = getCreditCardSummary(card.id);
 
@@ -399,31 +411,37 @@ export function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemPro
         </div>
       </div>
 
-      {/* Modals */}
-      <PayCreditCardModal
-        open={isPayOpen}
-        onOpenChange={setIsPayOpen}
-        card={card}
-        statement={targetStatement}
-        defaultAmount={targetStatement ? targetStatement.remainingDue : billedDue > 0 ? billedDue : undefined}
-      />
+      {/* Modals (lazy-mounted only when open) */}
+      {isPayOpen && (
+        <PayCreditCardModal
+          open={isPayOpen}
+          onOpenChange={setIsPayOpen}
+          card={card}
+          statement={targetStatement}
+          defaultAmount={targetStatement ? targetStatement.remainingDue : billedDue > 0 ? billedDue : undefined}
+        />
+      )}
 
-      <ReconcileStatementModal
-        open={isReconcileOpen}
-        onOpenChange={setIsReconcileOpen}
-        card={card}
-        statement={targetStatement}
-        defaultCycleKey={summary.billedStatement?.cycleKey || summary.unbilledCycle.cycleKey}
-      />
+      {isReconcileOpen && (
+        <ReconcileStatementModal
+          open={isReconcileOpen}
+          onOpenChange={setIsReconcileOpen}
+          card={card}
+          statement={targetStatement}
+          defaultCycleKey={summary.billedStatement?.cycleKey || summary.unbilledCycle.cycleKey}
+        />
+      )}
 
-      <StatementHistoryModal
-        open={isHistoryOpen}
-        onOpenChange={setIsHistoryOpen}
-        card={card}
-        initialTab={historyInitialTab}
-        onPay={handleOpenPay}
-        onReconcile={handleOpenReconcile}
-      />
+      {isHistoryOpen && (
+        <StatementHistoryModal
+          open={isHistoryOpen}
+          onOpenChange={setIsHistoryOpen}
+          card={card}
+          initialTab={historyInitialTab}
+          onPay={handleOpenPay}
+          onReconcile={handleOpenReconcile}
+        />
+      )}
     </Card>
   );
-}
+});

@@ -385,23 +385,21 @@ export function UnifiedAlertManager() {
     let active = true;
 
     const scanDexieAlerts = async () => {
-      if (scanningRef.current) return;
+      if (!active || scanningRef.current) return;
       scanningRef.current = true;
 
       try {
-        let userId: string | undefined;
-        try {
-          const supabase = getSupabaseClient();
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          userId = session?.user?.id;
-        } catch {
-          userId = undefined;
+        const supabase = getSupabaseClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const userId = session?.user?.id;
+        if (!userId || !active) {
+          if (active && useUnifiedAlertStore.getState().alerts.length > 0) {
+            setAlerts([]);
+          }
+          return;
         }
-
-        const filterByUser = <T extends { userId?: string }>(rows: T[]): T[] =>
-          userId ? rows.filter((r) => !r.userId || r.userId === userId) : rows;
 
         const [
           creditCardStatements,
@@ -414,15 +412,19 @@ export function UnifiedAlertManager() {
           supplementInventory,
           supplementLogs,
         ] = await Promise.all([
-          db.creditCardStatements.toArray(),
-          db.financeAccounts.toArray(),
-          db.emiTrackers.toArray(),
-          db.monthlyCommitments.toArray(),
-          db.financeRecurringBills.toArray(),
-          db.financeTransactions.toArray(),
-          db.tasks.toArray(),
-          db.supplementInventory.toArray(),
-          db.supplementLogs.toArray(),
+          db.creditCardStatements.where('userId').equals(userId).filter((s) => !s.deletedAt).toArray(),
+          db.financeAccounts.where('userId').equals(userId).filter((a) => !a.deletedAt && !a.archived).toArray(),
+          db.emiTrackers.where('userId').equals(userId).filter((e) => !e.deletedAt).toArray(),
+          db.monthlyCommitments.where('userId').equals(userId).filter((c) => !c.deletedAt).toArray(),
+          db.financeRecurringBills.where('userId').equals(userId).filter((b) => !b.deletedAt).toArray(),
+          db.financeTransactions.where('userId').equals(userId).filter((t) => !t.deletedAt).toArray(),
+          db.tasks.where('userId').equals(userId).filter((t) => t.status !== 'done' && t.status !== 'archived').toArray(),
+          fitnessEnabled
+            ? db.supplementInventory.where('userId').equals(userId).filter((s) => !s.deletedAt).toArray()
+            : Promise.resolve([]),
+          fitnessEnabled
+            ? db.supplementLogs.where('userId').equals(userId).filter((l) => !l.deletedAt).toArray()
+            : Promise.resolve([]),
         ]);
 
         if (!active) return;
@@ -430,18 +432,30 @@ export function UnifiedAlertManager() {
         const todayIso = getLocalIsoDate();
         const alerts = computeUnified3DayAlerts({
           todayIso,
-          creditCardStatements: filterByUser(creditCardStatements),
-          accounts: filterByUser(accounts),
-          emiTrackers: filterByUser(emiTrackers),
-          commitments: filterByUser(commitments),
-          recurringBills: filterByUser(recurringBills),
-          transactions: filterByUser(transactions),
-          tasks: filterByUser(tasks),
-          supplementInventory: fitnessEnabled ? filterByUser(supplementInventory) : [],
-          supplementLogs: fitnessEnabled ? filterByUser(supplementLogs) : [],
+          creditCardStatements,
+          accounts,
+          emiTrackers,
+          commitments,
+          recurringBills,
+          transactions,
+          tasks,
+          supplementInventory,
+          supplementLogs,
         });
 
-        setAlerts(alerts);
+        const prevAlerts = useUnifiedAlertStore.getState().alerts;
+        const unchanged =
+          prevAlerts.length === alerts.length &&
+          prevAlerts.every(
+            (a, i) =>
+              a.id === alerts[i].id &&
+              a.daysUntil === alerts[i].daysUntil &&
+              a.severity === alerts[i].severity &&
+              a.amount === alerts[i].amount
+          );
+        if (!unchanged) {
+          setAlerts(alerts);
+        }
 
         if (alerts.length > 0 && typeof window !== 'undefined') {
           const toastStorageKey = `habitflow_unified_alert_toast_${todayIso}`;
@@ -468,10 +482,23 @@ export function UnifiedAlertManager() {
       }
     };
 
-    void scanDexieAlerts();
+    const scheduleScan = () => {
+      if (!active) return;
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(() => {
+          if (active) void scanDexieAlerts();
+        }, { timeout: 2000 });
+      } else {
+        setTimeout(() => {
+          if (active) void scanDexieAlerts();
+        }, 300);
+      }
+    };
+
+    scheduleScan();
 
     const handleRefresh = () => {
-      void scanDexieAlerts();
+      scheduleScan();
     };
     window.addEventListener('habitflow-sync-complete', handleRefresh);
     return () => {

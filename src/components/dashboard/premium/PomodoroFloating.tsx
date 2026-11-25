@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -22,9 +23,13 @@ import {
 import { usePomodoroStore, type PomodoroMode } from '@/lib/stores/pomodoro-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+
+const AddTransactionModal = dynamic(
+  () => import('@/components/finance/AddTransactionModal').then((m) => ({ default: m.AddTransactionModal })),
+  { ssr: false }
+);
 
 function playOfflineChime() {
   if (typeof window === 'undefined') return;
@@ -577,7 +582,7 @@ export function PomodoroFloating() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.94 }}
                 aria-label="Add expense entry"
-                className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-primary/35 shadow-lg bg-card/95 backdrop-blur-xl text-primary transition-colors hover:border-primary/60 hover:bg-primary/10"
+                className="inline-flex items-center justify-center h-11 w-11 rounded-full border border-primary/35 shadow-lg bg-card md:bg-card/95 md:backdrop-blur-xl text-primary transition-colors hover:border-primary/60 hover:bg-primary/10"
               >
                 <Zap className="h-4 w-4 fill-primary/20" />
               </motion.button>
@@ -593,7 +598,7 @@ export function PomodoroFloating() {
                     : 'Open Focus & Habit Timers'
                 }
                 className={cn(
-                  'inline-flex items-center gap-2 h-11 rounded-full border shadow-lg bg-card/95 backdrop-blur-xl text-foreground transition-colors hover:border-primary/40',
+                  'inline-flex items-center gap-2 h-11 rounded-full border shadow-lg bg-card md:bg-card/95 md:backdrop-blur-xl text-foreground transition-colors hover:border-primary/40',
                   isRunning ? 'px-3.5 ring-2 ring-primary/15' : 'px-3',
                   activeColor.border
                 )}
@@ -621,10 +626,12 @@ export function PomodoroFloating() {
           )}
         </AnimatePresence>
       </div>
-      <AddTransactionModal
-        open={showExpenseModal}
-        onOpenChange={setShowExpenseModal}
-      />
+      {showExpenseModal && (
+        <AddTransactionModal
+          open={showExpenseModal}
+          onOpenChange={setShowExpenseModal}
+        />
+      )}
     </>
   );
 }

@@ -37,6 +37,7 @@ import {
   Utensils,
   Pill,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { resolveTransactionCycle, getCycleWindowForMonth, getLocalIsoDate, formatShortDate } from '@/lib/finance/credit-card-cycles';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import {
@@ -47,8 +48,12 @@ import {
 } from '@/lib/fitness/finance-bridge';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
-import { SmsImportModal } from './SmsImportModal';
 import { toast } from 'sonner';
+
+const SmsImportModal = dynamic(
+  () => import('./SmsImportModal').then((m) => ({ default: m.SmsImportModal })),
+  { ssr: false }
+);
 import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
@@ -245,10 +250,10 @@ export function AddTransactionModal({
 
   useEffect(() => {
     if (open && categories.length === 0) {
-      loadFinanceData(user?.id);
+      loadFinanceData(user?.id, false);
     }
     if (open && !fitnessHasLoaded) {
-      loadFitnessData(user?.id).catch(() => undefined);
+      loadFitnessData(user?.id, false).catch(() => undefined);
     }
   }, [open, categories.length, loadFinanceData, fitnessHasLoaded, loadFitnessData, user?.id]);
 
@@ -1990,7 +1995,7 @@ export function AddTransactionModal({
         }}
       />
 
-      {!onOpenSmsImport && (
+      {!onOpenSmsImport && isLocalSmsOpen && (
         <SmsImportModal
           open={isLocalSmsOpen}
           onOpenChange={setIsLocalSmsOpen}

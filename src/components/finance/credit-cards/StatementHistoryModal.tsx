@@ -540,7 +540,7 @@ export function StatementHistoryModal({
                     {cardStatements.map((stmt) => (
                       <div
                         key={stmt.id}
-                        className="p-3.5 rounded-xl bg-background border border-border flex items-center justify-between gap-3 text-xs hover:border-border/80 transition-colors shadow-xs"
+                        className="cv-auto p-3.5 rounded-xl bg-background border border-border flex items-center justify-between gap-3 text-xs hover:border-border/80 transition-colors shadow-xs"
                       >
                         <div className="space-y-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">

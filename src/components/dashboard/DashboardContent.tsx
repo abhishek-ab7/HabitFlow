@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { useShallow } from 'zustand/react/shallow';
@@ -40,24 +41,33 @@ import {
 import { getTimeGreeting } from '@/lib/design-tokens';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { isAIEnabled } from '@/lib/ai-features-flag';
-import {
-  HeroSection,
-  HabitOverview,
-  FocusGoal,
-  TodayTasksWidget,
-  AICoachWidget,
-  BentoGrid,
-  WeeklyReviewWidget,
-  FinanceOverviewWidget,
-  DashboardCenterLoader,
-} from '@/components/dashboard';
-import OnboardingWizard from '@/components/dashboard/OnboardingWizard';
-import DashboardTour from '@/components/dashboard/DashboardTour';
+import dynamic from 'next/dynamic';
+import { HeroSection } from './hero-section';
+import { HabitOverview } from './habit-overview';
+import { FocusGoal } from './focus-goal';
+import { TodayTasksWidget } from './TodayTasksWidget';
+import { AICoachWidget } from './AICoachWidget';
+import { BentoGrid } from './BentoGrid';
+import { WeeklyReviewWidget } from './WeeklyReviewWidget';
+import { FinanceOverviewWidget } from './FinanceOverviewWidget';
+import { DashboardCenterLoader } from './DashboardCenterLoader';
 import { MoodCheckIn } from '@/components/dashboard/MoodCheckIn';
-import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
-import { SmsImportModal } from '@/components/finance/SmsImportModal';
-import { AskFinancesDrawer } from '@/components/finance/AskFinancesDrawer';
 import { useUserStore } from '@/lib/stores/user-store';
+
+const OnboardingWizard = dynamic(() => import('@/components/dashboard/OnboardingWizard'), { ssr: false });
+const DashboardTour = dynamic(() => import('@/components/dashboard/DashboardTour'), { ssr: false });
+const AddTransactionModal = dynamic(
+  () => import('@/components/finance/AddTransactionModal').then((m) => ({ default: m.AddTransactionModal })),
+  { ssr: false }
+);
+const SmsImportModal = dynamic(
+  () => import('@/components/finance/SmsImportModal').then((m) => ({ default: m.SmsImportModal })),
+  { ssr: false }
+);
+const AskFinancesDrawer = dynamic(
+  () => import('@/components/finance/AskFinancesDrawer').then((m) => ({ default: m.AskFinancesDrawer })),
+  { ssr: false }
+);
 import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
 import { ProgressRing } from '@/components/motion';
 import { Button } from '@/components/ui/button';
@@ -254,7 +264,13 @@ export default function DashboardContent() {
   const moodLogs = useMoodStore((s) => s.moodLogs);
   const loadMoodLogs = useMoodStore((s) => s.loadMoodLogs);
 
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(() => {
+    const habitLoaded =
+      typeof useHabitStore.getState === 'function' ? Boolean(useHabitStore.getState()?.hasLoadedHabits) : false;
+    const taskLoaded =
+      typeof useTaskStore.getState === 'function' ? Boolean(useTaskStore.getState()?.hasLoaded) : false;
+    return !habitLoaded && !taskLoaded;
+  });
   const isLoading = isInitializing;
   const isGoalsEnabled = !settings?.habitOnlyMode && settings?.showGoals !== false;
   const isFinanceEnabled =
@@ -275,10 +291,12 @@ export default function DashboardContent() {
     }
   }, [isFinanceEnabled, isFitnessEnabled, workspaceLens]);
 
+  const userId = user?.id;
+
   useEffect(() => {
     if (authLoading) return;
 
-    if (!user) {
+    if (!userId) {
       setIsInitializing(false);
       return;
     }
@@ -294,12 +312,12 @@ export default function DashboardContent() {
         const end = format(endOfMonth(today), 'yyyy-MM-dd');
 
         await Promise.all([
-          loadDashboardLayout(user.id),
+          loadDashboardLayout(userId),
           loadAllMilestones(),
           loadCompletions(start, end),
           loadGamification(),
-          loadFinanceData(),
-          isFitnessEnabled ? loadFitnessData(user.id) : Promise.resolve(),
+          loadFinanceData(userId, false),
+          isFitnessEnabled ? loadFitnessData(userId, false) : Promise.resolve(),
           loadMoodLogs(start, end),
         ]);
 
@@ -323,7 +341,7 @@ export default function DashboardContent() {
     };
   }, [
     authLoading,
-    user,
+    userId,
     isDataReady,
     loadAllMilestones,
     loadCompletions,
@@ -332,6 +350,7 @@ export default function DashboardContent() {
     loadFinanceData,
     loadFitnessData,
     loadMoodLogs,
+    isFitnessEnabled,
   ]);
 
   useEffect(() => {
@@ -870,13 +889,12 @@ export default function DashboardContent() {
                   <span className="font-semibold text-foreground">
                     Up Next Today
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => router.push('/habits')}
+                  <Link
+                    href="/habits"
                     className="text-primary hover:underline font-medium"
                   >
                     All Habits →
-                  </button>
+                  </Link>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {nextUpHabits.map((item) => (
@@ -930,13 +948,12 @@ export default function DashboardContent() {
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>All scheduled habits for today are handled!</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => router.push('/habits')}
+                <Link
+                  href="/habits"
                   className="hover:underline font-semibold"
                 >
                   Open Grid →
-                </button>
+                </Link>
               </div>
             )}
           </section>
@@ -1021,14 +1038,13 @@ export default function DashboardContent() {
                 >
                   <Sparkles className="w-4 h-4" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => router.push('/finance')}
+                <Link
+                  href="/finance"
                   aria-label="Open Finance workspace"
                   className="min-h-[38px] min-w-[38px] rounded-xl border border-border bg-background hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <ArrowUpRight className="w-4 h-4" />
-                </button>
+                </Link>
               </div>
             </div>
 
@@ -1036,16 +1052,23 @@ export default function DashboardContent() {
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
               <div className="sm:col-span-7 space-y-1.5">
                 <div className="relative h-2 w-full rounded-full bg-muted overflow-visible">
-                  <div
-                    style={{ width: `${hasBudget ? budgetPct : 30}%` }}
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      isOverBudget
-                        ? 'bg-rose-500'
-                        : isAheadOfPace
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
-                    }`}
-                  />
+                  <div className="h-full w-full rounded-full overflow-hidden">
+                    <div
+                      style={{
+                        transform: `scaleX(${Math.max(
+                          0,
+                          Math.min(1, (hasBudget ? budgetPct : 30) / 100)
+                        )})`,
+                      }}
+                      className={`h-full w-full origin-left rounded-full transition-transform duration-300 ${
+                        isOverBudget
+                          ? 'bg-rose-500'
+                          : isAheadOfPace
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
+                    />
+                  </div>
                   {hasBudget && (
                     <div
                       style={{
@@ -1085,10 +1108,9 @@ export default function DashboardContent() {
                   {formatINR(financeSummary.safeToSpendMonthly)}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => router.push('/finance?tab=trackers')}
-                className="text-left hover:underline"
+              <Link
+                href="/finance?tab=trackers"
+                className="text-left hover:underline block"
               >
                 <span className="text-[11px] text-muted-foreground font-sans flex items-center gap-1">
                   <CalendarClock className="w-3 h-3 text-amber-500" />
@@ -1103,11 +1125,10 @@ export default function DashboardContent() {
                 >
                   {formatINR(dueSoonTotal)}
                 </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/finance?tab=activity')}
-                className="text-left hover:underline"
+              </Link>
+              <Link
+                href="/finance?tab=activity"
+                className="text-left hover:underline block"
               >
                 <span className="text-[11px] text-muted-foreground font-sans flex items-center gap-1">
                   <AlertCircle className="w-3 h-3 text-primary" />
@@ -1122,7 +1143,7 @@ export default function DashboardContent() {
                 >
                   {financeSummary.needsReviewCount} pending
                 </span>
-              </button>
+              </Link>
             </div>
           </section>
         )}
@@ -1260,13 +1281,14 @@ export default function DashboardContent() {
               <Zap className="w-3.5 h-3.5 text-amber-500" /> 10s Capture
             </Button>
             <Button
-              type="button"
               size="sm"
               variant="outline"
-              onClick={() => router.push('/fitness')}
+              asChild
               className="h-8 text-xs gap-1"
             >
-              Open Fitness <ArrowUpRight className="w-3.5 h-3.5" />
+              <Link href="/fitness">
+                Open Fitness <ArrowUpRight className="w-3.5 h-3.5" />
+              </Link>
             </Button>
           </div>
         </section>
@@ -1375,23 +1397,29 @@ export default function DashboardContent() {
       {/* LAYER 3: Balanced 12-Col Bento Grid */}
       <BentoGrid widgets={allWidgets} />
 
-      {/* Inline Quick Modals & Drawers */}
-      <AddTransactionModal
-        open={isQuickExpenseOpen}
-        onOpenChange={setIsQuickExpenseOpen}
-        onOpenSmsImport={() => {
-          setIsQuickExpenseOpen(false);
-          setIsSmsModalOpen(true);
-        }}
-      />
-      <SmsImportModal
-        open={isSmsModalOpen}
-        onOpenChange={setIsSmsModalOpen}
-      />
-      <AskFinancesDrawer
-        open={isAskAiOpen}
-        onOpenChange={setIsAskAiOpen}
-      />
+      {/* Inline Quick Modals & Drawers (lazy-mounted only when open) */}
+      {isQuickExpenseOpen && (
+        <AddTransactionModal
+          open={isQuickExpenseOpen}
+          onOpenChange={setIsQuickExpenseOpen}
+          onOpenSmsImport={() => {
+            setIsQuickExpenseOpen(false);
+            setIsSmsModalOpen(true);
+          }}
+        />
+      )}
+      {isSmsModalOpen && (
+        <SmsImportModal
+          open={isSmsModalOpen}
+          onOpenChange={setIsSmsModalOpen}
+        />
+      )}
+      {isAskAiOpen && (
+        <AskFinancesDrawer
+          open={isAskAiOpen}
+          onOpenChange={setIsAskAiOpen}
+        />
+      )}
       {showTour && <DashboardTour onClose={() => setShowTour(false)} />}
     </div>
   );

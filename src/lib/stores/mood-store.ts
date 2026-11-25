@@ -7,10 +7,11 @@ import type { MoodLog, MoodType } from '../types';
 interface MoodState {
   moodLogs: MoodLog[];
   isLoading: boolean;
+  loadedRange: { start: string; end: string; userId: string } | null;
   error: string | null;
 
   // Actions
-  loadMoodLogs: (startDate: string, endDate: string) => Promise<void>;
+  loadMoodLogs: (startDate: string, endDate: string, force?: boolean) => Promise<void>;
   logMood: (date: string, mood: MoodType) => Promise<void>;
   getMoodForDate: (date: string) => MoodType | undefined;
 }
@@ -18,21 +19,50 @@ interface MoodState {
 export const useMoodStore = create<MoodState>((set, get) => ({
   moodLogs: [],
   isLoading: false,
+  loadedRange: null,
   error: null,
 
-  loadMoodLogs: async (startDate: string, endDate: string) => {
-    set({ isLoading: true, error: null });
+  loadMoodLogs: async (startDate: string, endDate: string, force = false) => {
+    const state = get();
     try {
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
 
-      if (!session?.user?.id) {
-        set({ moodLogs: [], isLoading: false });
+      if (!uid) {
+        set({ moodLogs: [], isLoading: false, loadedRange: null });
         return;
       }
 
-      const logs = await getMoodLogs(session.user.id, startDate, endDate);
-      set({ moodLogs: logs, isLoading: false });
+      if (
+        !force &&
+        state.loadedRange &&
+        state.loadedRange.userId === uid &&
+        startDate >= state.loadedRange.start &&
+        endDate <= state.loadedRange.end
+      ) {
+        return;
+      }
+
+      const unionStart =
+        state.loadedRange && state.loadedRange.userId === uid && state.loadedRange.start < startDate
+          ? state.loadedRange.start
+          : startDate;
+      const unionEnd =
+        state.loadedRange && state.loadedRange.userId === uid && state.loadedRange.end > endDate
+          ? state.loadedRange.end
+          : endDate;
+
+      if (!state.loadedRange) {
+        set({ isLoading: true, error: null });
+      }
+
+      const logs = await getMoodLogs(uid, unionStart, unionEnd);
+      set({
+        moodLogs: logs,
+        isLoading: false,
+        loadedRange: { start: unionStart, end: unionEnd, userId: uid },
+      });
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
     }

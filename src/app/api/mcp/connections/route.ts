@@ -17,21 +17,20 @@ export async function GET() {
   const userId = session.user.id;
   const admin = getSupabaseAdmin();
 
-  // Fetch recent audit logs (last 25 entries)
-  const { data: auditLogs } = await admin
-    .from('mcp_audit_logs')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(25);
-
-  // Fetch active connected OAuth apps
-  const { data: tokens } = await admin
-    .from('mcp_oauth_tokens')
-    .select('client_id, scopes, created_at, expires_at, revoked_at')
-    .eq('user_id', userId)
-    .is('revoked_at', null)
-    .gt('expires_at', new Date().toISOString());
+  const [{ data: auditLogs }, { data: tokens }] = await Promise.all([
+    admin
+      .from('mcp_audit_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(25),
+    admin
+      .from('mcp_oauth_tokens')
+      .select('client_id, scopes, created_at, expires_at, revoked_at')
+      .eq('user_id', userId)
+      .is('revoked_at', null)
+      .gt('expires_at', new Date().toISOString()),
+  ]);
 
   // Aggregate tokens by client_id
   const clientMap = new Map<string, { clientId: string; scopes: string[]; firstConnectedAt: string }>();

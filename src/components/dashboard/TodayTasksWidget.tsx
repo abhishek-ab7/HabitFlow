@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useShallow } from 'zustand/react/shallow'
 import { TaskCard } from "@/components/tasks/TaskCard"
-import { motion, AnimatePresence } from "framer-motion"
 import { CalendarCheck, ArrowRight, Loader2, CheckSquare, ChevronDown, ChevronRight, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
@@ -81,43 +80,52 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
         setMounted(true)
     }, [loadTasks, tasks.length, mounted])
 
-    // Hydration safety: Don't render date-dependent logic until mounted
-    if (!mounted) {
-        return (
-            <section className="surface-card overflow-hidden h-[180px] flex items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-primary/60" />
-            </section>
-        )
-    }
+    const today = mounted ? getLocalIsoDate() : ''
 
-    const today = getLocalIsoDate()
-
-    const allFocusTasks = tasks.filter(t => {
-        if (t.status === 'done' || t.status === 'archived' || t.parentTaskId) return false;
-        return !t.due_date || t.due_date <= (today + "T23:59:59");
-    }).sort((a, b) => {
-        const aExplicit = a.metadata?.isMitForDate === today;
-        const bExplicit = b.metadata?.isMitForDate === today;
-        if (aExplicit && !bExplicit) return -1;
-        if (!aExplicit && bExplicit) return 1;
-        if (aExplicit && bExplicit) {
-            return Number(a.metadata?.mitRank ?? 99) - Number(b.metadata?.mitRank ?? 99);
+    const subtasksByParentId = useMemo(() => {
+        const map = new Map<string, Task[]>();
+        for (const t of tasks) {
+            if (t.parentTaskId && t.status !== 'archived') {
+                const arr = map.get(t.parentTaskId);
+                if (arr) arr.push(t);
+                else map.set(t.parentTaskId, [t]);
+            }
         }
-        const pDiff = (PRIORITY_WEIGHT[a.priority] ?? 2) - (PRIORITY_WEIGHT[b.priority] ?? 2);
-        if (pDiff !== 0) return pDiff;
-        if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-        if (a.due_date) return -1;
-        if (b.due_date) return 1;
-        return a.title.localeCompare(b.title);
-    });
+        return map;
+    }, [tasks]);
 
-    const { mitTasks, otherTasks } = partitionTop3Mits(allFocusTasks, today);
+    const allFocusTasks = useMemo(() => {
+        if (!mounted) return [];
+        return tasks.filter(t => {
+            if (t.status === 'done' || t.status === 'archived' || t.parentTaskId) return false;
+            return !t.due_date || t.due_date <= (today + "T23:59:59");
+        }).sort((a, b) => {
+            const aExplicit = a.metadata?.isMitForDate === today;
+            const bExplicit = b.metadata?.isMitForDate === today;
+            if (aExplicit && !bExplicit) return -1;
+            if (!aExplicit && bExplicit) return 1;
+            if (aExplicit && bExplicit) {
+                return Number(a.metadata?.mitRank ?? 99) - Number(b.metadata?.mitRank ?? 99);
+            }
+            const pDiff = (PRIORITY_WEIGHT[a.priority] ?? 2) - (PRIORITY_WEIGHT[b.priority] ?? 2);
+            if (pDiff !== 0) return pDiff;
+            if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+            if (a.due_date) return -1;
+            if (b.due_date) return 1;
+            return a.title.localeCompare(b.title);
+        });
+    }, [mounted, tasks, today]);
 
-    const handleTaskComplete = async (id: string) => {
+    const { mitTasks, otherTasks } = useMemo(
+        () => partitionTop3Mits(allFocusTasks, today),
+        [allFocusTasks, today]
+    );
+
+    const handleTaskComplete = useCallback(async (id: string) => {
         await toggleTaskComplete(id)
-    }
+    }, [toggleTaskComplete]);
 
-    const handleToggleMit = async (task: Task) => {
+    const handleToggleMit = useCallback(async (task: Task) => {
         if (typeof editTask !== 'function') return;
         const currentMeta = task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
         const isAlreadyMit = currentMeta.isMitForDate === today;
@@ -157,6 +165,15 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
                 mitRank: nextRank,
             },
         });
+    }, [editTask, allFocusTasks, today]);
+
+    // Hydration safety: Don't render date-dependent logic until mounted
+    if (!mounted) {
+        return (
+            <section className="surface-card overflow-hidden h-[180px] flex items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-primary/60" />
+            </section>
+        )
     }
 
     if (isLoading && tasks.length === 0) return (
@@ -205,65 +222,50 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
 
                 {/* Top 3 Must-Do MITs Zone */}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="top-3-mits-zone">
-                    <AnimatePresence mode="popLayout">
-                        {mitTasks.length === 0 ? (
-                            <motion.div
-                                initial={{ opacity: 0, y: 8 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="col-span-full flex flex-col sm:flex-row items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-5"
-                            >
-                                <div className="flex items-center gap-3 text-center sm:text-left">
-                                    <div className="p-2.5 rounded-xl bg-muted/60 border border-border/60 shrink-0 hidden sm:flex">
-                                        <CheckSquare className="h-5 w-5 text-muted-foreground/70" />
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        <p className="text-sm font-semibold text-foreground">Clear for takeoff</p>
-                                        <p className="text-xs text-muted-foreground">No pending tasks due today. Add one or review your habits.</p>
-                                    </div>
+                    {mitTasks.length === 0 ? (
+                        <div className="col-span-full flex flex-col sm:flex-row items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-5">
+                            <div className="flex items-center gap-3 text-center sm:text-left">
+                                <div className="p-2.5 rounded-xl bg-muted/60 border border-border/60 shrink-0 hidden sm:flex">
+                                    <CheckSquare className="h-5 w-5 text-muted-foreground/70" />
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => router.push('/habits')}
-                                        className="rounded-xl h-9 text-xs px-3.5"
-                                    >
-                                        Open Habits
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        onClick={() => router.push('/tasks')}
-                                        className="rounded-xl h-9 text-xs px-4"
-                                    >
-                                        Create Task
-                                    </Button>
+                                <div className="space-y-0.5">
+                                    <p className="text-sm font-semibold text-foreground">Clear for takeoff</p>
+                                    <p className="text-xs text-muted-foreground">No pending tasks due today. Add one or review your habits.</p>
                                 </div>
-                            </motion.div>
-                        ) : (
-                            mitTasks.map(({ task, isExplicitMit, mitRank }, index) => (
-                                <motion.div
-                                    key={task.id}
-                                    layout
-                                    initial={{ opacity: 0, y: 12 }}
-                                    animate={{
-                                        opacity: 1,
-                                        y: 0,
-                                        transition: { delay: index * 0.04 }
-                                    }}
-                                    exit={{ opacity: 0, scale: 0.95 }}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => router.push('/habits')}
+                                    className="rounded-xl h-9 text-xs px-3.5"
                                 >
-                                    <TaskCard
-                                        task={task}
-                                        onComplete={handleTaskComplete}
-                                        compact
-                                        isMit={isExplicitMit}
-                                        mitRank={isExplicitMit ? mitRank : null}
-                                        onToggleMit={typeof editTask === 'function' ? handleToggleMit : undefined}
-                                    />
-                                </motion.div>
-                            ))
-                        )}
-                    </AnimatePresence>
+                                    Open Habits
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={() => router.push('/tasks')}
+                                    className="rounded-xl h-9 text-xs px-4"
+                                >
+                                    Create Task
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        mitTasks.map(({ task, isExplicitMit, mitRank }) => (
+                            <div key={task.id}>
+                                <TaskCard
+                                    task={task}
+                                    subtasks={subtasksByParentId.get(task.id)}
+                                    onComplete={handleTaskComplete}
+                                    compact
+                                    isMit={isExplicitMit}
+                                    mitRank={isExplicitMit ? mitRank : null}
+                                    onToggleMit={typeof editTask === 'function' ? handleToggleMit : undefined}
+                                />
+                            </div>
+                        ))
+                    )}
                 </div>
 
                 {/* Collapsible Other Tasks Drawer */}
@@ -298,6 +300,7 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
                                     <TaskCard
                                         key={task.id}
                                         task={task}
+                                        subtasks={subtasksByParentId.get(task.id)}
                                         onComplete={handleTaskComplete}
                                         compact
                                         isMit={false}

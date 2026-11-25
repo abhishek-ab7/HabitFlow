@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import {
@@ -45,9 +46,17 @@ import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { calculateFitnessGoalProgress } from '@/lib/fitness/shared-analytics';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
-import { GoalRoadmapView } from './GoalRoadmapView';
-import { SMARTGoalAnalysis } from './SMARTGoalAnalysis';
+import dynamic from 'next/dynamic';
 import type { Goal, Milestone, GoalStats, Priority, AreaOfLife } from '@/lib/types';
+
+const GoalRoadmapView = dynamic(
+  () => import('./GoalRoadmapView').then((m) => ({ default: m.GoalRoadmapView })),
+  { ssr: false }
+);
+const SMARTGoalAnalysis = dynamic(
+  () => import('./SMARTGoalAnalysis').then((m) => ({ default: m.SMARTGoalAnalysis })),
+  { ssr: false }
+);
 
 interface GoalCardProps {
   goal: Goal;
@@ -77,7 +86,81 @@ const AREA_STYLES: Record<AreaOfLife, { text: string; label: string }> = {
   fun: { text: 'text-amber-600 dark:text-amber-400', label: 'Fun & Leisure' },
 };
 
-export function GoalCard({
+const EMPTY_HABITS: never[] = [];
+const EMPTY_COMPLETIONS: never[] = [];
+const EMPTY_ACCOUNTS: never[] = [];
+const EMPTY_DEBTS: never[] = [];
+const EMPTY_EMIS: never[] = [];
+const EMPTY_SIPS: never[] = [];
+const EMPTY_DAILY_LOGS: never[] = [];
+const EMPTY_WORKOUTS: never[] = [];
+
+function GoalDetailsHealthBadge({ goal, stats }: { goal: Goal; stats: GoalStats }) {
+  const { habits, completions } = useHabitStore(
+    useShallow((s) => ({ habits: s.habits, completions: s.completions }))
+  );
+
+  const healthScore = useMemo(() => {
+    const getLinkedCategories = (area: string): string[] => {
+      switch (area) {
+        case 'career': return ['work', 'learning'];
+        case 'health': return ['health'];
+        case 'relationships': return ['relationships'];
+        case 'personal_growth': return ['learning', 'personal'];
+        case 'finance': return ['finance'];
+        case 'fun': return ['personal'];
+        default: return [];
+      }
+    };
+
+    const linkedCats = getLinkedCategories(goal.areaOfLife);
+    const activeHabits = habits.filter((h) => !h.archived);
+    const linkedHabits = activeHabits.filter((h) => linkedCats.includes(h.category));
+    const targetHabits = linkedHabits.length > 0 ? linkedHabits : activeHabits;
+
+    let consistency = 80;
+    if (targetHabits.length > 0) {
+      const compsByHabit = new Map<string, typeof completions>();
+      for (const c of completions) {
+        const arr = compsByHabit.get(c.habitId);
+        if (arr) arr.push(c);
+        else compsByHabit.set(c.habitId, [c]);
+      }
+      const sumRates = targetHabits.reduce(
+        (sum, h) => sum + calculateHabitStats(h, compsByHabit.get(h.id) || []).completionRate,
+        0
+      );
+      consistency = sumRates / targetHabits.length;
+    }
+
+    const milestoneProgress = stats.progress;
+    const totalDays = stats.totalDays || 1;
+    const daysRemaining = stats.daysRemaining;
+    let proximityScore = 100;
+    if (!stats.isOnTrack) {
+      proximityScore = Math.max(0, Math.min(100, (daysRemaining / totalDays) * 100));
+    }
+
+    return Math.round(consistency * 0.4 + milestoneProgress * 0.4 + proximityScore * 0.2);
+  }, [goal.areaOfLife, habits, completions, stats]);
+
+  return (
+    <span
+      className={cn(
+        'font-semibold',
+        healthScore >= 80
+          ? 'text-emerald-600 dark:text-emerald-400'
+          : healthScore >= 50
+          ? 'text-amber-600 dark:text-amber-400'
+          : 'text-rose-600 dark:text-rose-400'
+      )}
+    >
+      Health {healthScore}/100
+    </span>
+  );
+}
+
+export const GoalCard = memo(function GoalCard({
   goal,
   milestones,
   stats,
@@ -93,11 +176,35 @@ export function GoalCard({
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [rippleMilestone, setRippleMilestone] = useState<string | null>(null);
 
-  const { habits, completions } = useHabitStore();
-  const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary, getMonthlySummary } = useFinanceStore();
-  const fitnessProfile = useFitnessStore((s) => s.profile);
-  const fitnessDailyLogs = useFitnessStore((s) => s.dailyLogs);
-  const fitnessWorkoutSessions = useFitnessStore((s) => s.workoutSessions);
+  const hasFinanceLink = Boolean(goal.financialLink && goal.financialLink.targetAmount);
+  const hasFitnessLink = Boolean(goal.fitnessLink && goal.fitnessLink.targetValue);
+
+  const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary, getMonthlySummary } = useFinanceStore(
+    useShallow((s) =>
+      hasFinanceLink
+        ? {
+            accounts: s.accounts,
+            debtRecords: s.debtRecords,
+            emiTrackers: s.emiTrackers,
+            sipPlans: s.sipPlans,
+            getNetWorthSummary: s.getNetWorthSummary,
+            getMonthlySummary: s.getMonthlySummary,
+          }
+        : {
+            accounts: EMPTY_ACCOUNTS,
+            debtRecords: EMPTY_DEBTS,
+            emiTrackers: EMPTY_EMIS,
+            sipPlans: EMPTY_SIPS,
+            getNetWorthSummary: s.getNetWorthSummary,
+            getMonthlySummary: s.getMonthlySummary,
+          }
+    )
+  );
+  const fitnessProfile = useFitnessStore((s) => (hasFitnessLink ? s.profile : null));
+  const fitnessDailyLogs = useFitnessStore((s) => (hasFitnessLink ? s.dailyLogs : EMPTY_DAILY_LOGS));
+  const fitnessWorkoutSessions = useFitnessStore((s) =>
+    hasFitnessLink ? s.workoutSessions : EMPTY_WORKOUTS
+  );
 
   const fitnessProgress = useMemo(() => {
     if (!goal.fitnessLink || !goal.fitnessLink.targetValue) return null;
@@ -213,47 +320,11 @@ export function GoalCard({
     };
   }, [goal.financialLink, accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary, getMonthlySummary]);
 
-  const healthScore = useMemo(() => {
-    const getLinkedCategories = (area: string): string[] => {
-      switch (area) {
-        case 'career': return ['work', 'learning'];
-        case 'health': return ['health'];
-        case 'relationships': return ['relationships'];
-        case 'personal_growth': return ['learning', 'personal'];
-        case 'finance': return ['finance'];
-        case 'fun': return ['personal'];
-        default: return [];
-      }
-    };
-
-    const linkedCats = getLinkedCategories(goal.areaOfLife);
-    const linkedHabits = habits.filter(h => !h.archived && linkedCats.includes(h.category));
-
-    let consistency = 80;
-    if (linkedHabits.length > 0) {
-      const completionRates = linkedHabits.map(h => calculateHabitStats(h, completions).completionRate);
-      consistency = completionRates.reduce((sum, rate) => sum + rate, 0) / completionRates.length;
-    } else if (habits.length > 0) {
-      const completionRates = habits.filter(h => !h.archived).map(h => calculateHabitStats(h, completions).completionRate);
-      consistency = completionRates.reduce((sum, rate) => sum + rate, 0) / completionRates.length;
-    }
-
-    const milestoneProgress = stats.progress;
-    const totalDays = stats.totalDays || 1;
-    const daysRemaining = stats.daysRemaining;
-    let proximityScore = 100;
-    if (!stats.isOnTrack) {
-      proximityScore = Math.max(0, Math.min(100, (daysRemaining / totalDays) * 100));
-    }
-
-    return Math.round(consistency * 0.4 + milestoneProgress * 0.4 + proximityScore * 0.2);
-  }, [goal.areaOfLife, habits, completions, stats]);
-
-  const deadlineInfo = getDeadlineStatus(goal.deadline);
+  const deadlineInfo = useMemo(() => getDeadlineStatus(goal.deadline), [goal.deadline]);
   const priorityStyle = PRIORITY_STYLES[goal.priority];
   const areaStyle = AREA_STYLES[goal.areaOfLife];
 
-  const pendingMilestones = milestones.filter(m => !m.completed);
+  const pendingMilestones = useMemo(() => milestones.filter(m => !m.completed), [milestones]);
   const nextMilestone = pendingMilestones[0];
 
   // Single truthful status indicator (never contradicts Not Started with On Track)
@@ -333,7 +404,7 @@ export function GoalCard({
     </DropdownMenu>
   );
 
-  const roadmapModal = (
+  const roadmapModal = detailsModalOpen ? (
     <Dialog open={detailsModalOpen} onOpenChange={setDetailsModalOpen}>
       <DialogContent className="max-w-full sm:max-w-4xl lg:max-w-5xl max-h-[90vh] overflow-y-auto bg-background border-border shadow-2xl p-5 sm:p-6 rounded-2xl">
         <DialogHeader className="pb-4 border-b border-border/60 space-y-3">
@@ -343,18 +414,7 @@ export function GoalCard({
               <span className="truncate">{goal.title}</span>
             </DialogTitle>
             <div className="flex items-center gap-3 text-xs font-mono tabular-nums">
-              <span
-                className={cn(
-                  'font-semibold',
-                  healthScore >= 80
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : healthScore >= 50
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-rose-600 dark:text-rose-400'
-                )}
-              >
-                Health {healthScore}/100
-              </span>
+              <GoalDetailsHealthBadge goal={goal} stats={stats} />
               <span className="text-muted-foreground">·</span>
               <span className={unifiedStatus.className}>{unifiedStatus.label}</span>
             </div>
@@ -396,7 +456,7 @@ export function GoalCard({
         </div>
       </DialogContent>
     </Dialog>
-  );
+  ) : null;
 
   // Compact Horizontal List View Row
   if (viewMode === 'list') {
@@ -827,4 +887,4 @@ export function GoalCard({
       {roadmapModal}
     </ScaleOnHover>
   );
-}
+});

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { Plus, Filter, Sparkles, Archive, X, Brain, ChevronDown, LayoutTemplate } from 'lucide-react';
@@ -19,8 +20,23 @@ import {
 import { HabitListSkeleton } from '@/components/ui/Skeletons';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { isAIEnabled } from '@/lib/ai-features-flag';
-import { MonthSelector, HabitGrid, HabitFormModal, HabitStackSuggestions, SmartHabitGenerator, ArchivedHabitsModal } from '@/components/habits';
-import { HabitSuggestions } from '@/components/habits/HabitSuggestions';
+import { MonthSelector } from './month-selector';
+import { HabitGrid } from './habit-grid';
+import { HabitStackSuggestions } from './HabitStackSuggestions';
+import { HabitSuggestions } from './HabitSuggestions';
+
+const HabitFormModal = dynamic(
+  () => import('./habit-form-modal').then((m) => ({ default: m.HabitFormModal })),
+  { ssr: false }
+);
+const SmartHabitGenerator = dynamic(
+  () => import('./SmartHabitGenerator').then((m) => ({ default: m.SmartHabitGenerator })),
+  { ssr: false }
+);
+const ArchivedHabitsModal = dynamic(
+  () => import('./ArchivedHabitsModal').then((m) => ({ default: m.ArchivedHabitsModal })),
+  { ssr: false }
+);
 import { FadeIn } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitFormData, Category } from '@/lib/types';
@@ -321,7 +337,7 @@ export default function HabitsPageContent() {
         </div>
 
         {/* Legend */}
-        <div className="flex items-center justify-center gap-6 mt-6 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-6 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-success/20 flex items-center justify-center">
               <div className="w-2 h-2 bg-success rounded-sm" />
@@ -340,28 +356,32 @@ export default function HabitsPageContent() {
       </FadeIn>
 
       {/* Form Modal */}
-      <HabitFormModal
-        open={showModal}
-        onOpenChange={(open) => {
-          setShowModal(open);
-          if (!open) setEditingHabit(undefined);
-        }}
-        onSubmit={editingHabit ? handleEditHabit : handleCreateHabit}
-        habit={editingHabit}
-        defaultTab={modalTab}
-      />
+      {showModal && (
+        <HabitFormModal
+          open={showModal}
+          onOpenChange={(open) => {
+            setShowModal(open);
+            if (!open) setEditingHabit(undefined);
+          }}
+          onSubmit={editingHabit ? handleEditHabit : handleCreateHabit}
+          habit={editingHabit}
+          defaultTab={modalTab}
+        />
+      )}
 
-      {isAIEnabled() && (
+      {isAIEnabled() && showSmartGenerator && (
         <SmartHabitGenerator
           open={showSmartGenerator}
           onOpenChange={setShowSmartGenerator}
         />
       )}
 
-      <ArchivedHabitsModal
-        open={showArchivedModal}
-        onOpenChange={setShowArchivedModal}
-      />
+      {showArchivedModal && (
+        <ArchivedHabitsModal
+          open={showArchivedModal}
+          onOpenChange={setShowArchivedModal}
+        />
+      )}
 
       <ConfirmDialog
         open={deleteConfirmOpen}

@@ -1,8 +1,19 @@
 'use client';
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { useShallow } from 'zustand/react/shallow';
-import { CreateTaskModal, SmartTaskInput, TaskCard, EisenhowerMatrix } from "@/components/tasks";
+import { CreateTaskModal } from "./CreateTaskModal";
+import { SmartTaskInput } from "./SmartTaskInput";
+import { TaskCard } from "./TaskCard";
+
+const EisenhowerMatrix = dynamic(
+  () => import("./EisenhowerMatrix").then((m) => ({ default: m.EisenhowerMatrix })),
+  {
+    ssr: false,
+    loading: () => <div className="h-96 rounded-2xl border border-border bg-card animate-pulse" />,
+  }
+);
 import { toast } from "sonner";
 import { useTaskStore } from "@/lib/stores/task-store";
 import { TaskListSkeleton } from "@/components/ui/Skeletons";
@@ -23,19 +34,32 @@ export default function TasksPageContent() {
     );
 
     const [viewMode, setViewMode] = useState<'list' | 'eisenhower'>('list');
+    const [completedLimit, setCompletedLimit] = useState(20);
 
     useEffect(() => {
         loadTasks();
     }, [loadTasks]);
 
-    const handleTaskComplete = async (id: string) => {
+    const handleTaskComplete = useCallback(async (id: string) => {
         try {
             await toggleTaskComplete(id);
             toast.success("Task updated");
         } catch {
             toast.error("Failed to update task");
         }
-    };
+    }, [toggleTaskComplete]);
+
+    const subtasksByParentId = useMemo(() => {
+        const map = new Map<string, typeof tasks>();
+        for (const t of tasks) {
+            if (t.parentTaskId && t.status !== 'archived') {
+                const list = map.get(t.parentTaskId);
+                if (list) list.push(t);
+                else map.set(t.parentTaskId, [t]);
+            }
+        }
+        return map;
+    }, [tasks]);
 
     const handleQuickAddTask = async (task: { title: string; dueDate?: Date; tags?: string[] }) => {
         try {
@@ -131,11 +155,13 @@ export default function TasksPageContent() {
                         ) : (
                             <div className="flex flex-col gap-3">
                                 {activeTasks.map((task) => (
-                                    <TaskCard
-                                        key={task.id}
-                                        task={task}
-                                        onComplete={handleTaskComplete}
-                                    />
+                                    <div key={task.id} className="cv-auto">
+                                        <TaskCard
+                                            task={task}
+                                            subtasks={subtasksByParentId.get(task.id)}
+                                            onComplete={handleTaskComplete}
+                                        />
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -151,14 +177,27 @@ export default function TasksPageContent() {
                                 </span>
                             </h2>
                             <div className="flex flex-col gap-3 opacity-65">
-                                {completedTasks.map((task) => (
-                                    <TaskCard
-                                        key={task.id}
-                                        task={task}
-                                        onComplete={handleTaskComplete}
-                                    />
+                                {completedTasks.slice(0, completedLimit).map((task) => (
+                                    <div key={task.id} className="cv-auto">
+                                        <TaskCard
+                                            task={task}
+                                            subtasks={subtasksByParentId.get(task.id)}
+                                            onComplete={handleTaskComplete}
+                                        />
+                                    </div>
                                 ))}
                             </div>
+                            {completedTasks.length > completedLimit && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCompletedLimit((c) => c + 20)}
+                                    className="w-full"
+                                >
+                                    Show more completed ({completedTasks.length - completedLimit} remaining)
+                                </Button>
+                            )}
                         </div>
                     )}
                 </div>

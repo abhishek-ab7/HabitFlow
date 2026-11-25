@@ -240,6 +240,16 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
       0
     );
 
+  const overloadHintsByExercise = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof getProgressiveOverloadHint>>();
+    for (const ex of exercises) {
+      if (!map.has(ex.name)) {
+        map.set(ex.name, getProgressiveOverloadHint(workoutSessions, ex.name));
+      }
+    }
+    return map;
+  }, [workoutSessions, exercises]);
+
   return (
     <div className="space-y-5">
       {/* Workout Builder Card */}
@@ -395,7 +405,7 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
         {exercises.length > 0 && (
           <div className="space-y-3">
             {exercises.map((ex, exIdx) => {
-              const hint = getProgressiveOverloadHint(workoutSessions, ex.name);
+              const hint = overloadHintsByExercise.get(ex.name);
               return (
                 <div
                   key={`${ex.name}-${exIdx}`}

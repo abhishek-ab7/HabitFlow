@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { getSyncEngine, SyncStatus } from '@/lib/sync';
 import { useAuth } from './auth-provider';
 import { useGoalStore } from '@/lib/stores/goal-store';
@@ -106,42 +106,87 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
-        // STEP 1: Migrations
-        if (active) setSyncStatus({ type: 'syncing', message: 'Checking migrations...', progress: 10 });
+        // STEP 1: Fast local schema/data migrations
+        if (active) setSyncStatus({ type: 'syncing', message: 'Loading local data...', progress: 30 });
         await syncEngine.checkAndRunMigrations();
 
         if (!active) return;
 
-        // STEP 2: Sync Supabase → IndexedDB
-        if (active) setSyncStatus({ type: 'syncing', message: 'Syncing from cloud...', progress: 40 });
-        await syncEngine.syncAll();
+        // STEP 2: Hydrate route-critical stores from local IndexedDB immediately (<50ms)
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/dashboard';
+        const hydrateAllLocalStores = async (forceRefresh = false) => {
+          const { useFitnessStore } = await import('@/lib/stores/fitness');
+          if (currentPath.startsWith('/finance')) {
+            await Promise.all([
+              useUserStore.getState().loadUser(forceRefresh),
+              useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
+              useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
+              useHabitStore.getState().loadHabits(forceRefresh),
+              useGoalStore.getState().loadGoals(forceRefresh),
+              useTaskStore.getState().loadTasks(forceRefresh),
+            ]);
+          } else if (currentPath.startsWith('/fitness')) {
+            await Promise.all([
+              useUserStore.getState().loadUser(forceRefresh),
+              useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
+              useHabitStore.getState().loadHabits(forceRefresh),
+              useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
+            ]);
+          } else {
+            await Promise.all([
+              useUserStore.getState().loadUser(forceRefresh),
+              useGoalStore.getState().loadGoals(forceRefresh),
+              useHabitStore.getState().loadHabits(forceRefresh),
+              useTaskStore.getState().loadTasks(forceRefresh),
+            ]);
+            // Hydrate heavy domain stores right after critical paint unless already needed on /dashboard
+            const loadSecondary = () => Promise.all([
+              useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
+              useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
+            ]).catch(() => {});
+            if (currentPath.startsWith('/dashboard') || currentPath.startsWith('/analytics')) {
+              void loadSecondary();
+            } else if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+              (window as any).requestIdleCallback(() => { if (active) void loadSecondary(); }, { timeout: 500 });
+            } else {
+              setTimeout(() => { if (active) void loadSecondary(); }, 50);
+            }
+          }
+        };
 
-        if (!active) return;
-
-        // STEP 3: Load IndexedDB → Zustand stores
-        if (active) setSyncStatus({ type: 'syncing', message: 'Loading data...', progress: 80 });
-        const { useFitnessStore } = await import('@/lib/stores/fitness');
-        await Promise.all([
-          useUserStore.getState().loadUser(),
-          useGoalStore.getState().loadGoals(),
-          useHabitStore.getState().loadHabits(),
-          useTaskStore.getState().loadTasks(),
-          useFinanceStore.getState().loadFinanceData(userId),
-          useFitnessStore.getState().loadFitnessData(userId),
-        ]);
+        await hydrateAllLocalStores(false);
 
         if (!active) return;
 
         hasInitializedRef.current = true;
         lastUserIdRef.current = userId;
         setIsDataReady(true);
-        setSyncStatus({ type: 'success', message: 'All data loaded' });
-
+        setSyncStatus({ type: 'success', message: 'Ready (offline-first)' });
         updateMetadata();
 
         metadataInterval = setInterval(() => {
           if (active) updateMetadata();
         }, 30000);
+
+        // STEP 3: Defer cloud Supabase two-way sync to post-paint idle time so Frame 1 & touch never block
+        const runDeferredCloudSync = async () => {
+          if (!active) return;
+          try {
+            await syncEngine.syncAll();
+          } catch (syncErr) {
+            console.warn('[SyncProvider] Background initial sync failed:', syncErr);
+          }
+        };
+
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          (window as any).requestIdleCallback(() => {
+            void runDeferredCloudSync();
+          }, { timeout: 1500 });
+        } else {
+          setTimeout(() => {
+            void runDeferredCloudSync();
+          }, 300);
+        }
 
       } catch (error) {
         console.error('[SyncProvider] Initialization failed:', error);
@@ -185,9 +230,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     updateMetadata();
   }, [isAuthenticated, updateMetadata]);
 
-  // Always render children immediately — NO blocking render
-  return (
-    <SyncContext.Provider value={{
+  const contextValue = useMemo<SyncContextType>(
+    () => ({
       syncStatus,
       isSyncing,
       isOnline,
@@ -195,8 +239,23 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       lastSyncAt,
       isDataReady,
       isStoragePersistent,
-      triggerSync
-    }}>
+      triggerSync,
+    }),
+    [
+      syncStatus,
+      isSyncing,
+      isOnline,
+      pendingChanges,
+      lastSyncAt,
+      isDataReady,
+      isStoragePersistent,
+      triggerSync,
+    ]
+  );
+
+  // Always render children immediately — NO blocking render
+  return (
+    <SyncContext.Provider value={contextValue}>
       {children}
     </SyncContext.Provider>
   );

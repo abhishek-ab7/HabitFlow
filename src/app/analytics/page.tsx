@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { AnalyticsPageContent } from '@/components/analytics';
+import AnalyticsPageContent from '@/components/analytics/AnalyticsPageContent';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AnalyticsPage() {

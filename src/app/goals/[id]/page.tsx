@@ -34,27 +34,31 @@ export default function GoalDetailsPage() {
     const fetchData = async () => {
         setLoading(true)
         try {
-            // Fetch Goal
-            const { data: goalData, error: goalError } = await supabase
-                .from("goals")
-                .select("*")
-                .eq("id", id as string)
-                .single()
+            const goalId = id as string
+            const [goalRes, taskRes, milestoneRes] = await Promise.all([
+                supabase
+                    .from("goals")
+                    .select("*")
+                    .eq("id", goalId)
+                    .single(),
+                supabase
+                    .from("tasks")
+                    .select("*")
+                    .eq("goal_id", goalId)
+                    .neq("status", "archived")
+                    .order("priority", { ascending: false }),
+                supabase
+                    .from("milestones")
+                    .select("*")
+                    .eq("goal_id", goalId)
+                    .order("order_index"),
+            ])
 
-            if (goalError) throw goalError
-            setGoal(goalData)
+            if (goalRes.error) throw goalRes.error
+            setGoal(goalRes.data)
 
-            // Fetch Tasks
-            const { data: taskData, error: taskError } = await supabase
-                .from("tasks")
-                .select("*")
-                .eq("goal_id", id as string)
-                .neq("status", "archived")
-                .order("priority", { ascending: false })
-
-            if (taskError) throw taskError
-
-            const mappedTasks: Task[] = (taskData || []).map((t: any) => ({
+            if (taskRes.error) throw taskRes.error
+            const mappedTasks: Task[] = (taskRes.data || []).map((t: any) => ({
                 id: t.id,
                 userId: t.user_id,
                 title: t.title,
@@ -70,15 +74,8 @@ export default function GoalDetailsPage() {
             }))
             setTasks(mappedTasks)
 
-            // Fetch Milestones
-            const { data: milestoneData, error: milestoneError } = await supabase
-                .from("milestones")
-                .select("*")
-                .eq("goal_id", id as string)
-                .order("order_index")
-
-            if (milestoneError) throw milestoneError
-            setMilestones(milestoneData || [])
+            if (milestoneRes.error) throw milestoneRes.error
+            setMilestones(milestoneRes.data || [])
 
         } catch (error) {
             console.error(error)

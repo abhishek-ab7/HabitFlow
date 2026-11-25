@@ -32,8 +32,8 @@ export class FinanceSyncEngine implements ISynchronizer {
   readonly domainName = 'Finance';
 
   /**
-   * Automatically migrates orphaned local-demo-user or unassigned records in Dexie
-   * to the authenticated user ID before synchronizing.
+   * Automatically migrates orphaned local-demo-user records in Dexie
+   * to the authenticated user ID using indexed userId queries (O(k) where k = orphans).
    */
   public async migrateOrphanedRecords(userId: string): Promise<number> {
     if (!userId || userId === 'local-demo-user') return 0;
@@ -56,24 +56,30 @@ export class FinanceSyncEngine implements ISynchronizer {
 
     let count = 0;
     const now = new Date().toISOString();
-    for (const table of tables) {
-      try {
-        const stranded = await table
-          .filter((item: any) => !item.userId || item.userId === demoUserId)
-          .toArray();
-        for (const item of stranded) {
-          await table.update(item.id, {
-            userId,
-            isDirty: true,
-            generationCounter: (item.generationCounter || 1) + 1,
-            updatedAt: now,
-          });
-          count++;
+    await Promise.all(
+      tables.map(async (table) => {
+        try {
+          const stranded = await table.where('userId').equals(demoUserId).toArray();
+          if (stranded.length > 0) {
+            await db.transaction('rw', table, async () => {
+              await Promise.all(
+                stranded.map((item: any) =>
+                  table.update(item.id, {
+                    userId,
+                    isDirty: true,
+                    generationCounter: (item.generationCounter || 1) + 1,
+                    updatedAt: now,
+                  })
+                )
+              );
+            });
+            count += stranded.length;
+          }
+        } catch (err) {
+          logger.warn('[FinanceSyncEngine] Error migrating orphaned records in table', err);
         }
-      } catch (err) {
-        logger.warn('[FinanceSyncEngine] Error migrating orphaned records in table', err);
-      }
-    }
+      })
+    );
     return count;
   }
 
@@ -95,40 +101,33 @@ export class FinanceSyncEngine implements ISynchronizer {
       if (res.hasError) hasError = true;
     };
 
-    // 1. Categories
-    applyStep(await syncCategories(supabase, userId));
+    // Tier 1: Root entities (Categories, Accounts, Commitments, Debts)
+    const tier1 = await Promise.all([
+      syncCategories(supabase, userId),
+      syncAccounts(supabase, userId),
+      syncCommitments(supabase, userId),
+      syncDebts(supabase, userId),
+    ]);
+    tier1.forEach(applyStep);
 
-    // 2. Accounts
-    applyStep(await syncAccounts(supabase, userId));
+    // Tier 2: Secondary entities depending on Accounts/Debts
+    const tier2 = await Promise.all([
+      syncCreditCardStatements(supabase, userId),
+      syncInstallments(supabase, userId),
+      syncEmis(supabase, userId),
+      syncSips(supabase, userId),
+      syncBudgets(supabase, userId),
+    ]);
+    tier2.forEach(applyStep);
 
-    // 2b. Credit Card Statements (MUST run after accounts and BEFORE transactions so paid_statement_id FK exists)
-    applyStep(await syncCreditCardStatements(supabase, userId));
-
-    // 3. Monthly Commitments
-    applyStep(await syncCommitments(supabase, userId));
-
-    // 4. Debt Records
-    applyStep(await syncDebts(supabase, userId));
-
-    // 5. Debt Installments
-    applyStep(await syncInstallments(supabase, userId));
-
-    // 6. EMI Trackers
-    applyStep(await syncEmis(supabase, userId));
-
-    // 6b. SIP Plans (MUST run before transactions so linked_sip_id FK exists when syncing offline creations)
-    applyStep(await syncSips(supabase, userId));
-
-    // 7. Finance Transactions (FKs depend on Accounts, Statements, Commitments, Debts, Installments, EMIs, SIPs)
-    applyStep(await syncTransactions(supabase, userId));
-
-    // 8. Finance Budgets
-    applyStep(await syncBudgets(supabase, userId));
-
-    // 9. V2 Trackers: Rules, Recurring Bills, Net Worth Snapshots
-    applyStep(await syncCategorizationRules(supabase, userId));
-    applyStep(await syncRecurringBills(supabase, userId));
-    applyStep(await syncNetWorthSnapshots(supabase, userId));
+    // Tier 3: Transactions & standalone trackers depending on Statements/Installments/EMIs/SIPs
+    const tier3 = await Promise.all([
+      syncTransactions(supabase, userId),
+      syncCategorizationRules(supabase, userId),
+      syncRecurringBills(supabase, userId),
+      syncNetWorthSnapshots(supabase, userId),
+    ]);
+    tier3.forEach(applyStep);
 
     // Run local deduplication to ensure any duplicate slugs or accounts in Dexie are merged
     await deduplicateFinanceRecordsInDexie(userId);
@@ -136,7 +135,7 @@ export class FinanceSyncEngine implements ISynchronizer {
     if (pulled > 0) {
       try {
         const { useFinanceStore } = await import('@/lib/stores/finance-store');
-        await useFinanceStore.getState().loadFinanceData(userId);
+        await useFinanceStore.getState().loadFinanceData(userId, true);
       } catch {
         // Non-fatal
       }

@@ -263,6 +263,7 @@ export async function migrateLocalDemoFinanceRecords(targetUserId: string) {
       ...(db.financeCategorizationRules ? [db.financeCategorizationRules] : []),
       ...(db.financeRecurringBills ? [db.financeRecurringBills] : []),
       ...(db.financeNetWorthSnapshots ? [db.financeNetWorthSnapshots] : []),
+      ...(db.creditCardStatements ? [db.creditCardStatements] : []),
     ];
 
     let migratedAny = false;
@@ -307,10 +308,11 @@ export interface FinanceStore {
   selectedMonth: string; // YYYY-MM
   filters: FinanceFilterState;
   isLoading: boolean;
+  hasLoaded: boolean;
   error: string | null;
 
   // Core Lifecycle
-  loadFinanceData: (customUserId?: string) => Promise<void>;
+  loadFinanceData: (customUserId?: string, force?: boolean) => Promise<void>;
   seedInitialFinanceData: (userId: string) => Promise<void>;
   resetAllFinanceData: (keepCategories?: boolean) => Promise<void>;
   setSelectedMonth: (monthKey: string) => void;

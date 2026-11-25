@@ -104,12 +104,12 @@ export function MonthlyBudgetModal({
   useEffect(() => {
     if (!open || !focusCategoryId) return;
     const el = document.getElementById(`cat-budget-input-${focusCategoryId}`);
-    if (el) {
-      setTimeout(() => {
-        el.focus();
-        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }, 120);
-    }
+    if (!el) return;
+    const timer = setTimeout(() => {
+      el.focus();
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 120);
+    return () => clearTimeout(timer);
   }, [open, focusCategoryId]);
 
   const categorySum = useMemo(() => {

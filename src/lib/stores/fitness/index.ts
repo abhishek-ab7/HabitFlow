@@ -21,9 +21,13 @@ export const useFitnessStore = create<FitnessStore>((set, get, api) => ({
   hasLoaded: false,
   currentUserId: null,
 
-  loadFitnessData: async (userId?: string) => {
+  loadFitnessData: async (userId?: string, force = true) => {
     const resolvedId = userId || get().currentUserId || 'local-demo-user';
-    set({ isLoading: true, currentUserId: resolvedId });
+    const state = get();
+    if (!force && state.hasLoaded && state.currentUserId === resolvedId) {
+      return;
+    }
+    set({ isLoading: !state.hasLoaded, currentUserId: resolvedId });
 
     try {
       const [

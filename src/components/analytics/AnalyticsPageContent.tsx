@@ -10,8 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/ui/page-header';
 import { FadeIn, StaggerContainer, StaggerItem, CountUp } from '@/components/motion';
-import { TimeRangeTabs } from '@/components/analytics';
-import { useHabitStore, useGoalStore, useTaskStore, useMoodStore, usePomodoroStore, useFinanceStore, formatINR } from '@/lib/stores';
+import { TimeRangeTabs } from './time-range-selector';
+import { useHabitStore } from '@/lib/stores/habit-store';
+import { useGoalStore } from '@/lib/stores/goal-store';
+import { useTaskStore } from '@/lib/stores/task-store';
+import { useMoodStore } from '@/lib/stores/mood-store';
+import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
+import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
@@ -32,39 +37,39 @@ import type { TimeRange, DailyStats, WeekdayStats, Insight, Trend, MoodType, Hab
 import { DAYS_OF_WEEK } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
-// Dynamic imports for heavy chart components
+// Dynamic imports for heavy chart components (direct module paths avoid circular barrel)
 const ConsistencyChart = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.ConsistencyChart })),
+  () => import('./consistency-chart').then(m => ({ default: m.ConsistencyChart })),
   { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
 );
 
 const CategoryBreakdownChart = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.CategoryBreakdownChart })),
+  () => import('./category-breakdown').then(m => ({ default: m.CategoryBreakdownChart })),
   { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
 );
 
 const WeekdayChart = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.WeekdayChart })),
+  () => import('./weekday-chart').then(m => ({ default: m.WeekdayChart })),
   { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
 );
 
 const HeatmapCalendar = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.HeatmapCalendar })),
+  () => import('./heatmap-calendar').then(m => ({ default: m.HeatmapCalendar })),
   { loading: () => <Skeleton className="h-48 w-full rounded-xl" />, ssr: false }
 );
 
 const InsightsCards = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.InsightsCards })),
+  () => import('./insights-cards').then(m => ({ default: m.InsightsCards })),
   { loading: () => <Skeleton className="h-64 w-full rounded-xl" />, ssr: false }
 );
 
 const PredictiveAnalytics = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.PredictiveAnalytics })),
+  () => import('./PredictiveAnalytics').then(m => ({ default: m.PredictiveAnalytics })),
   { loading: () => <Skeleton className="h-96 w-full rounded-xl" />, ssr: false }
 );
 
 const YearInReview = dynamic(
-  () => import('@/components/analytics').then(m => ({ default: m.YearInReview })),
+  () => import('./YearInReview').then(m => ({ default: m.YearInReview })),
   { loading: () => <Skeleton className="h-[520px] w-full rounded-xl" />, ssr: false }
 );
 
@@ -148,21 +153,15 @@ export default function AnalyticsPageContent() {
     loadHabits();
     loadGoals();
     loadTasks();
-    loadFinanceData();
-    loadFitnessData(user?.id);
+    loadFinanceData(user?.id, false);
+    loadFitnessData(user?.id, false);
 
     const end = new Date();
     const start = subYears(end, 1);
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd');
-    
-    const cacheKey = 'analytics_completions_' + format(end, 'yyyy-MM-dd');
-    const cached = sessionStorage.getItem(cacheKey);
-    if (!cached) {
-      loadCompletions(startStr, endStr);
-      sessionStorage.setItem(cacheKey, '1');
-    }
-    
+
+    loadCompletions(startStr, endStr);
     loadMoodLogs(startStr, endStr);
   }, [loadHabits, loadCompletions, loadGoals, loadTasks, loadMoodLogs, loadFinanceData, loadFitnessData, user?.id]);
 

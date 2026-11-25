@@ -76,6 +76,20 @@ export function AskFinancesDrawer({
   const [isLoading, setIsLoading] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (open) return;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -102,7 +116,7 @@ export function AskFinancesDrawer({
       typeof fitState.loadFitnessData === 'function' &&
       (!fitState.hasLoaded || (userId && fitState.currentUserId !== userId))
     ) {
-      Promise.resolve(fitState.loadFitnessData(userId || undefined)).catch(() => {});
+      Promise.resolve(fitState.loadFitnessData(userId || undefined, false)).catch(() => {});
     }
     if (habitState && typeof habitState.loadHabits === 'function' && (habitState.habits?.length ?? 0) === 0) {
       Promise.resolve(habitState.loadHabits()).catch(() => {});
@@ -167,9 +181,14 @@ export function AskFinancesDrawer({
           : undefined,
       });
 
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const res = await fetch('/api/ai/finance-qa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           question: trimmed,
           history: nextHistory.slice(-6).map((m) => ({
@@ -196,7 +215,10 @@ export function AskFinancesDrawer({
           source: data?.source,
         },
       ]);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
       setMessages((prev) => [
         ...prev,
         {

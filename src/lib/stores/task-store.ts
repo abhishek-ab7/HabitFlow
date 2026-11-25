@@ -12,10 +12,12 @@ import { getSyncEngine } from '../sync';
 interface TaskState {
     tasks: Task[];
     isLoading: boolean;
+    hasLoaded: boolean;
+    loadedUserId: string | null;
     error: string | null;
 
     // Actions
-    loadTasks: () => Promise<void>;
+    loadTasks: (force?: boolean) => Promise<void>;
     addTask: (data: TaskFormData) => Promise<Task>;
     editTask: (id: string, data: Partial<Task>) => Promise<void>;
     removeTask: (id: string) => Promise<void>;
@@ -62,21 +64,32 @@ function calculateNextDueDate(currentDueDateStr: string | undefined | null, rule
 export const useTaskStore = create<TaskState>((set, get) => ({
     tasks: [],
     isLoading: false,
+    hasLoaded: false,
+    loadedUserId: null,
     error: null,
 
-    loadTasks: async () => {
-        set({ isLoading: true, error: null });
+    loadTasks: async (force = false) => {
+        const state = get();
+        const supabase = getSupabaseClient();
         try {
-            const supabase = getSupabaseClient();
             const { data: { session } } = await supabase.auth.getSession();
+            const uid = session?.user?.id ?? null;
 
-            if (!session?.user?.id) {
-                set({ tasks: [], isLoading: false });
+            if (!uid) {
+                set({ tasks: [], isLoading: false, hasLoaded: false, loadedUserId: null });
                 return;
             }
 
-            const tasks = await getTasks(session.user.id);
-            set({ tasks, isLoading: false });
+            if (!force && state.hasLoaded && state.loadedUserId === uid) {
+                return;
+            }
+
+            if (!state.hasLoaded) {
+                set({ isLoading: true, error: null });
+            }
+
+            const tasks = await getTasks(uid);
+            set({ tasks, isLoading: false, hasLoaded: true, loadedUserId: uid });
         } catch (error) {
             set({ error: (error as Error).message, isLoading: false });
         }

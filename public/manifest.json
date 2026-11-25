@@ -5,8 +5,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#09050d",
-  "theme_color": "#6366f1",
+  "background_color": "#0b0d0e",
+  "theme_color": "#10b981",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -53,14 +53,14 @@
       "short_name": "Capture",
       "description": "Log expenses, meals, workouts, steps & tasks in 10 seconds",
       "url": "/dashboard?capture=1",
-      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Body & Fitness",
       "short_name": "Fitness",
       "description": "Calories, protein, steps, weight trend & workouts",
       "url": "/fitness",
-      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "share_target": {
@@ -73,11 +73,5 @@
     }
   },
   "screenshots": [],
-  "prefer_related_applications": false,
-  "related_applications": [
-    {
-      "platform": "webapp",
-      "url": "/manifest.json"
-    }
-  ]
+  "prefer_related_applications": false
 }

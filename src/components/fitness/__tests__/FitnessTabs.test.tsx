@@ -102,7 +102,7 @@ describe('/fitness Page & 5-Tab Shell RTL Smoke', () => {
     });
   });
 
-  it('renders all 5 fitness tabs and switches cleanly across Fuel, Body, Workouts, Supplements & Routines', () => {
+  it('renders all 5 fitness tabs and switches cleanly across Fuel, Body, Workouts, Supplements & Routines', async () => {
     render(<FitnessPageContent />);
 
     // Default tab: Fuel & Check-In
@@ -112,24 +112,24 @@ describe('/fitness Page & 5-Tab Shell RTL Smoke', () => {
 
     // Tab 2: Body Trends
     fireEvent.click(screen.getByRole('tab', { name: /Body Trends/i }));
-    expect(screen.getByText(/7-Day Rolling Average Weight/i)).toBeInTheDocument();
+    expect(await screen.findByText(/7-Day Rolling Average Weight/i)).toBeInTheDocument();
 
     // Tab 3: Workouts
     fireEvent.click(screen.getByRole('tab', { name: /Workouts/i }));
-    expect(screen.getByText(/Log Gym \/ Training Session/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Log Gym \/ Training Session/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Push' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '90s' })).toBeInTheDocument();
 
     // Tab 4: Supplements
     fireEvent.click(screen.getByRole('tab', { name: /Supplements/i }));
-    expect(screen.getByText(/Supplement Stock & Protein ROI/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Supplement Stock & Protein ROI/i)).toBeInTheDocument();
     expect(screen.getAllByText('Whey Isolate').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText(/Boiled Eggs/i).length).toBeGreaterThanOrEqual(2);
 
     // Tab 5: Routines & Quit
     fireEvent.click(screen.getByRole('tab', { name: /Routines & Quit/i }));
-    expect(screen.getByText(/Anti-Habits \("Quit" Trackers\)/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Anti-Habits \("Quit" Trackers\)/i)).toBeInTheDocument();
     expect(screen.getByText(/Morning Anchor/i)).toBeInTheDocument();
     expect(screen.getByText(/Night Shutdown/i)).toBeInTheDocument();
-  });
+  }, 15000);
 });

@@ -46,10 +46,9 @@ export function BentoGrid({ widgets }: BentoGridProps) {
       },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 8,
-      },
+      activationConstraint: isCustomizing
+        ? { delay: 180, tolerance: 8 }
+        : { delay: 999999, tolerance: 0 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,

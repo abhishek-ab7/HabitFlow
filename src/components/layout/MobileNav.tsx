@@ -13,14 +13,12 @@ import {
   Target,
   BarChart3,
   User,
-  MessageSquareText,
-  Sparkles,
   ChevronRight,
   X,
   Dumbbell,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Dialog,
   DialogContent,
@@ -28,23 +26,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
-import { SmsImportModal } from '@/components/finance/SmsImportModal';
-import { HabitFormModal } from '@/components/habits/habit-form-modal';
-import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
-import { useHabitStore } from '@/lib/stores/habit-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
-import { toast } from 'sonner';
-
-interface QuickActionItem {
-  id: string;
-  title: string;
-  description: string;
-  icon: React.ElementType;
-  color: string;
-  badge?: string;
-  onClick: () => void;
-}
 
 interface MoreMenuItem {
   href: string;
@@ -96,17 +78,8 @@ export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-
-  // Modal open states
-  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
 
-  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
-  const [isSmsImportOpen, setIsSmsImportOpen] = useState(false);
-  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
-  const [isNewHabitOpen, setIsNewHabitOpen] = useState(false);
-
-  const { addHabit } = useHabitStore();
   const settings = useGamificationStore((s) => s.settings);
 
   const showFitness = !settings?.habitOnlyMode && settings?.showFitness !== false;
@@ -227,63 +200,6 @@ export function MobileNav() {
   if (!mounted) return null;
 
   const isMoreActive = visibleMoreItems.some((item) => pathname.startsWith(item.href));
-
-  const quickActions: QuickActionItem[] = [
-    ...(showFinance
-      ? [
-          {
-            id: 'expense',
-            title: 'Log Expense / Income',
-            description: 'Record spending, split with friends, or scan a receipt',
-            icon: Wallet,
-            color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-            badge: 'Quick Add',
-            onClick: () => {
-              setIsQuickAddOpen(false);
-              setIsAddExpenseOpen(true);
-            },
-          },
-          {
-            id: 'sms',
-            title: 'Fetch from SMS & Alerts',
-            description: 'Auto-extract transactions from bank & UPI alerts',
-            icon: MessageSquareText,
-            color: 'text-primary bg-primary/10 border-primary/20',
-            badge: 'Smart Scan',
-            onClick: () => {
-              setIsQuickAddOpen(false);
-              setIsSmsImportOpen(true);
-            },
-          },
-        ]
-      : []),
-    ...(showTasks
-      ? [
-          {
-            id: 'task',
-            title: 'New Task',
-            description: 'Capture an actionable to-do with deadline & AI subtasks',
-            icon: ListTodo,
-            color: 'text-info bg-info/10 border-info/20',
-            onClick: () => {
-              setIsQuickAddOpen(false);
-              setIsCreateTaskOpen(true);
-            },
-          },
-        ]
-      : []),
-    {
-      id: 'habit',
-      title: 'New Habit',
-      description: 'Create a daily, flexible weekly, or interval habit',
-      icon: CheckSquare,
-      color: 'text-primary bg-primary/10 border-primary/20',
-      onClick: () => {
-        setIsQuickAddOpen(false);
-        setIsNewHabitOpen(true);
-      },
-    },
-  ];
 
   return (
     <>
@@ -443,77 +359,7 @@ export function MobileNav() {
         </nav>
       </div>
 
-      {/* Sheet 1: Universal Quick-Add Bottom Sheet */}
-      <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
-        <DialogContent
-          showCloseButton={false}
-          className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-md w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col border-border bg-background"
-        >
-          {/* Mobile Drag Handle */}
-          <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
-            <div className="w-10 h-1.5 rounded-full bg-muted-foreground/30" />
-          </div>
-
-          <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between">
-            <DialogHeader className="text-left space-y-0.5">
-              <DialogTitle className="text-base font-bold text-foreground">
-                Quick Actions
-              </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                Capture habits, track cashflow, or initiate deep focus
-              </DialogDescription>
-            </DialogHeader>
-            <button
-              type="button"
-              onClick={() => setIsQuickAddOpen(false)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="p-4 space-y-2 overflow-y-auto">
-            {quickActions.map((action) => {
-              const Icon = action.icon;
-              return (
-                <button
-                  key={action.id}
-                  type="button"
-                  onClick={action.onClick}
-                  className="w-full p-3 surface-subtle active:scale-[0.98] transition-all flex items-center gap-3.5 text-left group"
-                >
-                  <div
-                    className={cn(
-                      'w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-105',
-                      action.color
-                    )}
-                  >
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-foreground">
-                        {action.title}
-                      </span>
-                      {action.badge && (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-mono">
-                          {action.badge}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {action.description}
-                    </p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                </button>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Sheet 2: More Drawer (Tasks, Goals, Analytics, Settings) */}
+      {/* More Drawer (Tasks, Goals, Analytics, Settings) */}
       <Dialog open={isMoreDrawerOpen} onOpenChange={setIsMoreDrawerOpen}>
         <DialogContent
           showCloseButton={false}
@@ -547,15 +393,12 @@ export function MobileNav() {
               const Icon = item.icon;
               const isActive = pathname.startsWith(item.href);
               return (
-                <button
+                <Link
                   key={item.href}
-                  type="button"
-                  onClick={() => {
-                    setIsMoreDrawerOpen(false);
-                    router.push(item.href);
-                  }}
+                  href={item.href}
+                  onClick={() => setIsMoreDrawerOpen(false)}
                   className={cn(
-                    'w-full p-3 rounded-xl border transition-all flex items-center gap-3.5 text-left group',
+                    'w-full p-3 rounded-xl border transition-colors flex items-center gap-3.5 text-left group',
                     isActive
                       ? 'border-primary/40 bg-accent/60'
                       : 'border-border/50 bg-muted/45 hover:bg-muted/75 active:scale-[0.98]'
@@ -585,43 +428,12 @@ export function MobileNav() {
                     </p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                </button>
+                </Link>
               );
             })}
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Sub-Modals Triggered from Quick Actions */}
-      <AddTransactionModal
-        open={isAddExpenseOpen}
-        onOpenChange={setIsAddExpenseOpen}
-        onOpenSmsImport={() => {
-          setIsAddExpenseOpen(false);
-          setIsSmsImportOpen(true);
-        }}
-      />
-
-      <SmsImportModal
-        open={isSmsImportOpen}
-        onOpenChange={setIsSmsImportOpen}
-      />
-
-      <CreateTaskModal
-        open={isCreateTaskOpen}
-        onOpenChange={setIsCreateTaskOpen}
-        hideTrigger
-      />
-
-      <HabitFormModal
-        open={isNewHabitOpen}
-        onOpenChange={setIsNewHabitOpen}
-        onSubmit={async (data) => {
-          await addHabit(data);
-          toast.success('Habit created!');
-          setIsNewHabitOpen(false);
-        }}
-      />
     </>
   );
 }

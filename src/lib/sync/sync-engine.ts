@@ -37,6 +37,8 @@ const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   finance_sip_plans: syncFinanceWithRetry,
   finance_categorization_rules: syncFinanceWithRetry,
   finance_recurring_bills: syncFinanceWithRetry,
+  finance_net_worth_snapshots: syncFinanceWithRetry,
+  credit_card_statements: syncFinanceWithRetry,
   fitness_profiles: syncFitnessWithRetry,
   fitness_daily_logs: syncFitnessWithRetry,
   meal_templates: syncFitnessWithRetry,
@@ -118,6 +120,11 @@ export class SyncEngine {
   public goalSyncLock = false;
   public milestoneSyncLock = false;
 
+  // Auth listener & network listener cleanup
+  private authSubscription: { unsubscribe: () => void } | null = null;
+  private networkAbortController: AbortController | null = null;
+  private lastResumeSyncAt = 0;
+
   // Periodic duplicate cleanup
   private duplicateCleanupInterval: NodeJS.Timeout | null = null;
 
@@ -168,10 +175,11 @@ export class SyncEngine {
       // Resolve the auth ready promise
       this.authReadyResolve();
 
-      this.supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = this.supabase.auth.onAuthStateChange((_event, session) => {
         const newUserId = session?.user?.id || null;
         this.handleAuthStateChange(newUserId);
       });
+      this.authSubscription = subscription;
 
       if (this.userId) {
         this.setupRealtime();
@@ -186,34 +194,55 @@ export class SyncEngine {
 
   private setupNetworkListeners() {
     if (typeof window === 'undefined') return;
+    if (this.networkAbortController) {
+      this.networkAbortController.abort();
+    }
+    const controller = new AbortController();
+    this.networkAbortController = controller;
 
-    window.addEventListener('online', () => {
-      this.isOnline = true;
-      this.log('info', 'Back online, syncing pending changes...');
-      this.processPendingOperations();
-      this.syncAll();
-    });
+    window.addEventListener(
+      'online',
+      () => {
+        this.isOnline = true;
+        this.log('info', 'Back online, syncing pending changes...');
+        // syncAll() already invokes processPendingOperations() under syncLock
+        void this.syncAll();
+      },
+      { signal: controller.signal }
+    );
 
-    window.addEventListener('offline', () => {
-      this.isOnline = false;
-      this.log('info', 'Offline mode activated');
-      this.notifyStatus({ type: 'idle', message: 'Offline - changes will sync when online' });
-    });
+    window.addEventListener(
+      'offline',
+      () => {
+        this.isOnline = false;
+        this.log('info', 'Offline mode activated');
+        this.notifyStatus({ type: 'idle', message: 'Offline - changes will sync when online' });
+      },
+      { signal: controller.signal }
+    );
+
+    const triggerResumeSync = () => {
+      if (!this.isOnline || !this.userId || this.isSyncing || this.syncLock) return;
+      const now = Date.now();
+      if (now - this.lastResumeSyncAt < 60_000) return;
+      this.lastResumeSyncAt = now;
+      this.log('info', 'App resumed to foreground, triggering sync...');
+      void this.syncAll();
+    };
 
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && this.isOnline && this.userId) {
-          this.log('info', 'App resumed to foreground, triggering sync...');
-          this.syncAll();
-        }
-      });
+      document.addEventListener(
+        'visibilitychange',
+        () => {
+          if (document.visibilityState === 'visible') {
+            triggerResumeSync();
+          }
+        },
+        { signal: controller.signal }
+      );
     }
 
-    window.addEventListener('focus', () => {
-      if (this.isOnline && this.userId && !this.isSyncing) {
-        this.syncAll();
-      }
-    });
+    window.addEventListener('focus', triggerResumeSync, { signal: controller.signal });
   }
 
   private async loadPendingOperations() {
@@ -390,32 +419,78 @@ export class SyncEngine {
       this.notifyStatus({ type: 'syncing', message: 'Cleaning up duplicates...', progress: 80 });
       await this.cleanupLocalDuplicatesWithLogging();
 
-      if (!this.duplicateCleanupInterval && typeof window !== 'undefined') {
-        this.duplicateCleanupInterval = setInterval(() => {
-          this.cleanupLocalDuplicatesQuietly();
-        }, 30000);
-        this.log('info', '🔄 Periodic duplicate cleanup started (every 30s)');
-      }
-
       this.lastSyncAt = new Date();
       if (this.userId && typeof localStorage !== 'undefined') {
         localStorage.setItem(`habit_sync_last_at_${this.userId}`, this.lastSyncAt.toISOString());
       }
 
-      // Reload finance store so pulled cloud data updates UI immediately
-      try {
-        const { useFinanceStore } = await import('@/lib/stores/finance-store');
-        await useFinanceStore.getState().loadFinanceData(this.userId);
-      } catch (e) {
-        this.log('warn', 'Failed to refresh finance store after syncAll', e);
+      const details = report?.details ?? {};
+      const financePulled = details['Finance']?.pulled ?? 0;
+      const fitnessPulled = details['Fitness']?.pulled ?? 0;
+      const habitsPulled = (details['habits']?.pulled ?? 0) + (details['completions']?.pulled ?? 0);
+      const tasksPulled = details['tasks']?.pulled ?? 0;
+      const goalsPulled = (details['goals']?.pulled ?? 0) + (details['milestones']?.pulled ?? 0);
+      const settingsPulled = details['user_settings']?.pulled ?? 0;
+
+      if (financePulled > 0) {
+        try {
+          const { useFinanceStore } = await import('@/lib/stores/finance-store');
+          await useFinanceStore.getState().loadFinanceData(this.userId, true);
+        } catch (e) {
+          this.log('warn', 'Failed to refresh finance store after syncAll', e);
+        }
       }
 
-      // Reload fitness store so pulled cloud data updates UI immediately
-      try {
-        const { useFitnessStore } = await import('@/lib/stores/fitness');
-        await useFitnessStore.getState().loadFitnessData(this.userId);
-      } catch (e) {
-        this.log('warn', 'Failed to refresh fitness store after syncAll', e);
+      if (fitnessPulled > 0) {
+        try {
+          const { useFitnessStore } = await import('@/lib/stores/fitness');
+          await useFitnessStore.getState().loadFitnessData(this.userId, true);
+        } catch (e) {
+          this.log('warn', 'Failed to refresh fitness store after syncAll', e);
+        }
+      }
+
+      if (habitsPulled > 0) {
+        try {
+          const { useHabitStore } = await import('@/lib/stores/habit-store');
+          await useHabitStore.getState().loadHabits(true);
+        } catch (e) {
+          this.log('warn', 'Failed to refresh habits store after syncAll', e);
+        }
+      }
+
+      if (tasksPulled > 0) {
+        try {
+          const { useTaskStore } = await import('@/lib/stores/task-store');
+          await useTaskStore.getState().loadTasks(true);
+        } catch (e) {
+          this.log('warn', 'Failed to refresh tasks store after syncAll', e);
+        }
+      }
+
+      if (goalsPulled > 0) {
+        try {
+          const { useGoalStore } = await import('@/lib/stores/goal-store');
+          await Promise.all([
+            useGoalStore.getState().loadGoals(true),
+            useGoalStore.getState().loadAllMilestones(true),
+          ]);
+        } catch (e) {
+          this.log('warn', 'Failed to refresh goals store after syncAll', e);
+        }
+      }
+
+      if (settingsPulled > 0) {
+        try {
+          const { useUserStore } = await import('@/lib/stores/user-store');
+          await useUserStore.getState().loadUser(true);
+        } catch (e) {
+          this.log('warn', 'Failed to refresh user store after syncAll', e);
+        }
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('habitflow-sync-complete', { detail: report }));
       }
 
       this.notifyStatus({
@@ -840,6 +915,21 @@ export class SyncEngine {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'mood_logs', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('mood_logs')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'credit_card_statements', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('credit_card_statements')
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'finance_net_worth_snapshots', filter: `user_id=eq.${this.userId}` },
+        () => this.debouncedSync('finance_net_worth_snapshots')
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'finance_transactions', filter: `user_id=eq.${this.userId}` },
         () => this.debouncedSync('finance_transactions')
       )
@@ -951,10 +1041,12 @@ export class SyncEngine {
       let hasFinanceChange = false;
       let hasFitnessChange = false;
 
+      const ranSyncFns = new Set<Function>();
       for (const t of tablesToSync) {
         try {
           const syncFn = syncTableMap[t];
-          if (syncFn) {
+          if (syncFn && !ranSyncFns.has(syncFn)) {
+            ranSyncFns.add(syncFn);
             await syncFn(this);
           }
 
@@ -963,7 +1055,8 @@ export class SyncEngine {
             t === 'monthly_commitments' ||
             t === 'debt_records' ||
             t === 'debt_installments' ||
-            t === 'emi_trackers'
+            t === 'emi_trackers' ||
+            t === 'credit_card_statements'
           ) {
             hasFinanceChange = true;
           }
@@ -986,7 +1079,7 @@ export class SyncEngine {
       if (hasFinanceChange) {
         try {
           const { useFinanceStore } = await import('@/lib/stores/finance-store');
-          await useFinanceStore.getState().loadFinanceData(this.userId || undefined);
+          await useFinanceStore.getState().loadFinanceData(this.userId || undefined, true);
         } catch (e) {
           this.log('warn', 'Failed to reload finance store after realtime sync', e);
         }
@@ -995,10 +1088,14 @@ export class SyncEngine {
       if (hasFitnessChange) {
         try {
           const { useFitnessStore } = await import('@/lib/stores/fitness');
-          await useFitnessStore.getState().loadFitnessData(this.userId || undefined);
+          await useFitnessStore.getState().loadFitnessData(this.userId || undefined, true);
         } catch (e) {
           this.log('warn', 'Failed to reload fitness store after realtime sync', e);
         }
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('habitflow-sync-complete'));
       }
 
       this.notifyStatus({ type: 'success', message: 'Data updated' });
@@ -1239,11 +1336,33 @@ export class SyncEngine {
   public reset() {
     this.cleanupRealtime();
     this.pendingOperations.clear();
+    this.pendingRealtimeTables.clear();
     if (this.duplicateCleanupInterval) {
       clearInterval(this.duplicateCleanupInterval);
       this.duplicateCleanupInterval = null;
     }
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+      this.syncDebounceTimer = null;
+    }
+    if (this.financeSyncDebounceTimer) {
+      clearTimeout(this.financeSyncDebounceTimer);
+      this.financeSyncDebounceTimer = null;
+    }
+    if (this.fitnessSyncDebounceTimer) {
+      clearTimeout(this.fitnessSyncDebounceTimer);
+      this.fitnessSyncDebounceTimer = null;
+    }
+    if (this.authSubscription) {
+      this.authSubscription.unsubscribe();
+      this.authSubscription = null;
+    }
+    if (this.networkAbortController) {
+      this.networkAbortController.abort();
+      this.networkAbortController = null;
+    }
     this.lastSyncAt = null;
+    this.lastResumeSyncAt = 0;
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('habit_sync_pending');
     }

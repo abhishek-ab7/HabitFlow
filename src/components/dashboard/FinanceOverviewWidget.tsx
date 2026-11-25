@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Wallet,
@@ -13,14 +15,20 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
-import type { FinancialObligationItem } from '@/lib/types';
+import type { FinancialObligationItem, FinanceAccount } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { AddTransactionModal } from '@/components/finance/AddTransactionModal';
-import { PayCreditCardModal } from '@/components/finance/credit-cards/PayCreditCardModal';
 import { CategoryIcon } from '@/components/finance/CategoryIcon';
-import type { FinanceAccount } from '@/lib/types';
 import { formatHumanDate } from '@/lib/date-format';
 import { toast } from 'sonner';
+
+const AddTransactionModal = dynamic(
+  () => import('@/components/finance/AddTransactionModal').then((m) => ({ default: m.AddTransactionModal })),
+  { ssr: false }
+);
+const PayCreditCardModal = dynamic(
+  () => import('@/components/finance/credit-cards/PayCreditCardModal').then((m) => ({ default: m.PayCreditCardModal })),
+  { ssr: false }
+);
 
 export function FinanceOverviewWidget() {
   const router = useRouter();
@@ -54,7 +62,7 @@ export function FinanceOverviewWidget() {
 
   useEffect(() => {
     if (categories.length === 0) {
-      loadFinanceData();
+      loadFinanceData(undefined, false);
     }
   }, [categories.length, loadFinanceData]);
 
@@ -203,14 +211,15 @@ export function FinanceOverviewWidget() {
               <span className="sm:hidden">Log</span>
             </Button>
             <Button
-              type="button"
               variant="ghost"
               size="sm"
-              onClick={() => router.push('/finance')}
+              asChild
               className="group gap-1 text-xs min-h-[36px] px-2.5 text-muted-foreground hover:text-foreground rounded-xl whitespace-nowrap"
             >
-              <span className="hidden sm:inline">Finance</span>
-              <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+              <Link href="/finance">
+                <span className="hidden sm:inline">Finance</span>
+                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+              </Link>
             </Button>
           </div>
         </div>
@@ -327,13 +336,12 @@ export function FinanceOverviewWidget() {
                   <span className="font-semibold text-foreground">
                     Top Budget Envelopes
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => router.push('/finance')}
+                  <Link
+                    href="/finance"
                     className="text-primary hover:underline font-medium"
                   >
                     All Budgets →
-                  </button>
+                  </Link>
                 </div>
                 {topCategories.map((item) => {
                   const pct =
@@ -365,16 +373,18 @@ export function FinanceOverviewWidget() {
                         </span>
                       </div>
                       <div className="relative h-1.5 w-full rounded-full bg-muted overflow-visible">
-                        <div
-                          style={{ width: `${pct}%` }}
-                          className={`h-full rounded-full transition-all ${
-                            item.status === 'exceeded'
-                              ? 'bg-rose-500'
-                              : item.status === 'warning'
-                              ? 'bg-amber-500'
-                              : 'bg-emerald-500'
-                          }`}
-                        />
+                        <div className="h-full w-full rounded-full overflow-hidden">
+                          <div
+                            style={{ transform: `scaleX(${Math.max(0, Math.min(1, pct / 100))})` }}
+                            className={`h-full w-full origin-left rounded-full transition-transform duration-300 ${
+                              item.status === 'exceeded'
+                                ? 'bg-rose-500'
+                                : item.status === 'warning'
+                                ? 'bg-amber-500'
+                                : 'bg-emerald-500'
+                            }`}
+                          />
+                        </div>
                         {item.budgetLimit > 0 && (
                           <div
                             style={{
@@ -402,13 +412,12 @@ export function FinanceOverviewWidget() {
                     <Receipt className="w-3.5 h-3.5 text-muted-foreground" />
                     Recent Activity
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => router.push('/finance?tab=activity')}
+                  <Link
+                    href="/finance?tab=activity"
                     className="text-primary hover:underline font-medium"
                   >
                     Ledger →
-                  </button>
+                  </Link>
                 </div>
                 <div className="divide-y divide-border/60">
                   {recentTxs.map((tx) => {
@@ -536,13 +545,12 @@ export function FinanceOverviewWidget() {
                   );
                 })}
                 {due14d.length > 4 && (
-                  <button
-                    type="button"
-                    onClick={() => router.push('/finance?tab=trackers')}
-                    className="text-xs text-primary hover:underline font-medium"
+                  <Link
+                    href="/finance?tab=trackers"
+                    className="text-xs text-primary hover:underline font-medium inline-block"
                   >
                     +{due14d.length - 4} more obligations →
-                  </button>
+                  </Link>
                 )}
               </div>
             )}
@@ -550,10 +558,12 @@ export function FinanceOverviewWidget() {
         </div>
       </div>
 
-      <AddTransactionModal
-        open={isQuickAddOpen}
-        onOpenChange={setIsQuickAddOpen}
-      />
+      {isQuickAddOpen && (
+        <AddTransactionModal
+          open={isQuickAddOpen}
+          onOpenChange={setIsQuickAddOpen}
+        />
+      )}
 
       {payingCardAccount && (
         <PayCreditCardModal

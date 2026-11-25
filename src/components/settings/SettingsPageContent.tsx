@@ -39,7 +39,7 @@ import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { db, getSettings, updateSettings } from '@/lib/db';
-import { cleanupAllDuplicates, countAllDuplicates } from '@/lib/cleanup';
+import { cleanupAllDuplicates, countAllDuplicates, clearAllLocalData } from '@/lib/cleanup';
 import { forcePushAllHabits } from '@/lib/force-sync';
 import { getSyncEngine } from '@/lib/sync';
 import { getSupabaseClient } from '@/lib/supabase/client';
@@ -52,15 +52,29 @@ import {
   DEFAULT_COLOR_THEME,
   getColorThemeById,
 } from '@/lib/themes';
+import dynamic from 'next/dynamic';
 import { SyncStatusPanel } from '@/components/sync/SyncStatusPanel';
 import { SettingsHero } from '@/components/settings/SettingsHero';
-import { AvatarSelector } from '@/components/settings/AvatarSelector';
-import { PasswordChangeModal } from '@/components/settings/password-change-modal';
-import { DataVaultCard } from '@/components/settings/DataVaultCard';
-import { McpConnectionsCard } from '@/components/settings/McpConnectionsCard';
 import { useUserStore } from '@/lib/stores/user-store';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import type { Avatar } from '@/lib/avatars';
+
+const AvatarSelector = dynamic(
+  () => import('@/components/settings/AvatarSelector').then((m) => ({ default: m.AvatarSelector })),
+  { ssr: false }
+);
+const PasswordChangeModal = dynamic(
+  () => import('@/components/settings/password-change-modal').then((m) => ({ default: m.PasswordChangeModal })),
+  { ssr: false }
+);
+const DataVaultCard = dynamic(
+  () => import('@/components/settings/DataVaultCard').then((m) => ({ default: m.DataVaultCard })),
+  { ssr: false, loading: () => <div className="h-44 rounded-2xl border border-border bg-card animate-pulse" /> }
+);
+const McpConnectionsCard = dynamic(
+  () => import('@/components/settings/McpConnectionsCard').then((m) => ({ default: m.McpConnectionsCard })),
+  { ssr: false, loading: () => <div className="h-44 rounded-2xl border border-border bg-card animate-pulse" /> }
+);
 
 export default function SettingsPageContent() {
   const {
@@ -247,9 +261,8 @@ export default function SettingsPageContent() {
       const supabase = getSupabaseClient() as any;
       const uid = user.id;
 
-      // 1. Clear remote Supabase data in parallel
+      // 1. Clear remote Supabase data in parallel (Core + Fitness + Finance)
       await Promise.all([
-        supabase.from('habit_completions').delete().eq('user_id', uid),
         supabase.from('completions').delete().eq('user_id', uid),
         supabase.from('milestones').delete().eq('user_id', uid),
         supabase.from('tasks').delete().eq('user_id', uid),
@@ -261,10 +274,25 @@ export default function SettingsPageContent() {
         supabase.from('meal_templates').delete().eq('user_id', uid),
         supabase.from('fitness_daily_logs').delete().eq('user_id', uid),
         supabase.from('fitness_profiles').delete().eq('user_id', uid),
+        supabase.from('finance_transactions').delete().eq('user_id', uid),
+        supabase.from('finance_budgets').delete().eq('user_id', uid),
+        supabase.from('monthly_commitments').delete().eq('user_id', uid),
+        supabase.from('debt_installments').delete().eq('user_id', uid),
+        supabase.from('debt_records').delete().eq('user_id', uid),
+        supabase.from('emi_trackers').delete().eq('user_id', uid),
+        supabase.from('finance_sip_plans').delete().eq('user_id', uid),
+        supabase.from('finance_categorization_rules').delete().eq('user_id', uid),
+        supabase.from('finance_recurring_bills').delete().eq('user_id', uid),
+        supabase.from('finance_net_worth_snapshots').delete().eq('user_id', uid),
+        supabase.from('credit_card_statements').delete().eq('user_id', uid),
       ]);
 
-      await supabase.from('habits').delete().eq('user_id', uid);
-      await supabase.from('goals').delete().eq('user_id', uid);
+      await Promise.all([
+        supabase.from('habits').delete().eq('user_id', uid),
+        supabase.from('goals').delete().eq('user_id', uid),
+        supabase.from('finance_accounts').delete().eq('user_id', uid),
+        supabase.from('finance_categories').delete().eq('user_id', uid),
+      ]);
 
       // 2. Reset settings in Supabase to defaults rather than deleting the row
       await supabase.from('user_settings').update({
@@ -296,21 +324,8 @@ export default function SettingsPageContent() {
         updated_at: new Date().toISOString(),
       } as any).eq('user_id', uid);
 
-      // 3. Clear all local Dexie DB tables
-      await db.habits.clear();
-      await db.completions.clear();
-      await db.goals.clear();
-      await db.milestones.clear();
-      await db.tasks.clear();
-      await db.userSettings.clear();
-      await db.moodLogs.clear();
-      await db.fitnessProfiles.clear();
-      await db.fitnessDailyLogs.clear();
-      await db.mealTemplates.clear();
-      await db.mealLogs.clear();
-      await db.workoutSessions.clear();
-      await db.supplementInventory.clear();
-      await db.supplementLogs.clear();
+      // 3. Clear all 27 local Dexie DB tables and HabitFlow localStorage keys
+      await clearAllLocalData({ preserveTheme: true });
 
       try {
         const { useFitnessStore } = await import('@/lib/stores/fitness');
@@ -355,21 +370,6 @@ export default function SettingsPageContent() {
         dashboardLayout: [],
       };
       await db.userSettings.add(defaultSettings as any);
-
-      // 6. Delete all cached local storage keys related to habitflow, onboarding, and focus modes
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (
-          key.startsWith('habitflow_') || 
-          key.startsWith('focus_mode_') || 
-          key.startsWith('sync_version_') ||
-          key === 'habit_sync_pending'
-        )) {
-          keysToRemove.push(key);
-        }
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
 
       toast.success('All data permanently deleted. Refreshing...');
       setTimeout(() => window.location.reload(), 1500);
@@ -1212,12 +1212,14 @@ export default function SettingsPageContent() {
         </div>
       </FadeIn>
 
-      <AvatarSelector
-        open={showAvatarSelector}
-        onOpenChange={setShowAvatarSelector}
-        selectedAvatarId={settings.avatarId}
-        onSelect={handleUpdateAvatar}
-      />
+      {showAvatarSelector && (
+        <AvatarSelector
+          open={showAvatarSelector}
+          onOpenChange={setShowAvatarSelector}
+          selectedAvatarId={settings.avatarId}
+          onSelect={handleUpdateAvatar}
+        />
+      )}
 
       <ConfirmDialog
         open={showClearDataDialog}
@@ -1229,10 +1231,12 @@ export default function SettingsPageContent() {
         onConfirm={handleClearAllData}
       />
 
-      <PasswordChangeModal
-        isOpen={isPasswordModalOpen}
-        onClose={() => setIsPasswordModalOpen(false)}
-      />
+      {isPasswordModalOpen && (
+        <PasswordChangeModal
+          isOpen={isPasswordModalOpen}
+          onClose={() => setIsPasswordModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -405,6 +405,16 @@ db.version(18).stores({
   }
 });
 
+// Schema version 19 - Compound string-safe indexes for cold start & incremental sync performance
+db.version(19).stores({
+  habits: 'id, userId, name, category, archived, order, createdAt, updatedAt, isQuantitative, frequencyType, polarity, anchorBlock',
+  completions: 'id, userId, habitId, date, [habitId+date], [userId+date], status, updatedAt',
+  tasks: 'id, userId, status, [userId+status], priority, due_date, created_at, updated_at, parentTaskId, depth',
+  financeCategories: 'id, userId, slug, [userId+slug], type, order, archived, updatedAt',
+  financeTransactions: 'id, userId, date, [userId+date], monthKey, categoryId, accountId, toAccountId, paidStatementId, type, linkedCommitmentId, linkedDebtId, linkedEmiId, linkedSipId, splitGroupId, needsReview, [userId+monthKey], updatedAt',
+  monthlyCommitments: 'id, userId, isActive, dueDayOfMonth, defaultCategoryId, updatedAt',
+});
+
 // Register hooks for syncing database tables automatically
 const syncTables = [
   'habits', 'completions', 'goals', 'milestones', 

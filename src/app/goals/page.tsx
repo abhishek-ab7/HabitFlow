@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo, Suspense } from 'react';
+import { useEffect, useState, useMemo, useCallback, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useShallow } from 'zustand/react/shallow';
 import {
   Plus,
   Filter,
@@ -26,9 +27,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { FadeIn, StaggerContainer, StaggerItem } from '@/components/motion';
-import { GoalCard, GoalFormModal, EmptyGoals } from '@/components/goals';
-import { useGoalStore } from '@/lib/stores';
+import { FadeIn } from '@/components/motion';
+import { GoalCard } from '@/components/goals/goal-card';
+import { EmptyGoals } from '@/components/goals/empty-goals';
+import { useGoalStore } from '@/lib/stores/goal-store';
+
+const GoalFormModal = dynamic(
+  () => import('@/components/goals/goal-form-modal').then((m) => ({ default: m.GoalFormModal })),
+  { ssr: false }
+);
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
@@ -91,7 +98,29 @@ function GoalsPageContent() {
     getGoalStats,
     getGoalMilestones,
     getFilteredGoals,
-  } = useGoalStore();
+  } = useGoalStore(
+    useShallow((s) => ({
+      goals: s.goals,
+      milestones: s.milestones,
+      isLoading: s.isLoading,
+      loadGoals: s.loadGoals,
+      loadAllMilestones: s.loadAllMilestones,
+      addGoal: s.addGoal,
+      editGoal: s.editGoal,
+      removeGoal: s.removeGoal,
+      setFocus: s.setFocus,
+      toggleMilestoneComplete: s.toggleMilestoneComplete,
+      addMilestone: s.addMilestone,
+      removeMilestone: s.removeMilestone,
+      statusFilter: s.statusFilter,
+      areaFilter: s.areaFilter,
+      setStatusFilter: s.setStatusFilter,
+      setAreaFilter: s.setAreaFilter,
+      getGoalStats: s.getGoalStats,
+      getGoalMilestones: s.getGoalMilestones,
+      getFilteredGoals: s.getFilteredGoals,
+    }))
+  );
 
 
   // Load goals on mount AND when auth state changes
@@ -143,7 +172,49 @@ function GoalsPageContent() {
     const focusGoals = sortedGoals.filter(g => g.isFocus);
     const otherGoals = sortedGoals.filter(g => !g.isFocus);
     return [...focusGoals, ...otherGoals];
-  }, [getFilteredGoals, goals, statusFilter, areaFilter, searchQuery, sortBy, getGoalStats]);
+  }, [getFilteredGoals, goals, milestones, statusFilter, areaFilter, searchQuery, sortBy, getGoalStats]);
+
+  const milestonesByGoalId = useMemo(() => {
+    const map = new Map<string, typeof milestones>();
+    for (const m of milestones) {
+      const arr = map.get(m.goalId);
+      if (arr) arr.push(m);
+      else map.set(m.goalId, [m]);
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => a.order - b.order);
+    }
+    return map;
+  }, [milestones]);
+
+  const goalStatsById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof getGoalStats>>();
+    for (const g of displayGoals) {
+      map.set(g.id, getGoalStats(g.id));
+    }
+    return map;
+  }, [displayGoals, getGoalStats, milestones]);
+
+  const handleOpenEditModal = useCallback((goal: Goal) => {
+    setEditingGoal(goal);
+    setFormModalOpen(true);
+  }, []);
+
+  const handleCloseModal = useCallback((open: boolean) => {
+    setFormModalOpen(open);
+    if (!open) {
+      setEditingGoal(undefined);
+    }
+  }, []);
+
+  const handleArchiveGoal = useCallback(async (goalId: string) => {
+    await editGoal(goalId, { archived: true });
+  }, [editGoal]);
+
+  const handleAddMilestonePrompt = useCallback((goalId: string) => {
+    const found = goals.find((g) => g.id === goalId);
+    if (found) handleOpenEditModal(found);
+  }, [goals, handleOpenEditModal]);
 
   const handleCreateGoal = async (data: GoalFormData) => {
     await addGoal(data);
@@ -183,23 +254,7 @@ function GoalsPageContent() {
     }
   };
 
-  const handleOpenEditModal = (goal: Goal) => {
-    setEditingGoal(goal);
-    setFormModalOpen(true);
-  };
-
-  const handleCloseModal = (open: boolean) => {
-    setFormModalOpen(open);
-    if (!open) {
-      setEditingGoal(undefined);
-    }
-  };
-
-  const handleArchiveGoal = async (goalId: string) => {
-    await editGoal(goalId, { archived: true });
-  };
-
-  const handleSetFocus = async (goalId: string) => {
+  const handleSetFocus = useCallback(async (goalId: string) => {
     const goal = goals.find(g => g.id === goalId);
     if (!goal) return;
 
@@ -213,7 +268,7 @@ function GoalsPageContent() {
     }
 
     await setFocus(goalId);
-  };
+  }, [goals, setFocus]);
 
 
   const handleToggleStatus = (status: GoalStatus) => {
@@ -446,7 +501,7 @@ function GoalsPageContent() {
           </FadeIn>
         )
       ) : (
-        <StaggerContainer
+        <div
           className={cn(
             "grid grid-cols-1",
             viewMode === 'grid'
@@ -454,41 +509,39 @@ function GoalsPageContent() {
               : "gap-3 max-w-5xl"
           )}
         >
-          <AnimatePresence mode="popLayout">
-            {displayGoals.map((goal) => (
-              <StaggerItem key={goal.id} className={cn("min-w-0", viewMode === 'grid' && "h-full")}>
-                <GoalCard
-                  goal={goal}
-                  milestones={getGoalMilestones(goal.id)}
-                  stats={getGoalStats(goal.id)}
-                  viewMode={viewMode}
-                  onEdit={handleOpenEditModal}
-                  onDelete={removeGoal}
-                  onArchive={handleArchiveGoal}
-                  onSetFocus={handleSetFocus}
-                  onToggleMilestone={toggleMilestoneComplete}
-                  onAddMilestone={() => {
-                    handleOpenEditModal(goal);
-                  }}
-                />
-              </StaggerItem>
-            ))}
-          </AnimatePresence>
-        </StaggerContainer>
+          {displayGoals.map((goal) => (
+            <div key={goal.id} className={cn("min-w-0 cv-auto", viewMode === 'grid' && "h-full")}>
+              <GoalCard
+                goal={goal}
+                milestones={milestonesByGoalId.get(goal.id) || []}
+                stats={goalStatsById.get(goal.id) || getGoalStats(goal.id)}
+                viewMode={viewMode}
+                onEdit={handleOpenEditModal}
+                onDelete={removeGoal}
+                onArchive={handleArchiveGoal}
+                onSetFocus={handleSetFocus}
+                onToggleMilestone={toggleMilestoneComplete}
+                onAddMilestone={handleAddMilestonePrompt}
+              />
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Form Modal */}
-      <GoalFormModal
-        open={formModalOpen}
-        onOpenChange={handleCloseModal}
-        onSubmit={editingGoal ? handleEditGoal : handleCreateGoal}
-        goal={editingGoal}
-        existingMilestones={
-          editingGoal
-            ? getGoalMilestones(editingGoal.id).map(m => m.title)
-            : []
-        }
-      />
+      {/* Form Modal (lazy-mounted only when open) */}
+      {formModalOpen && (
+        <GoalFormModal
+          open={formModalOpen}
+          onOpenChange={handleCloseModal}
+          onSubmit={editingGoal ? handleEditGoal : handleCreateGoal}
+          goal={editingGoal}
+          existingMilestones={
+            editingGoal
+              ? getGoalMilestones(editingGoal.id).map(m => m.title)
+              : []
+          }
+        />
+      )}
     </div>
   );
 }

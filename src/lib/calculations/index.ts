@@ -431,19 +431,105 @@ export function calculateBestStreak(
     return bestStreak;
   }
 
-  // For flexible / specific_days / interval habits, evaluate across the span of recorded dates
-  const completedDates = completions
-    .filter((c) => c.completed && c.status !== 'frozen' && c.status !== 'rest' && !c.skipped)
-    .map((c) => c.date)
-    .sort();
+  // For flexible / specific_days / interval habits, compute best streak in a single chronological O(span + C log C) pass
+  const completedDatesSet = new Set<string>();
+  const frozenDatesSet = new Set<string>();
+  const restDatesSet = new Set<string>();
+  for (const c of completions) {
+    if (c.status === 'frozen') {
+      frozenDatesSet.add(c.date);
+    } else if (c.status === 'rest' || c.skipped) {
+      restDatesSet.add(c.date);
+    } else if (c.completed) {
+      completedDatesSet.add(c.date);
+    }
+  }
 
-  if (completedDates.length === 0) return 0;
+  if (completedDatesSet.size === 0) return 0;
+
+  const sortedCompleted = Array.from(completedDatesSet).sort();
+
+  if (freq === 'interval') {
+    const interval = Math.max(1, habit.intervalDays || 2);
+    let best = 1;
+    let run = 1;
+    for (let i = 1; i < sortedCompleted.length; i++) {
+      const diff = differenceInDays(parseISO(sortedCompleted[i]), parseISO(sortedCompleted[i - 1]));
+      if (diff <= interval) {
+        run++;
+      } else {
+        // Check if missing interval slots were bridged by frozen/rest days
+        let bridged = true;
+        let cursor = parseISO(sortedCompleted[i - 1]);
+        const targetEnd = parseISO(sortedCompleted[i]);
+        let daysSinceDone = 0;
+        while (differenceInDays(targetEnd, cursor) > 1) {
+          cursor = subDays(cursor, -1);
+          const dStr = formatDate(cursor);
+          daysSinceDone++;
+          if (frozenDatesSet.has(dStr) || restDatesSet.has(dStr)) {
+            daysSinceDone = 0;
+          } else if (daysSinceDone >= interval) {
+            bridged = false;
+            break;
+          }
+        }
+        run = bridged ? run + 1 : 1;
+      }
+      if (run > best) best = run;
+    }
+    return best;
+  }
+
+  const earliest = parseISO(sortedCompleted[0]);
+  const latest = parseISO(sortedCompleted[sortedCompleted.length - 1]);
+  const totalSpanDays = Math.min(1825, Math.max(0, differenceInDays(latest, earliest)));
+  const weekStartsOn = habit.weekStartsOn ?? 1;
+  const targetPerWeek = getEffectiveTargetDaysPerWeek(habit);
+  const allowedOffDaysPerWeek = Math.max(0, 7 - targetPerWeek);
+  const weekOffDaysUsed = new Map<string, number>();
 
   let best = 0;
-  for (const dStr of completedDates) {
-    const s = calculateCurrentStreak(completions, parseISO(dStr), habit);
-    if (s > best) best = s;
+  let run = 0;
+  for (let offset = 0; offset <= totalSpanDays; offset++) {
+    const currentDate = subDays(latest, totalSpanDays - offset);
+    const dateStr = formatDate(currentDate);
+
+    if (completedDatesSet.has(dateStr)) {
+      run++;
+      if (run > best) best = run;
+      continue;
+    }
+
+    if (frozenDatesSet.has(dateStr)) {
+      continue;
+    }
+
+    if (freq === 'specific_days') {
+      const dow = getDay(currentDate);
+      const isScheduled =
+        !habit.scheduledDays || habit.scheduledDays.length === 0 || habit.scheduledDays.includes(dow);
+      if (!isScheduled || restDatesSet.has(dateStr)) {
+        continue;
+      }
+      run = 0;
+      continue;
+    }
+
+    if (freq === 'weekly_flexible') {
+      const wkStart = formatDate(startOfWeek(currentDate, { weekStartsOn }));
+      const used = weekOffDaysUsed.get(wkStart) || 0;
+      if (used < allowedOffDaysPerWeek) {
+        weekOffDaysUsed.set(wkStart, used + 1);
+        continue;
+      }
+      run = 0;
+      continue;
+    }
+
+    run = 0;
   }
+
   return best;
 }
 

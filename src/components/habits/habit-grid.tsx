@@ -57,6 +57,8 @@ import {
 import { cn } from '@/lib/utils';
 import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
 import type { Habit, HabitCompletion, Category } from '@/lib/types';
+
+const EMPTY_HABIT_COMPLETIONS: HabitCompletion[] = [];
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
 import { SortableHabitRow } from './SortableHabitRow';
@@ -84,7 +86,9 @@ export const HabitGrid = memo(function HabitGrid({
 }: HabitGridProps) {
   const router = useRouter();
   const [rippleCell, setRippleCell] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
+  );
   const [showLogModal, setShowLogModal] = useState(false);
   const [selectedHabitForLog, setSelectedHabitForLog] = useState<Habit | null>(null);
   const [logDate, setLogDate] = useState('');
@@ -115,7 +119,9 @@ export const HabitGrid = memo(function HabitGrid({
     setShowLogModal(false);
     toast.success('Progress log updated');
   };
-  const { reorder, freezeHabit, markRestDay } = useHabitStore();
+  const reorder = useHabitStore((s) => s.reorder);
+  const freezeHabit = useHabitStore((s) => s.freezeHabit);
+  const markRestDay = useHabitStore((s) => s.markRestDay);
   const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
 
   const handleMobileRest = async (habitId: string, dateStr: string) => {
@@ -140,10 +146,10 @@ export const HabitGrid = memo(function HabitGrid({
   };
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Handle window resizing to detect mobile
+  // Handle window resizing to detect mobile (<1024px matches Tailwind lg breakpoint)
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(window.innerWidth < 1024);
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
@@ -196,6 +202,23 @@ export const HabitGrid = memo(function HabitGrid({
   const displayedDays = useMemo(() => {
     return days;
   }, [days]);
+
+  // Group completions per habit once so toggling one habit does not invalidate other rows
+  const completionsByHabit = useMemo(() => {
+    const map = new Map<string, HabitCompletion[]>();
+    for (let i = 0; i < completions.length; i++) {
+      const c = completions[i];
+      let arr = map.get(c.habitId);
+      if (!arr) {
+        arr = [];
+        map.set(c.habitId, arr);
+      }
+      arr.push(c);
+    }
+    return map;
+  }, [completions]);
+
+  const habitIds = useMemo(() => habits.map((h) => h.id), [habits]);
 
   // Helper to query completions efficiently
   const completionsMapByHabit = useMemo(() => {
@@ -271,11 +294,12 @@ export const HabitGrid = memo(function HabitGrid({
 
   return (
     <div className="space-y-6">
-      {/* DESKTOP LAYOUT (hidden on mobile) */}
-      <div ref={containerRef} className="hidden lg:block overflow-x-auto pb-4 scrollbar-hide">
+      {/* DESKTOP LAYOUT (mounted only on lg+ viewports) */}
+      {!isMobile && (
+      <div ref={containerRef} className="overflow-x-auto pb-4 scrollbar-hide">
         <div className="w-fit min-w-full">
           {/* Header row with days */}
-          <div className="flex items-center sticky top-0 bg-background/95 backdrop-blur-sm z-10 pb-2 border-b">
+          <div className="flex items-center sticky top-0 bg-background/95 z-10 pb-2 border-b">
             <div className="w-44 md:w-64 shrink-0 sticky left-0 bg-background z-20 border-r border-border/40 self-stretch" /> {/* Sticky Left Spacer */}
             <div className="flex gap-0.5">
               {displayedDays.map(({ day, dayLabel, isWeekend, isToday: isTodayDate }) => (
@@ -314,7 +338,7 @@ export const HabitGrid = memo(function HabitGrid({
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={habits.map(h => h.id)}
+              items={habitIds}
               strategy={verticalListSortingStrategy}
             >
               <div className="divide-y divide-border/50">
@@ -325,7 +349,7 @@ export const HabitGrid = memo(function HabitGrid({
                       key={habit.id}
                       habit={habit}
                       days={displayedDays}
-                      completions={completions}
+                      completions={completionsByHabit.get(habit.id) || EMPTY_HABIT_COMPLETIONS}
                       streak={streak}
                       onToggle={onToggle}
                       onEdit={onEdit}
@@ -340,21 +364,22 @@ export const HabitGrid = memo(function HabitGrid({
           </DndContext>
         </div>
       </div>
+      )}
 
-      {/* MOBILE LAYOUT (hidden on desktop) */}
-      <div className="lg:hidden space-y-4">
+      {/* MOBILE LAYOUT (mounted only on <lg viewports) */}
+      {isMobile && (
+      <div className="space-y-4">
         {habits.map((habit) => {
           const streak = streaks.get(habit.id) || 0;
           const habitsCompletionsMap = completionsMapByHabit.get(habit.id) || new Map();
-          const weekProg = getHabitWeekProgress(habit, completions, new Date());
+          const habitComps = completionsByHabit.get(habit.id) || EMPTY_HABIT_COMPLETIONS;
+          const weekProg = getHabitWeekProgress(habit, habitComps, new Date());
           const isQuit = habit.polarity === 'quit';
 
           return (
-            <motion.div
+            <div
               key={habit.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-card border rounded-2xl p-4 shadow-sm space-y-4 relative overflow-hidden"
+              className="cv-auto bg-card border rounded-2xl p-4 shadow-sm space-y-4 relative overflow-hidden"
             >
               {/* Header */}
               <div className="flex items-start justify-between gap-2">
@@ -562,10 +587,11 @@ export const HabitGrid = memo(function HabitGrid({
                   );
                 })}
               </div>
-            </motion.div>
+            </div>
           );
         })}
       </div>
+      )}
 
       <Dialog open={showLogModal} onOpenChange={setShowLogModal}>
         <DialogContent className="w-full max-w-sm rounded-2xl p-6 bg-background border shadow-xl">

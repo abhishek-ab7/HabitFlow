@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   CalendarDays,
   HeartHandshake,
@@ -13,13 +14,36 @@ import {
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type { FinancialObligationItem } from '@/lib/types';
-import { BillCalendarView } from './trackers/BillCalendarView';
-import { CommitmentsSection } from './trackers/CommitmentsSection';
-import { BillsSubsSection } from './trackers/BillsSubsSection';
-import { SipsSection } from './trackers/SipsSection';
-import { FriendsDebtSection } from './trackers/FriendsDebtSection';
-import { EmisPayoffSection } from './trackers/EmisPayoffSection';
 import { toast } from 'sonner';
+
+const SubTabFallback = () => (
+  <div className="h-56 rounded-2xl border border-border bg-card animate-pulse" />
+);
+
+const BillCalendarView = dynamic(
+  () => import('./trackers/BillCalendarView').then((m) => ({ default: m.BillCalendarView })),
+  { ssr: false, loading: SubTabFallback }
+);
+const CommitmentsSection = dynamic(
+  () => import('./trackers/CommitmentsSection').then((m) => ({ default: m.CommitmentsSection })),
+  { ssr: false, loading: SubTabFallback }
+);
+const BillsSubsSection = dynamic(
+  () => import('./trackers/BillsSubsSection').then((m) => ({ default: m.BillsSubsSection })),
+  { ssr: false, loading: SubTabFallback }
+);
+const SipsSection = dynamic(
+  () => import('./trackers/SipsSection').then((m) => ({ default: m.SipsSection })),
+  { ssr: false, loading: SubTabFallback }
+);
+const FriendsDebtSection = dynamic(
+  () => import('./trackers/FriendsDebtSection').then((m) => ({ default: m.FriendsDebtSection })),
+  { ssr: false, loading: SubTabFallback }
+);
+const EmisPayoffSection = dynamic(
+  () => import('./trackers/EmisPayoffSection').then((m) => ({ default: m.EmisPayoffSection })),
+  { ssr: false, loading: SubTabFallback }
+);
 
 interface TrackersTabProps {
   onLogOffsetExpense: (commitmentId: string) => void;

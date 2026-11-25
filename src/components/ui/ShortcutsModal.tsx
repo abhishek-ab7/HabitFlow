@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Keyboard, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export default function ShortcutsModal() {
-  const [isOpen, setIsOpen] = useState(false);
+export default function ShortcutsModal({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

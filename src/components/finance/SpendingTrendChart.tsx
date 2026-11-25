@@ -215,24 +215,30 @@ export function SpendingTrendChart({ onOpenBudgetModal }: SpendingTrendChartProp
   );
 
   const paceData = useMemo(
-    () => getDailySpendingPace(selectedMonth),
+    () => (chartMode === 'pace' ? getDailySpendingPace(selectedMonth) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getDailySpendingPace, selectedMonth, transactions, budgets, categories]
+    [chartMode, getDailySpendingPace, selectedMonth, transactions, budgets, categories]
   );
 
   const forecastData = useMemo(
-    () => getCashFlowForecast(forecastHorizon, includeBurn).points,
+    () =>
+      chartMode === 'forecast'
+        ? getCashFlowForecast(forecastHorizon, includeBurn).points
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getCashFlowForecast, forecastHorizon, includeBurn, accounts, transactions, budgets]
+    [chartMode, getCashFlowForecast, forecastHorizon, includeBurn, accounts, transactions, budgets]
   );
 
   const trendData = useMemo(
     () =>
-      timeframe === 'monthly'
-        ? getSixMonthSpendingTrends(selectedMonth, selectedCategoryId)
-        : getYearlySpendingTrends(selectedMonth, selectedCategoryId, 5),
+      chartMode === 'trend'
+        ? timeframe === 'monthly'
+          ? getSixMonthSpendingTrends(selectedMonth, selectedCategoryId)
+          : getYearlySpendingTrends(selectedMonth, selectedCategoryId, 5)
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
+      chartMode,
       timeframe,
       getSixMonthSpendingTrends,
       getYearlySpendingTrends,

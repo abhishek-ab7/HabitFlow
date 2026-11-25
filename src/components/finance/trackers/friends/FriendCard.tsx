@@ -44,7 +44,7 @@ interface FriendCardProps {
   onToggleBucket: (debt: DebtRecord) => void;
 }
 
-export function FriendCard({
+export const FriendCard = React.memo(function FriendCard({
   group,
   isExpanded,
   onToggleExpand,
@@ -75,7 +75,7 @@ export function FriendCard({
   const totalNet = group.everydayNet + group.longTermNetPosition;
 
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-xs transition-all">
+    <div className="cv-auto-lg rounded-2xl border border-border bg-card overflow-hidden shadow-xs transition-colors">
       {/* Friend Card Header */}
       <div
         role="button"
@@ -375,7 +375,7 @@ export function FriendCard({
                 {group.longTermLoans.map((loan) => {
                   const isBorrowed = loan.direction === 'borrowed';
                   const isLoanOpen = !!expandedLoanIds[loan.id];
-                  const installments = getDebtInstallments(loan.id);
+                  const installments = isLoanOpen ? getDebtInstallments(loan.id) : [];
                   const pct =
                     loan.principalAmount > 0
                       ? Math.min(
@@ -616,4 +616,4 @@ export function FriendCard({
       )}
     </div>
   );
-}
+});

@@ -24,13 +24,16 @@ interface GoalState {
   goals: Goal[];
   milestones: Milestone[];
   isLoading: boolean;
+  hasLoadedGoals: boolean;
+  hasLoadedMilestones: boolean;
+  loadedUserId: string | null;
   error: string | null;
   statusFilter: GoalStatus[];
   areaFilter: AreaOfLife[];
 
   // Actions
-  loadGoals: () => Promise<void>;
-  loadAllMilestones: () => Promise<void>;
+  loadGoals: (force?: boolean) => Promise<void>;
+  loadAllMilestones: (force?: boolean) => Promise<void>;
   addGoal: (data: GoalFormData) => Promise<Goal>;
   editGoal: (id: string, data: Partial<Goal>) => Promise<void>;
   removeGoal: (id: string) => Promise<void>;
@@ -57,40 +60,58 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   goals: [],
   milestones: [],
   isLoading: false,
+  hasLoadedGoals: false,
+  hasLoadedMilestones: false,
+  loadedUserId: null,
   error: null,
   statusFilter: [],
   areaFilter: [],
 
-  loadGoals: async () => {
-    set({ isLoading: true, error: null });
+  loadGoals: async (force = false) => {
+    const state = get();
     try {
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
 
-      if (!session?.user?.id) {
-        set({ goals: [], isLoading: false });
+      if (!uid) {
+        set({ goals: [], milestones: [], isLoading: false, hasLoadedGoals: false, hasLoadedMilestones: false, loadedUserId: null });
         return;
       }
 
-      const goals = await getGoals(session.user.id);
-      set({ goals, isLoading: false });
+      if (!force && state.hasLoadedGoals && state.loadedUserId === uid) {
+        return;
+      }
+
+      if (!state.hasLoadedGoals) {
+        set({ isLoading: true, error: null });
+      }
+
+      const goals = await getGoals(uid);
+      set({ goals, isLoading: false, hasLoadedGoals: true, loadedUserId: uid });
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
     }
   },
 
-  loadAllMilestones: async () => {
+  loadAllMilestones: async (force = false) => {
+    const state = get();
     try {
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
 
-      if (!session?.user?.id) {
-        set({ milestones: [] });
+      if (!uid) {
+        set({ milestones: [], hasLoadedMilestones: false });
         return;
       }
 
-      const milestones = await db.milestones.where('userId').equals(session.user.id).toArray();
-      set({ milestones });
+      if (!force && state.hasLoadedMilestones && state.loadedUserId === uid) {
+        return;
+      }
+
+      const milestones = await db.milestones.where('userId').equals(uid).toArray();
+      set({ milestones, hasLoadedMilestones: true, loadedUserId: uid });
     } catch (error) {
       set({ error: (error as Error).message });
     }

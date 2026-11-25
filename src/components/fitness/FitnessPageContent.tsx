@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   ChevronLeft,
   ChevronRight,
@@ -29,10 +30,27 @@ import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
 import Link from 'next/link';
 import { FuelTab } from './FuelTab';
-import { BodyTrendCharts } from './BodyTrendCharts';
-import { GymWorkoutTab } from './GymWorkoutTab';
-import { SupplementsRoiTab } from './SupplementsRoiTab';
-import { RoutineAndQuitTab } from './RoutineAndQuitTab';
+
+const FitnessTabFallback = () => (
+  <div className="h-64 rounded-2xl border border-border bg-card animate-pulse" />
+);
+
+const BodyTrendCharts = dynamic(
+  () => import('./BodyTrendCharts').then((m) => ({ default: m.BodyTrendCharts })),
+  { ssr: false, loading: FitnessTabFallback }
+);
+const GymWorkoutTab = dynamic(
+  () => import('./GymWorkoutTab').then((m) => ({ default: m.GymWorkoutTab })),
+  { ssr: false, loading: FitnessTabFallback }
+);
+const SupplementsRoiTab = dynamic(
+  () => import('./SupplementsRoiTab').then((m) => ({ default: m.SupplementsRoiTab })),
+  { ssr: false, loading: FitnessTabFallback }
+);
+const RoutineAndQuitTab = dynamic(
+  () => import('./RoutineAndQuitTab').then((m) => ({ default: m.RoutineAndQuitTab })),
+  { ssr: false, loading: FitnessTabFallback }
+);
 import { cn } from '@/lib/utils';
 import type {
   DietPreference,
@@ -80,6 +98,7 @@ export function FitnessPageContent() {
   const profile = useFitnessStore((s) => s.profile);
   const dailyLogs = useFitnessStore((s) => s.dailyLogs);
   const hasLoaded = useFitnessStore((s) => s.hasLoaded);
+  const currentUserId = useFitnessStore((s) => s.currentUserId);
 
   const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
   const upsertProfile = useFitnessStore((s) => s.upsertProfile);
@@ -108,10 +127,10 @@ export function FitnessPageContent() {
   });
 
   useEffect(() => {
-    if (!hasLoaded || !user?.id) {
-      loadFitnessData(userId).catch(() => undefined);
+    if (!hasLoaded || currentUserId !== userId) {
+      loadFitnessData(userId, false).catch(() => undefined);
     }
-  }, [hasLoaded, user?.id, userId, loadFitnessData]);
+  }, [hasLoaded, currentUserId, userId, loadFitnessData]);
 
   useEffect(() => {
     if (!profile) return;

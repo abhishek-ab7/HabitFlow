@@ -34,6 +34,9 @@ export {
   type SixMonthTrendPoint,
 };
 
+const migratedDemoFinanceUsers = new Set<string>();
+const deduplicatedFinanceUsers = new Set<string>();
+
 export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
   currentUserId: null,
   categories: [],
@@ -52,6 +55,7 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
   selectedMonth: getCurrentMonthKey(),
   filters: INITIAL_FILTERS,
   isLoading: true,
+  hasLoaded: false,
   error: null,
 
   setSelectedMonth: (monthKey) => set({ selectedMonth: monthKey }),
@@ -241,16 +245,25 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
       await db.financeCategories.where('userId').equals(userId).delete();
     }
 
-    await get().loadFinanceData(userId);
+    await get().loadFinanceData(userId, true);
   },
 
-  loadFinanceData: async (customUserId?: string) => {
-    set({ isLoading: true, error: null });
+  loadFinanceData: async (customUserId?: string, force = true) => {
     try {
       const userId = await resolveCurrentUserId(customUserId, get().currentUserId);
+      const state = get();
 
-      if (userId && userId !== 'local-demo-user') {
+      if (!force && state.hasLoaded && state.currentUserId === userId) {
+        return;
+      }
+
+      if (!state.hasLoaded) {
+        set({ isLoading: true, error: null });
+      }
+
+      if (userId && userId !== 'local-demo-user' && !migratedDemoFinanceUsers.has(userId)) {
         await migrateLocalDemoFinanceRecords(userId);
+        migratedDemoFinanceUsers.add(userId);
       }
 
       if (typeof window !== 'undefined') {
@@ -312,7 +325,10 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
         }
       }
 
-      await deduplicateFinanceRecordsInDexie(userId);
+      if (!deduplicatedFinanceUsers.has(userId) || force) {
+        await deduplicateFinanceRecordsInDexie(userId);
+        deduplicatedFinanceUsers.add(userId);
+      }
       await get().seedInitialFinanceData(userId);
 
       let repairResult: SplitRepairResult = { repairedCount: 0, affectedCardIds: [] };
@@ -454,6 +470,7 @@ export const useFinanceStore = create<FinanceStore>((set, get, api) => ({
         netWorthSnapshots,
         creditCardStatements,
         isLoading: false,
+        hasLoaded: true,
       });
 
       if (repairResult.affectedCardIds.length > 0) {

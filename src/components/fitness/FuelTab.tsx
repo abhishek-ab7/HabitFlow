@@ -45,7 +45,7 @@ interface FuelTabProps {
   userId: string;
 }
 
-function MacroRing({
+const MacroRing = React.memo(function MacroRing({
   label,
   valueText,
   subText,
@@ -104,7 +104,7 @@ function MacroRing({
       </div>
     </div>
   );
-}
+});
 
 const SLEEP_PRESETS = [5.5, 6, 6.5, 7, 7.5, 8, 8.5];
 const ENERGY_PRESETS = [
@@ -123,7 +123,7 @@ const MEAL_TYPE_OPTIONS: { value: MealType; label: string }[] = [
   { value: 'post_workout', label: 'Post-Workout' },
 ];
 
-export function FuelTab({ selectedDate, userId }: FuelTabProps) {
+export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: FuelTabProps) {
   const profile = useFitnessStore((s) => s.profile);
   const dailyLogs = useFitnessStore((s) => s.dailyLogs);
   const mealTemplates = useFitnessStore((s) => s.mealTemplates);
@@ -701,7 +701,7 @@ export function FuelTab({ selectedDate, userId }: FuelTabProps) {
             {dayMeals.map((meal) => {
               const isExpanded = expandedMealId === meal.id;
               return (
-                <div key={meal.id} className="py-2.5 first:pt-0 last:pb-0">
+                <div key={meal.id} className="cv-auto py-2.5 first:pt-0 last:pb-0">
                   <div className="flex items-center justify-between gap-3">
                     <button
                       type="button"
@@ -1025,4 +1025,4 @@ export function FuelTab({ selectedDate, userId }: FuelTabProps) {
       </Dialog>
     </div>
   );
-}
+});

@@ -27,7 +27,6 @@ import {
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/providers/auth-provider';
-import { useSync } from '@/providers/sync-provider';
 import { SyncStatusBadge } from '@/components/sync/SyncStatusBadge';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -50,10 +49,9 @@ export function Header() {
   const router = useRouter();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { isAuthenticated, user, signOut } = useAuth();
-  const { syncStatus, isSyncing } = useSync();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { settings } = useGamificationStore();
+  const settings = useGamificationStore((s) => s.settings);
   const visibleNavItems = navItems.filter(item => {
     if (settings?.habitOnlyMode) {
       return item.href === '/dashboard' || item.href === '/habits' || item.href === '/analytics' || item.href === '/settings';
@@ -92,7 +90,7 @@ export function Header() {
       <div className="w-full flex h-14 md:h-16 items-center px-4 md:px-6">
         {/* Logo */}
         <div className="flex-grow-0 flex-shrink-0 flex justify-start mr-4 lg:mr-8">
-          <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
+          <Link href={isAuthenticated ? '/dashboard' : '/'} className="flex items-center gap-2.5 flex-shrink-0">
             <motion.div
               className="relative flex h-10 w-10 min-w-[2.5rem] min-h-[2.5rem] aspect-square items-center justify-center rounded-xl bg-primary/10 border border-primary/25 shadow-sm shrink-0 overflow-hidden"
               whileHover={{ scale: 1.04 }}

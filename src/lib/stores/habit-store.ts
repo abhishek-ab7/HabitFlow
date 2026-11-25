@@ -21,7 +21,7 @@ import {
 } from '../db';
 import { getSupabaseClient } from '../supabase/client';
 import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
-import { calculateHabitStats, getHabitWeekProgress, type HabitWeekProgress } from '../calculations';
+import { calculateCurrentStreak, calculateHabitStats, getHabitWeekProgress, type HabitWeekProgress } from '../calculations';
 import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, parseISO, differenceInCalendarDays } from 'date-fns';
 import { getSyncEngine } from '../sync';
 import { useGamificationStore } from './gamification-store';
@@ -30,13 +30,15 @@ interface HabitState {
   habits: Habit[];
   completions: HabitCompletion[];
   isLoading: boolean;
+  hasLoadedHabits: boolean;
+  loadedHabitsUserId: string | null;
   error: string | null;
   selectedMonth: Date;
   categoryFilter: Category[];
   loadedRange: { start: string; end: string } | null;
 
   // Actions
-  loadHabits: () => Promise<void>;
+  loadHabits: (force?: boolean) => Promise<void>;
   loadArchivedHabits: () => Promise<Habit[]>;
   loadCompletions: (startDate: string, endDate: string) => Promise<void>;
   loadAllCompletions: () => Promise<void>;
@@ -163,24 +165,35 @@ export const useHabitStore = create<HabitState>((set, get) => ({
   habits: [],
   completions: [],
   isLoading: false,
+  hasLoadedHabits: false,
+  loadedHabitsUserId: null,
   error: null,
   selectedMonth: new Date(),
   categoryFilter: [],
   loadedRange: null,
 
-  loadHabits: async () => {
-    set({ isLoading: true, error: null });
+  loadHabits: async (force = false) => {
+    const state = get();
     try {
       const supabase = getSupabaseClient();
       const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
 
-      if (!session?.user?.id) {
-        set({ habits: [], isLoading: false });
+      if (!uid) {
+        set({ habits: [], isLoading: false, hasLoadedHabits: false, loadedHabitsUserId: null });
         return;
       }
 
-      const habits = await getHabits(session.user.id);
-      set({ habits, isLoading: false });
+      if (!force && state.hasLoadedHabits && state.loadedHabitsUserId === uid) {
+        return;
+      }
+
+      if (!state.hasLoadedHabits) {
+        set({ isLoading: true, error: null });
+      }
+
+      const habits = await getHabits(uid);
+      set({ habits, isLoading: false, hasLoadedHabits: true, loadedHabitsUserId: uid });
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
     }
@@ -457,7 +470,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     if (session?.user?.id) {
       await seedDemoData(session.user.id);
-      await get().loadHabits();
+      await get().loadHabits(true);
 
       const today = new Date();
       const start = format(startOfMonth(subMonths(today, 1)), 'yyyy-MM-dd');
@@ -564,10 +577,23 @@ export const useHabitStore = create<HabitState>((set, get) => ({
       return cachedStreaks!;
     }
 
+    // Group completions by habitId in a single O(C) pass
+    const byHabit = new Map<string, typeof completions>();
+    for (let i = 0; i < completions.length; i++) {
+      const c = completions[i];
+      let arr = byHabit.get(c.habitId);
+      if (!arr) {
+        arr = [];
+        byHabit.set(c.habitId, arr);
+      }
+      arr.push(c);
+    }
+
+    const today = new Date();
     const streaks = new Map<string, number>();
     for (const habit of habits) {
-      const stats = calculateHabitStats(habit, completions);
-      streaks.set(habit.id, stats.currentStreak);
+      const habitComps = byHabit.get(habit.id) || [];
+      streaks.set(habit.id, calculateCurrentStreak(habitComps, today, habit));
     }
 
     cachedStreaks = streaks;

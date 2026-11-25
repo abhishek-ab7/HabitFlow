@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Plus,
   ChevronLeft,
@@ -15,13 +16,42 @@ import {
 } from '@/lib/stores/finance-store';
 import type { FinanceTransaction } from '@/lib/types';
 import { OverviewTab } from './OverviewTab';
-import { ActivityTab } from './ActivityTab';
-import { TrackersTab } from './TrackersTab';
-import { AccountsTab } from './AccountsTab';
-import { AddTransactionModal } from './AddTransactionModal';
-import { MonthlyBudgetModal } from './MonthlyBudgetModal';
-import { SmsImportModal } from './SmsImportModal';
-import { AskFinancesDrawer } from './AskFinancesDrawer';
+
+const TabSkeleton = () => (
+  <div className="space-y-4">
+    <div className="h-44 rounded-2xl bg-muted/50 animate-pulse" />
+    <div className="h-64 rounded-2xl bg-muted/50 animate-pulse" />
+  </div>
+);
+
+const ActivityTab = dynamic(
+  () => import('./ActivityTab').then((m) => ({ default: m.ActivityTab })),
+  { ssr: false, loading: TabSkeleton }
+);
+const TrackersTab = dynamic(
+  () => import('./TrackersTab').then((m) => ({ default: m.TrackersTab })),
+  { ssr: false, loading: TabSkeleton }
+);
+const AccountsTab = dynamic(
+  () => import('./AccountsTab').then((m) => ({ default: m.AccountsTab })),
+  { ssr: false, loading: TabSkeleton }
+);
+const AddTransactionModal = dynamic(
+  () => import('./AddTransactionModal').then((m) => ({ default: m.AddTransactionModal })),
+  { ssr: false }
+);
+const MonthlyBudgetModal = dynamic(
+  () => import('./MonthlyBudgetModal').then((m) => ({ default: m.MonthlyBudgetModal })),
+  { ssr: false }
+);
+const SmsImportModal = dynamic(
+  () => import('./SmsImportModal').then((m) => ({ default: m.SmsImportModal })),
+  { ssr: false }
+);
+const AskFinancesDrawer = dynamic(
+  () => import('./AskFinancesDrawer').then((m) => ({ default: m.AskFinancesDrawer })),
+  { ssr: false }
+);
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
@@ -66,7 +96,7 @@ export function FinancePageContent() {
   const [isAskAiOpen, setIsAskAiOpen] = useState(false);
 
   useEffect(() => {
-    loadFinanceData(user?.id);
+    loadFinanceData(user?.id, false);
   }, [loadFinanceData, user?.id]);
 
   // Handle deep-links (?sms=..., ?tab=..., ?ask=1) once loaded
@@ -242,7 +272,7 @@ export function FinancePageContent() {
       <div
         role="tablist"
         aria-label="Finance sections"
-        className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted max-w-xl"
+        className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted w-full max-w-xl"
       >
         {(
           [
@@ -320,38 +350,46 @@ export function FinancePageContent() {
 
 
       {/* Keypad Bottom Sheet / Quick-Add Modal */}
-      <AddTransactionModal
-        open={isAddTxModalOpen}
-        onOpenChange={setIsAddTxModalOpen}
-        editingTransaction={editingTx}
-        defaultCommitmentId={defaultCommitmentId}
-        onOpenSmsImport={() => {
-          setIsAddTxModalOpen(false);
-          setSharedSmsText(null);
-          setIsSmsModalOpen(true);
-        }}
-      />
+      {isAddTxModalOpen && (
+        <AddTransactionModal
+          open={isAddTxModalOpen}
+          onOpenChange={setIsAddTxModalOpen}
+          editingTransaction={editingTx}
+          defaultCommitmentId={defaultCommitmentId}
+          onOpenSmsImport={() => {
+            setIsAddTxModalOpen(false);
+            setSharedSmsText(null);
+            setIsSmsModalOpen(true);
+          }}
+        />
+      )}
 
       {/* Monthly & Category Budget Setting Sheet */}
-      <MonthlyBudgetModal
-        open={isBudgetModalOpen}
-        onOpenChange={setIsBudgetModalOpen}
-        focusCategoryId={focusCategoryId}
-      />
+      {isBudgetModalOpen && (
+        <MonthlyBudgetModal
+          open={isBudgetModalOpen}
+          onOpenChange={setIsBudgetModalOpen}
+          focusCategoryId={focusCategoryId}
+        />
+      )}
 
       {/* SMS & Notification Expense Importer */}
-      <SmsImportModal
-        open={isSmsModalOpen}
-        onOpenChange={setIsSmsModalOpen}
-        initialText={sharedSmsText}
-      />
+      {isSmsModalOpen && (
+        <SmsImportModal
+          open={isSmsModalOpen}
+          onOpenChange={setIsSmsModalOpen}
+          initialText={sharedSmsText}
+        />
+      )}
 
       {/* Ask Life OS Cross-Domain Q&A Drawer */}
-      <AskFinancesDrawer
-        open={isAskAiOpen}
-        onOpenChange={setIsAskAiOpen}
-        userId={user?.id}
-      />
+      {isAskAiOpen && (
+        <AskFinancesDrawer
+          open={isAskAiOpen}
+          onOpenChange={setIsAskAiOpen}
+          userId={user?.id}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { DashboardCenterLoader } from '@/components/dashboard';
+import { DashboardCenterLoader } from '@/components/dashboard/DashboardCenterLoader';
 
 export default function Loading() {
   return (

@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
-import { DashboardContent, DashboardCenterLoader } from '@/components/dashboard';
+import DashboardContent from '@/components/dashboard/DashboardContent';
+import { DashboardCenterLoader } from '@/components/dashboard/DashboardCenterLoader';
 
 export default function DashboardPage() {
   return (

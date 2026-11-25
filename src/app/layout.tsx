@@ -8,7 +8,7 @@ import { Header, ShortcutsProvider, MobileNav, AppStartupGate } from '@/componen
 import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
-import { QuickCaptureModal } from '@/components/quick-capture/QuickCaptureModal';
+import { QuickCaptureLauncher } from '@/components/quick-capture/QuickCaptureLauncher';
 import { UnifiedAlertManager } from '@/components/alerts/UnifiedAlertManager';
 import './globals.css';
 
@@ -57,7 +57,6 @@ export const viewport: Viewport = {
   ],
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: 'cover',
 };
 
@@ -93,7 +92,7 @@ export default function RootLayout({
                 <UnifiedAlertManager />
                 <Toaster richColors position="bottom-right" />
                 <PomodoroFloating />
-                <QuickCaptureModal />
+                <QuickCaptureLauncher />
                 <PWAInstallPrompt />
               </AppStartupGate>
             </SyncProvider>

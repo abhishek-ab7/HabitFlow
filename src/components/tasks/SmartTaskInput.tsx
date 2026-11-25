@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import * as chrono from 'chrono-node';
+import type * as ChronoType from 'chrono-node';
 import { Calendar, Plus, X, Loader2, Mic } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,9 @@ export function SmartTaskInput({ onAddTask, placeholder = "Add a task... (e.g., 
     const [isListening, setIsListening] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // NLP Parsing
+    const chronoRef = useRef<typeof ChronoType | null>(null);
+
+    // NLP Parsing (lazy-loads chrono-node on first user input)
     useEffect(() => {
         if (!inputValue) {
             setParsedDate(null);
@@ -37,15 +39,27 @@ export function SmartTaskInput({ onAddTask, placeholder = "Add a task... (e.g., 
             return;
         }
 
-        const results = chrono.parse(inputValue);
-        if (results.length > 0) {
-            const result = results[0];
-            setParsedDate(result.start.date());
-            setDateText(result.text);
-        } else {
-            setParsedDate(null);
-            setDateText(null);
-        }
+        let cancelled = false;
+        const parseInput = async () => {
+            if (!chronoRef.current) {
+                chronoRef.current = await import('chrono-node');
+            }
+            if (cancelled) return;
+            const results = chronoRef.current.parse(inputValue);
+            if (results.length > 0) {
+                const result = results[0];
+                setParsedDate(result.start.date());
+                setDateText(result.text);
+            } else {
+                setParsedDate(null);
+                setDateText(null);
+            }
+        };
+        parseInput();
+
+        return () => {
+            cancelled = true;
+        };
     }, [inputValue]);
 
     const handleSubmit = async (e?: React.FormEvent) => {

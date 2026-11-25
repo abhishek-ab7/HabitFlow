@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { FitnessPageContent } from '@/components/fitness';
+import { FitnessPageContent } from '@/components/fitness/FitnessPageContent';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function FitnessFallback() {

@@ -67,7 +67,7 @@ export function SortableWidget({
     >
       {/* Customization Overlay */}
       {isCustomizing && (
-        <div className="absolute inset-0 bg-background/60 backdrop-blur-[1px] border-2 border-dashed border-primary/35 rounded-xl z-30 flex flex-col items-center justify-center p-4 transition-all duration-300">
+        <div className="absolute inset-0 bg-background/85 md:bg-background/70 border-2 border-dashed border-primary/35 rounded-xl z-30 flex flex-col items-center justify-center p-4 transition-opacity duration-200">
           <div className="surface-card shadow-xl p-3 flex items-center gap-2.5 scale-95 md:scale-100 transition-transform">
             
             {/* Drag Handle */}
@@ -75,7 +75,7 @@ export function SortableWidget({
               <div
                 {...attributes}
                 {...listeners}
-                className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary cursor-grab active:cursor-grabbing transition-colors"
+                className="touch-none p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-secondary cursor-grab active:cursor-grabbing transition-colors"
                 title="Drag to reorder"
               >
                 <GripHorizontal className="w-4 h-4" />
@@ -131,12 +131,12 @@ export function SortableWidget({
         </div>
       )}
 
-      {/* Default non-edit Drag Handle (subtle hover state when NOT customizing) */}
+      {/* Default non-edit Drag Handle (desktop hover only when NOT customizing) */}
       {!isCustomizing && !disableDrag && !pinned && (
         <div
           {...attributes}
           {...listeners}
-          className="absolute top-2 right-2 p-1.5 rounded-md text-muted-foreground/20 opacity-0 group-hover:opacity-100 hover:bg-secondary hover:text-foreground hover:text-muted-foreground/80 cursor-grab active:cursor-grabbing transition-all z-10"
+          className="hidden md:block touch-none absolute top-2 right-2 p-1.5 rounded-md text-muted-foreground/20 opacity-0 group-hover:opacity-100 hover:bg-secondary hover:text-foreground hover:text-muted-foreground/80 cursor-grab active:cursor-grabbing transition-opacity z-10"
           title="Drag widget"
         >
           <GripHorizontal className="w-4 h-4" />

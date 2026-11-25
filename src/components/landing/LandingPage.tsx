@@ -29,7 +29,12 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 import { useTheme } from '@/providers/theme-provider';
-import confetti from 'canvas-confetti';
+
+const confetti = (options: Record<string, unknown>) => {
+  import('canvas-confetti')
+    .then((mod) => mod.default(options))
+    .catch(() => {});
+};
 
 interface FloatingFeedback {
   id: string;

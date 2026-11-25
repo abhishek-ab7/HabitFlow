@@ -38,6 +38,8 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
   
   const cardRef = useRef<HTMLDivElement>(null);
   const isTransitioningRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize responsive state & sound preferences
   useEffect(() => {
@@ -56,6 +58,14 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+        transitionTimeoutRef.current = null;
+      }
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
     };
   }, []);
 
@@ -63,7 +73,15 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
   const playTourSound = (type: 'pop' | 'success' | 'close') => {
     if (!audioEnabled) return;
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtor) return;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioCtor();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -240,7 +258,11 @@ export default function DashboardTour({ onClose }: DashboardTourProps) {
             setActiveRect(finalRect);
             
             // Unblock coordinates recalculations after transition finishes
-            setTimeout(() => {
+            if (transitionTimeoutRef.current) {
+              clearTimeout(transitionTimeoutRef.current);
+            }
+            transitionTimeoutRef.current = setTimeout(() => {
+              transitionTimeoutRef.current = null;
               isTransitioningRef.current = false;
               const currentElement = document.querySelector(currentStepData.target);
               if (currentElement) {

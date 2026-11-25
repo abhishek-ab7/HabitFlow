@@ -1,6 +1,6 @@
 import { buildCashFlowForecast } from '@/lib/finance/forecast';
 import { detectSpendingAnomalies } from '@/lib/finance/anomalies';
-import { daysBetween } from '@/lib/finance/credit-card-cycles';
+import { getLocalIsoDate, daysBetween } from '@/lib/finance/credit-card-cycles';
 import type {
   CategorySpendItem,
   CommitmentLedgerSummary,
@@ -36,7 +36,25 @@ export type AnalyticsSlice = Pick<
   | 'getSpendingAnomalies'
 >;
 
-export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, get) => ({
+export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, get) => {
+  const memoCache = new Map<string, { refs: unknown[]; argKey: string; value: unknown }>();
+
+  function memoize<T>(slotKey: string, refs: unknown[], argKey: string, compute: () => T): T {
+    const entry = memoCache.get(slotKey);
+    if (
+      entry &&
+      entry.argKey === argKey &&
+      entry.refs.length === refs.length &&
+      entry.refs.every((r, idx) => Object.is(r, refs[idx]))
+    ) {
+      return entry.value as T;
+    }
+    const value = compute();
+    memoCache.set(slotKey, { refs, argKey, value });
+    return value;
+  }
+
+  return {
   exportTransactionsCsv: (monthKey) => {
     const list = get().getFilteredTransactions(monthKey);
     const categoriesMap = new Map(get().categories.map((c) => [c.id, c.name]));
@@ -86,7 +104,13 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
   },
 
   getNetWorthSummary: () => {
-    const accounts = get().accounts.filter(
+    const state = get();
+    return memoize(
+      'netWorthSummary',
+      [state.accounts, state.sipPlans, state.debtRecords, state.emiTrackers],
+      '',
+      () => {
+    const accounts = state.accounts.filter(
       (a) => !a.archived && !a.deletedAt && a.includeInNetWorth !== false
     );
     const liquidAssets = accounts
@@ -97,13 +121,13 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       .filter((a) => a.type === 'investment')
       .reduce((sum, a) => sum + Math.max(0, a.balance), 0);
 
-    const sipCorpus = get()
+    const sipCorpus = state
       .sipPlans.filter((s) => s.isActive && !s.deletedAt)
       .reduce((sum, s) => sum + Math.max(s.currentValue || 0, s.totalInvested || 0), 0);
 
     const investmentAssets = investmentAccountAssets + sipCorpus;
 
-    const debtSummary = get().getDebtSummary();
+    const debtSummary = state.getDebtSummary();
     const friendReceivables = debtSummary.totalLentRemaining;
     const friendPayables = debtSummary.totalBorrowedRemaining;
 
@@ -111,7 +135,7 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       .filter((a) => a.type === 'credit_card')
       .reduce((sum, a) => sum + Math.abs(a.balance), 0);
 
-    const emiRemainingPrincipal = get()
+    const emiRemainingPrincipal = state
       .emiTrackers.filter((e) => e.status === 'active' && !e.deletedAt)
       .reduce((sum, e) => {
         const remainingMonths = Math.max(0, e.tenureMonths - e.paidMonths);
@@ -137,6 +161,8 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       totalLiabilities,
       netWorth,
     };
+      }
+    );
   },
 
   getNetWorthHistory: (months = 6) => {
@@ -357,12 +383,29 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
   },
 
   getMonthlySummary: (monthKey) => {
-    const targetMonth = monthKey || get().selectedMonth;
+    const state = get();
+    const targetMonth = monthKey || state.selectedMonth;
+    const todayIso = getLocalIsoDate();
+    return memoize(
+      `monthlySummary:${targetMonth}`,
+      [
+        state.transactions,
+        state.budgets,
+        state.categories,
+        state.commitments,
+        state.emiTrackers,
+        state.debtRecords,
+        state.debtInstallments,
+        state.recurringBills,
+        state.sipPlans,
+      ],
+      `${targetMonth}|${todayIso}`,
+      () => {
     const prevMonth = getPreviousMonthKey(targetMonth);
-    const monthTransactions = get().transactions.filter(
+    const monthTransactions = state.transactions.filter(
       (t) => t.monthKey === targetMonth && !t.deletedAt
     );
-    const prevMonthExpenses = get().transactions.filter(
+    const prevMonthExpenses = state.transactions.filter(
       (t) => t.monthKey === prevMonth && t.type === 'expense' && !t.deletedAt
     );
 
@@ -538,10 +581,14 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       needsReviewCount,
       categoryBreakdown,
     };
+      }
+    );
   },
 
   getFriendLedgerGroups: () => {
-    const records = get().debtRecords.filter((d) => !d.deletedAt && d.status !== 'archived');
+    const state = get();
+    return memoize('friendLedgerGroups', [state.debtRecords], '', () => {
+    const records = state.debtRecords.filter((d) => !d.deletedAt && d.status !== 'archived');
     const groupMap = new Map<
       string,
       {
@@ -636,13 +683,16 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       const totalB = Math.abs(b.everydayNet) + b.longTermBorrowedRemaining + b.longTermLentRemaining;
       return totalB - totalA;
     });
+    });
   },
 
   getDebtSummary: () => {
-    const activeBorrowed = get().debtRecords.filter(
+    const state = get();
+    return memoize('debtSummary', [state.debtRecords], '', () => {
+    const activeBorrowed = state.debtRecords.filter(
       (d) => d.direction === 'borrowed' && d.status === 'active' && !d.deletedAt
     );
-    const activeLent = get().debtRecords.filter(
+    const activeLent = state.debtRecords.filter(
       (d) => d.direction === 'lent' && d.status === 'active' && !d.deletedAt
     );
 
@@ -682,6 +732,7 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       longTermLentRemaining,
       longTermNetPosition,
     };
+    });
   },
 
   getDebtInstallments: (debtId) => {
@@ -691,6 +742,23 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
   },
 
   getUpcomingFinancialObligations: (withinDays = 7) => {
+    const state = get();
+    const todayStr = getLocalIsoDate();
+    return memoize(
+      `upcomingObligations:${withinDays}`,
+      [
+        state.emiTrackers,
+        state.transactions,
+        state.commitments,
+        state.debtRecords,
+        state.debtInstallments,
+        state.recurringBills,
+        state.sipPlans,
+        state.accounts,
+        state.creditCardStatements,
+      ],
+      `${withinDays}|${todayStr}`,
+      () => {
     const now = new Date();
     const currentDay = now.getDate();
     const currentMonthKey = getCurrentMonthKey(now);
@@ -857,14 +925,20 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
     }
 
     return obligations.sort((a, b) => a.daysUntilDue - b.daysUntilDue);
+      }
+    );
   },
 
   getFilteredTransactions: (monthKey) => {
-    const { filters, transactions } = get();
+    const { filters, transactions, selectedMonth } = get();
     const hasExplicitDateRange = Boolean(filters.dateFrom || filters.dateTo);
-    const targetMonth = hasExplicitDateRange ? 'all' : monthKey || get().selectedMonth;
-
-    return transactions.filter((tx) => {
+    const targetMonth = hasExplicitDateRange ? 'all' : monthKey || selectedMonth;
+    return memoize(
+      `filteredTx:${targetMonth}`,
+      [transactions, filters],
+      targetMonth,
+      () =>
+        transactions.filter((tx) => {
       if (tx.deletedAt) return false;
       const tags = Array.isArray(tx.tags) ? tx.tags : [];
       if (targetMonth !== 'all' && tx.monthKey !== targetMonth) return false;
@@ -892,7 +966,8 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
       }
 
       return true;
-    });
+        })
+    );
   },
 
   getSixMonthSpendingTrends: (endMonthKey, categoryId = 'all') => {
@@ -1044,14 +1119,33 @@ export const createAnalyticsSlice: FinanceSliceCreator<AnalyticsSlice> = (_set, 
   getSpendingAnomalies: (monthKey) => {
     const state = get();
     const targetMonth = monthKey || state.selectedMonth;
-    return detectSpendingAnomalies({
-      selectedMonth: targetMonth,
-      transactions: state.transactions,
-      categories: state.categories,
-      accounts: state.accounts,
-      debtRecords: state.debtRecords,
-      recurringBills: state.recurringBills,
-      upcomingObligations7d: state.getUpcomingFinancialObligations(7),
-    });
+    const todayIso = getLocalIsoDate();
+    return memoize(
+      `spendingAnomalies:${targetMonth}`,
+      [
+        state.transactions,
+        state.categories,
+        state.accounts,
+        state.debtRecords,
+        state.recurringBills,
+        state.creditCardStatements,
+        state.emiTrackers,
+        state.commitments,
+        state.debtInstallments,
+        state.sipPlans,
+      ],
+      `${targetMonth}|${todayIso}`,
+      () =>
+        detectSpendingAnomalies({
+          selectedMonth: targetMonth,
+          transactions: state.transactions,
+          categories: state.categories,
+          accounts: state.accounts,
+          debtRecords: state.debtRecords,
+          recurringBills: state.recurringBills,
+          upcomingObligations7d: state.getUpcomingFinancialObligations(7),
+        })
+    );
   },
-});
+};
+};

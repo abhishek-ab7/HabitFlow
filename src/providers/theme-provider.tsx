@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { AccentTheme } from '@/lib/types';
 import {
   ACCENT_OVERRIDE_STORAGE_KEY,
@@ -223,21 +223,35 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     [setAccentOverride]
   );
 
+  const contextValue = useMemo<ThemeContextType>(
+    () => ({
+      theme,
+      setTheme,
+      resolvedTheme,
+      colorTheme,
+      setColorTheme,
+      accentOverride,
+      setAccentOverride,
+      resetAppearance,
+      accent,
+      setAccent,
+    }),
+    [
+      theme,
+      setTheme,
+      resolvedTheme,
+      colorTheme,
+      setColorTheme,
+      accentOverride,
+      setAccentOverride,
+      resetAppearance,
+      accent,
+      setAccent,
+    ]
+  );
+
   return (
-    <ThemeContext.Provider
-      value={{
-        theme,
-        setTheme,
-        resolvedTheme,
-        colorTheme,
-        setColorTheme,
-        accentOverride,
-        setAccentOverride,
-        resetAppearance,
-        accent,
-        setAccent,
-      }}
-    >
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );

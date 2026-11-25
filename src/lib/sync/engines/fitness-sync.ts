@@ -164,6 +164,7 @@ export class FitnessSyncEngine implements ISynchronizer {
   }
 
   private async migrateOrphanedRecords(userId: string) {
+    if (!userId || userId === 'local-demo-user') return;
     try {
       const tables = [
         'fitnessProfiles',
@@ -175,19 +176,22 @@ export class FitnessSyncEngine implements ISynchronizer {
         'supplementLogs',
       ] as const;
 
-      for (const tbl of tables) {
-        const table = db.table(tbl);
-        const allRows = await table.toArray();
-        const orphans = allRows.filter(
-          (row: any) => row.userId === 'local-demo-user' || !row.userId
-        );
-        if (orphans.length > 0) {
-          this.log('info', `Migrating ${orphans.length} orphaned ${tbl} records to ${userId}`);
-          for (const orphan of orphans) {
-            await table.update(orphan.id, { userId, isDirty: true });
+      await Promise.all(
+        tables.map(async (tbl) => {
+          const table = db.table(tbl);
+          const orphans = await table.where('userId').equals('local-demo-user').toArray();
+          if (orphans.length > 0) {
+            this.log('info', `Migrating ${orphans.length} orphaned ${tbl} records to ${userId}`);
+            await db.transaction('rw', table, async () => {
+              await Promise.all(
+                orphans.map((orphan: any) =>
+                  table.update(orphan.id, { userId, isDirty: true })
+                )
+              );
+            });
           }
-        }
-      }
+        })
+      );
     } catch (e) {
       this.log('error', 'Failed to migrate orphaned fitness records', e);
     }
@@ -930,26 +934,51 @@ export class FitnessSyncEngine implements ISynchronizer {
 
       await this.migrateOrphanedRecords(userId);
 
-      // Push/pull in dependency order
-      const steps = [
-        () => this.syncProfiles(supabase, userId),
-        () => this.syncDailyLogs(supabase, userId),
-        () => this.syncMealTemplates(supabase, userId),
-        () => this.syncMealLogs(supabase, userId),
-        () => this.syncWorkoutSessions(supabase, userId),
-        () => this.syncSupplementInventory(supabase, userId),
-        () => this.syncSupplementLogs(supabase, userId),
-      ];
-
-      for (const runStep of steps) {
-        try {
-          const res = await runStep();
-          pushed += res.pushed;
-          pulled += res.pulled;
-        } catch (err: any) {
+      // Push/pull Tier 1 independent tables in parallel, then dependent logs
+      const tier1Results = await Promise.all([
+        this.syncProfiles(supabase, userId).catch((err: any) => {
           this.log('error', 'Fitness sync step failed', err);
           errors.push(err?.message || String(err));
-        }
+          return { pushed: 0, pulled: 0 };
+        }),
+        this.syncDailyLogs(supabase, userId).catch((err: any) => {
+          this.log('error', 'Fitness sync step failed', err);
+          errors.push(err?.message || String(err));
+          return { pushed: 0, pulled: 0 };
+        }),
+        this.syncMealTemplates(supabase, userId).catch((err: any) => {
+          this.log('error', 'Fitness sync step failed', err);
+          errors.push(err?.message || String(err));
+          return { pushed: 0, pulled: 0 };
+        }),
+        this.syncWorkoutSessions(supabase, userId).catch((err: any) => {
+          this.log('error', 'Fitness sync step failed', err);
+          errors.push(err?.message || String(err));
+          return { pushed: 0, pulled: 0 };
+        }),
+        this.syncSupplementInventory(supabase, userId).catch((err: any) => {
+          this.log('error', 'Fitness sync step failed', err);
+          errors.push(err?.message || String(err));
+          return { pushed: 0, pulled: 0 };
+        }),
+      ]);
+
+      const tier2Results = await Promise.all([
+        this.syncMealLogs(supabase, userId).catch((err: any) => {
+          this.log('error', 'Fitness sync step failed', err);
+          errors.push(err?.message || String(err));
+          return { pushed: 0, pulled: 0 };
+        }),
+        this.syncSupplementLogs(supabase, userId).catch((err: any) => {
+          this.log('error', 'Fitness sync step failed', err);
+          errors.push(err?.message || String(err));
+          return { pushed: 0, pulled: 0 };
+        }),
+      ]);
+
+      for (const res of [...tier1Results, ...tier2Results]) {
+        pushed += res.pushed;
+        pulled += res.pulled;
       }
     } catch (err: any) {
       this.log('error', 'Fitness sync failed', err);
@@ -983,10 +1012,10 @@ export async function syncFitnessWithRetry(engine: any): Promise<FitnessSyncResu
   const syncEngine = new FitnessSyncEngine();
   const report = await syncEngine.sync(userId);
 
-  if (report.pulled > 0 || report.pushed > 0) {
+  if (report.pulled > 0) {
     try {
       const { useFitnessStore } = await import('@/lib/stores/fitness');
-      await useFitnessStore.getState().loadFitnessData(userId);
+      await useFitnessStore.getState().loadFitnessData(userId, true);
     } catch (e) {
       engine?.log?.('warn', 'Failed to refresh fitness store after sync', e);
     }

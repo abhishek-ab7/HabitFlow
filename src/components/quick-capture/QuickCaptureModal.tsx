@@ -73,8 +73,8 @@ const EXAMPLE_PROMPTS = [
   '7.5h sleep, energy 4, 74.2 kg',
 ];
 
-export function QuickCaptureModal() {
-  const [isOpen, setIsOpen] = useState(false);
+export function QuickCaptureModal({ defaultOpen = false }: { defaultOpen?: boolean } = {}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [inputText, setInputText] = useState('');
   const [actions, setActions] = useState<UniversalCaptureAction[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);

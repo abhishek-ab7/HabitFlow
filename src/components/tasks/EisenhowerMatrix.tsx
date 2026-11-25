@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState, useCallback } from 'react';
+import { GripVertical } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -90,10 +91,17 @@ function DroppableQuadrant({ id, title, subtitle, count, bgClass, textClass, bor
   );
 }
 
-function SortableTaskWrapper({ task, onComplete }: { task: Task; onComplete: (id: string) => void }) {
+const SortableTaskWrapper = memo(function SortableTaskWrapper({
+  task,
+  subtasks,
+  onComplete,
+}: {
+  task: Task;
+  subtasks?: Task[];
+  onComplete: (id: string) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
-    data: { type: 'Task', task }
   });
 
   const style = {
@@ -102,14 +110,23 @@ function SortableTaskWrapper({ task, onComplete }: { task: Task; onComplete: (id
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={cn(isDragging && 'opacity-50')}>
-      <TaskCard task={task} onComplete={onComplete} />
+    <div ref={setNodeRef} style={style} className={cn('relative group/drag', isDragging && 'opacity-50')}>
+      <button
+        type="button"
+        aria-label="Reorder task across quadrants"
+        {...attributes}
+        {...listeners}
+        className="touch-none absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-background/85 border border-border/60 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing opacity-80 sm:opacity-0 sm:group-hover/drag:opacity-100 transition-opacity"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <TaskCard task={task} subtasks={subtasks} onComplete={onComplete} disableSwipe />
     </div>
   );
-}
+});
 
 export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
-  const { editTask } = useTaskStore();
+  const editTask = useTaskStore((s) => s.editTask);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const todayEndIso = useMemo(() => {
@@ -117,10 +134,20 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
     return `${today}T23:59:59`;
   }, []);
 
-  const quadrants = useMemo(() => {
-    const activeRootTasks = tasks.filter(
-      (t) => !t.parentTaskId && t.status !== 'done' && t.status !== 'archived'
-    );
+  const { quadrants, quadrantIds, subtasksByParentId } = useMemo(() => {
+    const activeRootTasks: Task[] = [];
+    const subMap = new Map<string, Task[]>();
+
+    for (const t of tasks) {
+      if (t.status === 'archived') continue;
+      if (t.parentTaskId) {
+        const arr = subMap.get(t.parentTaskId);
+        if (arr) arr.push(t);
+        else subMap.set(t.parentTaskId, [t]);
+      } else if (t.status !== 'done') {
+        activeRootTasks.push(t);
+      }
+    }
 
     const grouped: Record<QuadrantKey, Task[]> = {
       doFirst: [],
@@ -134,20 +161,29 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
       grouped[q].push(task);
     }
 
-    return grouped;
+    return {
+      quadrants: grouped,
+      quadrantIds: {
+        doFirst: grouped.doFirst.map((t) => t.id),
+        schedule: grouped.schedule.map((t) => t.id),
+        delegate: grouped.delegate.map((t) => t.id),
+        dontDo: grouped.dontDo.map((t) => t.id),
+      },
+      subtasksByParentId: subMap,
+    };
   }, [tasks, todayEndIso]);
 
   const sensors = useSensors(
     useSensor(SmartPointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const handleDragStart = (event: DragStartEvent) => {
+  const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
     const task = tasks.find(t => t.id === active.id);
     if (task) setActiveTask(task);
-  };
+  }, [tasks]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -203,9 +239,9 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
           textClass="text-rose-600 dark:text-rose-400"
           borderClass="border-rose-500/20"
         >
-          <SortableContext id="doFirst" items={quadrants.doFirst.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext id="doFirst" items={quadrantIds.doFirst} strategy={verticalListSortingStrategy}>
             <div className="flex-1 space-y-3">
-              {quadrants.doFirst.map(t => <SortableTaskWrapper key={t.id} task={t} onComplete={onComplete} />)}
+              {quadrants.doFirst.map(t => <SortableTaskWrapper key={t.id} task={t} subtasks={subtasksByParentId.get(t.id)} onComplete={onComplete} />)}
               {quadrants.doFirst.length === 0 && <p className="text-xs text-muted-foreground italic mt-2">No urgent &amp; important tasks</p>}
             </div>
           </SortableContext>
@@ -221,9 +257,9 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
           textClass="text-emerald-600 dark:text-emerald-400"
           borderClass="border-emerald-500/20"
         >
-          <SortableContext id="schedule" items={quadrants.schedule.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext id="schedule" items={quadrantIds.schedule} strategy={verticalListSortingStrategy}>
             <div className="flex-1 space-y-3">
-              {quadrants.schedule.map(t => <SortableTaskWrapper key={t.id} task={t} onComplete={onComplete} />)}
+              {quadrants.schedule.map(t => <SortableTaskWrapper key={t.id} task={t} subtasks={subtasksByParentId.get(t.id)} onComplete={onComplete} />)}
               {quadrants.schedule.length === 0 && <p className="text-xs text-muted-foreground italic mt-2">No important tasks to schedule</p>}
             </div>
           </SortableContext>
@@ -239,9 +275,9 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
           textClass="text-amber-600 dark:text-amber-400"
           borderClass="border-amber-500/20"
         >
-          <SortableContext id="delegate" items={quadrants.delegate.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext id="delegate" items={quadrantIds.delegate} strategy={verticalListSortingStrategy}>
             <div className="flex-1 space-y-3">
-              {quadrants.delegate.map(t => <SortableTaskWrapper key={t.id} task={t} onComplete={onComplete} />)}
+              {quadrants.delegate.map(t => <SortableTaskWrapper key={t.id} task={t} subtasks={subtasksByParentId.get(t.id)} onComplete={onComplete} />)}
               {quadrants.delegate.length === 0 && <p className="text-xs text-muted-foreground italic mt-2">No urgent tasks to delegate</p>}
             </div>
           </SortableContext>
@@ -257,9 +293,9 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
           textClass="text-muted-foreground"
           borderClass="border-border/60"
         >
-          <SortableContext id="dontDo" items={quadrants.dontDo.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext id="dontDo" items={quadrantIds.dontDo} strategy={verticalListSortingStrategy}>
             <div className="flex-1 space-y-3">
-              {quadrants.dontDo.map(t => <SortableTaskWrapper key={t.id} task={t} onComplete={onComplete} />)}
+              {quadrants.dontDo.map(t => <SortableTaskWrapper key={t.id} task={t} subtasks={subtasksByParentId.get(t.id)} onComplete={onComplete} />)}
               {quadrants.dontDo.length === 0 && <p className="text-xs text-muted-foreground italic mt-2">Clear of low-value tasks</p>}
             </div>
           </SortableContext>
@@ -269,7 +305,7 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
       <DragOverlay>
         {activeTask ? (
           <div className="opacity-90 rotate-2 shadow-xl scale-105 transition-transform">
-            <TaskCard task={activeTask} onComplete={() => {}} />
+            <TaskCard task={activeTask} subtasks={subtasksByParentId.get(activeTask.id)} disableSwipe />
           </div>
         ) : null}
       </DragOverlay>

@@ -31,7 +31,7 @@ export interface FitnessStoreState {
 }
 
 export interface FitnessStoreActions {
-  loadFitnessData: (userId?: string) => Promise<void>;
+  loadFitnessData: (userId?: string, force?: boolean) => Promise<void>;
   clearFitnessState: () => void;
 
   // Bio & Profile slice

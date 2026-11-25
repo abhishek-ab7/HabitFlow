@@ -471,8 +471,23 @@ export function computeCreditCardSummary(params: {
     knownCycleKeys.add(prevCycleWindow.cycleKey);
   }
 
+  // Pre-index persisted statements & linked payments for O(1) lookup inside cycle loop
+  const persistedByCycle = new Map<string, CreditCardStatement>();
+  for (const s of persistedStatements) {
+    if (s.accountId === account.id && !s.deletedAt) {
+      persistedByCycle.set(s.cycleKey, s);
+    }
+  }
+  const linkedPaymentKeys = new Set<string>();
+  for (const tx of billPaymentTxs) {
+    if (tx.paidStatementId) {
+      linkedPaymentKeys.add(tx.paidStatementId);
+    }
+  }
+
   // Build statement list for all billed cycles in ascending chronological order
   const billedStatements: CreditCardStatement[] = [];
+  let hasPriorOpenStatement = false;
   for (const cycleKey of Array.from(knownCycleKeys).sort()) {
     const [cYear, cMonth] = cycleKey.split('-').map(Number);
     const window = getCycleWindowForMonth(billingDay, dueDay, cYear, cMonth - 1, gracePeriodDays);
@@ -493,9 +508,7 @@ export function computeCreditCardSummary(params: {
     }
 
     // Check for persisted override / record
-    const existing = persistedStatements.find(
-      (s) => s.accountId === account.id && s.cycleKey === cycleKey && !s.deletedAt
-    );
+    const existing = persistedByCycle.get(cycleKey);
 
     // If no persisted statement exists for this card, account.balance represents the user's
     // opening dues/bill for the latest closed statement (e.g. entered via Edit Account "Current Dues").
@@ -509,7 +522,6 @@ export function computeCreditCardSummary(params: {
       existing?.manualAdjustment ?? (openingDuesFallback > 0 ? Math.max(0, openingDuesFallback - calculatedAmount) : 0)
     );
     // Guard against double-counting carriedForwardAmount while prior statements remain open/unpaid
-    const hasPriorOpenStatement = billedStatements.some((prev) => prev.remainingDue > 0);
     const carriedForward = hasPriorOpenStatement
       ? 0
       : roundCurrency(existing?.carriedForwardAmount ?? 0);
@@ -517,13 +529,13 @@ export function computeCreditCardSummary(params: {
 
     // Preserve existing persisted paidAmount unless one or more payment transactions explicitly link to this statement
     const statementId = existing?.id || `${account.id}_${cycleKey}`;
-    const hasLinkedPayment = billPaymentTxs.some(
-      (tx) =>
-        Boolean(tx.paidStatementId) &&
-        (tx.paidStatementId === statementId || tx.paidStatementId === cycleKey)
-    );
+    const hasLinkedPayment =
+      linkedPaymentKeys.has(statementId) || linkedPaymentKeys.has(cycleKey);
     const initialPaid = hasLinkedPayment ? 0 : roundCurrency(Math.max(0, existing?.paidAmount ?? 0));
     const initialRemaining = roundCurrency(Math.max(0, totalDue - initialPaid));
+    if (initialRemaining > 0) {
+      hasPriorOpenStatement = true;
+    }
 
     const statement: CreditCardStatement = {
       id: statementId,

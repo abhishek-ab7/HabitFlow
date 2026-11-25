@@ -150,12 +150,9 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
 
           {/* Active Due Habit rows */}
           <div className="space-y-2.5">
-            {activeDueHabits.slice(0, 6).map(({ habit, weekProg, streak }, index) => (
-              <motion.div
+            {activeDueHabits.slice(0, 6).map(({ habit, weekProg, streak }) => (
+              <div
                 key={habit.id}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.04 }}
                 className="flex items-center justify-between overflow-x-auto pb-1 scrollbar-hide gap-2"
               >
                 {/* Habit info */}
@@ -238,7 +235,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
                     </button>
                   )}
                 </div>
-              </motion.div>
+              </div>
             ))}
           </div>
 

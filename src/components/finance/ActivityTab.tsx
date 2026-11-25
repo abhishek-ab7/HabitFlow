@@ -70,6 +70,7 @@ export function ActivityTab({
   onOpenSmsImport,
 }: ActivityTabProps) {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
+  const allTransactions = useFinanceStore((s) => s.transactions);
   const categories = useFinanceStore((s) => s.categories);
   const accounts = useFinanceStore((s) => s.accounts);
   const commitments = useFinanceStore((s) => s.commitments);
@@ -100,7 +101,11 @@ export function ActivityTab({
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(25);
 
-  const transactions = getFilteredTransactions(selectedMonth);
+  const transactions = useMemo(
+    () => getFilteredTransactions(selectedMonth),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getFilteredTransactions, selectedMonth, allTransactions, filters]
+  );
 
   useEffect(() => {
     setVisibleCount(25);
@@ -170,6 +175,18 @@ export function ActivityTab({
     [groupedByDate]
   );
 
+  const flatIndexById = useMemo(
+    () => new Map(flatOrderedTx.map((tx, idx) => [tx.id, idx])),
+    [flatOrderedTx]
+  );
+
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  const focusedIndexRef = useRef(focusedIndex);
+  focusedIndexRef.current = focusedIndex;
+  const flatOrderedTxRef = useRef(flatOrderedTx);
+  flatOrderedTxRef.current = flatOrderedTx;
+
   // Desktop Keyboard Triage: ↑/↓ focus row, R approve, E edit, D delete w/ undo, / search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -187,26 +204,26 @@ export function ActivityTab({
         return;
       }
 
-      if (isTyping || flatOrderedTx.length === 0) return;
+      const ordered = flatOrderedTxRef.current;
+      if (isTyping || ordered.length === 0) return;
 
+      const curIdx = focusedIndexRef.current;
       if (e.key === 'ArrowDown' || e.key === 'j') {
         e.preventDefault();
-        setFocusedIndex((prev) =>
-          prev < flatOrderedTx.length - 1 ? prev + 1 : 0
-        );
+        setFocusedIndex((prev) => (prev < ordered.length - 1 ? prev + 1 : 0));
       } else if (e.key === 'ArrowUp' || e.key === 'k') {
         e.preventDefault();
-        setFocusedIndex((prev) =>
-          prev > 0 ? prev - 1 : flatOrderedTx.length - 1
-        );
-      } else if (focusedIndex >= 0 && focusedIndex < flatOrderedTx.length) {
-        const current = flatOrderedTx[focusedIndex];
+        setFocusedIndex((prev) => (prev > 0 ? prev - 1 : ordered.length - 1));
+      } else if (curIdx >= 0 && curIdx < ordered.length) {
+        const current = ordered[curIdx];
         if (e.key.toLowerCase() === 'r') {
           e.preventDefault();
           if (current.needsReview) {
-            approveReviewedTransaction(current.id).then(() => {
-              toast.success(`Approved "${current.merchantName || current.title}"`);
-            });
+            approveReviewedTransaction(current.id)
+              .then(() => {
+                toast.success(`Approved "${current.merchantName || current.title}"`);
+              })
+              .catch(() => {});
           }
         } else if (e.key.toLowerCase() === 'e' || e.key === 'Enter') {
           e.preventDefault();
@@ -214,42 +231,37 @@ export function ActivityTab({
         } else if (e.key.toLowerCase() === 'd') {
           e.preventDefault();
           const snapshot = { ...current };
-          deleteTransaction(current.id).then(() => {
-            toast(`Deleted "${snapshot.merchantName || snapshot.title}"`, {
-              action: {
-                label: 'Undo',
-                onClick: () => {
-                  addTransaction({
-                    title: snapshot.title,
-                    merchantName: snapshot.merchantName,
-                    amount: snapshot.amount,
-                    type: snapshot.type,
-                    categoryId: snapshot.categoryId,
-                    accountId: snapshot.accountId,
-                    toAccountId: snapshot.toAccountId,
-                    date: snapshot.date,
-                    notes: snapshot.notes,
-                    tags: snapshot.tags,
-                    needsReview: snapshot.needsReview,
-                  });
+          deleteTransaction(current.id)
+            .then(() => {
+              toast(`Deleted "${snapshot.merchantName || snapshot.title}"`, {
+                action: {
+                  label: 'Undo',
+                  onClick: () => {
+                    addTransaction({
+                      title: snapshot.title,
+                      merchantName: snapshot.merchantName,
+                      amount: snapshot.amount,
+                      type: snapshot.type,
+                      categoryId: snapshot.categoryId,
+                      accountId: snapshot.accountId,
+                      toAccountId: snapshot.toAccountId,
+                      date: snapshot.date,
+                      notes: snapshot.notes,
+                      tags: snapshot.tags,
+                      needsReview: snapshot.needsReview,
+                    });
+                  },
                 },
-              },
-            });
-          });
+              });
+            })
+            .catch(() => {});
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    flatOrderedTx,
-    focusedIndex,
-    approveReviewedTransaction,
-    deleteTransaction,
-    addTransaction,
-    onEditTransaction,
-  ]);
+  }, [approveReviewedTransaction, deleteTransaction, addTransaction, onEditTransaction]);
 
   const hasActiveFilters =
     filters.searchQuery.trim() !== '' ||
@@ -374,12 +386,24 @@ export function ActivityTab({
     e.target.value = '';
   };
 
-  // Monthly Report Card summary data
-  const summary = getMonthlySummary(selectedMonth);
-  const categoryBreakdown = summary.categoryBreakdown.filter((c) => c.spent > 0);
-  const netWorth = getNetWorthSummary();
+  // Monthly Report Card summary data (computed only when Report dialog is open)
+  const summary = useMemo(
+    () => (isReportOpen ? getMonthlySummary(selectedMonth) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isReportOpen, getMonthlySummary, selectedMonth, allTransactions]
+  );
+  const categoryBreakdown = useMemo(
+    () => (summary ? summary.categoryBreakdown.filter((c) => c.spent > 0) : []),
+    [summary]
+  );
+  const netWorth = useMemo(
+    () => (isReportOpen ? getNetWorthSummary() : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isReportOpen, getNetWorthSummary, allTransactions, accounts]
+  );
 
   const handleCopyReportText = async () => {
+    if (!summary || !netWorth) return;
     const lines = [
       `HabitFlow Monthly Finance Report (${selectedMonth})`,
       `Income: ${formatINR(summary.totalIncome)}`,
@@ -857,15 +881,14 @@ export function ActivityTab({
                   const comm = tx.linkedCommitmentId
                     ? commitmentsMap.get(tx.linkedCommitmentId)
                     : undefined;
-                  const isSelected = selectedIds.includes(tx.id);
-                  const flatIdx = flatOrderedTx.findIndex((f) => f.id === tx.id);
+                  const isSelected = selectedIdSet.has(tx.id);
+                  const flatIdx = flatIndexById.get(tx.id) ?? -1;
                   const isKeyboardFocused = flatIdx === focusedIndex;
 
                   return (
                     <div
                       key={tx.id}
-                      onMouseEnter={() => setFocusedIndex(flatIdx)}
-                      className={`min-h-[64px] px-4 py-3 flex items-center justify-between gap-3 transition-colors ${
+                      className={`cv-auto min-h-[64px] px-4 py-3 flex items-center justify-between gap-3 transition-colors ${
                         isSelected
                           ? 'bg-primary/5'
                           : isKeyboardFocused
@@ -1027,6 +1050,7 @@ export function ActivityTab({
       )}
 
       {/* Monthly Financial Report Card Modal */}
+      {isReportOpen && summary && netWorth && (
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent
           showCloseButton={false}
@@ -1169,6 +1193,7 @@ export function ActivityTab({
           </div>
         </DialogContent>
       </Dialog>
+      )}
     </div>
   );
 }

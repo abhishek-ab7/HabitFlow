@@ -835,7 +835,19 @@
 
   html, body {
     max-width: 100vw;
-    overflow-x: hidden;
+    overflow-x: clip;
+    overscroll-behavior-y: contain;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button,
+  a,
+  [role="button"],
+  input,
+  select,
+  textarea,
+  summary {
+    touch-action: manipulation;
   }
 
   body {
@@ -899,24 +911,44 @@
     @apply bg-gradient-to-r from-primary via-emerald-500 to-teal-500 dark:from-primary dark:via-emerald-300 dark:to-teal-300 bg-clip-text text-transparent;
   }
 
-  /* Shimmer effect for skeletons */
+  /* Content-visibility helper for below-the-fold repeating items */
+  .cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
+
+  .cv-auto-lg {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+  }
+
+  /* Shimmer effect for skeletons (GPU-composited transform, no background-position repaint) */
   .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
     background: linear-gradient(
       90deg,
       transparent,
       oklch(0.7 0.005 240 / 0.14),
       transparent
     );
-    background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
+    will-change: transform;
   }
 
   @keyframes shimmer {
     0% {
-      background-position: 200% 0;
+      transform: translateX(-100%);
     }
     100% {
-      background-position: -200% 0;
+      transform: translateX(100%);
     }
   }
 
@@ -946,7 +978,7 @@
 
   /* Card hover lift */
   .hover-lift {
-    @apply transition-all duration-200;
+    @apply transition-[transform,box-shadow] duration-200;
   }
 
   .hover-lift:hover {
@@ -1023,7 +1055,7 @@
 
   /* Habit cell states */
   .habit-cell {
-    @apply w-11 h-11 rounded-lg border border-border/50 flex items-center justify-center cursor-pointer transition-all duration-200;
+    @apply w-11 h-11 rounded-lg border border-border/50 flex items-center justify-center cursor-pointer transition-colors duration-150;
   }
 
   .habit-cell-completed {
@@ -1111,14 +1143,14 @@ html, body {
 /* ============================================
    MOBILE PERFORMANCE & SMOOTH SCROLL ACCELERATION
    ============================================ */
-.overflow-x-auto, [class*="overflow-x-"] {
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-x: contain !important;
+.overflow-x-auto, .overflow-x-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
 }
 
-.overflow-y-auto, [class*="overflow-y-"] {
-  -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
+.overflow-y-auto, .overflow-y-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 /* ============================================

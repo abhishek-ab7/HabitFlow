@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { motion, AnimatePresence, useMotionValue, useTransform } from "framer-motion"
+import { memo, useState, useEffect } from "react"
+import { useShallow } from "zustand/react/shallow"
+import { motion, useMotionValue, useTransform } from "framer-motion"
 import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2, ChevronDown, ChevronRight, Edit, StickyNote, Check, Zap, Star } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { isAIEnabled } from "@/lib/ai-features-flag"
@@ -32,6 +33,59 @@ interface TaskCardProps {
     isMit?: boolean
     mitRank?: number | null
     onToggleMit?: (task: Task) => void
+    subtasks?: Task[]
+    disableSwipe?: boolean
+}
+
+const formatMinutesSeconds = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const remaining = secs % 60;
+    return `${mins}:${remaining.toString().padStart(2, '0')}`;
+};
+
+function ActiveTaskTimerPill() {
+    const { isRunning, timeLeft, pauseTimer, resumeTimer } = usePomodoroStore(
+        useShallow((s) => ({
+            isRunning: s.isRunning,
+            timeLeft: s.timeLeft,
+            pauseTimer: s.pauseTimer,
+            resumeTimer: s.resumeTimer,
+        }))
+    );
+
+    if (isRunning) {
+        return (
+            <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    pauseTimer();
+                }}
+                className="h-6 px-2 text-[10px] gap-1 text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 rounded-md font-semibold"
+            >
+                <Pause className="h-3 w-3 fill-current animate-pulse" />
+                <span>Focusing ({formatMinutesSeconds(timeLeft)})</span>
+            </Button>
+        );
+    }
+
+    return (
+        <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+                e.stopPropagation();
+                resumeTimer();
+            }}
+            className="h-6 px-2 text-[10px] gap-1 text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 rounded-md font-semibold"
+        >
+            <Play className="h-3 w-3 fill-current" />
+            <span>Paused ({formatMinutesSeconds(timeLeft)})</span>
+        </Button>
+    );
 }
 
 interface AIPriority {
@@ -40,11 +94,25 @@ interface AIPriority {
   urgencyScore: number;
 }
 
-export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, onToggleMit }: TaskCardProps) {
+export const TaskCard = memo(function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, onToggleMit, subtasks: subtasksProp, disableSwipe }: TaskCardProps) {
     const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
     const [loadingPriority, setLoadingPriority] = useState(false);
-    
-    const { removeTask, editTask, addTask, tasks, toggleTaskComplete } = useTaskStore();
+
+    const { removeTask, editTask, addTask, toggleTaskComplete } = useTaskStore(
+        useShallow((s) => ({
+            removeTask: s.removeTask,
+            editTask: s.editTask,
+            addTask: s.addTask,
+            toggleTaskComplete: s.toggleTaskComplete,
+        }))
+    );
+    const fallbackSubtasks = useTaskStore(
+        useShallow((s) =>
+            subtasksProp
+                ? null
+                : s.tasks.filter((t) => t.parentTaskId === task.id && t.status !== 'archived')
+        )
+    );
     const [isExpanded, setIsExpanded] = useState(false);
     const [expandedSubtasks, setExpandedSubtasks] = useState<Set<string>>(new Set());
     const [activeEditTask, setActiveEditTask] = useState<Task | null>(null);
@@ -89,23 +157,9 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
         setExpandedSubtasks(next);
     };
     
-    const { 
-        activeTaskId, 
-        isRunning: isTimerRunning, 
-        timeLeft, 
-        startTimer,
-        startPresetTimer,
-        pauseTimer, 
-        resumeTimer 
-    } = usePomodoroStore();
-
-    const isCurrentTaskActive = activeTaskId === task.id;
-
-    const formatMinutesSeconds = (secs: number) => {
-        const mins = Math.floor(secs / 60);
-        const remaining = secs % 60;
-        return `${mins}:${remaining.toString().padStart(2, '0')}`;
-    };
+    const isCurrentTaskActive = usePomodoroStore((s) => s.activeTaskId === task.id);
+    const startTimer = usePomodoroStore((s) => s.startTimer);
+    const startPresetTimer = usePomodoroStore((s) => s.startPresetTimer);
 
     const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done'
 
@@ -115,7 +169,11 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
         high: "border-red-500/30 bg-red-500/5 text-red-500 shadow-[0_0_15px_-5px_rgba(239,68,68,0.3)]",
     }
 
-    const subtasks = tasks.filter(t => t.parentTaskId === task.id && t.status !== 'archived');
+    const subtasks = Array.isArray(subtasksProp)
+        ? subtasksProp
+        : Array.isArray(fallbackSubtasks)
+            ? fallbackSubtasks
+            : [];
     const completedSubtasks = subtasks.filter(s => s.status === 'done').length;
     const subtaskProgress = subtasks.length > 0 ? (completedSubtasks / subtasks.length) * 100 : 0;
 
@@ -193,8 +251,7 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
 
             {/* Draggable Card */}
             <motion.div
-                layout
-                drag="x"
+                drag={disableSwipe ? false : "x"}
                 dragDirectionLock
                 dragConstraints={{ left: -100, right: 100 }}
                 dragElastic={{ left: 0.6, right: 0.6 }}
@@ -240,16 +297,8 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
                         }
                     }
                 }}
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.98 }}
-                whileHover={{
-                    y: -4,
-                    boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
-                    transition: { duration: 0.2 }
-                }}
                 className={cn(
-                    "group relative rounded-2xl border transition-all duration-200",
+                    "group relative rounded-2xl border transition-transform transition-colors duration-200 hover:-translate-y-0.5 hover:shadow-md",
                     compact ? "p-3" : "p-5",
                     "bg-card border-border shadow-xs",
                     "hover:border-primary/35",
@@ -257,7 +306,7 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
                 )}
             >
                 <div className={cn("flex items-start", compact ? "gap-2.5" : "gap-4")}>
-                    {/* Custom Animated Checkbox + Expand Button Container */}
+                    {/* Custom Checkbox + Expand Button Container */}
                     <div className="flex flex-col items-center shrink-0">
                         <button
                             onClick={(e) => {
@@ -265,36 +314,18 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
                                 onComplete?.(task.id)
                             }}
                             className={cn(
-                                "relative flex items-center justify-center rounded-full border-2 transition-all duration-300",
+                                "relative flex items-center justify-center rounded-full border-2 transition-colors duration-200",
                                 compact ? "mt-0.5 h-4 w-4" : "mt-1 h-6 w-6",
                                 task.status === 'done'
                                     ? "bg-primary border-primary text-primary-foreground"
                                     : "border-muted-foreground/30 group-hover:border-primary"
                             )}
                         >
-                        <AnimatePresence mode="wait">
                             {task.status === 'done' ? (
-                                <motion.div
-                                    key="checked"
-                                    initial={{ scale: 0, rotate: -20 }}
-                                    animate={{ scale: 1, rotate: 0 }}
-                                    exit={{ scale: 0, rotate: 20 }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                                >
-                                    <CheckCircle2 className={cn("stroke-[3px]", compact ? "h-2 w-2" : "h-4 w-4")} />
-                                </motion.div>
+                                <CheckCircle2 className={cn("stroke-[3px]", compact ? "h-2 w-2" : "h-4 w-4")} />
                             ) : (
-                                <motion.div
-                                    key="unchecked"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="opacity-0 group-hover:opacity-100"
-                                >
-                                    <Circle className={cn("text-primary", compact ? "h-2.5 w-2.5" : "h-4 w-4")} />
-                                </motion.div>
+                                <Circle className={cn("text-primary opacity-0 group-hover:opacity-100 transition-opacity", compact ? "h-2.5 w-2.5" : "h-4 w-4")} />
                             )}
-                            </AnimatePresence>
                         </button>
                         
                         {subtasks.length > 0 && !compact && (
@@ -403,25 +434,15 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
                         {/* Meta Section */}
                         <div className={cn("flex flex-wrap items-center pt-0.5", compact ? "gap-2" : "gap-4")}>
                             {task.due_date && (
-                                <motion.div
-                                    animate={isOverdue ? {
-                                        scale: [1, 1.05, 1],
-                                        color: ["#ef4444", "#dc2626", "#ef4444"]
-                                    } : {}}
-                                    transition={isOverdue ? {
-                                        type: "keyframes",
-                                        duration: 1.5,
-                                        repeat: Infinity,
-                                        ease: "easeInOut"
-                                    } : {}}
+                                <div
                                     className={cn(
                                         "flex items-center gap-1 text-[10px] text-muted-foreground font-medium",
-                                        isOverdue && "text-red-500"
+                                        isOverdue && "text-red-500 font-semibold"
                                     )}
                                 >
                                     <Calendar className={cn(compact ? "h-3 w-3" : "h-3.5 w-3.5")} />
                                     <span>{format(new Date(task.due_date), compact ? "MMM d" : "MMM d, h:mm a")}</span>
-                                </motion.div>
+                                </div>
                             )}
 
                             {task.estimatedTime !== undefined && task.estimatedTime > 0 && (
@@ -482,35 +503,7 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
                             {task.status !== 'done' && (
                                 <div className="flex items-center">
                                     {isCurrentTaskActive ? (
-                                        isTimerRunning ? (
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    pauseTimer();
-                                                }}
-                                                className="h-6 px-2 text-[10px] gap-1 text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 rounded-md font-semibold"
-                                            >
-                                                <Pause className="h-3 w-3 fill-current animate-pulse" />
-                                                <span>Focusing ({formatMinutesSeconds(timeLeft)})</span>
-                                            </Button>
-                                        ) : (
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    resumeTimer();
-                                                }}
-                                                className="h-6 px-2 text-[10px] gap-1 text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 rounded-md font-semibold"
-                                            >
-                                                <Play className="h-3 w-3 fill-current" />
-                                                <span>Paused ({formatMinutesSeconds(timeLeft)})</span>
-                                            </Button>
-                                        )
+                                        <ActiveTaskTimerPill />
                                     ) : (
                                         <div className="flex items-center gap-1">
                                             <Button
@@ -711,9 +704,9 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
                 {isExpanded && !compact && subtasks.length > 0 && (
                     <div className="mt-4 pt-4 border-t border-border/40 relative z-10" onClick={(e) => e.stopPropagation()}>
                         <SubtaskList
-                            tasks={tasks}
+                            tasks={subtasks}
                             parentId={task.id}
-                            allTasks={tasks}
+                            allTasks={subtasks}
                             onToggle={toggleTaskComplete}
                             onDelete={async (subId) => {
                                 if (confirm("Are you sure you want to delete this subtask?")) {
@@ -766,4 +759,4 @@ export function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, 
             )}
         </div>
     );
-}
+});

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { Plus, Users, Receipt, Wallet } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type {
@@ -13,18 +14,37 @@ import type {
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
-import {
-  FriendCard,
-  AddDebtModal,
-  SettleTabDialog,
-  OffsetLoanDialog,
-  InstallmentDialog,
-  TopUpDialog,
-  ShareSettlementDialog,
-} from './friends';
+import { FriendCard } from './friends/FriendCard';
+
+const AddDebtModal = dynamic(
+  () => import('./friends/AddDebtModal').then((m) => ({ default: m.AddDebtModal })),
+  { ssr: false }
+);
+const SettleTabDialog = dynamic(
+  () => import('./friends/SettleTabDialog').then((m) => ({ default: m.SettleTabDialog })),
+  { ssr: false }
+);
+const OffsetLoanDialog = dynamic(
+  () => import('./friends/OffsetLoanDialog').then((m) => ({ default: m.OffsetLoanDialog })),
+  { ssr: false }
+);
+const InstallmentDialog = dynamic(
+  () => import('./friends/InstallmentDialog').then((m) => ({ default: m.InstallmentDialog })),
+  { ssr: false }
+);
+const TopUpDialog = dynamic(
+  () => import('./friends/TopUpDialog').then((m) => ({ default: m.TopUpDialog })),
+  { ssr: false }
+);
+const ShareSettlementDialog = dynamic(
+  () => import('./friends/ShareSettlementDialog').then((m) => ({ default: m.ShareSettlementDialog })),
+  { ssr: false }
+);
 
 export function FriendsDebtSection() {
   const accounts = useFinanceStore((s) => s.accounts);
+  const debtRecords = useFinanceStore((s) => s.debtRecords);
+  const debtInstallments = useFinanceStore((s) => s.debtInstallments);
   const getDebtSummary = useFinanceStore((s) => s.getDebtSummary);
   const getFriendLedgerGroups = useFinanceStore((s) => s.getFriendLedgerGroups);
   const getDebtInstallments = useFinanceStore((s) => s.getDebtInstallments);
@@ -70,8 +90,16 @@ export function FriendsDebtSection() {
   const [debtToDelete, setDebtToDelete] = useState<{ id: string; title: string } | null>(null);
   const [installmentToDelete, setInstallmentToDelete] = useState<string | null>(null);
 
-  const summary = getDebtSummary();
-  const allFriendGroups = getFriendLedgerGroups();
+  const summary = useMemo(
+    () => getDebtSummary(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getDebtSummary, debtRecords]
+  );
+  const allFriendGroups = useMemo(
+    () => getFriendLedgerGroups(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [getFriendLedgerGroups, debtRecords, debtInstallments]
+  );
 
   // Known friend names for autocomplete
   const existingFriendNames = useMemo(() => {
@@ -404,60 +432,72 @@ export function FriendsDebtSection() {
         </div>
       )}
 
-      {/* 4. Sub-Component Modals & Dialogs */}
-      <AddDebtModal
-        isOpen={isNewOpen}
-        onClose={() => {
-          setIsNewOpen(false);
-          setEditingDebt(null);
-        }}
-        editingDebt={editingDebt}
-        defaultBucket={newDefaultBucket}
-        prefilledFriend={newPrefilledFriend}
-        existingFriendNames={existingFriendNames}
-        onSave={handleSaveDebt}
-      />
+      {/* 4. Sub-Component Modals & Dialogs (lazy-mounted only when open) */}
+      {isNewOpen && (
+        <AddDebtModal
+          isOpen={isNewOpen}
+          onClose={() => {
+            setIsNewOpen(false);
+            setEditingDebt(null);
+          }}
+          editingDebt={editingDebt}
+          defaultBucket={newDefaultBucket}
+          prefilledFriend={newPrefilledFriend}
+          existingFriendNames={existingFriendNames}
+          onSave={handleSaveDebt}
+        />
+      )}
 
-      <SettleTabDialog
-        group={settleFriend}
-        isOpen={!!settleFriend}
-        onClose={() => setSettleFriend(null)}
-        accounts={accounts}
-        onConfirmSettle={settleEverydayTab}
-      />
+      {!!settleFriend && (
+        <SettleTabDialog
+          group={settleFriend}
+          isOpen={!!settleFriend}
+          onClose={() => setSettleFriend(null)}
+          accounts={accounts}
+          onConfirmSettle={settleEverydayTab}
+        />
+      )}
 
-      <OffsetLoanDialog
-        group={offsetFriend}
-        isOpen={!!offsetFriend}
-        onClose={() => setOffsetFriend(null)}
-        onConfirmOffset={offsetSplitAgainstLoan}
-      />
+      {!!offsetFriend && (
+        <OffsetLoanDialog
+          group={offsetFriend}
+          isOpen={!!offsetFriend}
+          onClose={() => setOffsetFriend(null)}
+          onConfirmOffset={offsetSplitAgainstLoan}
+        />
+      )}
 
-      <InstallmentDialog
-        debt={installmentDebt}
-        editingInstallment={editingInstallment}
-        isOpen={!!installmentDebt || !!editingInstallment}
-        onClose={() => {
-          setInstallmentDebt(null);
-          setEditingInstallment(null);
-        }}
-        accounts={accounts}
-        onRecordInstallment={recordDebtInstallment}
-        onUpdateInstallment={updateDebtInstallment}
-      />
+      {(!!installmentDebt || !!editingInstallment) && (
+        <InstallmentDialog
+          debt={installmentDebt}
+          editingInstallment={editingInstallment}
+          isOpen={!!installmentDebt || !!editingInstallment}
+          onClose={() => {
+            setInstallmentDebt(null);
+            setEditingInstallment(null);
+          }}
+          accounts={accounts}
+          onRecordInstallment={recordDebtInstallment}
+          onUpdateInstallment={updateDebtInstallment}
+        />
+      )}
 
-      <TopUpDialog
-        target={topUpTarget}
-        isOpen={!!topUpTarget}
-        onClose={() => setTopUpTarget(null)}
-        onTopUp={topUpDebt}
-      />
+      {!!topUpTarget && (
+        <TopUpDialog
+          target={topUpTarget}
+          isOpen={!!topUpTarget}
+          onClose={() => setTopUpTarget(null)}
+          onTopUp={topUpDebt}
+        />
+      )}
 
-      <ShareSettlementDialog
-        group={shareFriend}
-        isOpen={!!shareFriend}
-        onClose={() => setShareFriend(null)}
-      />
+      {!!shareFriend && (
+        <ShareSettlementDialog
+          group={shareFriend}
+          isOpen={!!shareFriend}
+          onClose={() => setShareFriend(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={!!debtToDelete}

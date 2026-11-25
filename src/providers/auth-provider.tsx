@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Session, AuthError } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/lib/supabase/client';
@@ -92,6 +92,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const supabase = getSupabaseClient();
 
+    // Stop sync timers, realtime channels, and clear local state cleanly
+    try {
+      const [{ getSyncEngine }, { useUserStore }] = await Promise.all([
+        import('@/lib/sync'),
+        import('@/lib/stores/user-store'),
+      ]);
+      getSyncEngine().reset();
+      useUserStore.getState().cleanupRealtimeSubscription();
+    } catch {
+      // Non-blocking in test/offline environments
+    }
+
     // Phase 1: Clear client-side session immediately (fast path)
     await supabase.auth.signOut();
 
@@ -130,20 +142,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   }, []);
 
+  const contextValue = useMemo<AuthContextType>(
+    () => ({
+      user,
+      session,
+      isLoading,
+      isAuthenticated: !!session,
+      signUp,
+      signIn,
+      signInWithGoogle,
+      signOut,
+      resetPassword,
+    }),
+    [user, session, isLoading, signUp, signIn, signInWithGoogle, signOut, resetPassword]
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        isLoading,
-        isAuthenticated: !!session,
-        signUp,
-        signIn,
-        signInWithGoogle,
-        signOut,
-        resetPassword,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

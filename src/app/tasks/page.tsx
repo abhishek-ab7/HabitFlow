@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { TasksPageContent } from "@/components/tasks";
+import TasksPageContent from "@/components/tasks/TasksPageContent";
 import { TaskListSkeleton } from "@/components/ui/Skeletons";
 import { Skeleton } from "@/components/ui/skeleton";
 

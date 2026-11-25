@@ -6,7 +6,22 @@ const nextConfig: NextConfig = {
   // ⚡ PERFORMANCE OPTIMIZATIONS
   experimental: {
     // Optimize package imports to reduce bundle size
-    optimizePackageImports: ['lucide-react', 'framer-motion', 'date-fns', 'recharts'],
+    optimizePackageImports: [
+      'lucide-react',
+      'framer-motion',
+      'date-fns',
+      'recharts',
+      '@dnd-kit/core',
+      '@dnd-kit/sortable',
+      '@dnd-kit/utilities',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-popover',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-tooltip',
+      'sonner',
+    ],
   },
   
   compiler: {

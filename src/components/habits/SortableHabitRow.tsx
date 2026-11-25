@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -72,7 +72,7 @@ const getStreakStyle = (streak: number) => {
     return '';
 };
 
-export function SortableHabitRow({
+export const SortableHabitRow = memo(function SortableHabitRow({
     habit,
     days,
     completions,
@@ -156,7 +156,9 @@ export function SortableHabitRow({
     }, [yesterdayStr, dayBeforeYesterdayStr, completionMap]);
 
     const { triggerPop, triggerChime } = useFeedback();
-    const { updateNote, updateValue, markRestDay } = useHabitStore();
+    const updateNote = useHabitStore((s) => s.updateNote);
+    const updateValue = useHabitStore((s) => s.updateValue);
+    const markRestDay = useHabitStore((s) => s.markRestDay);
     const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
     const isQuit = habit.polarity === 'quit';
 
@@ -310,7 +312,7 @@ export function SortableHabitRow({
                 <div
                     {...attributes}
                     {...listeners}
-                    className="cursor-grab hover:text-foreground text-muted-foreground/50 active:cursor-grabbing p-1 -ml-2"
+                    className="touch-none cursor-grab hover:text-foreground text-muted-foreground/50 active:cursor-grabbing p-1 -ml-2"
                 >
                     <GripVertical className="h-4 w-4" />
                 </div>
@@ -507,7 +509,8 @@ export function SortableHabitRow({
                     const showRipple = rippleCell === cellKey && (isCompleted || isFrozen || isRest);
 
                     const innerButton = (
-                        <motion.button
+                        <button
+                            type="button"
                             onClick={(e) => handleCellClick(dateStr, isFutureDate, e.shiftKey)}
                             onContextMenu={(e) => {
                                 if (e.altKey || (weekProgress.restAllowedCount > 0 && !isCompleted && !isFrozen)) {
@@ -524,7 +527,9 @@ export function SortableHabitRow({
                             data-today={isTodayDate}
                             data-status={isCompleted ? 'completed' : isRest ? 'rest' : isFrozen ? 'frozen' : isAutoRest ? 'auto-rest' : 'pending'}
                             className={cn(
-                                "w-9 h-9 rounded-lg flex items-center justify-center transition-all relative overflow-hidden flex-shrink-0",
+                                "w-9 h-9 rounded-lg flex items-center justify-center transition-transform transition-colors relative overflow-hidden flex-shrink-0 active:scale-95",
+                                !isFutureDate && "hover:scale-105",
+                                burstActive === dateStr && "scale-115",
                                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                                 isCompleted
                                     ? "bg-success/20 text-success hover:bg-success/30"
@@ -540,10 +545,6 @@ export function SortableHabitRow({
                                                         ? "bg-primary/10 border-2 border-dashed border-primary/40 hover:bg-primary/20"
                                                         : "bg-muted/75 border border-border/70 hover:bg-muted dark:bg-muted/50 dark:border-border/60 dark:hover:bg-muted/70",
                             )}
-                            animate={{ scale: burstActive === dateStr ? 1.25 : 1 }}
-                            transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                            whileHover={!isFutureDate ? { scale: 1.05 } : {}}
-                            whileTap={!isFutureDate ? { scale: 0.95 } : {}}
                             title={
                                 isFutureDate
                                     ? undefined
@@ -552,89 +553,27 @@ export function SortableHabitRow({
                                     : "Left click: toggle. Right click: Streak Shield."
                             }
                         >
-                            {burstActive === dateStr && (
-                                <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-visible z-50">
-                                    {Array.from({ length: 8 }).map((_, i) => {
-                                        const angle = (i * 360) / 8;
-                                        const distance = 20 + Math.random() * 15;
-                                        const x = Math.cos((angle * Math.PI) / 180) * distance;
-                                        const y = Math.sin((angle * Math.PI) / 180) * distance;
-                                        const colorClass = isFrozen
-                                            ? ['bg-sky-400', 'bg-cyan-400', 'bg-blue-300', 'bg-sky-200'][i % 4]
-                                            : ['bg-emerald-400', 'bg-teal-400', 'bg-green-400', 'bg-yellow-400'][i % 4];
-                                        return (
-                                            <motion.div
-                                                key={i}
-                                                className={cn("absolute w-1.5 h-1.5 rounded-full", colorClass)}
-                                                initial={{ x: 0, y: 0, scale: 0.8, opacity: 1 }}
-                                                animate={{ x, y, scale: 0, opacity: 0 }}
-                                                transition={{ duration: 0.6, ease: 'easeOut' }}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                            )}
-
-                            {/* Render quantitative status or default checklist icons */}
-                            <AnimatePresence mode="wait">
-                                {isCompleted ? (
-                                        <motion.div
-                                        key="completed"
-                                        initial={{ scale: 0, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0, opacity: 0 }}
-                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                                    >
-                                        {isQuit ? <ShieldCheck className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                                    </motion.div>
-                                ) : isRest ? (
-                                    <motion.div
-                                        key="rest"
-                                        initial={{ scale: 0, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0, opacity: 0 }}
-                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                                    >
-                                        <Moon className="h-3.5 w-3.5" />
-                                    </motion.div>
-                                ) : isFrozen ? (
-                                    <motion.div
-                                        key="frozen"
-                                        initial={{ scale: 0, opacity: 0, rotate: -45 }}
-                                        animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                                        exit={{ scale: 0, opacity: 0, rotate: 45 }}
-                                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                                    >
-                                        <Snowflake className="h-4 w-4" />
-                                    </motion.div>
-                                ) : isAutoRest ? (
-                                    <motion.div
-                                        key="auto-rest"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 0.6 }}
-                                    >
-                                        <Moon className="h-3 w-3" />
-                                    </motion.div>
-                                ) : habit.isQuantitative && comp?.value && comp.value > 0 ? (
-                                    <motion.div
-                                        key="quantitative-val"
-                                        initial={{ scale: 0, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0, opacity: 0 }}
-                                        className="text-xs font-bold font-mono"
-                                    >
-                                        {comp.value}
-                                    </motion.div>
-                                ) : null}
-                            </AnimatePresence>
+                            {isCompleted ? (
+                                isQuit ? <ShieldCheck className="h-4 w-4" /> : <Check className="h-4 w-4" />
+                            ) : isRest ? (
+                                <Moon className="h-3.5 w-3.5" />
+                            ) : isFrozen ? (
+                                <Snowflake className="h-4 w-4" />
+                            ) : isAutoRest ? (
+                                <Moon className="h-3 w-3 opacity-60" />
+                            ) : habit.isQuantitative && comp?.value && comp.value > 0 ? (
+                                <span className="text-xs font-bold font-mono">{comp.value}</span>
+                            ) : null}
 
                             {/* Note indicator: small curl/dot if note exists */}
                             {comp?.note && (
                                 <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500" />
                             )}
 
-                            <SuccessRipple trigger={showRipple} color={isFrozen ? "bg-sky-400/40" : isRest ? "bg-teal-400/30" : "bg-success/30"} />
-                        </motion.button>
+                            {showRipple && (
+                                <SuccessRipple trigger={showRipple} color={isFrozen ? "bg-sky-400/40" : isRest ? "bg-teal-400/30" : "bg-success/30"} />
+                            )}
+                        </button>
                     );
 
                     const finalButton = comp?.note ? (
@@ -695,6 +634,7 @@ export function SortableHabitRow({
                                             <Pencil className="h-2 w-2" />
                                         </button>
                                     </PopoverTrigger>
+                                    {openPopoverDate === dateStr && (
                                     <PopoverContent 
                                         side="top" 
                                         align="center" 
@@ -809,6 +749,7 @@ export function SortableHabitRow({
                                             </Button>
                                         </div>
                                     </PopoverContent>
+                                    )}
                                 </Popover>
                             )}
                         </div>
@@ -831,14 +772,17 @@ export function SortableHabitRow({
                 </div>
             </div>
 
-            <ShareCardModal
-                open={showShareModal}
-                onOpenChange={setShowShareModal}
-                habit={habit}
-                streak={streak}
-            />
+            {showShareModal && (
+                <ShareCardModal
+                    open={showShareModal}
+                    onOpenChange={setShowShareModal}
+                    habit={habit}
+                    streak={streak}
+                />
+            )}
 
-            <Dialog open={showLogModal} onOpenChange={setShowLogModal}>
+            {showLogModal && (
+                <Dialog open={showLogModal} onOpenChange={setShowLogModal}>
                 <DialogContent className="w-full max-w-sm rounded-2xl p-6 bg-background border shadow-xl">
                     <DialogHeader className="space-y-1">
                         <DialogTitle className="text-lg font-bold text-foreground">Log Progress</DialogTitle>
@@ -926,9 +870,11 @@ export function SortableHabitRow({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            )}
 
             {/* No Streak Shields Remaining Dialog */}
-            <Dialog open={showNoShieldsDialog} onOpenChange={setShowNoShieldsDialog}>
+            {showNoShieldsDialog && (
+                <Dialog open={showNoShieldsDialog} onOpenChange={setShowNoShieldsDialog}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>No Streak Shields Remaining</DialogTitle>
@@ -958,6 +904,7 @@ export function SortableHabitRow({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+            )}
         </div>
     );
-}
+});

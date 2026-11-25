@@ -9,6 +9,13 @@ import type {
   FinanceNetWorthSnapshot,
   FinanceTransaction,
 } from '@/lib/types';
+
+let ccSummaryCache: {
+  accountsRef: unknown;
+  transactionsRef: unknown;
+  statementsRef: unknown;
+  results: Map<string, CreditCardCycleSummary | null>;
+} | null = null;
 import {
   computeCreditCardSummary,
   getCycleWindowForMonth,
@@ -211,14 +218,38 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
   },
 
   getCreditCardSummary: (accountId, referenceDate) => {
-    const account = get().accounts.find((a) => a.id === accountId);
-    if (!account || account.type !== 'credit_card') return null;
-    return computeCreditCardSummary({
+    const { accounts, transactions, creditCardStatements } = get();
+    const refDay = referenceDate || getLocalIsoDate();
+    if (
+      !ccSummaryCache ||
+      ccSummaryCache.accountsRef !== accounts ||
+      ccSummaryCache.transactionsRef !== transactions ||
+      ccSummaryCache.statementsRef !== creditCardStatements
+    ) {
+      ccSummaryCache = {
+        accountsRef: accounts,
+        transactionsRef: transactions,
+        statementsRef: creditCardStatements,
+        results: new Map(),
+      };
+    }
+    const cacheKey = `${accountId}|${refDay}`;
+    if (ccSummaryCache.results.has(cacheKey)) {
+      return ccSummaryCache.results.get(cacheKey) ?? null;
+    }
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account || account.type !== 'credit_card') {
+      ccSummaryCache.results.set(cacheKey, null);
+      return null;
+    }
+    const summary = computeCreditCardSummary({
       account,
-      transactions: get().transactions,
-      persistedStatements: get().creditCardStatements,
+      transactions,
+      persistedStatements: creditCardStatements,
       referenceDate,
     });
+    ccSummaryCache.results.set(cacheKey, summary);
+    return summary;
   },
 
   syncCardStatements: async (accountId?: string) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { format, addDays } from 'date-fns';
 import { X, Plus, Trash2, Star, Landmark, PiggyBank, ArrowDownRight, TrendingUp, Dumbbell, Scale, Ruler, Footprints } from 'lucide-react';
 import {
@@ -54,8 +54,16 @@ export function GoalFormModal({
   goal,
   existingMilestones = [],
 }: GoalFormModalProps) {
-  const { accounts, debtRecords, emiTrackers, sipPlans, getNetWorthSummary } = useFinanceStore();
-  const netWorthSummary = getNetWorthSummary();
+  const accounts = useFinanceStore((s) => s.accounts);
+  const debtRecords = useFinanceStore((s) => s.debtRecords);
+  const emiTrackers = useFinanceStore((s) => s.emiTrackers);
+  const sipPlans = useFinanceStore((s) => s.sipPlans);
+  const getNetWorthSummary = useFinanceStore((s) => s.getNetWorthSummary);
+  const netWorthSummary = useMemo(
+    () => (open ? getNetWorthSummary() : { netWorth: 0 }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [open, getNetWorthSummary, accounts, debtRecords, emiTrackers, sipPlans]
+  );
   const isFitnessEnabled = isFitnessModuleEnabled(
     useGamificationStore((s) => s.settings)
   );
