@@ -521,10 +521,84 @@ export class FitnessSyncEngine implements ISynchronizer {
     return { pushed, pulled };
   }
 
+  private async deduplicateMealTemplates(userId: string) {
+    const allTemplates = await db.mealTemplates.where('userId').equals(userId).toArray();
+    const activeByName = new Map<string, MealTemplate[]>();
+    for (const row of allTemplates) {
+      if (row.deletedAt) continue;
+      const key = row.name.trim().toLowerCase();
+      const list = activeByName.get(key) || [];
+      list.push(row);
+      activeByName.set(key, list);
+    }
+
+    const now = new Date().toISOString();
+    for (const group of activeByName.values()) {
+      if (group.length <= 1) continue;
+      group.sort((a, b) => {
+        const genDiff = toNum(b.generationCounter, 0) - toNum(a.generationCounter, 0);
+        if (genDiff !== 0) return genDiff;
+        const updDiff = new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+        if (updDiff !== 0) return updDiff;
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      });
+
+      for (const dup of group.slice(1)) {
+        await db.mealTemplates.update(dup.id, {
+          deletedAt: now,
+          isDirty: true,
+          generationCounter: toNum(dup.generationCounter, 1) + 1,
+          updatedAt: now,
+        });
+      }
+    }
+  }
+
   async syncMealTemplates(supabase: any, userId: string): Promise<{ pushed: number; pulled: number }> {
     let pushed = 0;
     let pulled = 0;
 
+    // 1. Pull FIRST so remote deletions/tombstones and existing staples are respected before pushing
+    const remoteRows = await this.pullTable(supabase, 'meal_templates', userId);
+    if (remoteRows !== null) {
+      const localMap = new Map(
+        (await db.mealTemplates.where('userId').equals(userId).toArray()).map((x) => [x.id, x])
+      );
+
+      for (const r of remoteRows) {
+        const local = localMap.get(r.id);
+        if (!local || (!local.isDirty && shouldApplyRemoteRecord(local, r))) {
+          const mapped: MealTemplate = {
+            id: r.id,
+            userId: r.user_id,
+            name: r.name,
+            hindiAliases: Array.isArray(r.hindi_aliases) ? r.hindi_aliases : [],
+            calories: toNum(r.calories, 0),
+            proteinG: toNum(r.protein_g, 0),
+            carbsG: toNum(r.carbs_g, 0),
+            fatG: toNum(r.fat_g, 0),
+            fiberG: toNullableNum(r.fiber_g),
+            servingLabel: r.serving_label || '1 serving',
+            mealType: r.meal_type ?? null,
+            isJunk: Boolean(r.is_junk),
+            isPinned: Boolean(r.is_pinned),
+            order: toNum(r.order_index, 0),
+            deletedAt: r.deleted_at ?? null,
+            generationCounter: toNum(r.generation_counter, 1),
+            isDirty: false,
+            createdAt: r.created_at || new Date().toISOString(),
+            updatedAt: r.updated_at || new Date().toISOString(),
+          };
+          await db.mealTemplates.put(mapped);
+          pulled++;
+        }
+      }
+    }
+
+    // 2. Deduplicate any same-named active staples before pushing (soft-deletes extras)
+    await this.deduplicateMealTemplates(userId);
+
+    // 3. Push dirty local templates (including any soft-delete tombstones)
     const dirty = (await db.mealTemplates.where('userId').equals(userId).toArray()).filter(
       (row) => row.isDirty
     );
@@ -555,42 +629,6 @@ export class FitnessSyncEngine implements ISynchronizer {
           await db.mealTemplates.update(t.id, { isDirty: false });
           pushed++;
         }
-      }
-    }
-
-    const remoteRows = await this.pullTable(supabase, 'meal_templates', userId);
-    if (remoteRows === null) return { pushed, pulled };
-
-    const localMap = new Map(
-      (await db.mealTemplates.where('userId').equals(userId).toArray()).map((x) => [x.id, x])
-    );
-
-    for (const r of remoteRows) {
-      const local = localMap.get(r.id);
-      if (!local || (!local.isDirty && shouldApplyRemoteRecord(local, r))) {
-        const mapped: MealTemplate = {
-          id: r.id,
-          userId: r.user_id,
-          name: r.name,
-          hindiAliases: Array.isArray(r.hindi_aliases) ? r.hindi_aliases : [],
-          calories: toNum(r.calories, 0),
-          proteinG: toNum(r.protein_g, 0),
-          carbsG: toNum(r.carbs_g, 0),
-          fatG: toNum(r.fat_g, 0),
-          fiberG: toNullableNum(r.fiber_g),
-          servingLabel: r.serving_label || '1 serving',
-          mealType: r.meal_type ?? null,
-          isJunk: Boolean(r.is_junk),
-          isPinned: Boolean(r.is_pinned),
-          order: toNum(r.order_index, 0),
-          deletedAt: r.deleted_at ?? null,
-          generationCounter: toNum(r.generation_counter, 1),
-          isDirty: false,
-          createdAt: r.created_at || new Date().toISOString(),
-          updatedAt: r.updated_at || new Date().toISOString(),
-        };
-        await db.mealTemplates.put(mapped);
-        pulled++;
       }
     }
 

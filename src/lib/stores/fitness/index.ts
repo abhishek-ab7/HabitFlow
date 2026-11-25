@@ -81,10 +81,25 @@ export const useFitnessStore = create<FitnessStore>((set, get, api) => ({
         (a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()
       );
 
+      // Deduplicate active meal templates by normalized name (keeps most recently updated/highest generation)
+      const dedupedTemplates = [...mealTemplates].sort(
+        (a, b) =>
+          (b.generationCounter || 0) - (a.generationCounter || 0) ||
+          new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()
+      );
+      const uniqueTemplates: typeof mealTemplates = [];
+      const seenTemplateNames = new Set<string>();
+      for (const tpl of dedupedTemplates) {
+        const key = tpl.name.trim().toLowerCase();
+        if (seenTemplateNames.has(key)) continue;
+        seenTemplateNames.add(key);
+        uniqueTemplates.push(tpl);
+      }
+
       set({
         profile: sortedProfiles[0] || null,
         dailyLogs: [...dailyLogs].sort((a, b) => a.date.localeCompare(b.date)),
-        mealTemplates: [...mealTemplates].sort((a, b) => a.order - b.order),
+        mealTemplates: uniqueTemplates.sort((a, b) => a.order - b.order),
         mealLogs: [...mealLogs].sort(
           (a, b) => b.date.localeCompare(a.date) || b.loggedAt.localeCompare(a.loggedAt)
         ),

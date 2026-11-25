@@ -755,4 +755,68 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
     const updated = await db.habits.get('hab_clear_anchor');
     expect(updated?.anchorBlock).toBeUndefined();
   });
+
+  it('FitnessSyncEngine deduplicates same-named active mealTemplates and skips re-seeding when remote rows exist', async () => {
+    const sb = makeFakeSupabase(userId, {
+      meal_templates: {
+        rows: [
+          {
+            id: 'tpl-dup-1',
+            user_id: userId,
+            name: '4 Boiled Eggs',
+            hindi_aliases: ['eggs'],
+            calories: 280,
+            protein_g: 24,
+            carbs_g: 2,
+            fat_g: 20,
+            fiber_g: 0,
+            serving_label: '4 whole eggs',
+            meal_type: 'breakfast',
+            is_junk: false,
+            is_pinned: true,
+            order_index: 0,
+            deleted_at: null,
+            generation_counter: 1,
+            created_at: '2026-11-25T04:00:00.000Z',
+            updated_at: '2026-11-25T04:00:00.000Z',
+          },
+          {
+            id: 'tpl-dup-2',
+            user_id: userId,
+            name: '4 Boiled Eggs',
+            hindi_aliases: ['eggs'],
+            calories: 280,
+            protein_g: 24,
+            carbs_g: 2,
+            fat_g: 20,
+            fiber_g: 0,
+            serving_label: '4 whole eggs',
+            meal_type: 'breakfast',
+            is_junk: false,
+            is_pinned: true,
+            order_index: 0,
+            deleted_at: null,
+            generation_counter: 2,
+            created_at: '2026-11-25T09:00:00.000Z',
+            updated_at: '2026-11-25T09:00:00.000Z',
+          },
+        ],
+      },
+    });
+    activeFakeSb.current = sb;
+
+    const engine = new FitnessSyncEngine();
+    await engine.syncMealTemplates(sb, userId);
+
+    const active = (await db.mealTemplates.where('userId').equals(userId).toArray()).filter(
+      (t) => !t.deletedAt
+    );
+    expect(active).toHaveLength(1);
+    expect(active[0].id).toBe('tpl-dup-2');
+    const softDeleted = await db.mealTemplates.get('tpl-dup-1');
+    expect(softDeleted?.deletedAt).toBeTruthy();
+
+    await useFitnessStore.getState().loadFitnessData(userId, true);
+    expect(useFitnessStore.getState().mealTemplates).toHaveLength(1);
+  });
 });

@@ -26,6 +26,27 @@ function resolveUserId(override?: string, current?: string | null): string {
 // Per-transaction serialized lock preventing duplicate Junk Food meals when
 // Universal Capture + Finance Mediator fire concurrently.
 const linkedTxLocks = new Map<string, Promise<MealLog>>();
+const seedingStarterLocks = new Map<string, Promise<void>>();
+
+/**
+ * Produces a deterministic RFC-4122-shaped UUID from userId + staple name
+ * so multiple devices never generate distinct UUIDs for the same starter staple.
+ */
+function buildStarterTemplateUuid(userId: string, name: string): string {
+  const input = `habitflow:starter_staple:${userId}:${name.trim().toLowerCase()}`;
+  const seeds = [0x811c9dc5, 0x9e3779b1, 0x85ebca77, 0xc2b2ae3d];
+  const hexParts: string[] = [];
+  for (let s = 0; s < seeds.length; s++) {
+    let hash = seeds[s] >>> 0;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    hexParts.push(hash.toString(16).padStart(8, '0'));
+  }
+  const raw = hexParts.join('');
+  return `${raw.slice(0, 8)}-${raw.slice(8, 12)}-4${raw.slice(13, 16)}-8${raw.slice(17, 20)}-${raw.slice(20, 32)}`;
+}
 
 async function withLinkedTxLock(
   transactionId: string,
@@ -60,46 +81,95 @@ export const createDietSlice: FitnessSliceCreator<
 > = (set, get) => ({
   seedStarterStaplesIfEmpty: async (userId) => {
     if (!userId) return;
-    const totalEver = await db.mealTemplates.where('userId').equals(userId).count();
-    if (totalEver > 0) return;
+    const inflight = seedingStarterLocks.get(userId);
+    if (inflight) return inflight;
 
-    const flagKey = `hf_fitness_staples_seeded_${userId}`;
-    if (typeof window !== 'undefined' && window.localStorage.getItem(flagKey)) {
-      return;
+    const run = (async () => {
+      const flagKey = `hf_fitness_staples_seeded_${userId}`;
+      const storage =
+        typeof window !== 'undefined' &&
+        window.localStorage &&
+        typeof window.localStorage.getItem === 'function' &&
+        typeof window.localStorage.setItem === 'function'
+          ? window.localStorage
+          : null;
+
+      if (storage?.getItem(flagKey)) {
+        return;
+      }
+
+      const totalEver = await db.mealTemplates.where('userId').equals(userId).count();
+      if (totalEver > 0) {
+        storage?.setItem(flagKey, '1');
+        return;
+      }
+
+      // If authenticated and online, verify Supabase has no templates (including soft-deleted tombstones)
+      // before seeding starters on a fresh browser/device.
+      if (
+        userId !== 'local-demo-user' &&
+        (typeof navigator === 'undefined' || navigator.onLine !== false)
+      ) {
+        try {
+          const { getSupabaseClient } = await import('@/lib/supabase/client');
+          const supabase = getSupabaseClient();
+          if (supabase && typeof supabase.from === 'function') {
+            const { count, error } = await (supabase.from('meal_templates') as any)
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', userId);
+            if (!error && typeof count === 'number' && count > 0) {
+              storage?.setItem(flagKey, '1');
+              return;
+            }
+          }
+        } catch {
+          // Non-fatal: test mocks or offline fallback proceed with deterministic IDs
+        }
+      }
+
+      const recheckEver = await db.mealTemplates.where('userId').equals(userId).count();
+      if (recheckEver > 0) return;
+
+      const now = new Date().toISOString();
+      const created: MealTemplate[] = STARTER_INDIAN_STAPLES.map((item, idx) => ({
+        id: buildStarterTemplateUuid(userId, item.name),
+        userId,
+        name: item.name,
+        hindiAliases: item.hindiAliases,
+        calories: item.calories,
+        proteinG: item.proteinG,
+        carbsG: item.carbsG,
+        fatG: item.fatG,
+        fiberG: item.fiberG ?? null,
+        servingLabel: item.servingLabel,
+        mealType: item.mealType ?? null,
+        isJunk: item.isJunk,
+        isPinned: item.isPinned,
+        order: item.order ?? idx,
+        deletedAt: null,
+        generationCounter: 1,
+        isDirty: true,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      await db.mealTemplates.bulkPut(created);
+      storage?.setItem(flagKey, '1');
+
+      set({
+        mealTemplates: [...created].sort((a, b) => a.order - b.order),
+      });
+      notifyFitnessSync();
+    })();
+
+    seedingStarterLocks.set(userId, run);
+    try {
+      await run;
+    } finally {
+      if (seedingStarterLocks.get(userId) === run) {
+        seedingStarterLocks.delete(userId);
+      }
     }
-
-    const now = new Date().toISOString();
-    const created: MealTemplate[] = STARTER_INDIAN_STAPLES.map((item, idx) => ({
-      id: crypto.randomUUID(),
-      userId,
-      name: item.name,
-      hindiAliases: item.hindiAliases,
-      calories: item.calories,
-      proteinG: item.proteinG,
-      carbsG: item.carbsG,
-      fatG: item.fatG,
-      fiberG: item.fiberG ?? null,
-      servingLabel: item.servingLabel,
-      mealType: item.mealType ?? null,
-      isJunk: item.isJunk,
-      isPinned: item.isPinned,
-      order: item.order ?? idx,
-      deletedAt: null,
-      generationCounter: 1,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    }));
-
-    await db.mealTemplates.bulkPut(created);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(flagKey, '1');
-    }
-
-    set({
-      mealTemplates: [...created].sort((a, b) => a.order - b.order),
-    });
-    notifyFitnessSync();
   },
 
   addMealLog: async (data, userIdOverride) => {
