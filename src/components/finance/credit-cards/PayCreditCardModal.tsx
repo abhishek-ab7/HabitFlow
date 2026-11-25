@@ -16,6 +16,7 @@ import { useFinanceStore } from '@/lib/stores/finance-store';
 import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
 import { getLocalIsoDate, formatShortDate } from '@/lib/finance/credit-card-cycles';
 import { Landmark, ArrowRight, ShieldCheck, Calendar, CreditCard } from 'lucide-react';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 interface PayCreditCardModalProps {
@@ -57,6 +58,7 @@ export function PayCreditCardModal({
   const [date, setDate] = useState(() => getLocalIsoDate());
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const feedback = useFeedback();
 
   useEffect(() => {
     if (open) {
@@ -75,14 +77,17 @@ export function PayCreditCardModal({
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fromAccountId) {
+      feedback.error();
       toast.error('Please select a payment account');
       return;
     }
     if (numAmount <= 0) {
+      feedback.error();
       toast.error('Please enter a valid payment amount');
       return;
     }
 
+    feedback.coin();
     setIsSubmitting(true);
     try {
       await payCreditCardBill({

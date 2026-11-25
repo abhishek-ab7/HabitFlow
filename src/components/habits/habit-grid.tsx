@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
 import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3, Moon, Shield, ShieldCheck, Timer } from 'lucide-react';
 import { getHabitWeekProgress, isHabitAutoRestOnDate } from '@/lib/calculations';
+import { useFeedback } from '@/hooks/use-feedback';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -96,6 +97,7 @@ export const HabitGrid = memo(function HabitGrid({
   const [logValue, setLogValue] = useState(0);
 
   const [showNoShieldsDialog, setShowNoShieldsDialog] = useState(false);
+  const feedback = useFeedback();
 
   const handleOpenLogModal = (habit: Habit) => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -111,6 +113,7 @@ export const HabitGrid = memo(function HabitGrid({
 
   const handleSaveLogModal = async () => {
     if (!selectedHabitForLog) return;
+    feedback.complete();
     const { updateNote, updateValue } = useHabitStore.getState();
     await updateNote(selectedHabitForLog.id, logDate, logNote);
     if (selectedHabitForLog.isQuantitative) {
@@ -125,6 +128,7 @@ export const HabitGrid = memo(function HabitGrid({
   const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
 
   const handleMobileRest = async (habitId: string, dateStr: string) => {
+    feedback.tap();
     try {
       await markRestDay(habitId, dateStr);
       toast.success('Rest day updated');
@@ -134,6 +138,7 @@ export const HabitGrid = memo(function HabitGrid({
   };
 
   const handleMobileFreeze = async (habitId: string, dateStr: string) => {
+    feedback.tap();
     try {
       await freezeHabit(habitId, dateStr);
     } catch (err) {
@@ -540,6 +545,11 @@ export const HabitGrid = memo(function HabitGrid({
                       key={dateStr}
                       onClick={() => {
                         if (!isFutureDate) {
+                          if (isCompleted) {
+                            feedback.uncheck();
+                          } else {
+                            feedback.complete();
+                          }
                           onToggle(habit.id, dateStr);
                         }
                       }}

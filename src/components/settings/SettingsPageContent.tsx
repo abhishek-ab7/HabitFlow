@@ -39,6 +39,13 @@ import { useTheme } from '@/providers/theme-provider';
 import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
 import { db, getSettings, updateSettings } from '@/lib/db';
+import {
+  getSensoryDiagnostics,
+  setSensoryPreferences,
+  syncSensoryPrefsFromSettings,
+  type SensoryDiagnostics,
+} from '@/lib/feedback/sensory-engine';
+import { useFeedback } from '@/hooks/use-feedback';
 import { cleanupAllDuplicates, countAllDuplicates, clearAllLocalData } from '@/lib/cleanup';
 import { forcePushAllHabits } from '@/lib/force-sync';
 import { getSyncEngine } from '@/lib/sync';
@@ -108,7 +115,13 @@ export default function SettingsPageContent() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
 
   const { displayName, email, setDisplayName, saveDisplayNameToServer, loadUser } = useUserStore();
-  const { streakShield, loadGamification, setStreakShields } = useGamificationStore();
+  const { streakShield, loadGamification, setStreakShields, updateUserSettings } = useGamificationStore();
+  const feedback = useFeedback();
+  const [sensoryDiag, setSensoryDiag] = useState<SensoryDiagnostics | null>(null);
+
+  useEffect(() => {
+    setSensoryDiag(getSensoryDiagnostics());
+  }, []);
 
   const handleReplayTour = () => {
     localStorage.removeItem('habitflow_dashboard_tutorial_completed');
@@ -145,6 +158,8 @@ export default function SettingsPageContent() {
           gems: 0,
           streakShield: 0,
           avatarId: 'avatar-1',
+          soundEnabled: true,
+          hapticsEnabled: true,
           showTasks: true,
           showGoals: true,
           showMilestones: true,
@@ -156,6 +171,8 @@ export default function SettingsPageContent() {
         s = defaultSettings;
       }
 
+      syncSensoryPrefsFromSettings(s);
+      setSensoryDiag(getSensoryDiagnostics());
       setSettings(s);
 
       // Check for duplicates
@@ -212,25 +229,28 @@ export default function SettingsPageContent() {
 
   const handleToggleSound = async () => {
     if (!settings || !user?.id) return;
-    const newValue = !settings.soundEnabled;
-    await updateSettings({ userId: user.id, soundEnabled: newValue });
+    const newValue = settings.soundEnabled === false;
+    setSensoryPreferences({ soundEnabled: newValue });
+    if (newValue) {
+      feedback.unlockAudio();
+      feedback.toggle(true);
+    }
     setSettings({ ...settings, soundEnabled: newValue });
-    localStorage.setItem('feedback_settings', JSON.stringify({
-      sound: newValue,
-      haptics: settings.hapticsEnabled
-    }));
+    setSensoryDiag(getSensoryDiagnostics());
+    await updateUserSettings({ soundEnabled: newValue });
     toast.success(newValue ? 'Sound enabled' : 'Sound disabled');
   };
 
   const handleToggleHaptics = async () => {
     if (!settings || !user?.id) return;
-    const newValue = !settings.hapticsEnabled;
-    await updateSettings({ userId: user.id, hapticsEnabled: newValue });
+    const newValue = settings.hapticsEnabled === false;
+    setSensoryPreferences({ hapticsEnabled: newValue });
+    if (newValue) {
+      feedback.haptic('toggle');
+    }
     setSettings({ ...settings, hapticsEnabled: newValue });
-    localStorage.setItem('feedback_settings', JSON.stringify({
-      sound: settings.soundEnabled,
-      haptics: newValue
-    }));
+    setSensoryDiag(getSensoryDiagnostics());
+    await updateUserSettings({ hapticsEnabled: newValue });
     toast.success(newValue ? 'Haptics enabled' : 'Haptics disabled');
   };
 
@@ -1018,12 +1038,12 @@ export default function SettingsPageContent() {
                     <div
                       className={cn(
                         'p-1.5 rounded-lg shrink-0',
-                        settings.soundEnabled
+                        settings.soundEnabled !== false
                           ? 'bg-primary/12 text-primary'
                           : 'bg-muted text-muted-foreground'
                       )}
                     >
-                      {settings.soundEnabled ? (
+                      {settings.soundEnabled !== false ? (
                         <Volume2 className="w-3.5 h-3.5" />
                       ) : (
                         <VolumeX className="w-3.5 h-3.5" />
@@ -1037,26 +1057,26 @@ export default function SettingsPageContent() {
                     </div>
                   </div>
                   <Button
-                    variant={settings.soundEnabled ? 'default' : 'outline'}
+                    variant={settings.soundEnabled !== false ? 'default' : 'outline'}
                     size="sm"
                     onClick={handleToggleSound}
                     className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
                   >
-                    {settings.soundEnabled ? 'On' : 'Off'}
+                    {settings.soundEnabled !== false ? 'On' : 'Off'}
                   </Button>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 pt-3">
+                <div className="flex items-center justify-between gap-3 py-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div
                       className={cn(
                         'p-1.5 rounded-lg shrink-0',
-                        settings.hapticsEnabled
+                        settings.hapticsEnabled !== false
                           ? 'bg-primary/12 text-primary'
                           : 'bg-muted text-muted-foreground'
                       )}
                     >
-                      {settings.hapticsEnabled ? (
+                      {settings.hapticsEnabled !== false ? (
                         <Vibrate className="w-3.5 h-3.5" />
                       ) : (
                         <VibrateOff className="w-3.5 h-3.5" />
@@ -1070,13 +1090,80 @@ export default function SettingsPageContent() {
                     </div>
                   </div>
                   <Button
-                    variant={settings.hapticsEnabled ? 'default' : 'outline'}
+                    variant={settings.hapticsEnabled !== false ? 'default' : 'outline'}
                     size="sm"
                     onClick={handleToggleHaptics}
                     className="h-8 px-3 text-xs font-medium whitespace-nowrap shrink-0"
                   >
-                    {settings.hapticsEnabled ? 'On' : 'Off'}
+                    {settings.hapticsEnabled !== false ? 'On' : 'Off'}
                   </Button>
+                </div>
+
+                <div className="pt-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-foreground">Test Feedback</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2.5 text-[11px] rounded-full"
+                        onClick={() => {
+                          feedback.tap();
+                          setSensoryDiag(getSensoryDiagnostics());
+                        }}
+                      >
+                        Test Tap
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2.5 text-[11px] rounded-full"
+                        onClick={() => {
+                          feedback.complete();
+                          setSensoryDiag(getSensoryDiagnostics());
+                        }}
+                      >
+                        Test Complete
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2.5 text-[11px] rounded-full"
+                        onClick={() => {
+                          feedback.coin();
+                          setSensoryDiag(getSensoryDiagnostics());
+                        }}
+                      >
+                        Test Pay
+                      </Button>
+                    </div>
+                  </div>
+                  {mounted && sensoryDiag && (
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Audio:{' '}
+                      <span className="font-medium text-foreground">
+                        {sensoryDiag.audioContextState === 'running'
+                          ? 'Ready'
+                          : sensoryDiag.audioContextState === 'suspended'
+                            ? 'Tap to unlock'
+                            : sensoryDiag.audioContextState}
+                      </span>{' '}
+                      · Haptics:{' '}
+                      <span className="font-medium text-foreground">
+                        {sensoryDiag.hasNativeBridge
+                          ? `${sensoryDiag.nativeBridgeName} bridge`
+                          : sensoryDiag.hasVibrateApi
+                            ? 'Vibration API'
+                            : 'Unavailable on this browser'}
+                      </span>
+                      {!sensoryDiag.hasNativeBridge && !sensoryDiag.hasVibrateApi && (
+                        <span> (iOS Safari disables web vibration; Chrome Android supports it)</span>
+                      )}
+                    </p>
+                  )}
                 </div>
               </div>
             </section>

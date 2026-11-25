@@ -16,6 +16,7 @@ import {
 } from '@/lib/stores/finance-store';
 import type { FinanceTransaction } from '@/lib/types';
 import { OverviewTab } from './OverviewTab';
+import { useFeedback } from '@/hooks/use-feedback';
 
 const TabSkeleton = () => (
   <div className="space-y-4">
@@ -83,6 +84,7 @@ export function FinancePageContent() {
   const getMonthlySummary = useFinanceStore((s) => s.getMonthlySummary);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+  const feedback = useFeedback();
   const [isAddTxModalOpen, setIsAddTxModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<FinanceTransaction | null>(null);
   const [defaultCommitmentId, setDefaultCommitmentId] = useState<string | null>(null);
@@ -192,7 +194,10 @@ export function FinancePageContent() {
             <div className="inline-flex items-center rounded-xl border border-border bg-card p-0.5">
               <button
                 type="button"
-                onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, -1))}
+                onClick={() => {
+                feedback.tap();
+                setSelectedMonth(shiftMonthKey(selectedMonth, -1));
+              }}
                 className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 aria-label="Previous month"
               >
@@ -203,7 +208,10 @@ export function FinancePageContent() {
               </span>
               <button
                 type="button"
-                onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, 1))}
+                onClick={() => {
+                  feedback.tap();
+                  setSelectedMonth(shiftMonthKey(selectedMonth, 1));
+                }}
                 className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 aria-label="Next month"
               >
@@ -293,7 +301,10 @@ export function FinancePageContent() {
               type="button"
               role="tab"
               aria-selected={isActive}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                feedback.tap();
+                setActiveTab(tab.id);
+              }}
               className={`min-h-[42px] px-2 sm:px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-1.5 ${
                 isActive
                   ? 'bg-background text-foreground shadow-sm'

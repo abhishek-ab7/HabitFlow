@@ -27,6 +27,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
+import { useFeedback } from '@/hooks/use-feedback';
 
 interface MoreMenuItem {
   href: string;
@@ -79,6 +80,7 @@ export function MobileNav() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
+  const feedback = useFeedback();
 
   const settings = useGamificationStore((s) => s.settings);
 
@@ -209,6 +211,7 @@ export function MobileNav() {
           {/* Slot 1: Home */}
           <Link
             href="/dashboard"
+            onClick={() => feedback.tap()}
             className={cn(
               'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-dashboard',
               pathname === '/dashboard' && 'text-primary'
@@ -232,6 +235,7 @@ export function MobileNav() {
           {showFitness ? (
             <Link
               href="/fitness"
+              onClick={() => feedback.tap()}
               className={cn(
                 'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors',
                 pathname.startsWith('/fitness') && 'text-primary'
@@ -253,6 +257,7 @@ export function MobileNav() {
           ) : (
             <Link
               href="/habits"
+              onClick={() => feedback.tap()}
               className={cn(
                 'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-habits',
                 pathname === '/habits' && 'text-primary'
@@ -277,7 +282,10 @@ export function MobileNav() {
           <div className="relative flex items-center justify-center w-full h-full">
             <button
               type="button"
-              onClick={() => window.dispatchEvent(new Event('open-quick-capture'))}
+              onClick={() => {
+                feedback.toggle(true);
+                window.dispatchEvent(new Event('open-quick-capture'));
+              }}
               aria-label="10-Second Universal Capture"
               className="absolute -top-3.5 w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 flex items-center justify-center border-4 border-background active:scale-90 hover:scale-105 transition-all"
             >
@@ -292,6 +300,7 @@ export function MobileNav() {
           {showFinance ? (
             <Link
               href="/finance"
+              onClick={() => feedback.tap()}
               className={cn(
                 'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-finance',
                 pathname === '/finance' && 'text-primary'
@@ -313,6 +322,7 @@ export function MobileNav() {
           ) : (
             <Link
               href="/analytics"
+              onClick={() => feedback.tap()}
               className={cn(
                 'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors',
                 pathname === '/analytics' && 'text-primary'
@@ -336,7 +346,10 @@ export function MobileNav() {
           {/* Slot 5: More (Drawer) */}
           <button
             type="button"
-            onClick={() => setIsMoreDrawerOpen(true)}
+            onClick={() => {
+              feedback.toggle(true);
+              setIsMoreDrawerOpen(true);
+            }}
             aria-label="Open More options"
             className={cn(
               'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-more',
@@ -396,7 +409,10 @@ export function MobileNav() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={() => setIsMoreDrawerOpen(false)}
+                  onClick={() => {
+                    feedback.tap();
+                    setIsMoreDrawerOpen(false);
+                  }}
                   className={cn(
                     'w-full p-3 rounded-xl border transition-colors flex items-center gap-3.5 text-left group',
                     isActive

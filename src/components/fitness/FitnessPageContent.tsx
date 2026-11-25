@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { useFeedback } from '@/hooks/use-feedback';
 import { addDays, getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
@@ -105,6 +106,7 @@ export function FitnessPageContent() {
   const upsertDailyLog = useFitnessStore((s) => s.upsertDailyLog);
 
   const todayIso = getLocalIsoDate();
+  const feedback = useFeedback();
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [activeTab, setActiveTab] = useState<FitnessTabId>('fuel');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -232,7 +234,10 @@ export function FitnessPageContent() {
           <div className="inline-flex items-center rounded-xl border border-border bg-card p-0.5">
             <button
               type="button"
-              onClick={() => setSelectedDate((d) => addDays(d, -1))}
+              onClick={() => {
+                feedback.tap();
+                setSelectedDate((d) => addDays(d, -1));
+              }}
               className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"
               aria-label="Previous day"
             >
@@ -240,14 +245,20 @@ export function FitnessPageContent() {
             </button>
             <button
               type="button"
-              onClick={() => setSelectedDate(todayIso)}
+              onClick={() => {
+                feedback.tap();
+                setSelectedDate(todayIso);
+              }}
               className="px-2.5 py-1 text-xs font-semibold text-foreground"
             >
               {selectedDate === todayIso ? 'Today' : selectedDate}
             </button>
             <button
               type="button"
-              onClick={() => setSelectedDate((d) => addDays(d, 1))}
+              onClick={() => {
+                feedback.tap();
+                setSelectedDate((d) => addDays(d, 1));
+              }}
               disabled={selectedDate >= todayIso}
               className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-35"
               aria-label="Next day"
@@ -309,7 +320,10 @@ export function FitnessPageContent() {
               key={tab.id}
               role="tab"
               aria-selected={active}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                feedback.tap();
+                setActiveTab(tab.id);
+              }}
               className={cn(
                 'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-colors border-b-2',
                 active

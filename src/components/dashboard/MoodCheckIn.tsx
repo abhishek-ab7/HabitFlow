@@ -6,6 +6,7 @@ import { format, subDays } from 'date-fns';
 import { useMoodStore } from '@/lib/stores/mood-store';
 import type { MoodType } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 const MOODS: {
@@ -61,6 +62,7 @@ interface MoodCheckInProps {
 
 export function MoodCheckIn({ compact = false }: MoodCheckInProps) {
   const { loadMoodLogs, logMood, getMoodForDate } = useMoodStore();
+  const feedback = useFeedback();
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const activeMood = getMoodForDate(todayStr);
 
@@ -70,6 +72,7 @@ export function MoodCheckIn({ compact = false }: MoodCheckInProps) {
   }, [loadMoodLogs, todayStr]);
 
   const handleMoodSelect = async (mood: MoodType) => {
+    feedback.complete();
     try {
       await logMood(todayStr, mood);
       toast.success(`Mood logged as ${mood}`, {

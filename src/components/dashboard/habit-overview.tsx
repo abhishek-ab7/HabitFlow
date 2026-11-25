@@ -14,6 +14,7 @@ import { colors } from '@/lib/design-tokens';
 import type { Habit, HabitCompletion, Category } from '@/lib/types';
 import { getHabitWeekProgress, calculateHabitStats } from '@/lib/calculations';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 interface HabitOverviewProps {
@@ -28,6 +29,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
   const [isMobile, setIsMobile] = useState(false);
   const [showRestingTray, setShowRestingTray] = useState(false);
   const { markRestDay } = useHabitStore();
+  const feedback = useFeedback();
 
   useEffect(() => {
     const checkMobile = () => {
@@ -87,6 +89,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
   }, [habits, completions]);
 
   const handleRestToday = async (habitId: string) => {
+    feedback.tap();
     try {
       await markRestDay(habitId, todayStr);
       toast.success('Updated Rest Day for today');
@@ -197,6 +200,11 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
                         key={dateStr}
                         onClick={async () => {
                           if (!isFuture && onToggle) {
+                            if (isCompleted) {
+                              feedback.uncheck();
+                            } else {
+                              feedback.complete();
+                            }
                             await onToggle(habit.id, dateStr);
                           }
                         }}
@@ -290,7 +298,10 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
                             variant="outline"
                             size="sm"
                             className="h-6 px-2 text-[10px]"
-                            onClick={() => onToggle(habit.id, todayStr)}
+                            onClick={() => {
+                              feedback.complete();
+                              onToggle(habit.id, todayStr);
+                            }}
                           >
                             Bonus Done
                           </Button>

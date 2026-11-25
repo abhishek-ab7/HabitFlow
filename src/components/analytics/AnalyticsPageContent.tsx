@@ -11,6 +11,7 @@ import {
   toAnalyticsRangeKey,
 } from '@/lib/analytics/life-os-aggregator';
 import { useLifeOsAnalytics } from '@/lib/analytics/use-life-os-analytics';
+import { useFeedback } from '@/hooks/use-feedback';
 import { cn } from '@/lib/utils';
 import type { AnalyticsTabId, AnalyticsTabProps } from './tabs/types';
 
@@ -62,6 +63,7 @@ const TAB_CONFIG: Array<{
 
 export default function AnalyticsPageContent() {
   const searchParams = useSearchParams();
+  const feedback = useFeedback();
   const tabRefs = useRef<Partial<Record<AnalyticsTabId, HTMLButtonElement | null>>>({});
 
   const [range, setRange] = useState<AnalyticsRangeKey>(() =>
@@ -115,20 +117,22 @@ export default function AnalyticsPageContent() {
 
   const handleSelectTab = useCallback(
     (nextTab: AnalyticsTabId) => {
+      feedback.tap();
       const resolved = parseTabParam(nextTab);
       setActiveTab(resolved);
       updateUrlParams(resolved, range);
       tabRefs.current[resolved]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     },
-    [parseTabParam, range, updateUrlParams]
+    [feedback, parseTabParam, range, updateUrlParams]
   );
 
   const handleRangeChange = useCallback(
     (nextRange: AnalyticsRangeKey) => {
+      feedback.tap();
       setRange(nextRange);
       updateUrlParams(activeTab, nextRange);
     },
-    [activeTab, updateUrlParams]
+    [feedback, activeTab, updateUrlParams]
   );
 
   const handleTabKeyDown = useCallback(

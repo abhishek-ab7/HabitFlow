@@ -19,6 +19,7 @@ import type { FinancialObligationItem, FinanceAccount } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { CategoryIcon } from '@/components/finance/CategoryIcon';
 import { formatHumanDate } from '@/lib/date-format';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 const AddTransactionModal = dynamic(
@@ -32,6 +33,7 @@ const PayCreditCardModal = dynamic(
 
 export function FinanceOverviewWidget() {
   const router = useRouter();
+  const feedback = useFeedback();
   const isLoading = useFinanceStore((s) => s.isLoading);
   const categories = useFinanceStore((s) => s.categories);
   const accounts = useFinanceStore((s) => s.accounts);
@@ -133,6 +135,7 @@ export function FinanceOverviewWidget() {
 
   const handleQuickPay = async (item: FinancialObligationItem) => {
     if (payingId) return; // Prevent double taps
+    feedback.coin();
     setPayingId(item.id);
     try {
       if (item.type === 'bill') {

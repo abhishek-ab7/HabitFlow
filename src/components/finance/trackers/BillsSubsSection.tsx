@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { SubscriptionAuditBanner } from './SubscriptionAuditBanner';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 export function BillsSubsSection() {
@@ -37,6 +38,7 @@ export function BillsSubsSection() {
     'monthly'
   );
   const [billDueDay, setBillDueDay] = useState('10');
+  const feedback = useFeedback();
 
   const activeBills = recurringBills.filter((b) => b.isActive && !b.deletedAt);
 
@@ -45,9 +47,11 @@ export function BillsSubsSection() {
     const amt = parseFloat(billAmount);
     const prev = parseFloat(billPrevAmount) || undefined;
     if (!billName.trim() || isNaN(amt) || amt <= 0) {
+      feedback.error();
       toast.error('Enter bill name and amount');
       return;
     }
+    feedback.success();
     const utilCat =
       categories.find((c) => c.slug === 'bills-utilities') || categories[0];
     const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
@@ -156,6 +160,7 @@ export function BillsSubsSection() {
                       type="button"
                       size="sm"
                       onClick={async () => {
+                        feedback.coin();
                         const tx = await payRecurringBill(bill.id);
                         if (tx) toast.success(`Paid ${bill.name}`);
                       }}
@@ -171,6 +176,7 @@ export function BillsSubsSection() {
                   <button
                     type="button"
                     onClick={async () => {
+                      feedback.warning();
                       await deleteRecurringBill(bill.id);
                       toast.success('Removed recurring bill');
                     }}

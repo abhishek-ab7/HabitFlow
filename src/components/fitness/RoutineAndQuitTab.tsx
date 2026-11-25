@@ -22,6 +22,7 @@ import { useHabitStore } from '@/lib/stores/habit-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
 import { calculateDailyFuelSummary } from '@/lib/fitness/shared-analytics';
+import { useFeedback } from '@/hooks/use-feedback';
 import { cn } from '@/lib/utils';
 import type { Habit, HabitAnchorBlock, HabitFormData } from '@/lib/types';
 
@@ -141,6 +142,7 @@ export function RoutineAndQuitTab({ selectedDate, userId }: RoutineAndQuitTabPro
 
   const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
   const startPresetTimer = usePomodoroStore((s) => s.startPresetTimer);
+  const feedback = useFeedback();
 
   const activeHabits = useMemo(
     () => habits.filter((h) => !h.archived),
@@ -203,12 +205,17 @@ export function RoutineAndQuitTab({ selectedDate, userId }: RoutineAndQuitTabPro
     );
 
   const handleToggleHabit = async (habit: Habit) => {
+    const done = isCompletedOnDate(habit.id);
+    if (done) {
+      feedback.uncheck();
+    } else {
+      feedback.complete();
+    }
     try {
       await toggleHabit(habit.id, selectedDate);
     } catch {
       // Fallback if unauthenticated local demo mode
       const { CrossDomainActionMediator } = await import('@/lib/stores/mediator');
-      const done = isCompletedOnDate(habit.id);
       await CrossDomainActionMediator.dispatch({
         type: done ? 'HABIT_UNCOMPLETED' : 'HABIT_COMPLETED',
         payload: {
@@ -449,6 +456,7 @@ export function RoutineAndQuitTab({ selectedDate, userId }: RoutineAndQuitTabPro
                       <button
                         type="button"
                         onClick={() => {
+                          feedback.complete();
                           incrementWater(500, selectedDate, userId);
                           toast.success('+500ml morning hydration');
                         }}
@@ -560,6 +568,7 @@ export function RoutineAndQuitTab({ selectedDate, userId }: RoutineAndQuitTabPro
                             variant={taken ? 'ghost' : 'secondary'}
                             disabled={taken}
                             onClick={async () => {
+                              feedback.complete();
                               await takeSupplementDose(
                                 sup.id,
                                 sup.dailyDosage,

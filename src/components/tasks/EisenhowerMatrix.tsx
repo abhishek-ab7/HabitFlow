@@ -27,6 +27,7 @@ import { TaskCard } from './TaskCard';
 import { useTaskStore } from '@/lib/stores/task-store';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { cn } from '@/lib/utils';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 interface EisenhowerMatrixProps {
@@ -127,6 +128,7 @@ const SortableTaskWrapper = memo(function SortableTaskWrapper({
 
 export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
   const editTask = useTaskStore((s) => s.editTask);
+  const feedback = useFeedback();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const todayEndIso = useMemo(() => {
@@ -209,6 +211,7 @@ export function EisenhowerMatrix({ tasks, onComplete }: EisenhowerMatrixProps) {
     const currentQuadrant = getEffectiveQuadrant(task, todayEndIso);
     if (targetQuadrant === currentQuadrant) return;
 
+    feedback.complete();
     const isUrgent = targetQuadrant === 'doFirst' || targetQuadrant === 'delegate';
     const isImportant = targetQuadrant === 'doFirst' || targetQuadrant === 'schedule';
 

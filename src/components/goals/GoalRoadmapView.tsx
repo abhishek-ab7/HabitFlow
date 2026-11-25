@@ -15,6 +15,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { useFeedback } from '@/hooks/use-feedback';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Goal, Milestone, GoalStats } from '@/lib/types';
@@ -29,6 +30,7 @@ interface GoalRoadmapViewProps {
 
 export function GoalRoadmapView({ goal, milestones, stats, onToggleMilestone }: GoalRoadmapViewProps) {
   const { habits, completions } = useHabitStore();
+  const feedback = useFeedback();
 
   // 1. Dynamic Health Score Calculation
   const healthScoreDetails = useMemo(() => {
@@ -242,7 +244,19 @@ export function GoalRoadmapView({ goal, milestones, stats, onToggleMilestone }: 
                   {/* Timeline icon indicator */}
                   <button
                     type="button"
-                    onClick={() => onToggleMilestone?.(milestone.id)}
+                    onClick={() => {
+                      if (isCompleted) {
+                        feedback.uncheck();
+                      } else if (
+                        stats.milestonesCompleted + 1 >= stats.milestonesTotal &&
+                        stats.milestonesTotal > 0
+                      ) {
+                        feedback.milestone();
+                      } else {
+                        feedback.complete();
+                      }
+                      onToggleMilestone?.(milestone.id);
+                    }}
                     className="absolute -left-[31px] top-0.5 bg-card flex items-center justify-center p-0.5 rounded-full z-10 hover:scale-110 active:scale-95 transition-transform duration-200 cursor-pointer"
                     title={isCompleted ? "Mark as Incomplete" : "Mark as Complete"}
                   >
@@ -255,7 +269,19 @@ export function GoalRoadmapView({ goal, milestones, stats, onToggleMilestone }: 
                   
                   {/* Milestone Details Card */}
                   <div 
-                    onClick={() => onToggleMilestone?.(milestone.id)}
+                    onClick={() => {
+                      if (isCompleted) {
+                        feedback.uncheck();
+                      } else if (
+                        stats.milestonesCompleted + 1 >= stats.milestonesTotal &&
+                        stats.milestonesTotal > 0
+                      ) {
+                        feedback.milestone();
+                      } else {
+                        feedback.complete();
+                      }
+                      onToggleMilestone?.(milestone.id);
+                    }}
                     className={cn(
                       "p-3 rounded-lg border transition-all duration-200 cursor-pointer select-none",
                       isCompleted 

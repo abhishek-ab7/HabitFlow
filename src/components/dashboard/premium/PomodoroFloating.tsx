@@ -21,6 +21,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { usePomodoroStore, type PomodoroMode } from '@/lib/stores/pomodoro-store';
+import { useFeedback } from '@/hooks/use-feedback';
+import { sensoryEngine } from '@/lib/feedback/sensory-engine';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -30,51 +32,6 @@ const AddTransactionModal = dynamic(
   () => import('@/components/finance/AddTransactionModal').then((m) => ({ default: m.AddTransactionModal })),
   { ssr: false }
 );
-
-function playOfflineChime() {
-  if (typeof window === 'undefined') return;
-  try {
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
-    if (!AudioCtx) return;
-
-    const ctx = new AudioCtx();
-    const now = ctx.currentTime;
-    const notes = [587.33, 880]; // D5 -> A5 calm chime
-
-    notes.forEach((freq, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, now + idx * 0.14);
-      gain.gain.setValueAtTime(0.001, now + idx * 0.14);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + idx * 0.14 + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.14 + 0.45);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + idx * 0.14);
-      osc.stop(now + idx * 0.14 + 0.48);
-    });
-
-    setTimeout(() => {
-      ctx.close().catch(() => undefined);
-    }, 1200);
-  } catch {
-    // Non-blocking in restricted / headless browsers
-  }
-}
-
-function triggerHapticBuzz() {
-  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-    try {
-      navigator.vibrate([200, 100, 200]);
-    } catch {
-      // Non-blocking
-    }
-  }
-}
 
 const MODE_LABELS: Record<PomodoroMode, string> = {
   focus: 'Focusing',
@@ -163,6 +120,7 @@ export function PomodoroFloating() {
   } = usePomodoroStore();
 
   const pathname = usePathname() ?? '';
+  const feedback = useFeedback();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [isEditingTime, setIsEditingTime] = useState(false);
@@ -212,8 +170,7 @@ export function PomodoroFloating() {
       }>;
       const finishedMode = customEvent.detail?.mode || 'focus';
 
-      playOfflineChime();
-      triggerHapticBuzz();
+      sensoryEngine.trigger('milestone');
 
       if (finishedMode === 'urge_10m') {
         setIsExpanded(true);
@@ -341,6 +298,7 @@ export function PomodoroFloating() {
                       size="sm"
                       className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold gap-1"
                       onClick={() => {
+                        feedback.complete();
                         resolveUrgeReflection('passed');
                         toast.success('Craving passed! Streak protected.');
                       }}
@@ -353,6 +311,7 @@ export function PomodoroFloating() {
                       variant="outline"
                       className="h-8 border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-semibold gap-1"
                       onClick={() => {
+                        feedback.warning();
                         resolveUrgeReflection('gave_in');
                         toast.info('Logged honestly — reset and go again.');
                       }}
@@ -507,6 +466,7 @@ export function PomodoroFloating() {
                       key={item.id}
                       type="button"
                       onClick={() => {
+                        feedback.tap();
                         if (
                           item.id === 'starter_2m' ||
                           item.id === 'urge_10m' ||
@@ -543,7 +503,10 @@ export function PomodoroFloating() {
                     size="icon"
                     variant="outline"
                     className="h-9 w-9 rounded-xl"
-                    onClick={resetTimer}
+                    onClick={() => {
+                      feedback.tap();
+                      resetTimer();
+                    }}
                     title="Reset Timer"
                   >
                     <RotateCcw className="h-4 w-4" />
@@ -552,7 +515,10 @@ export function PomodoroFloating() {
                     <Button
                       size="sm"
                       className="h-9 bg-amber-500 hover:bg-amber-600 text-white font-semibold gap-1.5 rounded-xl px-3.5"
-                      onClick={pauseTimer}
+                      onClick={() => {
+                        feedback.toggle(false);
+                        pauseTimer();
+                      }}
                     >
                       <Pause className="h-4 w-4 fill-current" />
                       Pause
@@ -564,7 +530,10 @@ export function PomodoroFloating() {
                         'h-9 font-semibold gap-1.5 text-white rounded-xl px-3.5',
                         activeColor.pillBg
                       )}
-                      onClick={resumeTimer}
+                      onClick={() => {
+                        feedback.toggle(true);
+                        resumeTimer();
+                      }}
                     >
                       <Play className="h-4 w-4 fill-current" />
                       Start

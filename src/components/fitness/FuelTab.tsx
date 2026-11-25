@@ -31,6 +31,7 @@ import { toast } from 'sonner';
 import { calculateDailyFuelSummary } from '@/lib/fitness/shared-analytics';
 import { estimateHinglishFoodMacros } from '@/lib/fitness/meal-estimator';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { useFeedback } from '@/hooks/use-feedback';
 import { cn } from '@/lib/utils';
 import type {
   MealLog,
@@ -161,6 +162,7 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
   );
 
   const [portionMultiplier, setPortionMultiplier] = useState<number>(1);
+  const feedback = useFeedback();
   const [expandedMealId, setExpandedMealId] = useState<string | null>(null);
   const [stepsDraft, setStepsDraft] = useState<string>('');
   const [isEditingSteps, setIsEditingSteps] = useState(false);
@@ -195,6 +197,7 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
   });
 
   const handleTapStaple = async (tpl: MealTemplate) => {
+    feedback.complete();
     const logged = await logFromTemplate(
       tpl.id,
       { date: selectedDate, multiplier: portionMultiplier, source: 'staple' },
@@ -252,7 +255,12 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
 
   const handleSaveMeal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mealForm.name.trim()) return;
+    if (!mealForm.name.trim()) {
+      feedback.error();
+      return;
+    }
+
+    feedback.complete();
 
     if (editingMeal) {
       await updateMealLog(editingMeal.id, mealForm);
@@ -293,6 +301,7 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
 
   const handleToggleLowEnergy = async () => {
     const nextEnabled = !summary.lowEnergyMode;
+    feedback.toggle(nextEnabled);
     const { restedHabitIds } = await toggleLowEnergyMode(
       selectedDate,
       nextEnabled,
@@ -437,7 +446,10 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                   size="sm"
                   variant="secondary"
                   className="h-7 px-2 text-xs"
-                  onClick={() => incrementSteps(2000, selectedDate, userId)}
+                  onClick={() => {
+                    feedback.complete();
+                    incrementSteps(2000, selectedDate, userId);
+                  }}
                 >
                   +2k
                 </Button>
@@ -480,7 +492,10 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
               type="button"
               size="sm"
               variant="secondary"
-              onClick={() => incrementWater(250, selectedDate, userId)}
+              onClick={() => {
+                feedback.complete();
+                incrementWater(250, selectedDate, userId);
+              }}
               className="h-8 text-xs"
             >
               +250 ml
@@ -489,7 +504,10 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
               type="button"
               size="sm"
               variant="secondary"
-              onClick={() => incrementWater(500, selectedDate, userId)}
+              onClick={() => {
+                feedback.complete();
+                incrementWater(500, selectedDate, userId);
+              }}
               className="h-8 text-xs"
             >
               +500 ml
@@ -498,7 +516,10 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
               type="button"
               size="sm"
               variant="secondary"
-              onClick={() => incrementWater(1000, selectedDate, userId)}
+              onClick={() => {
+                feedback.complete();
+                incrementWater(1000, selectedDate, userId);
+              }}
               className="h-8 text-xs"
             >
               +1 L Bottle
@@ -508,7 +529,10 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                 type="button"
                 size="sm"
                 variant="ghost"
-                onClick={() => incrementWater(-250, selectedDate, userId)}
+                onClick={() => {
+                  feedback.tap();
+                  incrementWater(-250, selectedDate, userId);
+                }}
                 className="h-8 text-xs text-muted-foreground"
               >
                 -250 ml
@@ -542,7 +566,10 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                   <button
                     key={hrs}
                     type="button"
-                    onClick={() => upsertDailyLog(selectedDate, { sleepHours: hrs }, userId)}
+                    onClick={() => {
+                      feedback.complete();
+                      upsertDailyLog(selectedDate, { sleepHours: hrs }, userId);
+                    }}
                     className={cn(
                       'px-2.5 py-1.5 sm:py-1 rounded-lg text-xs font-medium border transition-colors text-center',
                       summary.sleepHours === hrs
@@ -565,7 +592,10 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                   <button
                     key={p.val}
                     type="button"
-                    onClick={() => upsertDailyLog(selectedDate, { energyLevel: p.val }, userId)}
+                    onClick={() => {
+                      feedback.complete();
+                      upsertDailyLog(selectedDate, { energyLevel: p.val }, userId);
+                    }}
                     className={cn(
                       'px-2 py-1.5 sm:py-1 rounded-lg text-xs font-medium border transition-colors text-center truncate',
                       summary.energyLevel === p.val

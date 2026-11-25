@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { syncSensoryPrefsFromSettings } from '@/lib/feedback/sensory-engine';
 import type {
   Habit,
   HabitCompletion,
@@ -941,6 +942,12 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: Use
 
   if (existing) {
     await db.userSettings.update(existing.id, { ...data, updatedAt: now });
+    if (data.soundEnabled !== undefined || data.hapticsEnabled !== undefined) {
+      syncSensoryPrefsFromSettings({
+        soundEnabled: data.soundEnabled ?? existing.soundEnabled,
+        hapticsEnabled: data.hapticsEnabled ?? existing.hapticsEnabled,
+      });
+    }
   } else {
     const settings: UserSettings = {
       id: crypto.randomUUID(),
@@ -986,6 +993,7 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: Use
       ],
     };
     await db.userSettings.add(settings);
+    syncSensoryPrefsFromSettings(settings);
   }
 }
 

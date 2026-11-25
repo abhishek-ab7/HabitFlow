@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { HeaderAlertsBell } from '@/components/alerts/UnifiedAlertManager';
+import { useFeedback } from '@/hooks/use-feedback';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -50,6 +51,7 @@ export function Header() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const { isAuthenticated, user, signOut } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const feedback = useFeedback();
 
   const settings = useGamificationStore((s) => s.settings);
   const visibleNavItems = navItems.filter(item => {
@@ -82,7 +84,9 @@ export function Header() {
   };
 
   const toggleTheme = () => {
-    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
+    const nextDark = resolvedTheme !== 'dark';
+    feedback.toggle(nextDark);
+    setTheme(nextDark ? 'dark' : 'light');
   };
 
   return (
@@ -166,6 +170,7 @@ export function Header() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => feedback.tap()}
                 className={cn(
                   "nav-link relative flex items-center justify-start h-10 px-3 py-2 rounded-lg group",
                   `tour-nav-${item.label.toLowerCase()}`,
@@ -325,7 +330,10 @@ export function Header() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
+                  onClick={() => {
+                    feedback.tap();
+                    setMobileMenuOpen(false);
+                  }}
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors',
                     isActive

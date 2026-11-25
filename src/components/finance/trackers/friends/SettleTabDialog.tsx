@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
+import { useFeedback } from '@/hooks/use-feedback';
 
 interface SettleTabDialogProps {
   group: FriendLedgerGroup | null;
@@ -45,6 +46,7 @@ export function SettleTabDialog({
   const [settleDate, setSettleDate] = useState(() => getLocalIsoDate());
   const [settleNote, setSettleNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const feedback = useFeedback();
 
   useEffect(() => {
     if (isOpen && group) {
@@ -59,6 +61,7 @@ export function SettleTabDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    feedback.coin();
     try {
       setIsSubmitting(true);
       await onConfirmSettle(group.friendKey, {

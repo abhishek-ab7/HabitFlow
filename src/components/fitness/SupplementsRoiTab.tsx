@@ -27,6 +27,7 @@ import {
 import { toast } from 'sonner';
 import { calculateSupplementStockAndRoi } from '@/lib/fitness/shared-analytics';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { useFeedback } from '@/hooks/use-feedback';
 import { cn } from '@/lib/utils';
 import type {
   HabitAnchorBlock,
@@ -93,6 +94,7 @@ export function SupplementsRoiTab({ selectedDate, userId }: SupplementsRoiTabPro
   );
 
   const [modalOpen, setModalOpen] = useState(false);
+  const feedback = useFeedback();
   const [editingSupp, setEditingSupp] = useState<SupplementInventory | null>(null);
   const [form, setForm] = useState<SupplementInventoryFormData>({
     name: '',
@@ -160,9 +162,11 @@ export function SupplementsRoiTab({ selectedDate, userId }: SupplementsRoiTabPro
     };
 
     if (editingSupp) {
+      feedback.success();
       await updateSupplement(editingSupp.id, payload);
       toast.success(`Updated ${payload.name}`);
     } else {
+      feedback.success();
       await addSupplement(payload, userId);
       toast.success(`Added ${payload.name} to inventory`);
     }
@@ -170,6 +174,7 @@ export function SupplementsRoiTab({ selectedDate, userId }: SupplementsRoiTabPro
   };
 
   const handleTakeTodayStack = async () => {
+    feedback.complete();
     const created = await takeTodaySupplementStack(selectedDate, userId);
     if (created.length === 0) {
       toast.info('All active supplements are already logged for today');
@@ -448,6 +453,7 @@ export function SupplementsRoiTab({ selectedDate, userId }: SupplementsRoiTabPro
                         size="sm"
                         variant="outline"
                         onClick={async () => {
+                          feedback.uncheck();
                           await deleteSupplementLog(todayLog.id);
                           toast.info(`Undid ${sup.name} dose`);
                         }}
@@ -461,6 +467,7 @@ export function SupplementsRoiTab({ selectedDate, userId }: SupplementsRoiTabPro
                         size="sm"
                         variant="secondary"
                         onClick={async () => {
+                          feedback.complete();
                           const log = await takeSupplementDose(
                             sup.id,
                             sup.dailyDosage,

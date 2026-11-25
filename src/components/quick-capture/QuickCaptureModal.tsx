@@ -36,6 +36,7 @@ import {
   type UniversalMealAction,
 } from '@/lib/quick-capture/universal-parser';
 import { cn } from '@/lib/utils';
+import { useFeedback } from '@/hooks/use-feedback';
 
 interface SpeechRecognitionAlternativeLike {
   transcript: string;
@@ -86,6 +87,7 @@ export function QuickCaptureModal({ defaultOpen = false }: { defaultOpen?: boole
 
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const feedback = useFeedback();
 
   const addTask = useTaskStore((s) => s.addTask);
 
@@ -359,16 +361,19 @@ export function QuickCaptureModal({ defaultOpen = false }: { defaultOpen?: boole
   };
 
   const handleQuickWater = async (ml: number) => {
+    feedback.complete();
     await incrementWater(ml, getLocalIsoDate(), sessionUserId);
     toast.success(`+${ml}ml water logged`);
   };
 
   const handleQuickSteps = async (delta: number) => {
+    feedback.complete();
     await incrementSteps(delta, getLocalIsoDate(), sessionUserId);
     toast.success(`+${delta.toLocaleString()} steps logged`);
   };
 
   const handleQuickStaple = async (templateId: string, name: string) => {
+    feedback.complete();
     const logged = await logFromTemplate(
       templateId,
       { date: getLocalIsoDate(), source: 'universal_capture' },
@@ -382,8 +387,12 @@ export function QuickCaptureModal({ defaultOpen = false }: { defaultOpen?: boole
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const activeActions = actions.filter((a) => a.enabled);
-    if (activeActions.length === 0 || isSubmitting) return;
+    if (activeActions.length === 0 || isSubmitting) {
+      if (activeActions.length === 0) feedback.warning();
+      return;
+    }
 
+    feedback.success();
     setIsSubmitting(true);
     const uid = sessionUserId;
     const createdTxIdsByActionId = new Map<string, string>();

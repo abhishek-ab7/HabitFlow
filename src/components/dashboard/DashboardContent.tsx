@@ -75,6 +75,7 @@ import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/lib/stores/ui-store';
 import { useAuth } from '@/providers/auth-provider';
 import { useSync } from '@/providers/sync-provider';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 type WorkspaceLens = 'all' | 'habits' | 'fitness' | 'finance';
@@ -172,6 +173,7 @@ export default function DashboardContent() {
 
   const { user, isLoading: authLoading } = useAuth();
   const { isDataReady } = useSync();
+  const feedback = useFeedback();
 
   const { displayName } = useUserStore(
     useShallow((s) => ({
@@ -746,7 +748,10 @@ export default function DashboardContent() {
                 type="button"
                 role="tab"
                 aria-selected={workspaceLens === lens.id}
-                onClick={() => setWorkspaceLens(lens.id)}
+                onClick={() => {
+                  feedback.tap();
+                  setWorkspaceLens(lens.id);
+                }}
                 className={`min-h-[36px] px-3 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
                   workspaceLens === lens.id
                     ? 'bg-background text-foreground shadow-sm'
@@ -914,6 +919,7 @@ export default function DashboardContent() {
                         <button
                           type="button"
                           onClick={async () => {
+                            feedback.complete();
                             await toggle(item.id, todayStr);
                             toast.success(`Completed ${item.name}`);
                           }}
@@ -927,6 +933,7 @@ export default function DashboardContent() {
                           <button
                             type="button"
                             onClick={async () => {
+                              feedback.tap();
                               await markRestDay(item.id, todayStr);
                               toast.info(`Marked ${item.name} as Rest Day`);
                             }}
@@ -1235,6 +1242,7 @@ export default function DashboardContent() {
               data-testid="dashboard-low-energy-toggle"
               onClick={async () => {
                 const next = !todayFuelSummary.lowEnergyMode;
+                feedback.toggle(next);
                 const { restedHabitIds } = await toggleLowEnergyMode(
                   todayIsoStr,
                   next,
@@ -1264,6 +1272,7 @@ export default function DashboardContent() {
               size="sm"
               variant="secondary"
               onClick={() => {
+                feedback.complete();
                 incrementFitnessWater(250, todayIsoStr, user?.id);
                 toast.success('+250ml water logged');
               }}

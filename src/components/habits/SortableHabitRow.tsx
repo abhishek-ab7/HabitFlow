@@ -155,7 +155,7 @@ export const SortableHabitRow = memo(function SortableHabitRow({
         return missedYesterday && completedDayBefore;
     }, [yesterdayStr, dayBeforeYesterdayStr, completionMap]);
 
-    const { triggerPop, triggerChime } = useFeedback();
+    const feedback = useFeedback();
     const updateNote = useHabitStore((s) => s.updateNote);
     const updateValue = useHabitStore((s) => s.updateValue);
     const markRestDay = useHabitStore((s) => s.markRestDay);
@@ -168,9 +168,9 @@ export const SortableHabitRow = memo(function SortableHabitRow({
     );
 
     const handleToggleRestDay = async (dateStr: string, reason?: string) => {
+        feedback.tap();
         try {
             await markRestDay(habit.id, dateStr, reason);
-            triggerPop();
             const existing = getCompletion(dateStr);
             if (existing?.status === 'rest' || existing?.skipped) {
                 toast.info('Rest day cleared');
@@ -245,11 +245,12 @@ export const SortableHabitRow = memo(function SortableHabitRow({
             }
 
             setRippleCell(cellKey);
-            triggerChime();
-
             if (newValue >= target && currentValue < target) {
+                feedback.complete();
                 setBurstActive(dateStr);
                 setTimeout(() => setBurstActive(null), 800);
+            } else {
+                feedback.tap();
             }
 
             updateValue(habit.id, dateStr, newValue);
@@ -259,11 +260,15 @@ export const SortableHabitRow = memo(function SortableHabitRow({
             setRippleCell(cellKey);
 
             if (!completed) {
-                triggerChime();
+                if (streak + 1 === 7 || streak + 1 === 14 || streak + 1 === 30 || streak + 1 === 100) {
+                    feedback.milestone();
+                } else {
+                    feedback.complete();
+                }
                 setBurstActive(dateStr);
                 setTimeout(() => setBurstActive(null), 800);
             } else {
-                triggerPop();
+                feedback.uncheck();
             }
 
             onToggle(habit.id, dateStr);
@@ -280,7 +285,7 @@ export const SortableHabitRow = memo(function SortableHabitRow({
         const isCurrentlyFrozen = comp?.status === 'frozen';
 
         setRippleCell(cellKey);
-        triggerPop(); // Provide feedback for freeze too
+        feedback.tap(); // Provide feedback for freeze too
 
         if (!isCurrentlyFrozen) {
             setBurstActive(dateStr);

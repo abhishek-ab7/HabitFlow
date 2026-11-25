@@ -20,6 +20,7 @@ import {
 import type { Task } from "@/lib/types"
 import { usePomodoroStore } from "@/lib/stores/pomodoro-store"
 import { useTaskStore } from "@/lib/stores/task-store"
+import { useFeedback } from "@/hooks/use-feedback"
 import { SubtaskList } from "./SubtaskList"
 import { AddSubtaskButton } from "./AddSubtaskButton"
 import { EditTaskModal } from "./EditTaskModal"
@@ -120,6 +121,7 @@ export const TaskCard = memo(function TaskCard({ task, onComplete, onUpdate, com
     const [noteDraft, setNoteDraft] = useState(task.notes ?? "");
     const [isSavingNote, setIsSavingNote] = useState(false);
     const [justSavedNote, setJustSavedNote] = useState(false);
+    const feedback = useFeedback();
 
     useEffect(() => {
         setNoteDraft(task.notes ?? "");
@@ -263,6 +265,7 @@ export const TaskCard = memo(function TaskCard({ task, onComplete, onUpdate, com
                             onComplete(task.id);
                         }
                     } else if (info.offset.x < -threshold) {
+                        feedback.warning();
                         try {
                             await removeTask(task.id);
                             toast.success("Task deleted", {
@@ -409,6 +412,7 @@ export const TaskCard = memo(function TaskCard({ task, onComplete, onUpdate, com
                                     onClick={async (e) => {
                                         e.stopPropagation();
                                         if (confirm("Are you sure you want to delete this task?")) {
+                                            feedback.warning();
                                             try {
                                                 await removeTask(task.id);
                                                 toast.success("Task deleted successfully");
@@ -707,9 +711,18 @@ export const TaskCard = memo(function TaskCard({ task, onComplete, onUpdate, com
                             tasks={subtasks}
                             parentId={task.id}
                             allTasks={subtasks}
-                            onToggle={toggleTaskComplete}
+                            onToggle={async (subId) => {
+                                const target = subtasks.find((s) => s.id === subId);
+                                if (target?.status === 'done') {
+                                    feedback.uncheck();
+                                } else {
+                                    feedback.complete();
+                                }
+                                await toggleTaskComplete(subId);
+                            }}
                             onDelete={async (subId) => {
                                 if (confirm("Are you sure you want to delete this subtask?")) {
+                                    feedback.warning();
                                     await removeTask(subId);
                                     toast.success("Subtask deleted");
                                 }

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { useTaskStore } from "@/lib/stores/task-store"
 import { getLocalIsoDate } from "@/lib/finance/credit-card-cycles"
+import { useFeedback } from "@/hooks/use-feedback"
 import type { Task } from "@/lib/types"
 
 interface TodayTasksWidgetProps {
@@ -69,6 +70,7 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
     )
 
     const router = useRouter()
+    const feedback = useFeedback()
     const [mounted, setMounted] = useState(isHydrated)
     const [isOtherTasksOpen, setIsOtherTasksOpen] = useState(false)
 
@@ -122,8 +124,14 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
     );
 
     const handleTaskComplete = useCallback(async (id: string) => {
+        const target = tasks.find((t) => t.id === id);
+        if (target?.status === 'done') {
+            feedback.uncheck();
+        } else {
+            feedback.complete();
+        }
         await toggleTaskComplete(id)
-    }, [toggleTaskComplete]);
+    }, [tasks, toggleTaskComplete, feedback]);
 
     const handleToggleMit = useCallback(async (task: Task) => {
         if (typeof editTask !== 'function') return;

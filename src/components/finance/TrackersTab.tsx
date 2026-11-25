@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type { FinancialObligationItem } from '@/lib/types';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 const SubTabFallback = () => (
@@ -68,6 +69,7 @@ export function TrackersTab({ onLogOffsetExpense }: TrackersTabProps) {
   const settleCommitmentBalance = useFinanceStore((s) => s.settleCommitmentBalance);
 
   const [subTab, setSubTab] = useState<TrackerSubTab>('calendar');
+  const feedback = useFeedback();
 
   const upcoming30d = useMemo(
     () => getUpcomingFinancialObligations(31),
@@ -81,6 +83,11 @@ export function TrackersTab({ onLogOffsetExpense }: TrackersTabProps) {
   );
 
   const handleQuickPayObligation = async (item: FinancialObligationItem) => {
+    if (item.type === 'bill' || item.type === 'emi' || item.type === 'sip' || item.type === 'commitment') {
+      feedback.coin();
+    } else {
+      feedback.tap();
+    }
     if (item.type === 'bill') {
       const tx = await payRecurringBill(item.sourceId);
       if (tx) toast.success(`Paid ${item.title}`);
@@ -205,7 +212,10 @@ export function TrackersTab({ onLogOffsetExpense }: TrackersTabProps) {
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setSubTab(tab.id)}
+              onClick={() => {
+                feedback.tap();
+                setSubTab(tab.id);
+              }}
               className={`min-h-[40px] px-3.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap inline-flex items-center gap-1.5 shrink-0 ${
                 active
                   ? 'bg-background text-foreground shadow-sm'

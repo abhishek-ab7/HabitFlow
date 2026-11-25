@@ -16,10 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import {
-  calculate7DayRollingWeight,
-  calculateWeeklyWaistTrend,
-} from '@/lib/fitness/shared-analytics';
+import { calculate7DayRollingWeight, calculateWeeklyWaistTrend } from '@/lib/fitness/shared-analytics';
+import { useFeedback } from '@/hooks/use-feedback';
 import type { FitnessDailyLog, FitnessProfile } from '@/lib/types';
 
 interface BodyTrendChartsProps {
@@ -55,6 +53,7 @@ export function BodyTrendCharts({
   const [weightInput, setWeightInput] = useState<string>('');
   const [waistInput, setWaistInput] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const feedback = useFeedback();
 
   useEffect(() => {
     const w = selectedLog?.weightKg ?? rollingWeight.latestWeightKg ?? profile?.currentWeightKg;
@@ -79,10 +78,12 @@ export function BodyTrendCharts({
       (parsedWeight === undefined || !Number.isFinite(parsedWeight)) &&
       (parsedWaist === undefined || !Number.isFinite(parsedWaist))
     ) {
+      feedback.error();
       toast.error('Enter a valid weight (kg) or waist measurement (inches)');
       return;
     }
 
+    feedback.complete();
     setSaving(true);
     try {
       await onSaveBodyMetrics({

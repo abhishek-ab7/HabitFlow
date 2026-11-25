@@ -42,6 +42,7 @@ import { ScaleOnHover, SuccessRipple } from '@/components/motion';
 import { cn } from '@/lib/utils';
 import { getDeadlineStatus, calculateHabitStats } from '@/lib/calculations';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { useFeedback } from '@/hooks/use-feedback';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { calculateFitnessGoalProgress } from '@/lib/fitness/shared-analytics';
@@ -175,6 +176,7 @@ export const GoalCard = memo(function GoalCard({
   const [expanded, setExpanded] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [rippleMilestone, setRippleMilestone] = useState<string | null>(null);
+  const feedback = useFeedback();
 
   const hasFinanceLink = Boolean(goal.financialLink && goal.financialLink.targetAmount);
   const hasFitnessLink = Boolean(goal.fitnessLink && goal.fitnessLink.targetValue);
@@ -357,6 +359,15 @@ export const GoalCard = memo(function GoalCard({
   };
 
   const handleMilestoneToggle = (milestoneId: string) => {
+    const target = milestones.find((m) => m.id === milestoneId);
+    const wasCompleted = Boolean(target?.completed);
+    if (wasCompleted) {
+      feedback.uncheck();
+    } else if (stats.milestonesCompleted + 1 >= stats.milestonesTotal && stats.milestonesTotal > 0) {
+      feedback.milestone();
+    } else {
+      feedback.complete();
+    }
     setRippleMilestone(milestoneId);
     onToggleMilestone(milestoneId);
     setTimeout(() => setRippleMilestone(null), 500);
@@ -394,7 +405,10 @@ export const GoalCard = memo(function GoalCard({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={() => onDelete(goal.id)}
+          onClick={() => {
+            feedback.warning();
+            onDelete(goal.id);
+          }}
           className="text-destructive focus:text-destructive"
         >
           <Trash2 className="h-4 w-4 mr-2" />

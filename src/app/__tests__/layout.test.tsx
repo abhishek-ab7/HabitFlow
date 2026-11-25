@@ -19,6 +19,7 @@ vi.mock('@/components/layout', () => ({
   MobileNav: () => <div data-testid="mobile-nav" />,
   ShortcutsProvider: () => <div data-testid="shortcuts-provider" />,
   AppStartupGate: ({ children }: any) => <div data-testid="app-startup-gate">{children}</div>,
+  SensoryFeedbackBootstrap: () => null,
 }));
 
 vi.mock('@/components/pwa', () => ({

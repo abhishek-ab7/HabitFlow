@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { getSettings, updateSettings } from '../db';
+import { syncSensoryPrefsFromSettings } from '../feedback/sensory-engine';
 import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
 import type { UserSettings } from '../types';
@@ -69,6 +70,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
       if (session?.user?.id) {
         const settings = await getSettings(session.user.id);
         if (settings) {
+          syncSensoryPrefsFromSettings(settings);
           set({
             streakShield: settings.streakShield ?? 0,
             settings,
@@ -126,6 +128,7 @@ export const useGamificationStore = create<GamificationState>((set, get) => ({
     if (!currentSettings) return;
 
     const newSettings = { ...currentSettings, ...updates };
+    syncSensoryPrefsFromSettings(newSettings);
     set({ settings: newSettings });
 
     if (updates.streakShield !== undefined) {

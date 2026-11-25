@@ -3,3 +3,4 @@ export { ShortcutsProvider } from './ShortcutsProvider';
 export * from './MobileNav';
 export { AppStartupGate } from './AppStartupGate';
 export { SplashScreen } from './SplashScreen';
+export { SensoryFeedbackBootstrap } from '@/components/feedback/SensoryFeedbackBootstrap';

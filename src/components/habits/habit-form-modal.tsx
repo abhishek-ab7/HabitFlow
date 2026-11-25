@@ -26,6 +26,7 @@ import type {
   HabitAnchorBlock,
 } from '@/lib/types';
 import { useHabitStore } from '@/lib/stores/habit-store';
+import { useFeedback } from '@/hooks/use-feedback';
 import { HabitTemplates, type TemplateHabit } from './HabitTemplates';
 import { HabitDifficultySelector } from './HabitDifficultySelector';
 
@@ -110,6 +111,7 @@ export function HabitFormModal({
   const [stackAfterHabitId, setStackAfterHabitId] = useState<string>('');
 
   const { habits } = useHabitStore();
+  const feedback = useFeedback();
 
   const isEditing = !!habit;
 
@@ -173,6 +175,7 @@ export function HabitFormModal({
   }, [open, habit, defaultTab]);
 
   const handleSelectTemplate = (template: TemplateHabit) => {
+    feedback.tap();
     setName(template.name);
     setCategory(template.category);
     setTargetDays(template.targetDaysPerWeek);
@@ -189,10 +192,13 @@ export function HabitFormModal({
 
     // Validate
     if (!name.trim()) {
+      feedback.error();
       setErrors({ name: 'Habit name is required' });
       setActiveTab('details');
       return;
     }
+
+    feedback.success();
 
     const effectiveTargetDays =
       frequencyType === 'daily'

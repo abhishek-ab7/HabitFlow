@@ -21,6 +21,7 @@ import { EmptyTasksIllustration } from "@/components/ui/illustrations";
 import { PageHeader } from "@/components/ui/page-header";
 import { List, Grid2X2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useFeedback } from "@/hooks/use-feedback";
 
 export default function TasksPageContent() {
     const { tasks, loadTasks, isLoading, toggleTaskComplete, addTask } = useTaskStore(
@@ -35,19 +36,27 @@ export default function TasksPageContent() {
 
     const [viewMode, setViewMode] = useState<'list' | 'eisenhower'>('list');
     const [completedLimit, setCompletedLimit] = useState(20);
+    const feedback = useFeedback();
 
     useEffect(() => {
         loadTasks();
     }, [loadTasks]);
 
     const handleTaskComplete = useCallback(async (id: string) => {
+        const target = tasks.find((t) => t.id === id);
+        if (target?.status === 'done') {
+            feedback.uncheck();
+        } else {
+            feedback.complete();
+        }
         try {
             await toggleTaskComplete(id);
             toast.success("Task updated");
         } catch {
+            feedback.error();
             toast.error("Failed to update task");
         }
-    }, [toggleTaskComplete]);
+    }, [tasks, toggleTaskComplete, feedback]);
 
     const subtasksByParentId = useMemo(() => {
         const map = new Map<string, typeof tasks>();
@@ -62,6 +71,7 @@ export default function TasksPageContent() {
     }, [tasks]);
 
     const handleQuickAddTask = async (task: { title: string; dueDate?: Date; tags?: string[] }) => {
+        feedback.success();
         try {
             await addTask({
                 title: task.title,
@@ -101,7 +111,10 @@ export default function TasksPageContent() {
                                 variant={viewMode === 'list' ? 'default' : 'ghost'}
                                 size="sm"
                                 className="h-8 px-2.5 rounded-lg text-xs font-medium"
-                                onClick={() => setViewMode('list')}
+                                onClick={() => {
+                                    feedback.tap();
+                                    setViewMode('list');
+                                }}
                             >
                                 <List className="h-3.5 w-3.5 mr-1.5" />
                                 List
@@ -110,7 +123,10 @@ export default function TasksPageContent() {
                                 variant={viewMode === 'eisenhower' ? 'default' : 'ghost'}
                                 size="sm"
                                 className="h-8 px-2.5 rounded-lg text-xs font-medium"
-                                onClick={() => setViewMode('eisenhower')}
+                                onClick={() => {
+                                    feedback.tap();
+                                    setViewMode('eisenhower');
+                                }}
                             >
                                 <Grid2X2 className="h-3.5 w-3.5 mr-1.5" />
                                 Eisenhower

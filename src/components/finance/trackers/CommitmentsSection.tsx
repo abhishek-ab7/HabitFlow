@@ -27,6 +27,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 interface CommitmentsSectionProps {
@@ -54,6 +55,7 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
   );
 
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
+  const feedback = useFeedback();
   const toggleExpand = (id: string) =>
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -86,6 +88,7 @@ export function CommitmentsSection({ onLogOffsetExpense }: CommitmentsSectionPro
     ledger: CommitmentLedgerSummary
   ) => {
     e.stopPropagation();
+    feedback.coin();
     const tx = await settleCommitmentBalance(
       ledger.commitment.id,
       undefined,

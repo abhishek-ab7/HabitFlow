@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
+import { useFeedback } from '@/hooks/use-feedback';
 import { getProgressiveOverloadHint } from '@/lib/fitness/shared-analytics';
 import {
   searchExerciseLibrary,
@@ -73,6 +74,7 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const feedback = useFeedback();
 
   const suggestions = useMemo(
     () => searchExerciseLibrary(exerciseQuery, workoutType).slice(0, 8),
@@ -80,6 +82,7 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
   );
 
   const handleSelectSplit = (preset: (typeof SPLIT_PRESETS)[number]) => {
+    feedback.tap();
     setSelectedPresetId(preset.id);
     setWorkoutType(preset.workoutType);
     setTitle(preset.defaultTitle);
@@ -136,6 +139,7 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
   };
 
   const handleAddSet = (exIdx: number) => {
+    feedback.complete();
     setExercises((prev) =>
       prev.map((ex, i) => {
         if (i !== exIdx) return ex;
@@ -176,6 +180,7 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
   };
 
   const handleStartRest = (seconds: 60 | 90 | 120, exerciseName?: string) => {
+    feedback.toggle(true);
     startGymRestTimer(seconds, exerciseName);
     toast.success(`Rest timer started: ${seconds}s`);
   };
@@ -195,6 +200,7 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
   const handleSaveWorkout = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSaving) return;
+    feedback.milestone();
     setIsSaving(true);
     try {
       const saved = await addWorkoutSession(

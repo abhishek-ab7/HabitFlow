@@ -25,6 +25,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 interface DebtPayoffItem {
@@ -116,6 +117,7 @@ export function EmisPayoffSection() {
 
   const [strategy, setStrategy] = useState<'avalanche' | 'snowball'>('avalanche');
   const [extraPayment, setExtraPayment] = useState<number>(3000);
+  const feedback = useFeedback();
 
   // Add / Edit EMI dialog state
   const [isNewOpen, setIsNewOpen] = useState(false);
@@ -530,6 +532,7 @@ export function EmisPayoffSection() {
                       type="button"
                       size="sm"
                       onClick={async () => {
+                        feedback.coin();
                         const tx = await payMonthlyEmi(emi.id);
                         if (tx) toast.success(`Logged EMI payment for ${emi.loanName}`);
                       }}
@@ -552,6 +555,7 @@ export function EmisPayoffSection() {
                     <button
                       type="button"
                       onClick={async () => {
+                        feedback.warning();
                         await deleteEmiTracker(emi.id);
                         toast.success(`Removed ${emi.loanName}`);
                       }}

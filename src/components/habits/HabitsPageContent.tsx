@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils';
 import type { Habit, HabitFormData, Category } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useFeedback } from '@/hooks/use-feedback';
 
 const CATEGORIES: { value: Category; label: string }[] = [
   { value: 'health', label: 'Health' },
@@ -98,6 +99,7 @@ export default function HabitsPageContent() {
   const [showAIAssist, setShowAIAssist] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [habitIdToDelete, setHabitIdToDelete] = useState<string | null>(null);
+  const feedback = useFeedback();
 
   // Check for ?new=true query param
   useEffect(() => {
@@ -129,24 +131,27 @@ export default function HabitsPageContent() {
 
   // Event handlers - OPTIMIZED: Wrapped in useCallback to prevent re-renders
   const handleMonthChange = useCallback((date: Date) => {
+    feedback.tap();
     setSelectedMonth(date);
-  }, [setSelectedMonth]);
+  }, [feedback, setSelectedMonth]);
 
   const handleToggle = useCallback(async (habitId: string, date: string) => {
     await toggle(habitId, date);
   }, [toggle]);
 
   const handleCreateHabit = useCallback(async (data: HabitFormData) => {
+    feedback.success();
     await addHabit(data);
     setEditingHabit(undefined);
-  }, [addHabit]);
+  }, [feedback, addHabit]);
 
   const handleEditHabit = useCallback(async (data: HabitFormData) => {
     if (editingHabit) {
+      feedback.success();
       await editHabit(editingHabit.id, data);
       setEditingHabit(undefined);
     }
-  }, [editingHabit, editHabit]);
+  }, [feedback, editingHabit, editHabit]);
 
   const handleOpenEdit = useCallback((habit: Habit) => {
     setEditingHabit(habit);
@@ -154,8 +159,9 @@ export default function HabitsPageContent() {
   }, []);
 
   const handleArchive = useCallback(async (habitId: string) => {
+    feedback.warning();
     await editHabit(habitId, { archived: true });
-  }, [editHabit]);
+  }, [feedback, editHabit]);
 
   const handleDelete = useCallback((habitId: string) => {
     setHabitIdToDelete(habitId);
@@ -164,18 +170,20 @@ export default function HabitsPageContent() {
 
   const handleConfirmDelete = useCallback(async () => {
     if (habitIdToDelete) {
+      feedback.warning();
       await removeHabit(habitIdToDelete);
       setHabitIdToDelete(null);
     }
-  }, [habitIdToDelete, removeHabit]);
+  }, [feedback, habitIdToDelete, removeHabit]);
 
   const handleCategoryFilter = useCallback((category: Category) => {
+    feedback.tap();
     if (categoryFilter.includes(category)) {
       setCategoryFilter(categoryFilter.filter(c => c !== category));
     } else {
       setCategoryFilter([...categoryFilter, category]);
     }
-  }, [categoryFilter, setCategoryFilter]);
+  }, [feedback, categoryFilter, setCategoryFilter]);
 
   // Get filtered habits - OPTIMIZED: Memoized
   const filteredHabits = useMemo(() => 

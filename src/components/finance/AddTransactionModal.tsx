@@ -40,6 +40,7 @@ import {
 import dynamic from 'next/dynamic';
 import { resolveTransactionCycle, getCycleWindowForMonth, getLocalIsoDate, formatShortDate } from '@/lib/finance/credit-card-cycles';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { useFeedback } from '@/hooks/use-feedback';
 import {
   classifyCategoryBridgeKind,
   estimateDietBridgePreview,
@@ -157,6 +158,7 @@ export function AddTransactionModal({
   const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
 
   const todayStr = getLocalIsoDate();
+  const feedback = useFeedback();
 
   const [type, setType] = useState<FinanceTransactionType>('expense');
   const [amountStr, setAmountStr] = useState('');
@@ -722,9 +724,12 @@ export function AddTransactionModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isNaN(numericAmount) || numericAmount <= 0) {
+      feedback.error();
       toast.error('Please enter a valid amount');
       return;
     }
+
+    feedback.coin();
 
     const fallbackCat = activeCategories[0]?.id || 'uncategorized';
     const fallbackAcc = activeAccounts[0]?.id || 'default';
@@ -901,6 +906,7 @@ export function AddTransactionModal({
 
   const handleDelete = async () => {
     if (!editingTransaction) return;
+    feedback.warning();
     await deleteTransaction(editingTransaction.id);
     toast.success('Transaction deleted');
     onOpenChange(false);

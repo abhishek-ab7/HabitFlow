@@ -4,7 +4,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { AuthProvider } from '@/providers/auth-provider';
 import { SyncProvider } from '@/providers/sync-provider';
-import { Header, ShortcutsProvider, MobileNav, AppStartupGate } from '@/components/layout';
+import { Header, ShortcutsProvider, MobileNav, AppStartupGate, SensoryFeedbackBootstrap } from '@/components/layout';
 import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
 import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
@@ -80,6 +80,7 @@ export default function RootLayout({
           <AuthProvider>
             <SyncProvider>
               <ServiceWorkerRegistration />
+              <SensoryFeedbackBootstrap />
               <AppStartupGate>
                 <div className="relative flex min-h-screen flex-col pb-16 md:pb-0">
                   <Header />

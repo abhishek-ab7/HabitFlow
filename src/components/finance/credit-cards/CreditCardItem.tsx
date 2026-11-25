@@ -9,6 +9,7 @@ import { formatINR } from '@/lib/stores/finance/helpers';
 import { useFinanceStore } from '@/lib/stores/finance-store';
 import type { CreditCardStatement, FinanceAccount } from '@/lib/types';
 import { formatOrdinal, formatShortDate } from '@/lib/finance/credit-card-cycles';
+import { useFeedback } from '@/hooks/use-feedback';
 import type { StatementHistoryTab } from './StatementHistoryModal';
 
 const PayCreditCardModal = dynamic(
@@ -42,6 +43,7 @@ interface CreditCardItemProps {
 }
 
 export const CreditCardItem = React.memo(function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemProps) {
+  const feedback = useFeedback();
   const getCreditCardSummary = useFinanceStore((s) => s.getCreditCardSummary);
   const summary = getCreditCardSummary(card.id);
 
@@ -94,6 +96,7 @@ export const CreditCardItem = React.memo(function CreditCardItem({ card, onEdit,
       billedDue > currentStmt.remainingDue);
 
   const handleOpenPay = (stmt?: CreditCardStatement | null) => {
+    feedback.tap();
     setTargetStatement(stmt ?? currentStmt);
     setIsPayOpen(true);
   };

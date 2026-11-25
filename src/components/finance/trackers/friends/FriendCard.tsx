@@ -20,6 +20,7 @@ import type { DebtBucketType, DebtRecord, DebtInstallment, FriendLedgerGroup } f
 import { formatINR } from '@/lib/stores/finance-store';
 import { formatHumanDate, formatDueDay } from '@/lib/date-format';
 import { Button } from '@/components/ui/button';
+import { useFeedback } from '@/hooks/use-feedback';
 
 interface FriendCardProps {
   group: FriendLedgerGroup;
@@ -66,6 +67,7 @@ export const FriendCard = React.memo(function FriendCard({
   onDeleteInstallment,
   onToggleBucket,
 }: FriendCardProps) {
+  const feedback = useFeedback();
   const hasEveryday = group.everydayRecords.length > 0;
   const hasLoans = group.longTermLoans.length > 0;
 
@@ -228,7 +230,10 @@ export const FriendCard = React.memo(function FriendCard({
                       type="button"
                       size="sm"
                       variant="secondary"
-                      onClick={() => onOpenSettleTab(group)}
+                      onClick={() => {
+                        feedback.tap();
+                        onOpenSettleTab(group);
+                      }}
                       className="h-8 px-2.5 text-xs rounded-lg gap-1"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />

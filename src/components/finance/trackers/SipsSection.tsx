@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
+import { useFeedback } from '@/hooks/use-feedback';
 import { toast } from 'sonner';
 
 const ASSET_CLASS_LABELS: Record<SipAssetClass, string> = {
@@ -56,6 +57,7 @@ export function SipsSection() {
 
   const [valueModalSip, setValueModalSip] = useState<FinanceSipPlan | null>(null);
   const [updatedValue, setUpdatedValue] = useState('');
+  const feedback = useFeedback();
 
   const totals = useMemo(() => {
     const monthlyTarget = activeSips.reduce((s, p) => s + p.monthlyAmount, 0);
@@ -277,6 +279,7 @@ export function SipsSection() {
                       type="button"
                       size="sm"
                       onClick={async () => {
+                        feedback.coin();
                         const tx = await payMonthlySip(sip.id);
                         if (tx) toast.success(`Logged ${formatINR(sip.monthlyAmount)} SIP for ${sip.name}`);
                       }}
@@ -302,6 +305,7 @@ export function SipsSection() {
                     <button
                       type="button"
                       onClick={async () => {
+                        feedback.warning();
                         await deleteSipPlan(sip.id);
                         toast.success(`Removed ${sip.name}`);
                       }}
