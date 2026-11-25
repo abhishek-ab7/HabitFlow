@@ -43,6 +43,7 @@ import type { Habit, HabitFormData, Category } from '@/lib/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useFeedback } from '@/hooks/use-feedback';
+import { GuidedTour, TourTriggerButton, usePageTour, PAGE_TOURS } from '@/components/tour';
 
 const CATEGORIES: { value: Category; label: string }[] = [
   { value: 'health', label: 'Health' },
@@ -100,6 +101,13 @@ export default function HabitsPageContent() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [habitIdToDelete, setHabitIdToDelete] = useState<string | null>(null);
   const feedback = useFeedback();
+
+  const {
+    isOpen: isTourOpen,
+    startTour,
+    closeTour,
+    completeTour,
+  } = usePageTour('habits');
 
   // Check for ?new=true query param
   useEffect(() => {
@@ -275,13 +283,15 @@ export default function HabitsPageContent() {
                 <span className="hidden sm:inline">Archived</span>
               </Button>
 
+              <TourTriggerButton onClick={startTour} pageTitle="Habits" />
+
               <Button
                 size="sm"
                 onClick={() => {
                   setModalTab('details');
                   setShowModal(true);
                 }}
-                className="h-9 gap-1.5 rounded-xl text-xs sm:text-sm"
+                className="h-9 gap-1.5 rounded-xl text-xs sm:text-sm tour-add-habit-btn"
               >
                 <Plus className="h-4 w-4" />
                 <span>New Habit</span>
@@ -291,7 +301,7 @@ export default function HabitsPageContent() {
         />
 
         {/* Controls */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 tour-habits-header">
           <MonthSelector 
             selectedMonth={selectedMonth} 
             onMonthChange={handleMonthChange} 
@@ -328,7 +338,7 @@ export default function HabitsPageContent() {
 
         <div className="w-full">
           {/* Habit Grid - Full width */}
-          <Card className="border-none shadow-none md:border md:shadow-sm">
+          <Card className="border-none shadow-none md:border md:shadow-sm tour-habits-grid">
             <CardContent className="p-2 sm:p-4 md:p-6">
               <HabitGrid
                 habits={filteredHabits}
@@ -449,6 +459,14 @@ export default function HabitsPageContent() {
           )}
         </AnimatePresence>
       )}
+
+      {/* Guided Tour */}
+      <GuidedTour
+        {...PAGE_TOURS.habits}
+        isOpen={isTourOpen}
+        onClose={closeTour}
+        onComplete={completeTour}
+      />
     </div>
   );
 }

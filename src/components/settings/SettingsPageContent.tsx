@@ -27,7 +27,22 @@ import {
   Layers,
   Check,
   RotateCcw,
+  ChevronDown,
+  LayoutDashboard,
+  CheckSquare,
+  ListTodo,
+  Target,
+  Dumbbell,
+  Wallet,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -116,12 +131,26 @@ export default function SettingsPageContent() {
   const { streakShield, loadGamification, setStreakShields, updateUserSettings } = useGamificationStore();
   const feedback = useFeedback();
 
-  const handleReplayTour = () => {
+  const handleResetAllTours = () => {
     localStorage.removeItem('habitflow_dashboard_tutorial_completed');
-    toast.success('Tour reset! Redirecting to dashboard...');
+    localStorage.removeItem('habitflow_tour_dashboard_completed');
+    localStorage.removeItem('habitflow_tour_habits_completed');
+    localStorage.removeItem('habitflow_tour_tasks_completed');
+    localStorage.removeItem('habitflow_tour_goals_completed');
+    localStorage.removeItem('habitflow_tour_finance_completed');
+    localStorage.removeItem('habitflow_tour_fitness_completed');
+    toast.success('All page tours reset! You will see guided walkthroughs on each section.');
+  };
+
+  const handleReplaySpecificTour = (tourKey: string, path: string) => {
+    localStorage.removeItem(`habitflow_tour_${tourKey}_completed`);
+    if (tourKey === 'dashboard') {
+      localStorage.removeItem('habitflow_dashboard_tutorial_completed');
+    }
+    toast.success(`Reset ${tourKey} tour! Redirecting...`);
     setTimeout(() => {
-      window.location.href = '/dashboard';
-    }, 1000);
+      window.location.href = path;
+    }, 400);
   };
 
   useEffect(() => {
@@ -1090,21 +1119,79 @@ export default function SettingsPageContent() {
                   Help &amp; Guides
                 </h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Replay the guided tour or explore the platform reference.
+                  Replay interactive tours for any section or explore the complete Life OS Academy.
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleReplayTour}
-                className="h-9 px-3 text-xs gap-1.5 whitespace-nowrap"
-                title="Restart Guided Tour"
-              >
-                <RefreshCw className="h-3.5 w-3.5 shrink-0" />
-                <span>Replay Tour</span>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-3 text-xs gap-1.5 whitespace-nowrap"
+                    title="Select a tour to replay"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+                    <span>Replay Tour</span>
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground ml-0.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56 rounded-xl">
+                  <DropdownMenuLabel className="text-xs font-bold">Guided Tours</DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={handleResetAllTours}
+                    className="gap-2 cursor-pointer font-medium text-primary"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    <span>Reset All Tours</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleReplaySpecificTour('dashboard', '/dashboard')}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <LayoutDashboard className="h-4 w-4 text-primary" />
+                    <span>Dashboard Tour</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleReplaySpecificTour('habits', '/habits')}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <CheckSquare className="h-4 w-4 text-emerald-500" />
+                    <span>Habits Consistency</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleReplaySpecificTour('tasks', '/tasks')}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <ListTodo className="h-4 w-4 text-sky-500" />
+                    <span>Task Manager</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleReplaySpecificTour('goals', '/goals')}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <Target className="h-4 w-4 text-rose-500" />
+                    <span>Goals &amp; Milestones</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleReplaySpecificTour('fitness', '/fitness')}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <Dumbbell className="h-4 w-4 text-amber-500" />
+                    <span>Fitness &amp; Body Hub</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleReplaySpecificTour('finance', '/finance')}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <Wallet className="h-4 w-4 text-emerald-600" />
+                    <span>Finance Hub</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Button
                 variant="outline"
                 size="sm"
@@ -1113,7 +1200,7 @@ export default function SettingsPageContent() {
               >
                 <Link href="/tutorial">
                   <BookOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span>Help Guides</span>
+                  <span>Academy Guide</span>
                 </Link>
               </Button>
             </div>

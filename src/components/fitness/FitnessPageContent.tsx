@@ -53,6 +53,7 @@ const RoutineAndQuitTab = dynamic(
   { ssr: false, loading: FitnessTabFallback }
 );
 import { cn } from '@/lib/utils';
+import { GuidedTour, TourTriggerButton, usePageTour, PAGE_TOURS } from '@/components/tour';
 import type {
   DietPreference,
   FitnessActivityLevel,
@@ -110,6 +111,13 @@ export function FitnessPageContent() {
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [activeTab, setActiveTab] = useState<FitnessTabId>('fuel');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  const {
+    isOpen: isTourOpen,
+    startTour,
+    closeTour,
+    completeTour,
+  } = usePageTour('fitness');
 
   const [profileForm, setProfileForm] = useState<FitnessProfileFormData>({
     heightCm: 175,
@@ -267,6 +275,8 @@ export function FitnessPageContent() {
             </button>
           </div>
 
+          <TourTriggerButton onClick={startTour} pageTitle="Fitness Hub" />
+
           <Button
             type="button"
             size="sm"
@@ -310,7 +320,7 @@ export function FitnessPageContent() {
       {/* 4-Tab Shell Navigation */}
       <div
         role="tablist"
-        className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-border/70"
+        className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-border/70 tour-fitness-tabs"
       >
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -326,6 +336,7 @@ export function FitnessPageContent() {
               }}
               className={cn(
                 'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-t-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-colors border-b-2',
+                `tour-fitness-${tab.id}`,
                 active
                   ? 'border-primary text-foreground bg-muted/40'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -624,6 +635,14 @@ export function FitnessPageContent() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Guided Tour */}
+      <GuidedTour
+        {...PAGE_TOURS.fitness}
+        isOpen={isTourOpen}
+        onClose={closeTour}
+        onComplete={completeTour}
+      />
     </div>
   );
 }

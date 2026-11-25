@@ -41,6 +41,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Goal, GoalFormData, GoalStatus, AreaOfLife } from '@/lib/types';
+import { GuidedTour, TourTriggerButton, usePageTour, PAGE_TOURS } from '@/components/tour';
 
 const STATUS_OPTIONS: { value: GoalStatus; label: string }[] = [
   { value: 'not_started', label: 'Not Started' },
@@ -68,6 +69,13 @@ function GoalsPageContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('deadline');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  const {
+    isOpen: isTourOpen,
+    startTour,
+    closeTour,
+    completeTour,
+  } = usePageTour('goals');
 
   const { isAuthenticated, user } = useAuth();
 
@@ -323,17 +331,20 @@ function GoalsPageContent() {
               : 'Set meaningful goals and track your progress'
           }
           actions={
-            <Button onClick={() => setFormModalOpen(true)} size="sm" className="h-9 gap-1.5 rounded-xl">
-              <Plus className="h-4 w-4" />
-              New Goal
-            </Button>
+            <div className="flex items-center gap-2">
+              <TourTriggerButton onClick={startTour} pageTitle="Goals" />
+              <Button onClick={() => setFormModalOpen(true)} size="sm" className="h-9 gap-1.5 rounded-xl tour-add-goal-btn">
+                <Plus className="h-4 w-4" />
+                New Goal
+              </Button>
+            </div>
           }
         />
       </FadeIn>
 
       {/* Filters & Controls */}
       {goals.length > 0 && (
-        <FadeIn delay={0.1} className="mb-6">
+        <FadeIn delay={0.1} className="mb-6 tour-goals-header">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             {/* Search */}
             <div className="relative flex-1 max-w-sm">
@@ -503,7 +514,7 @@ function GoalsPageContent() {
       ) : (
         <div
           className={cn(
-            "grid grid-cols-1",
+            "grid grid-cols-1 tour-goals-grid",
             viewMode === 'grid'
               ? "gap-5 md:grid-cols-2 lg:grid-cols-3"
               : "gap-3 max-w-5xl"
@@ -542,6 +553,14 @@ function GoalsPageContent() {
           }
         />
       )}
+
+      {/* Guided Tour */}
+      <GuidedTour
+        {...PAGE_TOURS.goals}
+        isOpen={isTourOpen}
+        onClose={closeTour}
+        onComplete={completeTour}
+      />
     </div>
   );
 }

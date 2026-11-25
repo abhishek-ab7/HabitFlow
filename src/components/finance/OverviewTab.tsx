@@ -196,7 +196,7 @@ export function OverviewTab({
         {/* Left Column on Desktop (5 cols): Safe-to-Spend Glass Hero + Category Budgets/Donut */}
         <div className="lg:col-span-5 space-y-4">
           {/* Safe-to-Spend Flagship Hero Card */}
-          <div className="surface-hero p-5 sm:p-6 space-y-4">
+          <div className="surface-hero p-5 sm:p-6 space-y-4 tour-safe-to-spend">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">

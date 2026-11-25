@@ -22,6 +22,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { List, Grid2X2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useFeedback } from "@/hooks/use-feedback";
+import { GuidedTour, TourTriggerButton, usePageTour, PAGE_TOURS } from "@/components/tour";
 
 export default function TasksPageContent() {
     const { tasks, loadTasks, isLoading, toggleTaskComplete, addTask } = useTaskStore(
@@ -37,6 +38,13 @@ export default function TasksPageContent() {
     const [viewMode, setViewMode] = useState<'list' | 'eisenhower'>('list');
     const [completedLimit, setCompletedLimit] = useState(20);
     const feedback = useFeedback();
+
+    const {
+        isOpen: isTourOpen,
+        startTour,
+        closeTour,
+        completeTour,
+    } = usePageTour('tasks');
 
     useEffect(() => {
         loadTasks();
@@ -106,7 +114,8 @@ export default function TasksPageContent() {
                 description="Manage your daily priorities and project to-dos."
                 actions={
                     <>
-                        <div className="inline-flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60">
+                        <TourTriggerButton onClick={startTour} pageTitle="Tasks" />
+                        <div className="inline-flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60 tour-task-views">
                             <Button
                                 variant={viewMode === 'list' ? 'default' : 'ghost'}
                                 size="sm"
@@ -138,7 +147,7 @@ export default function TasksPageContent() {
             />
 
             {/* Quick Add Input */}
-            <div className="max-w-3xl mx-auto w-full">
+            <div className="max-w-3xl mx-auto w-full tour-task-input">
                 <SmartTaskInput onAddTask={handleQuickAddTask} />
             </div>
 
@@ -153,7 +162,7 @@ export default function TasksPageContent() {
                     </div>
                 </div>
             ) : viewMode === 'list' ? (
-                <div className="max-w-3xl mx-auto w-full space-y-8">
+                <div className="max-w-3xl mx-auto w-full space-y-8 tour-task-list">
                     {/* Active Tasks - Clean single-column stack to prevent uneven card heights */}
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -220,6 +229,14 @@ export default function TasksPageContent() {
             ) : (
                 <EisenhowerMatrix tasks={tasks} onComplete={handleTaskComplete} />
             )}
+
+            {/* Guided Tour */}
+            <GuidedTour
+                {...PAGE_TOURS.tasks}
+                isOpen={isTourOpen}
+                onClose={closeTour}
+                onComplete={completeTour}
+            />
         </div>
     );
 }

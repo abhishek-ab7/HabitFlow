@@ -58,6 +58,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { isFitnessModuleEnabled } from '@/lib/workspace-modules';
 import { useGamificationStore } from '@/lib/stores/gamification-store';
 import { useAuth } from '@/providers/auth-provider';
+import { GuidedTour, TourTriggerButton, usePageTour, PAGE_TOURS } from '@/components/tour';
 
 type ActiveTab = 'overview' | 'activity' | 'trackers' | 'accounts';
 
@@ -96,6 +97,13 @@ export function FinancePageContent() {
   const [isSmsModalOpen, setIsSmsModalOpen] = useState(false);
   const [sharedSmsText, setSharedSmsText] = useState<string | null>(null);
   const [isAskAiOpen, setIsAskAiOpen] = useState(false);
+
+  const {
+    isOpen: isTourOpen,
+    startTour,
+    closeTour,
+    completeTour,
+  } = usePageTour('finance');
 
   useEffect(() => {
     loadFinanceData(user?.id, false);
@@ -237,6 +245,8 @@ export function FinancePageContent() {
               </span>
             </Button>
 
+            <TourTriggerButton onClick={startTour} pageTitle="Finance Hub" />
+
             <Button
               type="button"
               variant="outline"
@@ -245,7 +255,7 @@ export function FinancePageContent() {
                 setSharedSmsText(null);
                 setIsSmsModalOpen(true);
               }}
-              className="h-9 px-2.5 sm:px-3 rounded-xl gap-1.5 whitespace-nowrap"
+              className="h-9 px-2.5 sm:px-3 rounded-xl gap-1.5 whitespace-nowrap tour-finance-sms"
               title="Fetch expenses from SMS or notifications"
             >
               <MessageSquareText className="w-4 h-4 text-primary" />
@@ -280,7 +290,7 @@ export function FinancePageContent() {
       <div
         role="tablist"
         aria-label="Finance sections"
-        className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted w-full max-w-xl"
+        className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted w-full max-w-xl tour-finance-tabs"
       >
         {(
           [
@@ -305,7 +315,7 @@ export function FinancePageContent() {
                 feedback.tap();
                 setActiveTab(tab.id);
               }}
-              className={`min-h-[42px] px-2 sm:px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-1.5 ${
+              className={`min-h-[42px] px-2 sm:px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all whitespace-nowrap flex items-center justify-center gap-1.5 tour-finance-${tab.id} ${
                 isActive
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
@@ -401,6 +411,14 @@ export function FinancePageContent() {
           userId={user?.id}
         />
       )}
+
+      {/* Guided Tour */}
+      <GuidedTour
+        {...PAGE_TOURS.finance}
+        isOpen={isTourOpen}
+        onClose={closeTour}
+        onComplete={completeTour}
+      />
     </div>
   );
 }
