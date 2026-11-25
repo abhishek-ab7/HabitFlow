@@ -515,6 +515,7 @@ export interface FinanceStore {
     options?: {
       expectedIncome?: number;
       plannedSipAmount?: number;
+      paydayOfMonth?: number;
       categoryRollovers?: Record<string, boolean>;
       budgetMode?: FinanceBudgetMode;
       assignedIncome?: number;

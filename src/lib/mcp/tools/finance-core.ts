@@ -25,6 +25,12 @@ import {
 } from '@/lib/finance/shared-analytics';
 import { buildCashFlowForecast } from '@/lib/finance/forecast';
 import { detectSpendingAnomalies } from '@/lib/finance/anomalies';
+import {
+  normalizePaydayOfMonth,
+  parsePaydayFromNotes,
+  resolveEffectivePaydayOfMonth,
+  upsertPaydayNoteTag,
+} from '@/lib/finance/payday';
 
 export function registerFinanceCoreTools(server: McpServer) {
   // 14. get_finance_overview
@@ -889,6 +895,7 @@ export function registerFinanceCoreTools(server: McpServer) {
         totalBudget: z.number().min(0).optional().describe('Overall monthly spending limit'),
         expectedIncome: z.number().min(0).optional().describe('Expected monthly salary/inflows'),
         plannedSipAmount: z.number().min(0).optional().describe('Planned monthly SIP investment goal'),
+        paydayOfMonth: z.number().int().min(1).max(31).optional().describe('Day of month (1-31) when salary/expected income arrives'),
         budgetMode: z.enum(['cap', 'zero_based']).optional(),
         assignedIncome: z.number().min(0).optional(),
         notes: z.string().optional(),
@@ -933,14 +940,12 @@ export function registerFinanceCoreTools(server: McpServer) {
           return { isError: true, content: [{ type: 'text', text: 'Forbidden: Missing habitflow:finance:read scope.' }] };
         }
 
-        const [{ data: budget }, { data: categories }] = await Promise.all([
+        const [{ data: allBudgets }, { data: categories }] = await Promise.all([
           supabase
             .from('finance_budgets')
             .select('*')
             .eq('user_id', auth.userId)
-            .eq('month_key', monthKey)
-            .is('deleted_at', null)
-            .maybeSingle(),
+            .is('deleted_at', null),
           supabase
             .from('finance_categories')
             .select('id, name, monthly_budget_limit')
@@ -948,11 +953,33 @@ export function registerFinanceCoreTools(server: McpServer) {
             .is('deleted_at', null),
         ]);
 
+        const mappedBudgets = (allBudgets || []).map(mapFinanceBudgetFromRow);
+        const budget = (allBudgets || []).find((b: any) => b.month_key === monthKey) ?? null;
+        const effectivePaydayOfMonth =
+          resolveEffectivePaydayOfMonth(mappedBudgets, monthKey) ?? 1;
+
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ monthKey, budget, categoryBudgets: categories || [] }, null, 2),
+              text: JSON.stringify(
+                {
+                  monthKey,
+                  budget: budget
+                    ? {
+                        ...budget,
+                        payday_of_month:
+                          normalizePaydayOfMonth(budget.payday_of_month) ??
+                          parsePaydayFromNotes(budget.notes) ??
+                          effectivePaydayOfMonth,
+                      }
+                    : null,
+                  effectivePaydayOfMonth,
+                  categoryBudgets: categories || [],
+                },
+                null,
+                2
+              ),
             },
           ],
         };
@@ -964,6 +991,13 @@ export function registerFinanceCoreTools(server: McpServer) {
         }
 
         const start = Date.now();
+        const isMissingPaydayColError = (err: any) =>
+          Boolean(
+            err &&
+              (err.code === 'PGRST204' ||
+                err.code === '42703' ||
+                String(err.message || '').includes('payday_of_month'))
+          );
         try {
           const { data: existing } = await supabase
             .from('finance_budgets')
@@ -973,45 +1007,82 @@ export function registerFinanceCoreTools(server: McpServer) {
             .is('deleted_at', null)
             .maybeSingle();
 
-          let savedBudget = null;
+          let savedBudget: Record<string, any> | null = null;
+          const normalizedPayday =
+            args.paydayOfMonth !== undefined
+              ? normalizePaydayOfMonth(args.paydayOfMonth)
+              : undefined;
 
           if (existing) {
             const updates: Record<string, any> = {};
             if (args.totalBudget !== undefined) updates.total_budget = args.totalBudget;
             if (args.expectedIncome !== undefined) updates.expected_income = args.expectedIncome;
             if (args.plannedSipAmount !== undefined) updates.planned_sip_amount = args.plannedSipAmount;
+            if (normalizedPayday !== undefined) updates.payday_of_month = normalizedPayday;
             if (args.budgetMode !== undefined) updates.budget_mode = args.budgetMode;
             if (args.assignedIncome !== undefined) updates.assigned_income = args.assignedIncome;
             if (args.notes !== undefined) updates.notes = args.notes;
 
             const meta = getUpdateMetadata(existing);
-            const { data, error } = await supabase
+            let { data, error } = await supabase
               .from('finance_budgets')
               .update({ ...updates, ...meta })
               .eq('id', existing.id)
               .select()
               .single();
 
+            if (error && normalizedPayday !== undefined && isMissingPaydayColError(error)) {
+              const fallbackUpdates = { ...updates };
+              delete fallbackUpdates.payday_of_month;
+              fallbackUpdates.notes = upsertPaydayNoteTag(
+                args.notes !== undefined ? args.notes : existing.notes,
+                normalizedPayday
+              );
+              const retry = await supabase
+                .from('finance_budgets')
+                .update({ ...fallbackUpdates, ...meta })
+                .eq('id', existing.id)
+                .select()
+                .single();
+              data = retry.data;
+              error = retry.error;
+            }
+
             if (error) throw error;
             savedBudget = data;
           } else {
             const meta = getInsertMetadata();
-            const { data, error } = await supabase
+            const insertPayload: Record<string, any> = {
+              user_id: auth.userId,
+              month_key: monthKey,
+              total_budget: args.totalBudget ?? 0,
+              expected_income: args.expectedIncome ?? 0,
+              planned_sip_amount: args.plannedSipAmount ?? 0,
+              ...(normalizedPayday !== undefined ? { payday_of_month: normalizedPayday } : {}),
+              budget_mode: args.budgetMode || 'cap',
+              assigned_income: args.assignedIncome ?? 0,
+              notes: args.notes || null,
+              currency: 'INR',
+              ...meta,
+            };
+            let { data, error } = await supabase
               .from('finance_budgets')
-              .insert({
-                user_id: auth.userId,
-                month_key: monthKey,
-                total_budget: args.totalBudget ?? 0,
-                expected_income: args.expectedIncome ?? 0,
-                planned_sip_amount: args.plannedSipAmount ?? 0,
-                budget_mode: args.budgetMode || 'cap',
-                assigned_income: args.assignedIncome ?? 0,
-                notes: args.notes || null,
-                currency: 'INR',
-                ...meta,
-              })
+              .insert(insertPayload)
               .select()
               .single();
+
+            if (error && normalizedPayday !== undefined && isMissingPaydayColError(error)) {
+              const fallbackInsert = { ...insertPayload };
+              delete fallbackInsert.payday_of_month;
+              fallbackInsert.notes = upsertPaydayNoteTag(args.notes, normalizedPayday);
+              const retry = await supabase
+                .from('finance_budgets')
+                .insert(fallbackInsert)
+                .select()
+                .single();
+              data = retry.data;
+              error = retry.error;
+            }
 
             if (error) throw error;
             savedBudget = data;

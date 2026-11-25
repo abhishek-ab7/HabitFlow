@@ -47,6 +47,8 @@ import {
   executeFinanceFitnessBridge,
   findMatchingSupplementId,
 } from '@/lib/fitness/finance-bridge';
+import { matchExpenseToSupplement } from '@/lib/fitness/supplement-meal-bridge';
+import { findBestTransactionMealMatch } from '@/lib/fitness/meal-finance-matcher';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPickerSheet } from './CategoryPickerSheet';
 import { toast } from 'sonner';
@@ -876,6 +878,51 @@ export function AddTransactionModal({
           newSupplementName: title.trim() || undefined,
         });
 
+        // Auto-sync supplement cost for ROI when Health & Supplements expense matches a supplement with cost 0
+        let syncedSupplementCostName: string | null = null;
+        let promptRestockSup: ReturnType<typeof matchExpenseToSupplement> = null;
+        if (
+          type === 'expense' &&
+          bridgeKind === 'health_supplements' &&
+          !restockSupplementEnabled
+        ) {
+          const fitState = useFitnessStore.getState();
+          const matchedSup = matchExpenseToSupplement(
+            {
+              title: createdTx.title,
+              merchantName: createdTx.merchantName,
+              notes: createdTx.notes,
+            },
+            fitState.supplementInventory
+          );
+          if (matchedSup) {
+            if (Number(matchedSup.costInr || 0) === 0) {
+              await fitState.updateSupplement(matchedSup.id, {
+                costInr: createdTx.amount,
+                linkedTransactionId: createdTx.id,
+              });
+              syncedSupplementCostName = matchedSup.name;
+            } else {
+              promptRestockSup = matchedSup;
+            }
+          }
+        }
+
+        // Auto-link same-day food_dining expense to a high-confidence unlinked meal
+        let autoLinkedMealMatch: ReturnType<typeof findBestTransactionMealMatch> = null;
+        if (type === 'expense' && bridgeKind === 'food_dining' && !alsoLogToDiet) {
+          const fitState = useFitnessStore.getState();
+          const candidateMeal = findBestTransactionMealMatch(
+            createdTx,
+            fitState.mealLogs,
+            categories
+          );
+          if (candidateMeal && candidateMeal.confidence === 'high') {
+            await fitState.linkMealToTransaction(candidateMeal.meal.id, createdTx.id);
+            autoLinkedMealMatch = candidateMeal;
+          }
+        }
+
         if (isRecurringEnabled) {
           toast.success('Saved entry & added recurring bill reminder');
         } else if (bridgeKind === 'junk') {
@@ -886,6 +933,37 @@ export function AddTransactionModal({
           toast.success(
             `Saved expense & restocked ${bridgeResult.supplementRestocked}`
           );
+        } else if (syncedSupplementCostName) {
+          toast.success(
+            `Saved expense & updated ${syncedSupplementCostName} cost (${formatINR(createdTx.amount)}) for ROI`
+          );
+        } else if (promptRestockSup) {
+          const targetSup = promptRestockSup;
+          toast.success(`Saved ${formatINR(createdTx.amount)} expense`, {
+            description: `Update or restock ${targetSup.name}?`,
+            action: {
+              label: `Restock ${targetSup.name}`,
+              onClick: () => {
+                void useFitnessStore.getState().restockSupplement(targetSup.id, {
+                  servingsAdded: targetSup.totalServings,
+                  costInr: createdTx.amount,
+                  linkedTransactionId: createdTx.id,
+                  date: createdTx.date,
+                });
+                toast.success(`Restocked ${targetSup.name} with ${formatINR(createdTx.amount)} cost`);
+              },
+            },
+          });
+        } else if (autoLinkedMealMatch) {
+          const linkedMeal = autoLinkedMealMatch.meal;
+          toast.success(`Saved expense & linked to "${linkedMeal.name}"`, {
+            action: {
+              label: 'Undo',
+              onClick: () => {
+                void useFitnessStore.getState().linkMealToTransaction(linkedMeal.id, null);
+              },
+            },
+          });
         } else if (linkedCommitmentId !== 'none') {
           toast.success('Saved and linked to commitment');
         } else {

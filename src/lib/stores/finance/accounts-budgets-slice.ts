@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { normalizePaydayOfMonth } from '@/lib/finance/payday';
 import type {
   CreditCardCycleSummary,
   CreditCardStatement,
@@ -729,12 +730,17 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
       options?.assignedIncome !== undefined
         ? Math.max(0, Number(options.assignedIncome) || 0)
         : existing?.assignedIncome;
+    const nextPaydayOfMonth =
+      options?.paydayOfMonth !== undefined
+        ? normalizePaydayOfMonth(options.paydayOfMonth)
+        : existing?.paydayOfMonth;
 
     if (existing) {
       await db.financeBudgets.update(existing.id, {
         totalBudget: normalizedTotal,
         expectedIncome: normalizedIncome,
         plannedSipAmount: normalizedSip,
+        paydayOfMonth: nextPaydayOfMonth,
         budgetMode: nextBudgetMode,
         assignedIncome: nextAssignedIncome,
         isDirty: true,
@@ -744,6 +750,7 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
       normalizedTotal > 0 ||
       normalizedIncome > 0 ||
       normalizedSip > 0 ||
+      nextPaydayOfMonth !== undefined ||
       nextBudgetMode === 'zero_based'
     ) {
       const budget: FinanceBudget = {
@@ -753,6 +760,7 @@ export const createAccountsBudgetsSlice: FinanceSliceCreator<AccountsBudgetsSlic
         totalBudget: normalizedTotal,
         expectedIncome: normalizedIncome,
         plannedSipAmount: normalizedSip,
+        paydayOfMonth: nextPaydayOfMonth,
         budgetMode: nextBudgetMode,
         assignedIncome: nextAssignedIncome,
         currency: 'INR',

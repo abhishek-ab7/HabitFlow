@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BatteryLow,
   ChevronDown,
@@ -30,7 +30,13 @@ import {
 import { toast } from 'sonner';
 import { calculateDailyFuelSummary } from '@/lib/fitness/shared-analytics';
 import { estimateHinglishFoodMacros } from '@/lib/fitness/meal-estimator';
+import { buildAutoMealSupplementNoteTag } from '@/lib/fitness/supplement-meal-bridge';
+import {
+  findBestMealTransactionMatch,
+  findCandidateTransactionsForMeal,
+} from '@/lib/fitness/meal-finance-matcher';
 import { useFitnessStore } from '@/lib/stores/fitness';
+import { useFinanceStore } from '@/lib/stores/finance-store';
 import { useFeedback } from '@/hooks/use-feedback';
 import { cn } from '@/lib/utils';
 import type {
@@ -140,6 +146,28 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
   const deleteMealLog = useFitnessStore((s) => s.deleteMealLog);
   const addMealTemplate = useFitnessStore((s) => s.addMealTemplate);
   const deleteMealTemplate = useFitnessStore((s) => s.deleteMealTemplate);
+  const linkMealToTransaction = useFitnessStore((s) => s.linkMealToTransaction);
+
+  const financeAccounts = useFinanceStore((s) => s.accounts);
+  const financeCategories = useFinanceStore((s) => s.categories);
+  const financeTransactions = useFinanceStore((s) => s.transactions);
+  const addFinanceTransaction = useFinanceStore((s) => s.addTransaction);
+  const financeHasLoaded = useFinanceStore((s) => s.hasLoaded);
+  const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
+
+  useEffect(() => {
+    if (!financeHasLoaded && typeof loadFinanceData === 'function') {
+      loadFinanceData(userId, false).catch(() => undefined);
+    }
+  }, [financeHasLoaded, loadFinanceData, userId]);
+
+  const activeFinanceAccounts = useMemo(
+    () =>
+      financeAccounts.filter(
+        (a) => !a.deletedAt && !a.archived && a.type !== 'investment'
+      ),
+    [financeAccounts]
+  );
 
   const todayLog = useMemo(
     () => dailyLogs.find((d) => d.date === selectedDate && !d.deletedAt),
@@ -155,6 +183,22 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
     () => mealLogs.filter((m) => !m.deletedAt && m.date === selectedDate),
     [mealLogs, selectedDate]
   );
+
+  const candidateTxByMealId = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof findCandidateTransactionsForMeal>[number]>();
+    if (financeTransactions.length === 0) return map;
+    for (const meal of dayMeals) {
+      if (meal.linkedTransactionId) continue;
+      const top = findCandidateTransactionsForMeal(
+        meal,
+        financeTransactions,
+        mealLogs,
+        financeCategories
+      )[0];
+      if (top) map.set(meal.id, top);
+    }
+    return map;
+  }, [dayMeals, financeTransactions, mealLogs, financeCategories]);
 
   const pinnedTemplates = useMemo(
     () => mealTemplates.filter((t) => !t.deletedAt).sort((a, b) => a.order - b.order),
@@ -180,6 +224,9 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
     isJunk: false,
     notes: '',
   });
+  const [paidOutside, setPaidOutside] = useState(false);
+  const [paidAmountStr, setPaidAmountStr] = useState('');
+  const [paidAccountId, setPaidAccountId] = useState('');
 
   // Add Staple Modal
   const [stapleModalOpen, setStapleModalOpen] = useState(false);
@@ -196,6 +243,42 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
     isPinned: true,
   });
 
+  const notifySupplementAutoSync = (mealId: string) => {
+    const state = useFitnessStore.getState();
+    const tag = buildAutoMealSupplementNoteTag(mealId);
+    const matchedLog = state.supplementLogs.find(
+      (l) => !l.deletedAt && String(l.notes || '').includes(tag)
+    );
+    if (!matchedLog) return;
+    const sup = state.supplementInventory.find((s) => s.id === matchedLog.supplementId);
+    if (!sup) return;
+    toast.info(
+      `Synced ${matchedLog.servingsTaken} ${sup.unitLabel} from ${sup.brand || sup.name} inventory`
+    );
+  };
+
+  const tryAutoLinkMealToFinance = async (logged: MealLog) => {
+    if (logged.linkedTransactionId) return false;
+    const match = findBestMealTransactionMatch(
+      logged,
+      financeTransactions,
+      useFitnessStore.getState().mealLogs,
+      financeCategories
+    );
+    if (!match || match.confidence !== 'high') return false;
+    await linkMealToTransaction(logged.id, match.transaction.id);
+    const label = match.transaction.merchantName || match.transaction.title;
+    toast.info(`Linked to ₹${match.transaction.amount} ${label}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          void linkMealToTransaction(logged.id, null);
+        },
+      },
+    });
+    return true;
+  };
+
   const handleTapStaple = async (tpl: MealTemplate) => {
     feedback.complete();
     const logged = await logFromTemplate(
@@ -205,6 +288,8 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
     );
     if (logged) {
       toast.success(`+${logged.name} (${logged.calories} kcal · ${logged.proteinG}g P)`);
+      notifySupplementAutoSync(logged.id);
+      await tryAutoLinkMealToFinance(logged);
     }
   };
 
@@ -220,6 +305,13 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
       isJunk: false,
       notes: '',
     });
+    setPaidOutside(false);
+    setPaidAmountStr('');
+    const defaultAcc =
+      activeFinanceAccounts.find((a) => a.isDefault)?.id ||
+      activeFinanceAccounts[0]?.id ||
+      '';
+    setPaidAccountId(defaultAcc);
     setMealModalOpen(true);
   };
 
@@ -235,6 +327,8 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
       isJunk: meal.isJunk,
       notes: meal.notes || '',
     });
+    setPaidOutside(false);
+    setPaidAmountStr('');
     setMealModalOpen(true);
   };
 
@@ -260,14 +354,70 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
       return;
     }
 
+    const paidAmount = parseFloat(paidAmountStr);
+    const resolvedPaidAccountId =
+      paidAccountId ||
+      activeFinanceAccounts.find((a) => a.isDefault)?.id ||
+      activeFinanceAccounts[0]?.id ||
+      '';
+
+    if (
+      !editingMeal &&
+      paidOutside &&
+      (!Number.isFinite(paidAmount) || paidAmount <= 0 || !resolvedPaidAccountId)
+    ) {
+      feedback.error();
+      toast.error('Enter a valid expense amount and select an account');
+      return;
+    }
+
     feedback.complete();
 
     if (editingMeal) {
       await updateMealLog(editingMeal.id, mealForm);
       toast.success('Meal updated');
+    } else if (paidOutside && Number.isFinite(paidAmount) && paidAmount > 0) {
+      const targetCat = mealForm.isJunk
+        ? financeCategories.find(
+            (c) => !c.deletedAt && (c.slug === 'junk-food' || /junk/i.test(c.name))
+          )
+        : financeCategories.find(
+            (c) => !c.deletedAt && (c.slug === 'food-dining' || /food|dining/i.test(c.name))
+          );
+      const fallbackCat =
+        targetCat ||
+        financeCategories.find((c) => !c.deletedAt && c.type !== 'income');
+
+      const createdTx = await addFinanceTransaction({
+        title: mealForm.name.trim(),
+        merchantName: mealForm.name.trim(),
+        amount: paidAmount,
+        type: 'expense',
+        categoryId: fallbackCat?.id || 'default',
+        subcategory: mealForm.isJunk ? 'Junk Food' : 'Healthy Meal',
+        accountId: resolvedPaidAccountId,
+        date: selectedDate,
+        notes: mealForm.notes?.trim() || `Logged with meal: ${mealForm.name.trim()}`,
+        tags: ['fitness_meal', ...(mealForm.isJunk ? ['junk_food'] : [])],
+        skipAutoDietBridge: true,
+      });
+
+      const logged = await addMealLog(
+        {
+          ...mealForm,
+          date: selectedDate,
+          source: 'manual',
+          linkedTransactionId: createdTx.id,
+        },
+        userId
+      );
+      toast.success(`Logged meal & ₹${paidAmount} expense (linked)`);
+      notifySupplementAutoSync(logged.id);
     } else {
-      await addMealLog({ ...mealForm, date: selectedDate, source: 'manual' }, userId);
+      const logged = await addMealLog({ ...mealForm, date: selectedDate, source: 'manual' }, userId);
       toast.success('Meal logged');
+      notifySupplementAutoSync(logged.id);
+      await tryAutoLinkMealToFinance(logged);
     }
     setMealModalOpen(false);
   };
@@ -730,9 +880,12 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
           <div className="divide-y divide-border/70">
             {dayMeals.map((meal) => {
               const isExpanded = expandedMealId === meal.id;
+              const candidateMatch = !meal.linkedTransactionId
+                ? candidateTxByMealId.get(meal.id)
+                : undefined;
               return (
                 <div key={meal.id} className="cv-auto py-2.5 first:pt-0 last:pb-0">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() =>
@@ -740,7 +893,7 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                       }
                       className="flex-1 text-left min-w-0 flex items-center justify-between gap-3 py-1"
                     >
-                      <div className="min-w-0 flex items-center gap-2">
+                      <div className="min-w-0 flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-foreground truncate">
                           {meal.name}
                         </span>
@@ -776,6 +929,31 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                         )}
                       </div>
                     </button>
+
+                    {candidateMatch && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          feedback.complete();
+                          const tx = candidateMatch.transaction;
+                          await linkMealToTransaction(meal.id, tx.id);
+                          toast.success(
+                            `Linked "${meal.name}" to ₹${tx.amount} ${tx.merchantName || tx.title}`
+                          );
+                        }}
+                        className="h-7 px-2 text-[11px] rounded-full gap-1 shrink-0 border-primary/40 text-primary hover:bg-primary/10"
+                      >
+                        <Wallet className="h-3 w-3" />
+                        Link to ₹{candidateMatch.transaction.amount}{' '}
+                        {(
+                          candidateMatch.transaction.merchantName ||
+                          candidateMatch.transaction.title
+                        ).slice(0, 14)}
+                      </Button>
+                    )}
                   </div>
 
                   {isExpanded && (
@@ -942,6 +1120,62 @@ export const FuelTab = React.memo(function FuelTab({ selectedDate, userId }: Fue
                 Flag as Junk Food
               </label>
             </div>
+
+            {!editingMeal && (
+              <div className="rounded-xl border border-border bg-muted/25 p-3 space-y-2.5">
+                <label className="flex items-center justify-between gap-2 text-xs font-medium cursor-pointer">
+                  <span className="flex items-center gap-1.5 text-foreground">
+                    <Wallet className="h-3.5 w-3.5 text-primary" />
+                    Paid outside? Add ₹ cost
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={paidOutside}
+                    onChange={(e) => setPaidOutside(e.target.checked)}
+                    className="rounded accent-primary h-4 w-4"
+                  />
+                </label>
+
+                {paidOutside && (
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-muted-foreground">
+                        Amount (₹)
+                      </label>
+                      <Input
+                        type="number"
+                        min={1}
+                        step="1"
+                        value={paidAmountStr}
+                        onChange={(e) => setPaidAmountStr(e.target.value)}
+                        placeholder="e.g., 180"
+                        className="h-9 text-sm font-mono tabular-nums"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-muted-foreground">
+                        Account
+                      </label>
+                      <select
+                        value={paidAccountId}
+                        onChange={(e) => setPaidAccountId(e.target.value)}
+                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+                      >
+                        {activeFinanceAccounts.length === 0 ? (
+                          <option value="">No active accounts</option>
+                        ) : (
+                          activeFinanceAccounts.map((acc) => (
+                            <option key={acc.id} value={acc.id}>
+                              {acc.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <DialogFooter>
               <Button

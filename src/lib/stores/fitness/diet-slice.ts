@@ -5,6 +5,11 @@ import {
   estimateHinglishFoodMacros,
   STARTER_INDIAN_STAPLES,
 } from '@/lib/fitness/meal-estimator';
+import {
+  buildAutoMealSupplementNoteTag,
+  hasAutoMealSupplementLog,
+  matchProteinMealToSupplement,
+} from '@/lib/fitness/supplement-meal-bridge';
 import type { MealLog, MealTemplate } from '@/lib/types';
 import type { FitnessSliceCreator, FitnessStoreActions } from './types';
 
@@ -77,6 +82,7 @@ export const createDietSlice: FitnessSliceCreator<
     | 'deleteMealTemplate'
     | 'ensureMealForJunkTransaction'
     | 'upsertMealFromCapture'
+    | 'linkMealToTransaction'
   >
 > = (set, get) => ({
   seedStarterStaplesIfEmpty: async (userId) => {
@@ -210,6 +216,45 @@ export const createDietSlice: FitnessSliceCreator<
       currentUserId: userId,
     }));
     notifyFitnessSync();
+
+    if (!meal.isJunk) {
+      try {
+        const supInventory =
+          get().supplementInventory.length > 0
+            ? get().supplementInventory
+            : db.supplementInventory
+              ? await db.supplementInventory
+                  .where('userId')
+                  .equals(userId)
+                  .filter((s) => !s.deletedAt)
+                  .toArray()
+              : [];
+        const supMatch = matchProteinMealToSupplement(meal, supInventory);
+        if (supMatch) {
+          const existingLogs =
+            get().supplementLogs.length > 0
+              ? get().supplementLogs
+              : db.supplementLogs
+                ? await db.supplementLogs
+                    .where('supplementId')
+                    .equals(supMatch.supplement.id)
+                    .filter((l) => !l.deletedAt)
+                    .toArray()
+                : [];
+          if (!hasAutoMealSupplementLog(existingLogs, meal.id, supMatch.supplement.id)) {
+            await get().takeSupplementDose(
+              supMatch.supplement.id,
+              supMatch.servings,
+              meal.date,
+              `Auto-synced from meal: ${meal.name} ${buildAutoMealSupplementNoteTag(meal.id)}`,
+              userId
+            );
+          }
+        }
+      } catch (err) {
+        logger.warn('[FitnessStore] Meal->Supplement auto-sync skipped:', err);
+      }
+    }
 
     try {
       const { CrossDomainActionMediator } = await import('../mediator');
@@ -559,5 +604,34 @@ export const createDietSlice: FitnessSliceCreator<
       return withLinkedTxLock(params.linkedTransactionId, run);
     }
     return run();
+  },
+
+  linkMealToTransaction: async (mealId, transactionId) => {
+    const existing =
+      get().mealLogs.find((m) => m.id === mealId) || (await db.mealLogs.get(mealId));
+    if (!existing || existing.deletedAt) return null;
+
+    const normalizedTxId = transactionId ?? null;
+    if ((existing.linkedTransactionId ?? null) === normalizedTxId) {
+      return existing;
+    }
+
+    const now = new Date().toISOString();
+    const updated: MealLog = {
+      ...existing,
+      linkedTransactionId: normalizedTxId,
+      generationCounter: (existing.generationCounter || 1) + 1,
+      isDirty: true,
+      updatedAt: now,
+    };
+
+    await db.mealLogs.put(updated);
+    set((state) => ({
+      mealLogs: state.mealLogs
+        .map((m) => (m.id === mealId ? updated : m))
+        .sort((a, b) => b.date.localeCompare(a.date) || b.loggedAt.localeCompare(a.loggedAt)),
+    }));
+    notifyFitnessSync();
+    return updated;
   },
 });

@@ -192,20 +192,62 @@ export const createBioSlice: FitnessSliceCreator<
 
     await db.fitnessDailyLogs.put(nextLog);
 
-    // Keep profile.currentWeightKg synced when today's weight is updated
-    if (patch.weightKg !== undefined && patch.weightKg !== null) {
-      const profile = get().profile;
-      if (profile) {
-        const updatedProfile: FitnessProfile = {
-          ...profile,
-          currentWeightKg: patch.weightKg,
-          startingWeightKg: profile.startingWeightKg ?? patch.weightKg,
-          generationCounter: (profile.generationCounter || 0) + 1,
-          isDirty: true,
-          updatedAt: now,
-        };
-        await db.fitnessProfiles.put(updatedProfile);
-        set({ profile: updatedProfile });
+    // Sync profile.currentWeightKg only when this weigh-in is the latest recorded date (never clobber on historical backfill)
+    if (
+      typeof patch.weightKg === 'number' &&
+      Number.isFinite(patch.weightKg) &&
+      patch.weightKg > 0
+    ) {
+      let existingDbLogs: FitnessDailyLog[] = [];
+      try {
+        existingDbLogs = await db.fitnessDailyLogs
+          .where('userId')
+          .equals(userId)
+          .filter((row) => !row.deletedAt)
+          .toArray();
+      } catch {
+        // Fallback cleanly to in-memory logs
+      }
+      const allWeightDates = [
+        ...get().dailyLogs,
+        ...existingDbLogs,
+        nextLog,
+      ]
+        .filter(
+          (row) =>
+            !row.deletedAt &&
+            typeof row.weightKg === 'number' &&
+            Number.isFinite(row.weightKg) &&
+            row.weightKg > 0
+        )
+        .map((row) => row.date.slice(0, 10));
+
+      const latestWeighInDate = allWeightDates.reduce<string | null>(
+        (max, d) => (!max || d > max ? d : max),
+        null
+      );
+      const targetDay = normalizedDate.slice(0, 10);
+
+      if (!latestWeighInDate || targetDay >= latestWeighInDate) {
+        const profile =
+          get().profile ||
+          (await db.fitnessProfiles
+            .where('userId')
+            .equals(userId)
+            .filter((p) => !p.deletedAt)
+            .first());
+        if (profile) {
+          const updatedProfile: FitnessProfile = {
+            ...profile,
+            currentWeightKg: patch.weightKg,
+            startingWeightKg: profile.startingWeightKg ?? patch.weightKg,
+            generationCounter: (profile.generationCounter || 0) + 1,
+            isDirty: true,
+            updatedAt: now,
+          };
+          await db.fitnessProfiles.put(updatedProfile);
+          set({ profile: updatedProfile });
+        }
       }
     }
 
@@ -309,7 +351,10 @@ export const createBioSlice: FitnessSliceCreator<
             continue;
           }
           if (existingComp?.status === 'rest') {
-            if (existingComp.restReason === 'Low-Energy Day') {
+            if (
+              existingComp.restReason === 'Low-Energy Day' ||
+              existingComp.restReason === 'Low-Energy Mode'
+            ) {
               restedHabitIds.push(habit.id);
             }
             continue;
@@ -336,8 +381,10 @@ export const createBioSlice: FitnessSliceCreator<
             // Non-blocking in offline / isolated test env
           }
         } else if (
-          existingComp?.status === 'rest' &&
+          !existingComp?.completed &&
+          (existingComp?.status === 'rest' || existingComp?.skipped) &&
           (existingComp.restReason === 'Low-Energy Day' ||
+            existingComp.restReason === 'Low-Energy Mode' ||
             existing?.restedHabitIds?.includes(habit.id))
         ) {
           const cleared = await clearRestCompletion(

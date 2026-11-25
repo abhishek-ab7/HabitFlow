@@ -436,14 +436,33 @@ export class CrossDomainActionMediator {
             // Fitness module disabled by user — skip automatic Diet logging
           } else {
             const { useFitnessStore } = await import('./fitness');
-            await useFitnessStore.getState().ensureMealForJunkTransaction({
-              transactionId: event.transaction.id,
-              userId: event.transaction.userId,
-              date: event.transaction.date || event.date,
-              title: event.transaction.title,
-              amountInr: event.transaction.amount,
-              notes: event.transaction.notes,
-            });
+            const fitState = useFitnessStore.getState();
+            const { findBestTransactionMealMatch } = await import(
+              '@/lib/fitness/meal-finance-matcher'
+            );
+            const activeMeals = fitState.mealLogs.filter((m) => !m.deletedAt);
+            const existingCategories = event.category ? [event.category] : [];
+            const matchedMeal = findBestTransactionMealMatch(
+              event.transaction,
+              activeMeals,
+              existingCategories
+            );
+
+            if (matchedMeal && matchedMeal.confidence === 'high') {
+              await fitState.linkMealToTransaction(
+                matchedMeal.meal.id,
+                event.transaction.id
+              );
+            } else {
+              await fitState.ensureMealForJunkTransaction({
+                transactionId: event.transaction.id,
+                userId: event.transaction.userId,
+                date: event.transaction.date || event.date,
+                title: event.transaction.title,
+                amountInr: event.transaction.amount,
+                notes: event.transaction.notes,
+              });
+            }
           }
         } catch {
           // Non-blocking bridge if fitness store unavailable in isolated tests

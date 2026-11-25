@@ -1,3 +1,5 @@
+import { getIstIsoDate } from '@/lib/mcp/config';
+import { resolveEffectivePaydayOfMonth } from '@/lib/finance/payday';
 import type {
   CashFlowForecastPoint,
   CreditCardStatement,
@@ -22,6 +24,7 @@ export interface CashFlowForecastInput {
   horizonDays: 30 | 60 | 90;
   includeDiscretionaryBurn?: boolean;
   referenceDate?: string;
+  paydayOfMonth?: number;
 }
 
 export interface CashFlowForecastResult {
@@ -81,7 +84,8 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
     liquidAccounts.reduce((sum, a) => sum + Number(a.balance || 0), 0)
   );
 
-  const today = referenceDate ? new Date(`${referenceDate}T00:00:00`) : new Date();
+  const resolvedRefDate = referenceDate || getIstIsoDate();
+  const today = new Date(`${resolvedRefDate}T00:00:00`);
   today.setHours(0, 0, 0, 0);
   const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
@@ -122,20 +126,32 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
     return vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
   })();
 
+  const recentBudgetWithIncome = budgets
+    .filter((b) => !b.deletedAt && b.expectedIncome > 0)
+    .sort((a, b) => (b.monthKey || '').localeCompare(a.monthKey || ''))[0];
+
   const estimatedMonthlyIncome = Math.round(
     currentBudget?.expectedIncome && currentBudget.expectedIncome > 0
       ? currentBudget.expectedIncome
-      : recentMonthlyIncomeAvg
+      : recentBudgetWithIncome?.expectedIncome && recentBudgetWithIncome.expectedIncome > 0
+        ? recentBudgetWithIncome.expectedIncome
+        : recentMonthlyIncomeAvg
   );
 
-  // Infer payday from largest recent income transaction day, defaulting to 1st of month
+  // Resolve persisted salary payday first, falling back to largest recent income transaction day, then 1
+  const configuredPayday = resolveEffectivePaydayOfMonth(
+    budgets,
+    currentMonthKey,
+    input.paydayOfMonth
+  );
   const largestIncome = recentIncomes.reduce<FinanceTransaction | null>(
     (best, tx) => (!best || tx.amount > best.amount ? tx : best),
     null
   );
-  const paydayOfMonth = largestIncome?.date
-    ? Math.min(28, Math.max(1, parseInt(largestIncome.date.slice(8, 10), 10) || 1))
-    : 1;
+  const inferredPayday = largestIncome?.date
+    ? Math.min(31, Math.max(1, parseInt(largestIncome.date.slice(8, 10), 10) || 1))
+    : undefined;
+  const paydayOfMonth = configuredPayday ?? inferredPayday ?? 1;
 
   const activeBills = recurringBills.filter((b) => b.isActive && !b.deletedAt);
   const activeEmis = emiTrackers.filter((e) => e.status === 'active' && !e.deletedAt);

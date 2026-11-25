@@ -1,4 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import {
+  normalizePaydayOfMonth,
+  parsePaydayFromNotes,
+  stripPaydayNoteTag,
+} from '@/lib/finance/payday';
 import type {
   Category,
   CommitmentCategory,
@@ -172,13 +177,15 @@ export function mapFinanceBudgetFromRow(r: Record<string, any>): FinanceBudget {
     totalBudget: Number(r.total_budget || 0),
     expectedIncome: Number(r.expected_income || 0),
     plannedSipAmount: Number(r.planned_sip_amount || 0),
+    paydayOfMonth:
+      normalizePaydayOfMonth(r.payday_of_month) ?? parsePaydayFromNotes(r.notes),
     budgetMode: r.budget_mode === 'zero_based' ? 'zero_based' : 'cap',
     assignedIncome:
       r.assigned_income !== null && r.assigned_income !== undefined
         ? Number(r.assigned_income)
         : undefined,
     currency: r.currency || 'INR',
-    notes: r.notes || undefined,
+    notes: stripPaydayNoteTag(r.notes),
     deletedAt: r.deleted_at || null,
     generationCounter: Number(r.generation_counter || 1),
     createdAt: r.created_at || r.updated_at || now,
@@ -451,21 +458,55 @@ export function mapHabitFromRow(r: Record<string, any>, fallbackDateIso?: string
 }
 
 /**
+ * Resolves canonical habit completion status from a Postgres `completions` row,
+ * repairing legacy rows where `notes` / `rest_reason` / `skipped` indicate rest
+ * even if `status` was left NULL.
+ */
+export function resolveCompletionStatusFromRow(
+  r: Record<string, any>
+): CompletionStatus | undefined {
+  if (
+    r.status === 'completed' ||
+    r.status === 'rest' ||
+    r.status === 'missed' ||
+    r.status === 'frozen'
+  ) {
+    return r.status as CompletionStatus;
+  }
+  if (r.status === 'uncompleted') {
+    return undefined;
+  }
+  if (
+    r.skipped === true ||
+    Boolean(r.rest_reason) ||
+    /^rest day\b/i.test(String(r.notes || ''))
+  ) {
+    return 'rest';
+  }
+  if (r.completed === true) {
+    return 'completed';
+  }
+  return undefined;
+}
+
+/**
  * Maps a Supabase `completions` row (`snake_case`) into a `HabitCompletion`.
  */
 export function mapHabitCompletionFromRow(
   r: Record<string, any>,
   fallbackUserId = ''
 ): HabitCompletion {
+  const resolvedStatus = resolveCompletionStatusFromRow(r);
+  const isRest = resolvedStatus === 'rest';
   return {
     id: String(r.id),
     userId: String(r.user_id || fallbackUserId),
     habitId: String(r.habit_id || ''),
     date: String(r.date || ''),
-    completed: !!r.completed,
-    skipped: r.skipped ?? undefined,
-    status: (r.status || undefined) as CompletionStatus | undefined,
-    restReason: r.rest_reason || undefined,
+    completed: resolvedStatus === 'completed' || (!!r.completed && !isRest),
+    skipped: Boolean(r.skipped) || isRest || undefined,
+    status: resolvedStatus,
+    restReason: r.rest_reason || (isRest ? 'Low-Energy Day' : undefined),
     note: r.notes || undefined,
     value: r.value !== null && r.value !== undefined ? Number(r.value) : undefined,
     createdAt: r.created_at || undefined,

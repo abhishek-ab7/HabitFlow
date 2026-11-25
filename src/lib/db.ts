@@ -612,13 +612,14 @@ export async function markRestCompletion(
     restReason: reason || 'Recovery',
   });
   const now = new Date().toISOString();
+  const normalizedReason = reason || 'Recovery';
 
   completion.completed = false;
   completion.status = 'rest';
   completion.skipped = true;
-  completion.restReason = reason || 'Recovery';
-  if (reason && !completion.note) {
-    completion.note = `Rest Day: ${reason}`;
+  completion.restReason = normalizedReason;
+  if (!completion.note || /^Rest Day:\s*(Low-Energy|Recovery)/i.test(completion.note)) {
+    completion.note = `Rest Day: ${normalizedReason}`;
   }
   completion.updatedAt = now;
 
@@ -627,7 +628,8 @@ export async function markRestCompletion(
   } else {
     await db.completions.add(completion);
   }
-  return completion;
+  const persisted = await db.completions.get(completion.id);
+  return persisted || completion;
 }
 
 export async function clearRestCompletion(
@@ -645,8 +647,8 @@ export async function clearRestCompletion(
   completion.skipped = false;
   if (
     completion.note &&
-    completion.restReason &&
-    completion.note === `Rest Day: ${completion.restReason}`
+    ((completion.restReason && completion.note === `Rest Day: ${completion.restReason}`) ||
+      /^Rest Day:\s*(Low-Energy|Recovery)/i.test(completion.note))
   ) {
     completion.note = undefined;
   }
@@ -656,7 +658,8 @@ export async function clearRestCompletion(
   if (existing) {
     await db.completions.update(completion.id, completion);
   }
-  return completion;
+  const persisted = await db.completions.get(completion.id);
+  return persisted || completion;
 }
 
 export async function freezeCompletion(habitId: HabitId, date: ISODate, userId: UserId): Promise<HabitCompletion> {

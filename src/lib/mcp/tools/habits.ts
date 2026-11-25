@@ -6,8 +6,9 @@ import { getSupabaseAdmin } from '../supabase-admin';
 import { getIstIsoDate } from '../config';
 import { getInsertMetadata, getUpdateMetadata } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
-import { mapHabitCompletionFromRow, mapHabitFromRow } from '../mappers';
+import { mapHabitCompletionFromRow, mapHabitFromRow, resolveCompletionStatusFromRow } from '../mappers';
 import { calculateHabitStats, getHabitWeekProgress } from '@/lib/calculations';
+import { addDays } from '@/lib/finance/credit-card-cycles';
 
 export function registerHabitsTools(server: McpServer) {
   // 3. get_habits
@@ -57,10 +58,8 @@ export function registerHabitsTools(server: McpServer) {
         return { isError: true, content: [{ type: 'text', text: `Failed to fetch habits: ${habitsError.message}` }] };
       }
 
-      // Fetch completions for streak & today calculations
-      const historyDate = new Date(`${dateIst}T00:00:00`);
-      historyDate.setDate(historyDate.getDate() - (args.historyDays || 30));
-      const historyStartIso = historyDate.toISOString().substring(0, 10);
+      // Fetch completions for streak & today calculations (IST-aligned)
+      const historyStartIso = addDays(dateIst, -(args.historyDays || 30));
 
       const { data: completions } = await supabase
         .from('completions')
@@ -84,6 +83,10 @@ export function registerHabitsTools(server: McpServer) {
 
         const stats = calculateHabitStats(habitObj, habitCompletions, refDate);
         const todayComp = todayCompletionsMap.get(h.id);
+        const resolvedTodayStatus = todayComp
+          ? resolveCompletionStatusFromRow(todayComp)
+          : undefined;
+        const todayStatus = resolvedTodayStatus || 'pending';
 
         return {
           id: h.id,
@@ -106,7 +109,7 @@ export function registerHabitsTools(server: McpServer) {
           longestStreak: stats.bestStreak,
           completionRate: stats.completionRate,
           weekProgress: getHabitWeekProgress(habitObj, habitCompletions, refDate),
-          todayStatus: todayComp?.status || (todayComp?.completed ? 'completed' : 'pending'),
+          todayStatus,
           todayValue: todayComp?.value ?? null,
           todayNotes: todayComp?.notes ?? null,
         };

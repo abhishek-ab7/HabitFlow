@@ -2,7 +2,14 @@
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import {
+  normalizePaydayOfMonth,
+  parsePaydayFromNotes,
+  stripPaydayNoteTag,
+  upsertPaydayNoteTag,
+} from '@/lib/finance/payday';
+import {
   type SyncStepResult,
+  missingRemoteFinanceColumns,
   missingRemoteFinanceTables,
   isMissingRelationError,
   upsertWithColumnFallback,
@@ -377,6 +384,7 @@ export async function syncBudgets(supabase: any, userId: string): Promise<SyncSt
       continue;
     }
 
+    const normalizedPayday = normalizePaydayOfMonth(budget.paydayOfMonth);
     const payload = {
       id: budget.id,
       user_id: userId,
@@ -384,18 +392,43 @@ export async function syncBudgets(supabase: any, userId: string): Promise<SyncSt
       total_budget: budget.totalBudget,
       expected_income: budget.expectedIncome,
       planned_sip_amount: Number(budget.plannedSipAmount || 0),
+      payday_of_month: normalizedPayday ?? null,
       budget_mode: budget.budgetMode || 'cap',
       assigned_income: budget.assignedIncome !== undefined ? Number(budget.assignedIncome) : null,
       currency: budget.currency,
-      notes: budget.notes || null,
+      notes:
+        normalizedPayday !== undefined &&
+        missingRemoteFinanceColumns.get('finance_budgets')?.has('payday_of_month')
+          ? upsertPaydayNoteTag(budget.notes, normalizedPayday)
+          : stripPaydayNoteTag(budget.notes) || null,
       deleted_at: budget.deletedAt || null,
       generation_counter: budget.generationCounter || 1,
       created_at: budget.createdAt,
       updated_at: budget.updatedAt,
     };
-    const { error } = await upsertWithColumnFallback(supabase, 'finance_budgets', payload, {
+    let { error } = await upsertWithColumnFallback(supabase, 'finance_budgets', payload, {
       onConflict: 'user_id,month_key',
     });
+    // If payday_of_month was newly detected as missing on remote, re-sync with [payday:N] in notes
+    if (
+      !error &&
+      normalizedPayday !== undefined &&
+      missingRemoteFinanceColumns.get('finance_budgets')?.has('payday_of_month') &&
+      !parsePaydayFromNotes(payload.notes)
+    ) {
+      const retryRes = await upsertWithColumnFallback(
+        supabase,
+        'finance_budgets',
+        {
+          ...payload,
+          notes: upsertPaydayNoteTag(budget.notes, normalizedPayday),
+          generation_counter: (budget.generationCounter || 1) + 1,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,month_key' }
+      );
+      error = retryRes.error;
+    }
     if (!error) {
       await db.financeBudgets.update(budget.id, { isDirty: false });
       pushed++;
@@ -432,10 +465,14 @@ export async function syncBudgets(supabase: any, userId: string): Promise<SyncSt
             totalBudget: Number(r.total_budget || 0),
             expectedIncome: Number(r.expected_income || 0),
             plannedSipAmount: r.planned_sip_amount ? Number(r.planned_sip_amount) : (local?.plannedSipAmount ?? 0),
+            paydayOfMonth:
+              normalizePaydayOfMonth(r.payday_of_month) ??
+              parsePaydayFromNotes(r.notes) ??
+              local?.paydayOfMonth,
             budgetMode: r.budget_mode === 'zero_based' ? 'zero_based' : (local?.budgetMode || 'cap'),
             assignedIncome: r.assigned_income !== null && r.assigned_income !== undefined ? Number(r.assigned_income) : local?.assignedIncome,
             currency: r.currency || 'INR',
-            notes: r.notes || undefined,
+            notes: stripPaydayNoteTag(r.notes),
             deletedAt: r.deleted_at || null,
             generationCounter: r.generation_counter || 1,
             createdAt: r.created_at || r.updated_at || new Date().toISOString(),

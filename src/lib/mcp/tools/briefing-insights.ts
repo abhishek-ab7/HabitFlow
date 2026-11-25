@@ -24,6 +24,7 @@ import {
   mapSupplementInventoryFromRow,
   mapSupplementLogFromRow,
   mapWorkoutSessionFromRow,
+  resolveCompletionStatusFromRow,
 } from '../mappers';
 import { calculateDailyFuelSummary } from '@/lib/fitness/shared-analytics';
 import { computeCrossDomainInsights } from '@/lib/intelligence/cross-domain-insights';
@@ -112,6 +113,7 @@ export function registerBriefingInsightsTools(server: McpServer) {
       const completionMap = new Map(todayComps.map((c) => [c.habit_id, c]));
       const habitsDue = (habits || []).map((h) => {
         const comp = completionMap.get(h.id);
+        const resolvedStatus = comp ? resolveCompletionStatusFromRow(comp) : undefined;
         return {
           id: h.id,
           name: h.name,
@@ -119,8 +121,8 @@ export function registerBriefingInsightsTools(server: McpServer) {
           polarity: h.polarity || 'build',
           anchorBlock: h.anchor_block ?? null,
           frequencyType: h.frequency_type,
-          isCompleted: comp ? comp.completed : false,
-          status: comp?.status || (comp?.completed ? 'completed' : 'pending'),
+          isCompleted: resolvedStatus === 'completed' || (!!comp?.completed && resolvedStatus !== 'rest'),
+          status: resolvedStatus || 'pending',
           value: comp?.value ?? null,
           targetValue: h.target_value ?? null,
           unit: h.unit ?? null,
@@ -493,6 +495,8 @@ export function registerBriefingInsightsTools(server: McpServer) {
           lowestBalanceDate: forecast.lowestBalanceDate,
           crunchDate: forecast.crunchDate,
           dailyDiscretionaryBurn: forecast.dailyDiscretionaryBurn,
+          estimatedMonthlyIncome: forecast.estimatedMonthlyIncome,
+          paydayOfMonth: forecast.paydayOfMonth,
         },
         crossDomainSummary: {
           totalHabitsTracked: totalHabits,

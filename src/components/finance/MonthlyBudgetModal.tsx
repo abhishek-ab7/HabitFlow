@@ -3,6 +3,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, RefreshCw, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
+import {
+  normalizePaydayOfMonth,
+  resolveEffectivePaydayOfMonth,
+} from '@/lib/finance/payday';
 import type { FinanceBudgetMode } from '@/lib/types';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -39,6 +43,7 @@ export function MonthlyBudgetModal({
   const [budgetMode, setBudgetMode] = useState<FinanceBudgetMode>('cap');
   const [overallInput, setOverallInput] = useState('');
   const [expectedIncomeInput, setExpectedIncomeInput] = useState('');
+  const [paydayInput, setPaydayInput] = useState('1');
   const [plannedSipInput, setPlannedSipInput] = useState('');
   const [categoryInputs, setCategoryInputs] = useState<Record<string, string>>({});
   const [categoryRollovers, setCategoryRollovers] = useState<Record<string, boolean>>({});
@@ -84,6 +89,7 @@ export function MonthlyBudgetModal({
     setBaseSalaryInput(resolvedIncomeStr || '19000');
     setLeaveDaysInput('0');
     setShowLeaveHelper(false);
+    setPaydayInput(String(resolveEffectivePaydayOfMonth(budgets, selectedMonth) ?? 1));
     setPlannedSipInput(
       existingBudget && (existingBudget.plannedSipAmount || 0) > 0
         ? String(existingBudget.plannedSipAmount)
@@ -186,6 +192,7 @@ export function MonthlyBudgetModal({
         {
           expectedIncome: expectedIncomeNum,
           plannedSipAmount: plannedSipNum,
+          paydayOfMonth: normalizePaydayOfMonth(parseInt(paydayInput, 10)) ?? 1,
           categoryRollovers,
           budgetMode,
           assignedIncome: budgetMode === 'zero_based' ? totalAssigned : undefined,
@@ -404,22 +411,46 @@ export function MonthlyBudgetModal({
 
                 <div className="space-y-1">
                   <Label
-                    htmlFor="planned-sip-input"
+                    htmlFor="payday-of-month-input"
                     className="text-xs font-medium text-muted-foreground"
                   >
-                    Target Monthly SIP / Savings (₹)
+                    Salary / Payday Day (1–31)
                   </Label>
                   <Input
-                    id="planned-sip-input"
+                    id="payday-of-month-input"
                     type="number"
-                    min="0"
-                    step="500"
-                    value={plannedSipInput}
-                    onChange={(e) => setPlannedSipInput(e.target.value)}
-                    placeholder="e.g., 15000"
+                    min="1"
+                    max="31"
+                    step="1"
+                    value={paydayInput}
+                    onChange={(e) => setPaydayInput(e.target.value)}
+                    onBlur={() => {
+                      const norm = normalizePaydayOfMonth(parseInt(paydayInput, 10)) ?? 1;
+                      setPaydayInput(String(norm));
+                    }}
+                    placeholder="e.g., 7"
                     className="h-10 font-mono tabular-nums text-sm"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label
+                  htmlFor="planned-sip-input"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  Target Monthly SIP / Savings (₹)
+                </Label>
+                <Input
+                  id="planned-sip-input"
+                  type="number"
+                  min="0"
+                  step="500"
+                  value={plannedSipInput}
+                  onChange={(e) => setPlannedSipInput(e.target.value)}
+                  placeholder="e.g., 15000"
+                  className="h-10 font-mono tabular-nums text-sm"
+                />
               </div>
 
               {showLeaveHelper && (

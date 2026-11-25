@@ -31,6 +31,12 @@ import {
 } from '@/lib/fitness/shared-analytics';
 import { computeCrossDomainInsights } from '@/lib/intelligence/cross-domain-insights';
 import { addDays } from '@/lib/finance/credit-card-cycles';
+import {
+  buildAutoMealSupplementNoteTag,
+  hasAutoMealSupplementLog,
+  matchProteinMealToSupplement,
+} from '@/lib/fitness/supplement-meal-bridge';
+import { findBestMealTransactionMatch } from '@/lib/fitness/meal-finance-matcher';
 
 const EXERCISE_SET_SCHEMA = z.object({
   reps: z.number().int().min(1),
@@ -438,6 +444,7 @@ export function registerFitnessTools(server: McpServer) {
         sorenessLevel: z.number().int().min(1).max(5).nullable().optional(),
         lowEnergyMode: z.boolean().optional(),
         autoRestGymHabits: z.boolean().optional().describe('When lowEnergyMode is true, automatically mark gym-anchored habits as rest for this date'),
+        restReason: z.string().optional().describe('Optional reason when auto-resting gym habits in Low-Energy Mode (defaults to Low-Energy Day)'),
         junkFreeOverride: z.boolean().optional(),
         restedHabitIds: z.array(z.string()).optional(),
         notes: z.string().nullable().optional(),
@@ -529,52 +536,6 @@ export function registerFitnessTools(server: McpServer) {
           };
         }
 
-        // Cross-domain hook: auto-rest gym-anchored habits when entering Low-Energy Mode
-        let autoRestedIds: string[] = [];
-        if (args.lowEnergyMode && args.autoRestGymHabits) {
-          const { data: gymHabits } = await supabase
-            .from('habits')
-            .select('id')
-            .eq('user_id', auth.userId)
-            .eq('is_archived', false)
-            .eq('anchor_block', 'gym');
-
-          for (const h of gymHabits || []) {
-            const { data: existingComp } = await supabase
-              .from('completions')
-              .select('*')
-              .eq('user_id', auth.userId)
-              .eq('habit_id', h.id)
-              .eq('date', dateIst)
-              .maybeSingle();
-
-            if (existingComp) {
-              await supabase
-                .from('completions')
-                .update({
-                  completed: false,
-                  skipped: true,
-                  status: 'rest',
-                  rest_reason: 'Low-Energy Mode',
-                  ...getUpdateMetadata(existingComp),
-                })
-                .eq('id', existingComp.id);
-            } else {
-              await supabase.from('completions').insert({
-                user_id: auth.userId,
-                habit_id: h.id,
-                date: dateIst,
-                completed: false,
-                skipped: true,
-                status: 'rest',
-                rest_reason: 'Low-Energy Mode',
-                ...getInsertMetadata(),
-              });
-            }
-            autoRestedIds.push(h.id);
-          }
-        }
-
         const { data: existing, error: fetchErr } = await supabase
           .from('fitness_daily_logs')
           .select('*')
@@ -583,6 +544,125 @@ export function registerFitnessTools(server: McpServer) {
           .maybeSingle();
 
         if (fetchErr) throw fetchErr;
+
+        // Cross-domain hook: auto-rest gym-anchored habits when entering Low-Energy Mode,
+        // and cleanly revert only auto-rested rows when disabling Low-Energy Mode.
+        let autoRestedIds: string[] = [];
+        let revertedRestHabitIds: string[] = [];
+        const restReason = args.restReason?.trim() || 'Low-Energy Day';
+        const restNote = `Rest Day: ${restReason}`;
+
+        if (args.lowEnergyMode && args.autoRestGymHabits) {
+          const { data: allActiveHabits } = await supabase
+            .from('habits')
+            .select('id, name, polarity, anchor_block, auto_track_rule')
+            .eq('user_id', auth.userId)
+            .eq('is_archived', false);
+
+          const gymHabits = (allActiveHabits || []).filter((h: any) => {
+            if (h.polarity === 'quit') return false;
+            if (h.auto_track_rule && h.auto_track_rule !== 'none') {
+              return h.auto_track_rule === 'workout_logged';
+            }
+            return (
+              h.anchor_block === 'gym' ||
+              /\b(workout|exercise|gym|training|lift|cardio|run|running|jog|cycling|swim|morning walk)\b/i.test(
+                String(h.name || '')
+              )
+            );
+          });
+
+          for (const h of gymHabits) {
+            const { data: existingComp } = await supabase
+              .from('completions')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('habit_id', h.id)
+              .eq('date', dateIst)
+              .maybeSingle();
+
+            if (
+              existingComp?.completed === true &&
+              existingComp?.status !== 'rest' &&
+              existingComp?.status !== 'frozen'
+            ) {
+              continue;
+            }
+
+            if (existingComp) {
+              const { error: compUpdErr } = await supabase
+                .from('completions')
+                .update({
+                  completed: false,
+                  skipped: true,
+                  status: 'rest',
+                  rest_reason: restReason,
+                  notes:
+                    existingComp.notes && !/^Rest Day:/i.test(String(existingComp.notes))
+                      ? existingComp.notes
+                      : restNote,
+                  ...getUpdateMetadata(existingComp),
+                })
+                .eq('id', existingComp.id);
+              if (compUpdErr) throw compUpdErr;
+            } else {
+              const { error: compInsErr } = await supabase.from('completions').insert({
+                user_id: auth.userId,
+                habit_id: h.id,
+                date: dateIst,
+                completed: false,
+                skipped: true,
+                status: 'rest',
+                rest_reason: restReason,
+                notes: restNote,
+                ...getInsertMetadata(),
+              });
+              if (compInsErr) throw compInsErr;
+            }
+            autoRestedIds.push(h.id);
+          }
+        } else if (args.lowEnergyMode === false) {
+          const { data: dayComps } = await supabase
+            .from('completions')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .eq('date', dateIst);
+
+          const trackedIds = new Set<string>(
+            Array.isArray(existing?.rested_habit_ids)
+              ? existing.rested_habit_ids.map(String)
+              : []
+          );
+          for (const comp of dayComps || []) {
+            const isLowEnergyRest =
+              (comp.status === 'rest' ||
+                comp.skipped === true ||
+                /^Rest Day:/i.test(String(comp.notes || ''))) &&
+              (trackedIds.has(comp.habit_id) ||
+                comp.rest_reason === 'Low-Energy Day' ||
+                comp.rest_reason === 'Low-Energy Mode');
+            if (isLowEnergyRest && !comp.completed) {
+              const nextNotes = /^Rest Day:\s*(Low-Energy|Recovery)/i.test(
+                String(comp.notes || '')
+              )
+                ? null
+                : comp.notes;
+              const { error: revErr } = await supabase
+                .from('completions')
+                .update({
+                  completed: false,
+                  skipped: false,
+                  status: null,
+                  rest_reason: null,
+                  notes: nextNotes,
+                  ...getUpdateMetadata(comp),
+                })
+                .eq('id', comp.id);
+              if (revErr) throw revErr;
+              revertedRestHabitIds.push(comp.habit_id);
+            }
+          }
+        }
 
         let savedRow: Record<string, unknown>;
 
@@ -603,7 +683,9 @@ export function registerFitnessTools(server: McpServer) {
           if (args.lowEnergyMode !== undefined) updates.low_energy_mode = args.lowEnergyMode;
           if (args.junkFreeOverride !== undefined)
             updates.junk_free_override = args.junkFreeOverride;
-          if (args.restedHabitIds !== undefined || autoRestedIds.length > 0) {
+          if (args.lowEnergyMode === false) {
+            updates.rested_habit_ids = args.restedHabitIds ?? [];
+          } else if (args.restedHabitIds !== undefined || autoRestedIds.length > 0) {
             const existingRested = Array.isArray(existing.rested_habit_ids) ? existing.rested_habit_ids : [];
             const baseList = args.restedHabitIds !== undefined ? args.restedHabitIds : existingRested;
             updates.rested_habit_ids = Array.from(new Set([...baseList, ...autoRestedIds]));
@@ -641,7 +723,10 @@ export function registerFitnessTools(server: McpServer) {
             soreness_level: args.sorenessLevel ?? null,
             low_energy_mode: args.lowEnergyMode ?? false,
             junk_free_override: args.junkFreeOverride ?? false,
-            rested_habit_ids: Array.from(new Set([...(args.restedHabitIds ?? []), ...autoRestedIds])),
+            rested_habit_ids:
+              args.lowEnergyMode === false
+                ? args.restedHabitIds ?? []
+                : Array.from(new Set([...(args.restedHabitIds ?? []), ...autoRestedIds])),
             notes: args.notes ?? null,
             ...meta,
           };
@@ -656,24 +741,50 @@ export function registerFitnessTools(server: McpServer) {
           savedRow = data;
         }
 
-        // Sync current_weight_kg onto fitness_profiles if a profile exists
-        if (typeof args.weightKg === 'number' && args.weightKg > 0) {
-          const { data: prof } = await supabase
-            .from('fitness_profiles')
-            .select('*')
+        // Sync current_weight_kg onto fitness_profiles ONLY if this log date >= latest weigh-in date
+        let profileWeightSynced = false;
+        if (typeof args.weightKg === 'number' && Number.isFinite(args.weightKg) && args.weightKg > 0) {
+          const { data: allWeightLogs } = await supabase
+            .from('fitness_daily_logs')
+            .select('date, weight_kg')
             .eq('user_id', auth.userId)
             .is('deleted_at', null)
-            .maybeSingle();
+            .order('date', { ascending: false });
 
-          if (prof) {
-            await supabase
+          const latestWeightedRow = (allWeightLogs || []).find(
+            (r: any) =>
+              r.weight_kg !== null &&
+              r.weight_kg !== undefined &&
+              Number.isFinite(Number(r.weight_kg)) &&
+              Number(r.weight_kg) > 0
+          );
+          const latestWeighInDate = latestWeightedRow
+            ? String(latestWeightedRow.date).slice(0, 10)
+            : null;
+
+          if (!latestWeighInDate || dateIst >= latestWeighInDate) {
+            const { data: prof } = await supabase
               .from('fitness_profiles')
-              .update({
-                current_weight_kg: args.weightKg,
-                ...getUpdateMetadata(prof),
-              })
+              .select('*')
               .eq('user_id', auth.userId)
-              .eq('id', prof.id);
+              .is('deleted_at', null)
+              .maybeSingle();
+
+            if (prof) {
+              const { error: profUpdErr } = await supabase
+                .from('fitness_profiles')
+                .update({
+                  current_weight_kg: args.weightKg,
+                  ...(prof.starting_weight_kg === null || prof.starting_weight_kg === undefined
+                    ? { starting_weight_kg: args.weightKg }
+                    : {}),
+                  ...getUpdateMetadata(prof),
+                })
+                .eq('user_id', auth.userId)
+                .eq('id', prof.id);
+              if (profUpdErr) throw profUpdErr;
+              profileWeightSynced = true;
+            }
           }
         }
 
@@ -693,6 +804,8 @@ export function registerFitnessTools(server: McpServer) {
                 {
                   action: existing ? 'merged_updated' : 'created',
                   autoRestedHabitIds: autoRestedIds,
+                  revertedRestHabitIds,
+                  profileWeightSynced,
                   dailyLog: mapFitnessDailyLogFromRow(savedRow),
                 },
                 null,
@@ -1145,6 +1258,60 @@ export function registerFitnessTools(server: McpServer) {
           });
         }
 
+        let resolvedLinkedTxId = linkedTxResult?.transaction.id ?? args.linkedTransactionId ?? null;
+        let autoLinkedTransaction: {
+          id: string;
+          title: string;
+          amount: number;
+          date: string;
+        } | null = null;
+
+        if (!resolvedLinkedTxId && hasScope(auth, 'habitflow:finance:read')) {
+          const [{ data: dayTxs }, { data: finCats }, { data: dayMeals }] = await Promise.all([
+            supabase
+              .from('finance_transactions')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('date', dateIst)
+              .is('deleted_at', null),
+            supabase
+              .from('finance_categories')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .is('deleted_at', null),
+            supabase
+              .from('meal_logs')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('date', dateIst)
+              .is('deleted_at', null),
+          ]);
+          const mappedTxs = (dayTxs || []).map(mapFinanceTransactionFromRow);
+          const mappedCats = (finCats || []).map(mapFinanceCategoryFromRow);
+          const mappedMealsDay = (dayMeals || []).map(mapMealLogFromRow);
+          const txMatch = findBestMealTransactionMatch(
+            {
+              id: '__draft__',
+              name: mealName,
+              date: dateIst,
+              isJunk: isJunkMeal,
+              notes: args.notes ?? null,
+            },
+            mappedTxs,
+            mappedMealsDay,
+            mappedCats
+          );
+          if (txMatch && txMatch.confidence === 'high') {
+            resolvedLinkedTxId = txMatch.transaction.id;
+            autoLinkedTransaction = {
+              id: txMatch.transaction.id,
+              title: txMatch.transaction.title,
+              amount: txMatch.transaction.amount,
+              date: txMatch.transaction.date,
+            };
+          }
+        }
+
         const insertPayload = {
           user_id: auth.userId,
           date: dateIst,
@@ -1171,7 +1338,7 @@ export function registerFitnessTools(server: McpServer) {
           quantity_multiplier: mult,
           is_junk: isJunkMeal,
           template_id: args.templateId ?? null,
-          linked_transaction_id: linkedTxResult?.transaction.id ?? args.linkedTransactionId ?? null,
+          linked_transaction_id: resolvedLinkedTxId,
           source: 'mcp',
           notes: args.notes ?? null,
           logged_at: new Date().toISOString(),
@@ -1184,6 +1351,92 @@ export function registerFitnessTools(server: McpServer) {
           .select()
           .single();
         if (error) throw error;
+
+        const mappedMeal = mapMealLogFromRow(data);
+
+        // Auto-deduct matching protein supplement inventory for non-junk meals
+        let autoLoggedSupplement: {
+          supplementId: string;
+          name: string;
+          brand: string | null;
+          servingsTaken: number;
+          remainingServings: number;
+          logId: string;
+        } | null = null;
+
+        if (!isJunkMeal) {
+          const { data: supRows } = await supabase
+            .from('supplement_inventory')
+            .select('*')
+            .eq('user_id', auth.userId)
+            .is('deleted_at', null);
+
+          const mappedSups = (supRows || []).map(mapSupplementInventoryFromRow);
+          const supMatch = matchProteinMealToSupplement(mappedMeal, mappedSups);
+          if (supMatch) {
+            const { data: existingSupLogs } = await supabase
+              .from('supplement_logs')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('supplement_id', supMatch.supplement.id)
+              .is('deleted_at', null);
+
+            const mappedExistingSupLogs = (existingSupLogs || []).map(mapSupplementLogFromRow);
+            if (
+              !hasAutoMealSupplementLog(
+                mappedExistingSupLogs,
+                mappedMeal.id,
+                supMatch.supplement.id
+              )
+            ) {
+              const { data: insSupLog, error: insSupLogErr } = await supabase
+                .from('supplement_logs')
+                .insert({
+                  user_id: auth.userId,
+                  supplement_id: supMatch.supplement.id,
+                  date: dateIst,
+                  servings_taken: supMatch.servings,
+                  taken_at: new Date().toISOString(),
+                  notes: `Auto-synced from meal: ${mealName} ${buildAutoMealSupplementNoteTag(mappedMeal.id)}`,
+                  ...getInsertMetadata(),
+                })
+                .select()
+                .single();
+
+              if (!insSupLogErr && insSupLog) {
+                const allLogsForSup = [
+                  ...mappedExistingSupLogs,
+                  mapSupplementLogFromRow(insSupLog),
+                ];
+                const nextRemaining = deriveSupplementRemainingServings(
+                  supMatch.supplement,
+                  allLogsForSup
+                );
+                const rawSupRow = (supRows || []).find(
+                  (r: any) => r.id === supMatch.supplement.id
+                );
+                const { error: updSupErr } = await supabase
+                  .from('supplement_inventory')
+                  .update({
+                    remaining_servings: nextRemaining,
+                    ...getUpdateMetadata(rawSupRow),
+                  })
+                  .eq('user_id', auth.userId)
+                  .eq('id', supMatch.supplement.id);
+                if (updSupErr) throw updSupErr;
+
+                autoLoggedSupplement = {
+                  supplementId: supMatch.supplement.id,
+                  name: supMatch.supplement.name,
+                  brand: supMatch.supplement.brand ?? null,
+                  servingsTaken: supMatch.servings,
+                  remainingServings: nextRemaining,
+                  logId: insSupLog.id,
+                };
+              }
+            }
+          }
+        }
 
         await logMcpToolInvocation(auth, {
           toolName: 'manage_meals',
@@ -1200,7 +1453,9 @@ export function registerFitnessTools(server: McpServer) {
               text: JSON.stringify(
                 {
                   action: 'logged',
-                  meal: mapMealLogFromRow(data),
+                  meal: mappedMeal,
+                  ...(autoLoggedSupplement ? { autoLoggedSupplement } : {}),
+                  ...(autoLinkedTransaction ? { autoLinkedTransaction } : {}),
                   ...(linkedTxResult
                     ? {
                         linkedTransaction: linkedTxResult.transaction,

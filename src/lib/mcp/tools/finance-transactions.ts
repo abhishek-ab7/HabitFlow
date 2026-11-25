@@ -14,6 +14,15 @@ import {
 } from '../sync-helpers';
 import { logMcpToolInvocation } from '../audit';
 import { resolveTransactionCycle } from '@/lib/finance/credit-card-cycles';
+import {
+  mapFinanceCategoryFromRow,
+  mapFinanceTransactionFromRow,
+  mapMealLogFromRow,
+  mapSupplementInventoryFromRow,
+} from '../mappers';
+import { classifyCategoryBridgeKind } from '@/lib/fitness/finance-bridge';
+import { matchExpenseToSupplement } from '@/lib/fitness/supplement-meal-bridge';
+import { findBestTransactionMealMatch } from '@/lib/fitness/meal-finance-matcher';
 
 export function registerFinanceTransactionsTools(server: McpServer) {
   // 19. get_transactions
@@ -243,6 +252,95 @@ export function registerFinanceTransactionsTools(server: McpServer) {
           });
           const updatedAccounts = await applyAccountBalanceDelta(supabase, auth.userId, deltas);
 
+          let autoSyncedSupplementCost: {
+            supplementId: string;
+            name: string;
+            costInr: number;
+          } | null = null;
+          let autoLinkedMeal: { id: string; name: string; date: string } | null = null;
+
+          if (args.type === 'expense' && hasScope(auth, 'habitflow:write')) {
+            const { data: catRow } = await supabase
+              .from('finance_categories')
+              .select('*')
+              .eq('user_id', auth.userId)
+              .eq('id', categoryId)
+              .maybeSingle();
+
+            const mappedCat = catRow ? mapFinanceCategoryFromRow(catRow) : null;
+            const bridgeKind = classifyCategoryBridgeKind(mappedCat);
+
+            if (bridgeKind === 'health_supplements') {
+              const { data: supRows } = await supabase
+                .from('supplement_inventory')
+                .select('*')
+                .eq('user_id', auth.userId)
+                .is('deleted_at', null);
+
+              const mappedSups = (supRows || []).map(mapSupplementInventoryFromRow);
+              const matchedSup = matchExpenseToSupplement(
+                {
+                  title: newTx.title,
+                  merchantName: newTx.merchant_name,
+                  notes: newTx.notes,
+                },
+                mappedSups
+              );
+              if (matchedSup && Number(matchedSup.costInr || 0) === 0) {
+                const rawSup = (supRows || []).find((r: any) => r.id === matchedSup.id);
+                const { error: supCostErr } = await supabase
+                  .from('supplement_inventory')
+                  .update({
+                    cost_inr: Number(args.amount),
+                    linked_transaction_id: data.id,
+                    ...getUpdateMetadata(rawSup),
+                  })
+                  .eq('user_id', auth.userId)
+                  .eq('id', matchedSup.id);
+                if (!supCostErr) {
+                  autoSyncedSupplementCost = {
+                    supplementId: matchedSup.id,
+                    name: matchedSup.name,
+                    costInr: Number(args.amount),
+                  };
+                }
+              }
+            } else if (bridgeKind === 'food_dining' || bridgeKind === 'junk') {
+              const { data: dayMeals } = await supabase
+                .from('meal_logs')
+                .select('*')
+                .eq('user_id', auth.userId)
+                .eq('date', txDate)
+                .is('deleted_at', null);
+
+              const mappedDayMeals = (dayMeals || []).map(mapMealLogFromRow);
+              const mappedTx = mapFinanceTransactionFromRow(data);
+              const mealMatch = findBestTransactionMealMatch(
+                mappedTx,
+                mappedDayMeals,
+                mappedCat ? [mappedCat] : []
+              );
+              if (mealMatch && mealMatch.confidence === 'high') {
+                const rawMeal = (dayMeals || []).find((m: any) => m.id === mealMatch.meal.id);
+                const { error: linkErr } = await supabase
+                  .from('meal_logs')
+                  .update({
+                    linked_transaction_id: data.id,
+                    ...getUpdateMetadata(rawMeal),
+                  })
+                  .eq('user_id', auth.userId)
+                  .eq('id', mealMatch.meal.id);
+                if (!linkErr) {
+                  autoLinkedMeal = {
+                    id: mealMatch.meal.id,
+                    name: mealMatch.meal.name,
+                    date: mealMatch.meal.date,
+                  };
+                }
+              }
+            }
+          }
+
           await logMcpToolInvocation(auth, {
             toolName: 'manage_transaction',
             action: 'create',
@@ -255,7 +353,17 @@ export function registerFinanceTransactionsTools(server: McpServer) {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify({ action: 'created', transaction: data, updatedAccounts }, null, 2),
+                text: JSON.stringify(
+                  {
+                    action: 'created',
+                    transaction: data,
+                    updatedAccounts,
+                    ...(autoSyncedSupplementCost ? { autoSyncedSupplementCost } : {}),
+                    ...(autoLinkedMeal ? { autoLinkedMeal } : {}),
+                  },
+                  null,
+                  2
+                ),
               },
             ],
           };

@@ -692,6 +692,7 @@ export interface FinanceBudget {
   totalBudget: number;
   expectedIncome: number;
   plannedSipAmount?: number;
+  paydayOfMonth?: number; // 1..31 salary arrival day
   budgetMode?: FinanceBudgetMode;
   assignedIncome?: number;
   currency: string;
@@ -1060,6 +1061,8 @@ export interface FinanceTransactionFormData {
   statementCycleKey?: string | null;
   paidStatementId?: string | null;
   isCreditCardPayment?: boolean;
+  /** Internal caller flag to skip auto-creating a duplicate Junk Food meal when caller already links a meal. */
+  skipAutoDietBridge?: boolean;
 }
 
 export interface FinanceFilterState {

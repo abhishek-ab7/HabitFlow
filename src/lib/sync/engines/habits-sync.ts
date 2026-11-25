@@ -192,26 +192,15 @@ export class CompletionsSyncEngine implements ISynchronizer {
         updated_at: new Date().toISOString()
       }));
 
-      const { error } = await (this.supabase.from('completions') as any)
-        .upsert(payload, { onConflict: 'habit_id,date' });
+      const { error } = await upsertRowsWithColumnFallback(
+        this.supabase,
+        'completions',
+        payload,
+        { onConflict: 'habit_id,date' }
+      );
 
       if (error) {
-        const legacyPayload = batch.map((c) => ({
-          id: c.id,
-          user_id: userId,
-          habit_id: c.habitId,
-          date: c.date,
-          completed: c.completed,
-          notes: c.note || null,
-          value: c.value || 0,
-          generation_counter: c.generationCounter || 1,
-          updated_at: new Date().toISOString()
-        }));
-        const { error: fallbackErr } = await (this.supabase.from('completions') as any)
-          .upsert(legacyPayload, { onConflict: 'habit_id,date' });
-        if (fallbackErr) {
-          throw new Error(`[CompletionsSyncEngine Bulk Push Failure]: ${fallbackErr.message}`);
-        }
+        throw new Error(`[CompletionsSyncEngine Bulk Push Failure]: ${error.message}`);
       }
 
       await db.transaction('rw', db.completions, async () => {
@@ -245,18 +234,22 @@ export class CompletionsSyncEngine implements ISynchronizer {
           const local = await db.completions.get(remote.id);
           
           if (!local || (remote.generation_counter || 0) > (local.generationCounter || 0)) {
-            const isRest = remote.status === 'rest' || remote.skipped === true;
+            const isRest =
+              remote.status === 'rest' ||
+              remote.skipped === true ||
+              Boolean(remote.rest_reason) ||
+              /^rest day\b/i.test(String(remote.notes || ''));
             await db.completions.put({
               id: remote.id,
               userId: remote.user_id,
               habitId: remote.habit_id,
               date: remote.date,
-              completed: remote.completed,
+              completed: isRest ? false : remote.completed,
               status: remote.status || (isRest ? 'rest' : remote.completed ? 'completed' : undefined),
               skipped: isRest,
               restReason: Object.prototype.hasOwnProperty.call(remote, 'rest_reason')
                 ? (remote.rest_reason ?? undefined)
-                : local?.restReason || undefined,
+                : local?.restReason || (isRest ? 'Low-Energy Day' : undefined),
               note: remote.notes || undefined,
               value: remote.value || 0,
               generationCounter: remote.generation_counter || 1,

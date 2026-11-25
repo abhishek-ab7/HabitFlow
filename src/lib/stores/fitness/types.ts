@@ -110,6 +110,10 @@ export interface FitnessStoreActions {
     source?: MealLogSource;
     notes?: string | null;
   }) => Promise<MealLog>;
+  linkMealToTransaction: (
+    mealId: string,
+    transactionId: string | null
+  ) => Promise<MealLog | null>;
 
   // Workout slice
   addWorkoutSession: (

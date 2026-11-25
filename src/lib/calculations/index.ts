@@ -373,6 +373,10 @@ export function calculateCurrentStreak(
     }
 
     if (freq === 'weekly_flexible') {
+      if (isExplicitRest) {
+        currentDate = subDays(currentDate, 1);
+        continue;
+      }
       const wkStart = formatDate(startOfWeek(currentDate, { weekStartsOn }));
       const used = weekOffDaysUsed.get(wkStart) || 0;
       if (used < allowedOffDaysPerWeek) {
@@ -517,6 +521,9 @@ export function calculateBestStreak(
     }
 
     if (freq === 'weekly_flexible') {
+      if (restDatesSet.has(dateStr)) {
+        continue;
+      }
       const wkStart = formatDate(startOfWeek(currentDate, { weekStartsOn }));
       const used = weekOffDaysUsed.get(wkStart) || 0;
       if (used < allowedOffDaysPerWeek) {

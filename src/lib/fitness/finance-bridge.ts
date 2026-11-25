@@ -1,4 +1,5 @@
 import { estimateHinglishFoodMacros } from './meal-estimator';
+import { matchExpenseToSupplement } from './supplement-meal-bridge';
 import { useFitnessStore } from '@/lib/stores/fitness';
 import type {
   FinanceCategory,
@@ -73,25 +74,11 @@ export function findMatchingSupplementId(
   const active = inventory.filter((s) => !s.deletedAt && s.isActive);
   if (active.length === 0) return '__new__';
 
-  const q = title.trim().toLowerCase();
+  const q = title.trim();
   if (!q) return active[0].id;
 
-  const directMatch = active.find(
-    (s) =>
-      q.includes(s.name.toLowerCase()) ||
-      s.name.toLowerCase().includes(q)
-  );
-  if (directMatch) return directMatch.id;
-
-  const keywords = ['whey', 'protein', 'creatine', 'omega', 'vitamin', 'd3', 'magnesium', 'zinc', 'fish oil', 'multivitamin'];
-  for (const kw of keywords) {
-    if (q.includes(kw)) {
-      const tokenMatch = active.find((s) => s.name.toLowerCase().includes(kw));
-      if (tokenMatch) return tokenMatch.id;
-    }
-  }
-
-  return '__new__';
+  const matched = matchExpenseToSupplement({ title: q }, active);
+  return matched ? matched.id : '__new__';
 }
 
 export function estimateDietBridgePreview(title: string, amountInr: number, isJunk: boolean) {

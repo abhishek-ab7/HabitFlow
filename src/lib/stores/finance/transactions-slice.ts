@@ -273,6 +273,7 @@ export const createTransactionsSlice: FinanceSliceCreator<TransactionsSlice> = (
         amount: tx.amount,
         transaction: tx,
         category: txCategory,
+        skipAutoDietBridge: data.skipAutoDietBridge,
       });
     } catch {
       // Non-blocking gamification & cross-domain hook
