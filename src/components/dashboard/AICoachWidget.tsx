@@ -119,6 +119,28 @@ function compute14dFitnessTelemetry(params: {
   };
 }
 
+function selectActiveHabitNames(habits: ReturnType<typeof useHabitStore.getState>['habits']): string[] {
+  return habits.filter((h) => !h.archived).map((h) => h.name);
+}
+
+function selectDueTaskTitles(tasks: ReturnType<typeof useTaskStore.getState>['tasks'], todayEnd: string): string[] {
+  return tasks
+    .filter((t) => t.status !== 'done' && t.status !== 'archived' && !t.parentTaskId && t.due_date && t.due_date <= todayEnd)
+    .map((t) => t.title);
+}
+
+function buildCoachCrossDomainSummary(crossDomain: ReturnType<typeof computeCrossDomainInsights>) {
+  return {
+    alerts: crossDomain.alerts.slice(0, 4).map((a) => ({ title: a.title, description: a.description, metricBadge: a.metricBadge })),
+    gymCostPerWorkoutInr: crossDomain.gymSupplementRoi.gymCostPerWorkoutInr,
+    primaryProteinCostPer25gInr: crossDomain.gymSupplementRoi.primaryCostPer25gProteinInr,
+    triggerMultiplier: crossDomain.triggers.overallSpendMultiplier,
+    topTriggerLabel: crossDomain.triggers.topTriggerLabel,
+    socialFoodSpend30dInr: crossDomain.socialSpendDiet.socialFoodSpend30dInr,
+    savings70PctMonthlyInr: crossDomain.walletWaistline.savings70PctMonthlyInr,
+  };
+}
+
 function buildCoachContextPayload(params: {
   today: string;
   habits: ReturnType<typeof useHabitStore.getState>['habits'];
@@ -136,7 +158,6 @@ function buildCoachContextPayload(params: {
   moodLogs: ReturnType<typeof useMoodStore.getState>['moodLogs'];
 }) {
   const { today, habits, habitCompletions, tasks, fitnessDailyLogs, fitnessMealLogs, fitnessWorkoutSessions, fitnessProfile } = params;
-  const todayEnd = `${today}T23:59:59`;
   const crossDomain = computeCrossDomainInsights({
     todayDate: today,
     transactions: params.financeTransactions,
@@ -154,8 +175,8 @@ function buildCoachContextPayload(params: {
 
   return {
     todayIso: today,
-    todaysHabits: habits.filter((h) => !h.archived).map((h) => h.name),
-    unfinishedTasks: tasks.filter((t) => t.status !== 'done' && t.status !== 'archived' && !t.parentTaskId && t.due_date && t.due_date <= todayEnd).map((t) => t.title),
+    todaysHabits: selectActiveHabitNames(habits),
+    unfinishedTasks: selectDueTaskTitles(tasks, `${today}T23:59:59`),
     mode: 'briefing' as const,
     fitnessTelemetry: compute14dFitnessTelemetry({
       today,
@@ -165,15 +186,7 @@ function buildCoachContextPayload(params: {
       fitnessWorkoutSessions,
       walletWaistline: crossDomain.walletWaistline,
     }),
-    crossDomainInsights: {
-      alerts: crossDomain.alerts.slice(0, 4).map((a) => ({ title: a.title, description: a.description, metricBadge: a.metricBadge })),
-      gymCostPerWorkoutInr: crossDomain.gymSupplementRoi.gymCostPerWorkoutInr,
-      primaryProteinCostPer25gInr: crossDomain.gymSupplementRoi.primaryCostPer25gProteinInr,
-      triggerMultiplier: crossDomain.triggers.overallSpendMultiplier,
-      topTriggerLabel: crossDomain.triggers.topTriggerLabel,
-      socialFoodSpend30dInr: crossDomain.socialSpendDiet.socialFoodSpend30dInr,
-      savings70PctMonthlyInr: crossDomain.walletWaistline.savings70PctMonthlyInr,
-    },
+    crossDomainInsights: buildCoachCrossDomainSummary(crossDomain),
   };
 }
 
@@ -274,7 +287,8 @@ function useCoachCacheHydration(params: {
   const { userId, userEmail, displayName, email, isLoadingUser, hasData, loading, onHydrate } = params;
   useEffect(() => {
     if (!userId || !email) return;
-    if (isLoadingUser || hasData || loading) return;
+    if (isLoadingUser) return;
+    if (hasData || loading) return;
     const cached = readCachedCoachAdvice(
       `ai_coach_advice_${userId}`,
       getIstIsoDate(),
@@ -354,21 +368,48 @@ function useCoachBriefingController() {
   return { data, loading, error, isFinanceEnabled, anomalies, fetchAdvice };
 }
 
-export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
-  const router = useRouter();
-  const { data, loading, error, isFinanceEnabled, anomalies, fetchAdvice } = useCoachBriefingController();
+function formatLiveGreeting(greeting?: string): string {
+  if (!greeting) return '';
+  const { greeting: timeGreeting } = getTimeGreeting();
+  if (/^good\s+(morning|afternoon|evening|night)/i.test(greeting)) {
+    return greeting.replace(/^good\s+(morning|afternoon|evening|night)/i, timeGreeting);
+  }
+  return greeting;
+}
 
-  const animatedFocus = useTypewriter(data?.focus || '', 15, !loading);
-
-  // Always keep greeting synchronized with the current client time of day
-  const liveGreeting = useMemo(() => {
-    if (!data?.greeting) return '';
-    const { greeting: timeGreeting } = getTimeGreeting();
-    if (/^good\s+(morning|afternoon|evening|night)/i.test(data.greeting)) {
-      return data.greeting.replace(/^good\s+(morning|afternoon|evening|night)/i, timeGreeting);
-    }
-    return data.greeting;
-  }, [data?.greeting]);
+function CoachAnomalyRow({
+  alert,
+  onNavigate,
+}: {
+  alert: ReturnType<ReturnType<typeof useFinanceStore.getState>['getSpendingAnomalies']>[number];
+  onNavigate: (target: string) => void;
+}) {
+  const isCritical = alert.severity === 'critical';
+  return (
+    <div
+      className={cn(
+        'rounded-xl border p-3 flex items-start justify-between gap-2.5 text-xs',
+        isCritical ? 'border-rose-500/30 bg-rose-500/5' : 'border-amber-500/30 bg-amber-500/5'
+      )}
+    >
+      <div className="flex items-start gap-2 min-w-0">
+        <AlertTriangle className={cn('w-4 h-4 shrink-0 mt-0.5', isCritical ? 'text-rose-500' : 'text-amber-500')} />
+        <div className="min-w-0">
+          <p className="font-semibold text-foreground">{alert.title}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{alert.description}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onNavigate(alert.actionTarget)}
+        className="text-[11px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5 shrink-0"
+      >
+        {alert.actionLabel}
+        <ArrowRight className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
 
 function CoachAnomalyAlerts({
   anomalies,
@@ -380,34 +421,43 @@ function CoachAnomalyAlerts({
   if (anomalies.length === 0) return null;
   return (
     <div className="space-y-2">
-      {anomalies.map((alert) => {
-        const isCritical = alert.severity === 'critical';
-        return (
-          <div
-            key={alert.id}
-            className={cn(
-              'rounded-xl border p-3 flex items-start justify-between gap-2.5 text-xs',
-              isCritical ? 'border-rose-500/30 bg-rose-500/5' : 'border-amber-500/30 bg-amber-500/5'
-            )}
-          >
-            <div className="flex items-start gap-2 min-w-0">
-              <AlertTriangle className={cn('w-4 h-4 shrink-0 mt-0.5', isCritical ? 'text-rose-500' : 'text-amber-500')} />
-              <div className="min-w-0">
-                <p className="font-semibold text-foreground">{alert.title}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{alert.description}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate(alert.actionTarget)}
-              className="text-[11px] font-semibold text-primary hover:underline inline-flex items-center gap-0.5 shrink-0"
-            >
-              {alert.actionLabel}
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-        );
-      })}
+      {anomalies.map((alert) => (
+        <CoachAnomalyRow key={alert.id} alert={alert} onNavigate={onNavigate} />
+      ))}
+    </div>
+  );
+}
+
+function CoachLoadingState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-5 space-y-2 text-muted-foreground">
+      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      <p className="text-xs">Preparing today&apos;s briefing...</p>
+    </div>
+  );
+}
+
+function CoachErrorState({ error, loading, onRetry }: { error: string; loading: boolean; onRetry: () => void }) {
+  return (
+    <div className="rounded-xl border border-border bg-background p-4 text-center space-y-2.5">
+      <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">AI Coach Unavailable</p>
+      <p className="text-xs text-muted-foreground">{error}</p>
+      <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={loading} className="rounded-xl text-xs">
+        Try Again
+      </Button>
+    </div>
+  );
+}
+
+function CoachEmptyState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border p-4 text-center space-y-2.5">
+      <p className="text-xs font-semibold text-foreground">Ready for your daily Life OS briefing?</p>
+      <p className="text-[11px] text-muted-foreground">Synthesize your active habits and pending tasks into one clear focus target.</p>
+      <Button type="button" size="sm" onClick={onRetry} className="rounded-xl text-xs gap-1.5">
+        <Sparkles className="w-3.5 h-3.5" />
+        Generate Daily Briefing
+      </Button>
     </div>
   );
 }
@@ -421,37 +471,9 @@ function CoachBriefingSection(props: {
   onRetry: () => void;
 }) {
   const { loading, error, data, liveGreeting, animatedFocus, onRetry } = props;
-  if (loading && !data) {
-    return (
-      <div className="flex flex-col items-center justify-center py-5 space-y-2 text-muted-foreground">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
-        <p className="text-xs">Preparing today&apos;s briefing...</p>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rounded-xl border border-border bg-background p-4 text-center space-y-2.5">
-        <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">AI Coach Unavailable</p>
-        <p className="text-xs text-muted-foreground">{error}</p>
-        <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={loading} className="rounded-xl text-xs">
-          Try Again
-        </Button>
-      </div>
-    );
-  }
-  if (!data) {
-    return (
-      <div className="rounded-xl border border-dashed border-border p-4 text-center space-y-2.5">
-        <p className="text-xs font-semibold text-foreground">Ready for your daily Life OS briefing?</p>
-        <p className="text-[11px] text-muted-foreground">Synthesize your active habits and pending tasks into one clear focus target.</p>
-        <Button type="button" size="sm" onClick={onRetry} className="rounded-xl text-xs gap-1.5">
-          <Sparkles className="w-3.5 h-3.5" />
-          Generate Daily Briefing
-        </Button>
-      </div>
-    );
-  }
+  if (loading && !data) return <CoachLoadingState />;
+  if (error) return <CoachErrorState error={error} loading={loading} onRetry={onRetry} />;
+  if (!data) return <CoachEmptyState onRetry={onRetry} />;
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-bold text-foreground">{liveGreeting}</h3>
@@ -472,47 +494,80 @@ function CoachBriefingSection(props: {
   );
 }
 
+function CoachCardHeader({
+  isFinanceEnabled,
+  loading,
+  onAskLifeOs,
+  onRefresh,
+}: {
+  isFinanceEnabled: boolean;
+  loading: boolean;
+  onAskLifeOs: () => void;
+  onRefresh: () => void;
+}) {
   return (
-    <Card className="rounded-2xl border border-border bg-card shadow-none overflow-hidden relative h-full flex flex-col tour-ai-coach-widget">
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
-          <Sparkles className="w-4 h-4 text-primary" />
-          AI Coach &amp; Alerts
-        </CardTitle>
-        <div className="flex items-center gap-1">
-          {isFinanceEnabled && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => (onOpenAskFinances ? onOpenAskFinances() : router.push('/finance?ask=1'))}
-              className="h-8 px-2.5 text-xs gap-1 rounded-xl"
-            >
-              <MessageSquare className="w-3.5 h-3.5 text-primary" />
-              Ask Life OS
-            </Button>
-          )}
+    <CardHeader className="flex flex-row items-center justify-between pb-3">
+      <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+        <Sparkles className="w-4 h-4 text-primary" />
+        AI Coach &amp; Alerts
+      </CardTitle>
+      <div className="flex items-center gap-1">
+        {isFinanceEnabled && (
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => fetchAdvice(true)}
-            disabled={loading}
-            aria-label="Refresh AI briefing"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            variant="outline"
+            size="sm"
+            onClick={onAskLifeOs}
+            className="h-8 px-2.5 text-xs gap-1 rounded-xl"
           >
-            <RefreshCw className={cn('w-3.5 h-3.5 transition-all duration-500', loading && 'animate-spin')} />
+            <MessageSquare className="w-3.5 h-3.5 text-primary" />
+            Ask Life OS
           </Button>
-        </div>
-      </CardHeader>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onRefresh}
+          disabled={loading}
+          aria-label="Refresh AI briefing"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+        >
+          <RefreshCw className={cn('w-3.5 h-3.5 transition-all duration-500', loading && 'animate-spin')} />
+        </Button>
+      </div>
+    </CardHeader>
+  );
+}
+
+export function AICoachWidget({ onOpenAskFinances }: AICoachWidgetProps) {
+  const router = useRouter();
+  const { data, loading, error, isFinanceEnabled, anomalies, fetchAdvice } = useCoachBriefingController();
+
+  const animatedFocus = useTypewriter(data?.focus || '', 15, !loading);
+  const liveGreeting = useMemo(() => formatLiveGreeting(data?.greeting), [data?.greeting]);
+
+  const handleAskLifeOs = () => {
+    if (onOpenAskFinances) onOpenAskFinances();
+    else router.push('/finance?ask=1');
+  };
+
+  const handleNavigateTarget = (target: string) => {
+    const isMainFinance = target === 'finance' || target === 'budgets';
+    router.push(isMainFinance ? '/finance' : `/finance?tab=${target}`);
+  };
+
+  return (
+    <Card className="rounded-2xl border border-border bg-card shadow-none overflow-hidden relative h-full flex flex-col tour-ai-coach-widget">
+      <CoachCardHeader
+        isFinanceEnabled={isFinanceEnabled}
+        loading={loading}
+        onAskLifeOs={handleAskLifeOs}
+        onRefresh={() => fetchAdvice(true)}
+      />
 
       <CardContent className="space-y-4 flex-1 flex flex-col justify-between">
-        <CoachAnomalyAlerts
-          anomalies={anomalies}
-          onNavigate={(target) =>
-            router.push(target === 'finance' || target === 'budgets' ? '/finance' : `/finance?tab=${target}`)
-          }
-        />
+        <CoachAnomalyAlerts anomalies={anomalies} onNavigate={handleNavigateTarget} />
         <CoachBriefingSection
           loading={loading}
           error={error}

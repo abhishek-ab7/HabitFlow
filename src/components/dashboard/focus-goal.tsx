@@ -26,6 +26,156 @@ interface SingleGoalCardProps {
   onToggleMilestone: (milestoneId: string) => void;
 }
 
+const DEADLINE_COLOR_MAP: Record<string, string> = {
+  destructive: 'text-rose-600 dark:text-rose-400',
+  warning: 'text-amber-600 dark:text-amber-400',
+  success: 'text-emerald-600 dark:text-emerald-400',
+};
+
+function GoalLiveProgressBar({
+  currentLabel,
+  targetLabel,
+  progress,
+  barColorClass,
+}: {
+  currentLabel: string;
+  targetLabel: string;
+  progress: number;
+  barColorClass: string;
+}) {
+  return (
+    <div className="mt-3 space-y-1">
+      <div className="flex items-center justify-between text-xs font-mono tabular-nums">
+        <span className="font-bold text-foreground">{currentLabel}</span>
+        <span className="text-muted-foreground">Target {targetLabel}</span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div style={{ width: `${Math.min(100, progress)}%` }} className={cn('h-full rounded-full transition-all', barColorClass)} />
+      </div>
+    </div>
+  );
+}
+
+function GoalNextMilestonesList({
+  nextMilestones,
+  onToggleMilestone,
+}: {
+  nextMilestones: Milestone[];
+  onToggleMilestone: (milestoneId: string) => void;
+}) {
+  if (nextMilestones.length === 0) return null;
+  return (
+    <div className="space-y-2 mt-3">
+      {nextMilestones.map((milestone) => (
+        <motion.div key={milestone.id} className="flex items-center gap-2" whileHover={{ x: 2 }}>
+          <Checkbox
+            id={milestone.id}
+            checked={milestone.completed}
+            onCheckedChange={() => onToggleMilestone(milestone.id)}
+            className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 h-4 w-4"
+          />
+          <label
+            htmlFor={milestone.id}
+            className={cn('text-xs sm:text-sm cursor-pointer transition-colors truncate', milestone.completed && 'line-through text-muted-foreground')}
+          >
+            {milestone.title}
+          </label>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+function GoalCardHeader({
+  title,
+  isFinancialGoal,
+  isFitnessGoal,
+  deadlineLabel,
+  deadlineClass,
+  stats,
+}: {
+  title: string;
+  isFinancialGoal: boolean;
+  isFitnessGoal: boolean;
+  deadlineLabel: string;
+  deadlineClass: string;
+  stats: GoalStats;
+}) {
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-base font-bold text-foreground truncate">{title}</h3>
+        {isFinancialGoal && (
+          <span className="text-[11px] font-semibold text-primary inline-flex items-center gap-1 shrink-0">
+            <Wallet className="w-3 h-3" /> Live Finance
+          </span>
+        )}
+        {isFitnessGoal && !isFinancialGoal && (
+          <span className="text-[11px] font-semibold text-primary inline-flex items-center gap-1 shrink-0">
+            <Dumbbell className="w-3 h-3" /> Live Fitness
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 text-xs mt-1">
+        <span className={cn('inline-flex items-center gap-1 font-medium', deadlineClass)}>
+          <Calendar className="h-3.5 w-3.5" />
+          {deadlineLabel}
+        </span>
+        {stats && (
+          <>
+            <span className="text-muted-foreground" aria-hidden="true">·</span>
+            <span className={cn('font-semibold', stats.isOnTrack ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+              {stats.isOnTrack ? 'On Track' : 'Behind Pace'}
+            </span>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function GoalProgressSection({
+  isFinancialGoal,
+  isFitnessGoal,
+  stats,
+  progress,
+}: {
+  isFinancialGoal: boolean;
+  isFitnessGoal: boolean;
+  stats: GoalStats;
+  progress: number;
+}) {
+  if (isFinancialGoal) {
+    return (
+      <GoalLiveProgressBar
+        currentLabel={formatINR(stats.currentFinancialAmount || 0)}
+        targetLabel={formatINR(stats.targetFinancialAmount || 0)}
+        progress={progress}
+        barColorClass="bg-emerald-500"
+      />
+    );
+  }
+  if (isFitnessGoal) {
+    return (
+      <GoalLiveProgressBar
+        currentLabel={`${stats.currentFitnessValue ?? 0} ${stats.fitnessUnit || ''}`}
+        targetLabel={`${stats.targetFitnessValue} ${stats.fitnessUnit || ''}`}
+        progress={progress}
+        barColorClass="bg-primary"
+      />
+    );
+  }
+  return null;
+}
+
+function computeGoalCardFlags(goal: Goal, stats: GoalStats) {
+  const isFinancialGoal = Boolean(goal.financialLink) && (stats?.targetFinancialAmount ?? 0) > 0;
+  const isFitnessGoal = Boolean(goal.fitnessLink) && (stats?.targetFitnessValue ?? 0) > 0;
+  const showMilestoneFooter = Boolean(stats) && !isFinancialGoal && (!isFitnessGoal || stats.milestonesTotal > 0);
+  return { isFinancialGoal, isFitnessGoal, showMilestoneFooter };
+}
+
 function SingleGoalCard({
   goal,
   milestones,
@@ -35,171 +185,39 @@ function SingleGoalCard({
   const deadlineInfo = getDeadlineStatus(goal.deadline);
   const progress = stats?.progress ?? 0;
   const nextMilestones = milestones.filter((m) => !m.completed).slice(0, 2);
-  const isFinancialGoal =
-    Boolean(goal.financialLink) &&
-    typeof stats?.targetFinancialAmount === 'number' &&
-    stats.targetFinancialAmount > 0;
-  const isFitnessGoal =
-    Boolean(goal.fitnessLink) &&
-    typeof stats?.targetFitnessValue === 'number' &&
-    stats.targetFitnessValue > 0;
-
-  const getDeadlineColorClass = (color: typeof deadlineInfo.color) => {
-    switch (color) {
-      case 'destructive':
-        return 'text-rose-600 dark:text-rose-400';
-      case 'warning':
-        return 'text-amber-600 dark:text-amber-400';
-      case 'success':
-        return 'text-emerald-600 dark:text-emerald-400';
-      default:
-        return 'text-muted-foreground';
-    }
-  };
+  const { isFinancialGoal, isFitnessGoal, showMilestoneFooter } = computeGoalCardFlags(goal, stats);
+  const deadlineClass = DEADLINE_COLOR_MAP[deadlineInfo.color] ?? 'text-muted-foreground';
 
   return (
     <div className="rounded-xl border border-border bg-background p-4 sm:p-5">
       <div className="flex flex-col sm:flex-row gap-4 h-full">
-        {/* Progress Ring */}
         <div className="shrink-0 flex justify-center sm:justify-start items-center">
           <ProgressRing progress={progress} size={92} strokeWidth={8}>
             <div className="text-center font-mono tabular-nums">
-              <span className="text-xl font-bold">
-                <CountUp value={progress} />
-              </span>
+              <span className="text-xl font-bold"><CountUp value={progress} /></span>
               <span className="text-xs text-muted-foreground">%</span>
             </div>
           </ProgressRing>
         </div>
 
-        {/* Goal Info */}
         <div className="flex-1 min-w-0 flex flex-col justify-between gap-3">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-base font-bold text-foreground truncate">
-                {goal.title}
-              </h3>
-              {isFinancialGoal && (
-                <span className="text-[11px] font-semibold text-primary inline-flex items-center gap-1 shrink-0">
-                  <Wallet className="w-3 h-3" />
-                  Live Finance
-                </span>
-              )}
-              {isFitnessGoal && !isFinancialGoal && (
-                <span className="text-[11px] font-semibold text-primary inline-flex items-center gap-1 shrink-0">
-                  <Dumbbell className="w-3 h-3" />
-                  Live Fitness
-                </span>
-              )}
-            </div>
-
-            {/* Unboxed Deadline & Status Line */}
-            <div className="flex flex-wrap items-center gap-2 text-xs mt-1">
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1 font-medium',
-                  getDeadlineColorClass(deadlineInfo.color)
-                )}
-              >
-                <Calendar className="h-3.5 w-3.5" />
-                {deadlineInfo.label}
-              </span>
-              {stats && (
-                <>
-                  <span className="text-muted-foreground" aria-hidden="true">
-                    ·
-                  </span>
-                  <span
-                    className={cn(
-                      'font-semibold',
-                      stats.isOnTrack
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-600 dark:text-rose-400'
-                    )}
-                  >
-                    {stats.isOnTrack ? 'On Track' : 'Behind Pace'}
-                  </span>
-                </>
-              )}
-            </div>
-
-            {/* Live Financial Progress Bar */}
-            {isFinancialGoal && (
-              <div className="mt-3 space-y-1">
-                <div className="flex items-center justify-between text-xs font-mono tabular-nums">
-                  <span className="font-bold text-foreground">
-                    {formatINR(stats.currentFinancialAmount || 0)}
-                  </span>
-                  <span className="text-muted-foreground">
-                    Target {formatINR(stats.targetFinancialAmount || 0)}
-                  </span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    style={{ width: `${Math.min(100, progress)}%` }}
-                    className="h-full bg-emerald-500 rounded-full transition-all"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Live Fitness Progress Bar */}
-            {isFitnessGoal && (
-              <div className="mt-3 space-y-1">
-                <div className="flex items-center justify-between text-xs font-mono tabular-nums">
-                  <span className="font-bold text-foreground">
-                    {stats.currentFitnessValue ?? 0} {stats.fitnessUnit || ''}
-                  </span>
-                  <span className="text-muted-foreground">
-                    Target {stats.targetFitnessValue} {stats.fitnessUnit || ''}
-                  </span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    style={{ width: `${Math.min(100, progress)}%` }}
-                    className="h-full bg-primary rounded-full transition-all"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Milestones */}
-            {nextMilestones.length > 0 && (
-              <div className="space-y-2 mt-3">
-                {nextMilestones.map((milestone) => (
-                  <motion.div
-                    key={milestone.id}
-                    className="flex items-center gap-2"
-                    whileHover={{ x: 2 }}
-                  >
-                    <Checkbox
-                      id={milestone.id}
-                      checked={milestone.completed}
-                      onCheckedChange={() => onToggleMilestone(milestone.id)}
-                      className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 h-4 w-4"
-                    />
-                    <label
-                      htmlFor={milestone.id}
-                      className={cn(
-                        'text-xs sm:text-sm cursor-pointer transition-colors truncate',
-                        milestone.completed && 'line-through text-muted-foreground'
-                      )}
-                    >
-                      {milestone.title}
-                    </label>
-                  </motion.div>
-                ))}
-              </div>
-            )}
+            <GoalCardHeader
+              title={goal.title}
+              isFinancialGoal={isFinancialGoal}
+              isFitnessGoal={isFitnessGoal}
+              deadlineLabel={deadlineInfo.label}
+              deadlineClass={deadlineClass}
+              stats={stats}
+            />
+            <GoalProgressSection isFinancialGoal={isFinancialGoal} isFitnessGoal={isFitnessGoal} stats={stats} progress={progress} />
+            <GoalNextMilestonesList nextMilestones={nextMilestones} onToggleMilestone={onToggleMilestone} />
           </div>
 
-          {/* Footer Meta */}
-          {stats && !isFinancialGoal && (!isFitnessGoal || stats.milestonesTotal > 0) && (
+          {showMilestoneFooter && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t border-border/60 font-mono tabular-nums">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-              <span>
-                {stats.milestonesCompleted}/{stats.milestonesTotal} milestones complete
-              </span>
+              <span>{stats.milestonesCompleted}/{stats.milestonesTotal} milestones complete</span>
             </div>
           )}
         </div>

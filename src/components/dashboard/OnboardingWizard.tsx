@@ -88,61 +88,14 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
   const handleFinish = async () => {
     setIsSubmitting(true);
     try {
-      // Add selected habits
-      for (const tempId of selectedTemplates) {
-        const template = HABIT_TEMPLATES.find(t => t.id === tempId);
-        if (template) {
-          await addHabit({
-            name: template.name,
-            icon: template.icon,
-            category: template.category,
-            targetDaysPerWeek: template.targetDaysPerWeek,
-          });
-        }
-      }
-
-      // Add goal if specified
-      if (goalTitle.trim()) {
-        const deadline = new Date();
-        deadline.setDate(deadline.getDate() + 90); // Default 90-day goal
-
-        await addGoal({
-          title: goalTitle,
-          description: 'My 90-day focus goal created during onboarding',
-          areaOfLife: goalCategory === 'work' ? 'career' : 
-                      goalCategory === 'learning' ? 'personal_growth' : 
-                      goalCategory === 'personal' ? 'personal_growth' : 
-                      goalCategory as any, // maps to health, finance, relationships
-          priority: 'high',
-          startDate: getLocalIsoDate(),
-          deadline: getLocalIsoDate(deadline),
-          isFocus: true,
-          milestones: [
-            'Define key milestones',
-            'Check progress in 30 days',
-            'Check progress in 60 days',
-          ]
-        });
-      }
-
-      // Save name and avatar settings
-      if (nameInput.trim()) {
-        setDisplayName(nameInput.trim());
-        await saveDisplayNameToServer();
-      }
-
-      const supabase = getSupabaseClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-      if (userId) {
-        await updateSettings({ userId, avatarId: selectedAvatarId });
-        const currentSettings = await getSettings(userId);
-        if (currentSettings) {
-          const syncEngine = getSyncEngine();
-          await syncEngine.pushUserSettings(currentSettings);
-        }
-      }
-
+      await createSelectedOnboardingHabits(selectedTemplates, addHabit);
+      await createOnboardingFocusGoal(goalTitle, goalCategory, addGoal);
+      await syncOnboardingProfileAndSettings({
+        nameInput,
+        selectedAvatarId,
+        setDisplayName,
+        saveDisplayNameToServer,
+      });
       localStorage.setItem('habitflow_onboarded', 'true');
       localStorage.removeItem('habitflow_just_signed_up');
       onComplete();
@@ -198,229 +151,375 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         <div className="flex-1 p-6 relative overflow-hidden flex flex-col justify-between">
           <AnimatePresence mode="wait" custom={step}>
             {step === 1 && (
-              <motion.div 
-                key="step1"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                className="space-y-5 flex-1 flex flex-col justify-center"
-              >
-                <div className="space-y-1 text-center sm:text-left">
-                  <h3 className="text-xl font-bold tracking-tight">Set up your profile</h3>
-                  <p className="text-sm text-muted-foreground">Choose a name and select your companion avatar character.</p>
-                </div>
-
-                <div className="space-y-4 text-left">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What should we call you?</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Alex" 
-                      value={nameInput}
-                      onChange={(e) => setNameInput(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Select your avatar</label>
-                    <div className="grid grid-cols-4 gap-2 max-h-[160px] overflow-y-auto pr-1">
-                      {AVATARS.map((avatar) => {
-                        const isSelected = selectedAvatarId === avatar.id;
-                        return (
-                          <button
-                            key={avatar.id}
-                            type="button"
-                            onClick={() => setSelectedAvatarId(avatar.id)}
-                            className={cn(
-                              "relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all group aspect-square hover:bg-muted/30",
-                              isSelected 
-                                ? "border-primary bg-primary/5 shadow-sm" 
-                                : "border-border bg-card"
-                            )}
-                          >
-                            <div className={cn(
-                              "w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-inner bg-gradient-to-br transition-transform group-hover:scale-105",
-                              avatar.bgGradient
-                            )}>
-                              <img
-                                src={avatar.src}
-                                alt={avatar.name}
-                                className="w-8 h-8 object-contain drop-shadow-sm"
-                              />
-                            </div>
-                            <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground mt-1 truncate max-w-full">
-                              {avatar.name.split(' ').pop()}
-                            </span>
-                            {isSelected && (
-                              <div className="absolute top-1 right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm">
-                                <Check className="h-2 w-2" />
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+              <OnboardingStepProfile
+                nameInput={nameInput}
+                selectedAvatarId={selectedAvatarId}
+                onNameChange={setNameInput}
+                onSelectAvatar={setSelectedAvatarId}
+              />
             )}
-
             {step === 2 && (
-              <motion.div 
-                key="step2"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                className="space-y-4 flex-1 flex flex-col"
-              >
-                <div className="space-y-1">
-                  <h3 className="text-lg font-bold">Pick your starter habits</h3>
-                  <p className="text-sm text-muted-foreground">Select a few habits to start tracking today. You can always change these later.</p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[280px] overflow-y-auto pr-1">
-                  {HABIT_TEMPLATES.map(temp => {
-                    const isSelected = selectedTemplates.includes(temp.id);
-                    return (
-                      <button
-                        key={temp.id}
-                        onClick={() => handleToggleTemplate(temp.id)}
-                        className={cn(
-                          "flex items-start gap-3 p-3 rounded-xl border text-left transition-all hover:bg-muted/50",
-                          isSelected 
-                            ? "border-primary bg-primary/5 shadow-sm" 
-                            : "border-border"
-                        )}
-                      >
-                        <span className="text-2xl mt-0.5">{temp.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm truncate">{temp.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{temp.description}</p>
-                          <span className="inline-block mt-1 text-[10px] uppercase font-bold tracking-wider text-muted-foreground/80">
-                            {temp.category} • {temp.frequency}
-                          </span>
-                        </div>
-                        {isSelected && (
-                          <div className="bg-primary text-primary-foreground rounded-full p-0.5 mt-0.5">
-                            <Check className="h-3 w-3" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </motion.div>
+              <OnboardingStepHabits
+                selectedTemplates={selectedTemplates}
+                onToggleTemplate={handleToggleTemplate}
+              />
             )}
-
             {step === 3 && (
-              <motion.div 
-                key="step3"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                className="space-y-5 flex-1 flex flex-col justify-center"
-              >
-                <div className="space-y-1 text-center sm:text-left">
-                  <h3 className="text-lg font-bold">Set your 90-day focus goal</h3>
-                  <p className="text-sm text-muted-foreground">Focus is key. Set a milestone you want to reach in the next 3 months.</p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Goal Title</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Solve 100 LeetCode problems / Lose 5kg" 
-                      value={goalTitle}
-                      onChange={(e) => setGoalTitle(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Category</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['learning', 'health', 'work', 'personal', 'finance', 'relationships'] as Category[]).map(cat => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setGoalCategory(cat)}
-                          className={cn(
-                            "py-2 rounded-lg border text-xs capitalize font-medium transition-all",
-                            goalCategory === cat 
-                              ? "bg-primary text-primary-foreground border-primary" 
-                              : "bg-background border-border hover:bg-muted"
-                          )}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+              <OnboardingStepGoal
+                goalTitle={goalTitle}
+                goalCategory={goalCategory}
+                onGoalTitleChange={setGoalTitle}
+                onGoalCategoryChange={setGoalCategory}
+              />
             )}
-
             {step === 4 && (
-              <motion.div 
-                key="step4"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                className="space-y-5 flex-1 flex flex-col justify-center text-center"
-              >
-                <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto text-success">
-                  <Check className="h-8 w-8 animate-bounce" />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-xl font-bold">You are ready to flow!</h3>
-                  <p className="text-muted-foreground max-w-sm mx-auto text-sm">
-                    We will set up your selected {selectedTemplates.length} habits and {goalTitle ? '1 goal' : 'prepare your dashboard'}. Get ready to make progress every single day.
-                  </p>
-                </div>
-              </motion.div>
+              <OnboardingStepReady
+                selectedCount={selectedTemplates.length}
+                hasGoal={Boolean(goalTitle)}
+              />
             )}
           </AnimatePresence>
 
-          {/* Footer buttons */}
-          <div className="mt-8 pt-4 border-t flex justify-between items-center bg-card">
-            {step > 1 ? (
-              <button
-                onClick={handleBack}
-                disabled={isSubmitting}
-                className="flex items-center gap-1 text-sm font-medium hover:text-primary transition-colors text-muted-foreground disabled:opacity-50"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </button>
-            ) : (
-              <div />
-            )}
-
-            {step < 4 ? (
-              <button
-                onClick={handleNext}
-                disabled={step === 1 && !nameInput.trim()}
-                className="flex items-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/95 transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Continue
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                onClick={handleFinish}
-                disabled={isSubmitting}
-                className="flex items-center gap-1.5 px-6 py-2.5 bg-success text-success-foreground rounded-xl font-semibold text-sm hover:bg-success/90 transition-colors shadow-lg shadow-success/20 disabled:opacity-50"
-              >
-                {isSubmitting ? 'Setting up...' : 'Start tracking'}
-                <Sparkles className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+          <OnboardingWizardFooter
+            step={step}
+            isSubmitting={isSubmitting}
+            canContinue={step !== 1 || Boolean(nameInput.trim())}
+            onBack={handleBack}
+            onNext={handleNext}
+            onFinish={handleFinish}
+          />
         </div>
       </motion.div>
+    </div>
+  );
+}
+
+async function createSelectedOnboardingHabits(
+  selectedTemplates: string[],
+  addHabit: ReturnType<typeof useHabitStore.getState>['addHabit']
+) {
+  for (const tempId of selectedTemplates) {
+    const template = HABIT_TEMPLATES.find((t) => t.id === tempId);
+    if (!template) continue;
+    await addHabit({
+      name: template.name,
+      icon: template.icon,
+      category: template.category,
+      targetDaysPerWeek: template.targetDaysPerWeek,
+    });
+  }
+}
+
+async function createOnboardingFocusGoal(
+  goalTitle: string,
+  goalCategory: Category,
+  addGoal: ReturnType<typeof useGoalStore.getState>['addGoal']
+) {
+  if (!goalTitle.trim()) return;
+  const deadline = new Date();
+  deadline.setDate(deadline.getDate() + 90);
+  await addGoal({
+    title: goalTitle,
+    description: 'My 90-day focus goal created during onboarding',
+    areaOfLife: resolveGoalArea(goalCategory),
+    priority: 'high',
+    startDate: getLocalIsoDate(),
+    deadline: getLocalIsoDate(deadline),
+    isFocus: true,
+    milestones: ['Define key milestones', 'Check progress in 30 days', 'Check progress in 60 days'],
+  });
+}
+
+async function syncOnboardingProfileAndSettings(params: {
+  nameInput: string;
+  selectedAvatarId: string;
+  setDisplayName: (name: string) => void;
+  saveDisplayNameToServer: () => Promise<void>;
+}) {
+  if (params.nameInput.trim()) {
+    params.setDisplayName(params.nameInput.trim());
+    await params.saveDisplayNameToServer();
+  }
+  const supabase = getSupabaseClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return;
+
+  await updateSettings({ userId, avatarId: params.selectedAvatarId });
+  const currentSettings = await getSettings(userId);
+  if (currentSettings) {
+    const syncEngine = getSyncEngine();
+    await syncEngine.pushUserSettings(currentSettings);
+  }
+}
+
+function resolveGoalArea(goalCategory: Category) {
+  const map: Partial<Record<Category, string>> = {
+    work: 'career',
+    learning: 'personal_growth',
+    personal: 'personal_growth',
+  };
+  return (map[goalCategory] ?? goalCategory) as any;
+}
+
+function OnboardingStepProfile({
+  nameInput,
+  selectedAvatarId,
+  onNameChange,
+  onSelectAvatar,
+}: {
+  nameInput: string;
+  selectedAvatarId: string;
+  onNameChange: (v: string) => void;
+  onSelectAvatar: (id: string) => void;
+}) {
+  return (
+    <motion.div
+      key="step1"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -15 }}
+      className="space-y-5 flex-1 flex flex-col justify-center"
+    >
+      <div className="space-y-1 text-center sm:text-left">
+        <h3 className="text-xl font-bold tracking-tight">Set up your profile</h3>
+        <p className="text-sm text-muted-foreground">Choose a name and select your companion avatar character.</p>
+      </div>
+
+      <div className="space-y-4 text-left">
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">What should we call you?</label>
+          <input
+            type="text"
+            placeholder="e.g. Alex"
+            value={nameInput}
+            onChange={(e) => onNameChange(e.target.value)}
+            className="w-full px-4 py-2.5 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-all"
+            required
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Select your avatar</label>
+          <div className="grid grid-cols-4 gap-2 max-h-[160px] overflow-y-auto pr-1">
+            {AVATARS.map((avatar) => {
+              const isSelected = selectedAvatarId === avatar.id;
+              return (
+                <button
+                  key={avatar.id}
+                  type="button"
+                  onClick={() => onSelectAvatar(avatar.id)}
+                  className={cn(
+                    'relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all group aspect-square hover:bg-muted/30',
+                    isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border bg-card'
+                  )}
+                >
+                  <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-inner bg-gradient-to-br transition-transform group-hover:scale-105', avatar.bgGradient)}>
+                    <img src={avatar.src} alt={avatar.name} className="w-8 h-8 object-contain drop-shadow-sm" />
+                  </div>
+                  <span className="text-[9px] font-medium text-muted-foreground group-hover:text-foreground mt-1 truncate max-w-full">
+                    {avatar.name.split(' ').pop()}
+                  </span>
+                  {isSelected && (
+                    <div className="absolute top-1 right-1 bg-primary text-primary-foreground rounded-full p-0.5 shadow-sm">
+                      <Check className="h-2 w-2" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function OnboardingStepHabits({
+  selectedTemplates,
+  onToggleTemplate,
+}: {
+  selectedTemplates: string[];
+  onToggleTemplate: (id: string) => void;
+}) {
+  return (
+    <motion.div
+      key="step2"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -15 }}
+      className="space-y-4 flex-1 flex flex-col"
+    >
+      <div className="space-y-1">
+        <h3 className="text-lg font-bold">Pick your starter habits</h3>
+        <p className="text-sm text-muted-foreground">Select a few habits to start tracking today. You can always change these later.</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[280px] overflow-y-auto pr-1">
+        {HABIT_TEMPLATES.map((temp) => {
+          const isSelected = selectedTemplates.includes(temp.id);
+          return (
+            <button
+              key={temp.id}
+              onClick={() => onToggleTemplate(temp.id)}
+              className={cn(
+                'flex items-start gap-3 p-3 rounded-xl border text-left transition-all hover:bg-muted/50',
+                isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border'
+              )}
+            >
+              <span className="text-2xl mt-0.5">{temp.icon}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate">{temp.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{temp.description}</p>
+                <span className="inline-block mt-1 text-[10px] uppercase font-bold tracking-wider text-muted-foreground/80">
+                  {temp.category} • {temp.frequency}
+                </span>
+              </div>
+              {isSelected && (
+                <div className="bg-primary text-primary-foreground rounded-full p-0.5 mt-0.5">
+                  <Check className="h-3 w-3" />
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
+const ONBOARDING_GOAL_CATEGORIES: Category[] = ['learning', 'health', 'work', 'personal', 'finance', 'relationships'];
+
+function OnboardingStepGoal({
+  goalTitle,
+  goalCategory,
+  onGoalTitleChange,
+  onGoalCategoryChange,
+}: {
+  goalTitle: string;
+  goalCategory: Category;
+  onGoalTitleChange: (v: string) => void;
+  onGoalCategoryChange: (c: Category) => void;
+}) {
+  return (
+    <motion.div
+      key="step3"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -15 }}
+      className="space-y-5 flex-1 flex flex-col justify-center"
+    >
+      <div className="space-y-1 text-center sm:text-left">
+        <h3 className="text-lg font-bold">Set your 90-day focus goal</h3>
+        <p className="text-sm text-muted-foreground">Focus is key. Set a milestone you want to reach in the next 3 months.</p>
+      </div>
+
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Goal Title</label>
+          <input
+            type="text"
+            placeholder="e.g. Solve 100 LeetCode problems / Lose 5kg"
+            value={goalTitle}
+            onChange={(e) => onGoalTitleChange(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Category</label>
+          <div className="grid grid-cols-3 gap-2">
+            {ONBOARDING_GOAL_CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => onGoalCategoryChange(cat)}
+                className={cn(
+                  'py-2 rounded-lg border text-xs capitalize font-medium transition-all',
+                  goalCategory === cat ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted'
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function OnboardingStepReady({ selectedCount, hasGoal }: { selectedCount: number; hasGoal: boolean }) {
+  return (
+    <motion.div
+      key="step4"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -15 }}
+      className="space-y-5 flex-1 flex flex-col justify-center text-center"
+    >
+      <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto text-success">
+        <Check className="h-8 w-8 animate-bounce" />
+      </div>
+      <div className="space-y-2">
+        <h3 className="text-xl font-bold">You are ready to flow!</h3>
+        <p className="text-muted-foreground max-w-sm mx-auto text-sm">
+          We will set up your selected {selectedCount} habits and {hasGoal ? '1 goal' : 'prepare your dashboard'}. Get ready to make progress every single day.
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+function OnboardingWizardFooter({
+  step,
+  isSubmitting,
+  canContinue,
+  onBack,
+  onNext,
+  onFinish,
+}: {
+  step: number;
+  isSubmitting: boolean;
+  canContinue: boolean;
+  onBack: () => void;
+  onNext: () => void;
+  onFinish: () => void;
+}) {
+  return (
+    <div className="mt-8 pt-4 border-t flex justify-between items-center bg-card">
+      {step > 1 ? (
+        <button
+          onClick={onBack}
+          disabled={isSubmitting}
+          className="flex items-center gap-1 text-sm font-medium hover:text-primary transition-colors text-muted-foreground disabled:opacity-50"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+      ) : (
+        <div />
+      )}
+
+      {step < 4 ? (
+        <button
+          onClick={onNext}
+          disabled={!canContinue}
+          className="flex items-center gap-1.5 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:bg-primary/95 transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Continue
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      ) : (
+        <button
+          onClick={onFinish}
+          disabled={isSubmitting}
+          className="flex items-center gap-1.5 px-6 py-2.5 bg-success text-success-foreground rounded-xl font-semibold text-sm hover:bg-success/90 transition-colors shadow-lg shadow-success/20 disabled:opacity-50"
+        >
+          {isSubmitting ? 'Setting up...' : 'Start tracking'}
+          <Sparkles className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }

@@ -125,7 +125,7 @@ async function applyMitToggle(
     await patchTaskMitMeta(task, { isMitForDate: today, mitRank: Math.min(3, pinned.length + 1) }, editTask);
 }
 
-function useTodayTasksState(isHydrated: boolean) {
+function useTodayTasksData(isHydrated: boolean) {
     const { loadTasks, tasks, toggleTaskComplete, editTask, isLoading } = useTaskStore(
         useShallow((s) => ({
             loadTasks: s.loadTasks,
@@ -134,36 +134,52 @@ function useTodayTasksState(isHydrated: boolean) {
             editTask: s.editTask,
             isLoading: s.isLoading,
         }))
-    )
-    const feedback = useFeedback()
-    const [mounted, setMounted] = useState(isHydrated)
+    );
+    const [mounted, setMounted] = useState(isHydrated);
 
     useEffect(() => {
-        if (tasks.length === 0) loadTasks()
-        if (!mounted) setMounted(true)
-    }, [loadTasks, tasks.length, mounted])
+        if (tasks.length === 0) loadTasks();
+        if (!mounted) setMounted(true);
+    }, [loadTasks, tasks.length, mounted]);
 
-    const today = mounted ? getLocalIsoDate() : ''
-    const subtasksByParentId = useMemo(() => buildSubtasksMap(tasks), [tasks])
-
+    const today = mounted ? getLocalIsoDate() : '';
+    const subtasksByParentId = useMemo(() => buildSubtasksMap(tasks), [tasks]);
     const allFocusTasks = useMemo(
         () => selectActiveFocusTasks(tasks, mounted, today),
         [mounted, tasks, today]
     );
-
     const { mitTasks, otherTasks } = useMemo(() => partitionTop3Mits(allFocusTasks, today), [allFocusTasks, today]);
+
+    return { mounted, isLoading, tasks, today, subtasksByParentId, allFocusTasks, mitTasks, otherTasks, toggleTaskComplete, editTask };
+}
+
+function useTodayTasksState(isHydrated: boolean) {
+    const feedback = useFeedback();
+    const {
+        mounted,
+        isLoading,
+        tasks,
+        today,
+        subtasksByParentId,
+        allFocusTasks,
+        mitTasks,
+        otherTasks,
+        toggleTaskComplete,
+        editTask,
+    } = useTodayTasksData(isHydrated);
 
     const handleTaskComplete = useCallback(async (id: string) => {
         const target = tasks.find((t) => t.id === id);
         if (target?.status === 'done') feedback.uncheck();
         else feedback.complete();
-        await toggleTaskComplete(id)
+        await toggleTaskComplete(id);
     }, [tasks, toggleTaskComplete, feedback]);
 
+    const canEditMit = typeof editTask === 'function';
     const handleToggleMit = useCallback(async (task: Task) => {
-        if (typeof editTask !== 'function') return;
+        if (!canEditMit) return;
         await applyMitToggle(task, today, allFocusTasks, editTask);
-    }, [editTask, allFocusTasks, today]);
+    }, [canEditMit, editTask, allFocusTasks, today]);
 
     return {
         mounted,
@@ -174,7 +190,7 @@ function useTodayTasksState(isHydrated: boolean) {
         mitTasks,
         otherTasks,
         handleTaskComplete,
-        handleToggleMit: typeof editTask === 'function' ? handleToggleMit : undefined,
+        handleToggleMit: canEditMit ? handleToggleMit : undefined,
     };
 }
 
@@ -223,6 +239,28 @@ function OtherTasksDrawer(props: {
     );
 }
 
+function FocusMitEmptyState({ onNavigate }: { onNavigate: (path: string) => void }) {
+    return (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="top-3-mits-zone">
+            <div className="col-span-full flex flex-col sm:flex-row items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-5">
+                <div className="flex items-center gap-3 text-center sm:text-left">
+                    <div className="p-2.5 rounded-xl bg-muted/60 border border-border/60 shrink-0 hidden sm:flex">
+                        <CheckSquare className="h-5 w-5 text-muted-foreground/70" />
+                    </div>
+                    <div className="space-y-0.5">
+                        <p className="text-sm font-semibold text-foreground">Clear for takeoff</p>
+                        <p className="text-xs text-muted-foreground">No pending tasks due today. Add one or review your habits.</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" onClick={() => onNavigate('/habits')} className="rounded-xl h-9 text-xs px-3.5">Open Habits</Button>
+                    <Button size="sm" onClick={() => onNavigate('/tasks')} className="rounded-xl h-9 text-xs px-4">Create Task</Button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function FocusMitGrid(props: {
     mitTasks: Array<{ task: Task; isExplicitMit: boolean; mitRank: number }>;
     subtasksByParentId: Map<string, Task[]>;
@@ -231,27 +269,7 @@ function FocusMitGrid(props: {
     onNavigate: (path: string) => void;
 }) {
     const { mitTasks, subtasksByParentId, onComplete, onToggleMit, onNavigate } = props;
-    if (mitTasks.length === 0) {
-        return (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="top-3-mits-zone">
-                <div className="col-span-full flex flex-col sm:flex-row items-center justify-between gap-4 rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-5">
-                    <div className="flex items-center gap-3 text-center sm:text-left">
-                        <div className="p-2.5 rounded-xl bg-muted/60 border border-border/60 shrink-0 hidden sm:flex">
-                            <CheckSquare className="h-5 w-5 text-muted-foreground/70" />
-                        </div>
-                        <div className="space-y-0.5">
-                            <p className="text-sm font-semibold text-foreground">Clear for takeoff</p>
-                            <p className="text-xs text-muted-foreground">No pending tasks due today. Add one or review your habits.</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        <Button variant="outline" size="sm" onClick={() => onNavigate('/habits')} className="rounded-xl h-9 text-xs px-3.5">Open Habits</Button>
-                        <Button size="sm" onClick={() => onNavigate('/tasks')} className="rounded-xl h-9 text-xs px-4">Create Task</Button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+    if (mitTasks.length === 0) return <FocusMitEmptyState onNavigate={onNavigate} />;
 
     return (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="top-3-mits-zone">
@@ -272,6 +290,51 @@ function FocusMitGrid(props: {
     );
 }
 
+function TodayTasksHeader({
+    allFocusCount,
+    onViewAll,
+}: {
+    allFocusCount: number;
+    onViewAll: () => void;
+}) {
+    const taskWord = allFocusCount === 1 ? 'task' : 'tasks';
+    return (
+        <div className="flex items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary flex items-center justify-center">
+                    <CalendarCheck className="h-4 w-4" />
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground leading-snug">Today&apos;s Focus</h2>
+                        {allFocusCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider">
+                                <Star className="h-2.5 w-2.5 fill-current" />
+                                Top 3 Must-Do MITs
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-xs text-muted-foreground font-mono tabular-nums">
+                        {allFocusCount > 0 ? `${allFocusCount} ${taskWord} queued for today` : 'All tasks clear for today'}
+                    </p>
+                </div>
+            </div>
+            <Button variant="ghost" size="sm" onClick={onViewAll} className="group shrink-0 gap-1 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl transition-all h-9 text-xs px-2.5 sm:px-3">
+                <span>All Tasks</span>
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+            </Button>
+        </div>
+    );
+}
+
+function TodayTasksLoadingBox() {
+    return (
+        <section className="surface-card overflow-hidden h-[180px] flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-primary/60" />
+        </section>
+    );
+}
+
 export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) {
     const router = useRouter()
     const [isOtherTasksOpen, setIsOtherTasksOpen] = useState(false)
@@ -287,50 +350,13 @@ export function TodayTasksWidget({ isHydrated = false }: TodayTasksWidgetProps) 
         handleToggleMit,
     } = useTodayTasksState(isHydrated)
 
-    if (!mounted) {
-        return (
-            <section className="surface-card overflow-hidden h-[180px] flex items-center justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-primary/60" />
-            </section>
-        )
-    }
-
-    if (isLoading && tasksCount === 0) return (
-        <div className="h-full min-h-[180px] flex items-center justify-center surface-card">
-            <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
-        </div>
-    )
+    if (!mounted) return <TodayTasksLoadingBox />;
+    if (isLoading && tasksCount === 0) return <TodayTasksLoadingBox />;
 
     return (
         <section className="surface-card overflow-hidden tour-tasks-widget">
             <div className="p-4 sm:p-6 space-y-4">
-                <div className="flex items-start sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 shrink-0 text-primary flex items-center justify-center">
-                            <CalendarCheck className="h-4 w-4" />
-                        </div>
-                        <div className="space-y-0.5 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground leading-snug">Today&apos;s Focus</h2>
-                                {allFocusTasks.length > 0 && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider">
-                                        <Star className="h-2.5 w-2.5 fill-current" />
-                                        Top 3 Must-Do MITs
-                                    </span>
-                                )}
-                            </div>
-                            <p className="text-xs text-muted-foreground font-mono tabular-nums">
-                                {allFocusTasks.length > 0
-                                    ? `${allFocusTasks.length} ${allFocusTasks.length === 1 ? 'task' : 'tasks'} queued for today`
-                                    : "All tasks clear for today"}
-                            </p>
-                        </div>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => router.push('/tasks')} className="group shrink-0 gap-1 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-xl transition-all h-9 text-xs px-2.5 sm:px-3">
-                        <span>All Tasks</span>
-                        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-                    </Button>
-                </div>
+                <TodayTasksHeader allFocusCount={allFocusTasks.length} onViewAll={() => router.push('/tasks')} />
 
                 <FocusMitGrid
                     mitTasks={mitTasks}

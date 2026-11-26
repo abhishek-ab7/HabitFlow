@@ -106,17 +106,55 @@ function buildPillarSummaryCards(snapshot: AnalyticsTabProps['snapshot']): Pilla
   return cards;
 }
 
+function PillarWeightsLegend({
+  weights,
+  modules,
+}: {
+  weights: AnalyticsTabProps['snapshot']['weights'];
+  modules: AnalyticsTabProps['snapshot']['modules'];
+}) {
+  const ariaLabel = `Pillar weights: Habits ${weights.habitsPct}%${modules.showFinance ? `, Finance ${weights.financePct}%` : ''}${modules.showFitness ? `, Fitness ${weights.fitnessPct}%` : ''}`;
+  return (
+    <div className="space-y-2">
+      <div className="h-3 w-full overflow-hidden rounded-full bg-muted flex" role="img" aria-label={ariaLabel}>
+        <div className="h-full bg-emerald-500 transition-all" style={{ width: `${weights.habitsPct}%` }} />
+        {modules.showFinance && <div className="h-full bg-sky-500 transition-all" style={{ width: `${weights.financePct}%` }} />}
+        {modules.showFitness && <div className="h-full bg-orange-500 transition-all" style={{ width: `${weights.fitnessPct}%` }} />}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+          Habits {weights.habitsPct}%
+        </span>
+        {modules.showFinance && (
+          <span className="inline-flex items-center gap-1.5 tabular-nums">
+            <span className="h-2 w-2 rounded-full bg-sky-500" aria-hidden="true" />
+            Finance {weights.financePct}%
+          </span>
+        )}
+        {modules.showFitness && (
+          <span className="inline-flex items-center gap-1.5 tabular-nums">
+            <span className="h-2 w-2 rounded-full bg-orange-500" aria-hidden="true" />
+            Fitness {weights.fitnessPct}%
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getScoreDeltaStyle(delta: number) {
+  if (delta > 0) return { cls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', dir: 'up' as const, label: `+${delta} pts` };
+  if (delta < 0) return { cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300', dir: 'down' as const, label: `${delta} pts` };
+  return { cls: 'bg-muted text-muted-foreground', dir: 'flat' as const, label: 'Steady vs prior' };
+}
+
 function LifeOsBalanceHeroCard({ snapshot }: { snapshot: AnalyticsTabProps['snapshot'] }) {
   const { modules, weights } = snapshot;
   const activeModuleCount = 1 + (modules.showFinance ? 1 : 0) + (modules.showFitness ? 1 : 0);
   const scoreBadge = getScoreBadgeLabel(snapshot.lifeOsScore);
-  const deltaPositive = snapshot.lifeOsScoreDelta > 0;
-  const deltaNegative = snapshot.lifeOsScoreDelta < 0;
-  const deltaClass = deltaPositive
-    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-    : deltaNegative
-      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
-      : 'bg-muted text-muted-foreground';
+  const delta = getScoreDeltaStyle(snapshot.lifeOsScoreDelta);
 
   return (
     <section className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-4">
@@ -141,48 +179,15 @@ function LifeOsBalanceHeroCard({ snapshot }: { snapshot: AnalyticsTabProps['snap
             {snapshot.lifeOsScore}
             <span className="text-base sm:text-lg font-medium text-muted-foreground">/100</span>
           </div>
-          <div className={cn('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold tabular-nums', deltaClass)}>
-            {deltaPositive && <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />}
-            {deltaNegative && <TrendingDown className="w-3.5 h-3.5" aria-hidden="true" />}
-            <span>
-              {snapshot.lifeOsScoreDelta === 0
-                ? 'Steady vs prior'
-                : `${deltaPositive ? '+' : ''}${snapshot.lifeOsScoreDelta} pts`}
-            </span>
+          <div className={cn('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold tabular-nums', delta.cls)}>
+            {delta.dir === 'up' && <TrendingUp className="w-3.5 h-3.5" aria-hidden="true" />}
+            {delta.dir === 'down' && <TrendingDown className="w-3.5 h-3.5" aria-hidden="true" />}
+            <span>{delta.label}</span>
           </div>
         </div>
       </div>
 
-      <div className="space-y-2">
-        <div
-          className="h-3 w-full overflow-hidden rounded-full bg-muted flex"
-          role="img"
-          aria-label={`Pillar weights: Habits ${weights.habitsPct}%${modules.showFinance ? `, Finance ${weights.financePct}%` : ''}${modules.showFitness ? `, Fitness ${weights.fitnessPct}%` : ''}`}
-        >
-          <div className="h-full bg-emerald-500 transition-all" style={{ width: `${weights.habitsPct}%` }} />
-          {modules.showFinance && <div className="h-full bg-sky-500 transition-all" style={{ width: `${weights.financePct}%` }} />}
-          {modules.showFitness && <div className="h-full bg-orange-500 transition-all" style={{ width: `${weights.fitnessPct}%` }} />}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5 tabular-nums">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
-            Habits {weights.habitsPct}%
-          </span>
-          {modules.showFinance && (
-            <span className="inline-flex items-center gap-1.5 tabular-nums">
-              <span className="h-2 w-2 rounded-full bg-sky-500" aria-hidden="true" />
-              Finance {weights.financePct}%
-            </span>
-          )}
-          {modules.showFitness && (
-            <span className="inline-flex items-center gap-1.5 tabular-nums">
-              <span className="h-2 w-2 rounded-full bg-orange-500" aria-hidden="true" />
-              Fitness {weights.fitnessPct}%
-            </span>
-          )}
-        </div>
-      </div>
+      <PillarWeightsLegend weights={weights} modules={modules} />
     </section>
   );
 }

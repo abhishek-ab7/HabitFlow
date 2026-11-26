@@ -74,8 +74,9 @@ function summarizeHeatmapActivity(weeksData: HeatmapCell[][], todayIso: string) 
   let activeDays = 0;
   for (const week of weeksData) {
     for (const day of week) {
-      if (day.dateStr <= todayIso && day.data && day.data.count > 0) {
-        totalCompletions += day.data.count;
+      const count = day.dateStr <= todayIso ? (day.data?.count ?? 0) : 0;
+      if (count > 0) {
+        totalCompletions += count;
         activeDays += 1;
       }
     }
@@ -113,6 +114,38 @@ function HeatmapDayCell({ day, todayIso }: { day: HeatmapCell; todayIso: string 
   );
 }
 
+function HeatmapWindowToggle({
+  defaultWeeks,
+  showFullYear,
+  onChange,
+}: {
+  defaultWeeks: number;
+  showFullYear: boolean;
+  onChange: (fullYear: boolean) => void;
+}) {
+  return (
+    <div role="group" aria-label="Heatmap window" className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-[11px]">
+      {([
+        [false, `${defaultWeeks}W`],
+        [true, 'Full Year'],
+      ] as const).map(([fullYear, label]) => (
+        <button
+          key={label}
+          type="button"
+          aria-pressed={showFullYear === fullYear}
+          onClick={() => onChange(fullYear)}
+          className={cn(
+            'rounded-md px-2 py-1 font-medium transition-colors tabular-nums',
+            showFullYear === fullYear ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function HeatmapCalendarInner({ data, weeks }: HeatmapCalendarProps) {
   const defaultWeeks = weeks && weeks <= 16 ? weeks : 12;
   const [showFullYear, setShowFullYear] = useState(false);
@@ -120,46 +153,21 @@ function HeatmapCalendarInner({ data, weeks }: HeatmapCalendarProps) {
 
   const todayIso = useMemo(() => getIstIsoDate(), []);
   const dataMap = useMemo(() => new Map(data.map((d) => [d.date, d])), [data]);
-  const weeksData = useMemo(
-    () => buildWeeksGrid(dataMap, activeWeeks, todayIso),
-    [dataMap, activeWeeks, todayIso]
-  );
+  const weeksData = useMemo(() => buildWeeksGrid(dataMap, activeWeeks, todayIso), [dataMap, activeWeeks, todayIso]);
   const monthLabels = useMemo(() => buildMonthLabels(weeksData), [weeksData]);
   const { totalCompletions, activeDays } = useMemo(
     () => summarizeHeatmapActivity(weeksData, todayIso),
     [weeksData, todayIso]
   );
 
+  const checkInWord = totalCompletions === 1 ? 'check-in' : 'check-ins';
+  const dayWord = activeDays === 1 ? 'day' : 'days';
+
   return (
     <AnalyticsChartCard
       title="Activity Heatmap"
-      subtitle={`${totalCompletions} check-in${totalCompletions === 1 ? '' : 's'} across ${activeDays} active day${activeDays === 1 ? '' : 's'}`}
-      headerRight={
-        <div role="group" aria-label="Heatmap window" className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-[11px]">
-          <button
-            type="button"
-            aria-pressed={!showFullYear}
-            onClick={() => setShowFullYear(false)}
-            className={cn(
-              'rounded-md px-2 py-1 font-medium transition-colors tabular-nums',
-              !showFullYear ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {defaultWeeks}W
-          </button>
-          <button
-            type="button"
-            aria-pressed={showFullYear}
-            onClick={() => setShowFullYear(true)}
-            className={cn(
-              'rounded-md px-2 py-1 font-medium transition-colors',
-              showFullYear ? 'bg-background text-foreground shadow-xs font-semibold' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            Full Year
-          </button>
-        </div>
-      }
+      subtitle={`${totalCompletions} ${checkInWord} across ${activeDays} active ${dayWord}`}
+      headerRight={<HeatmapWindowToggle defaultWeeks={defaultWeeks} showFullYear={showFullYear} onChange={setShowFullYear} />}
       isEmpty={totalCompletions === 0 && !showFullYear}
       emptyTitle="No habit check-ins in this window"
       emptyDescription="Check off habits today to start lighting up your consistency grid."

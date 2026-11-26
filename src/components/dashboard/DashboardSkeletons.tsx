@@ -71,19 +71,33 @@ export function MetricCardsSkeleton() {
   );
 }
 
+function WidgetHeaderSkeleton({
+  titleWidth,
+  subtitleWidth,
+  actionWidth = 'w-20',
+}: {
+  titleWidth: string;
+  subtitleWidth: string;
+  actionWidth?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-xl" />
+          <Skeleton className={`h-7 ${titleWidth} rounded-lg`} />
+        </div>
+        <Skeleton className={`h-4 ${subtitleWidth} rounded ml-12`} />
+      </div>
+      <Skeleton className={`h-9 ${actionWidth} rounded-xl`} />
+    </div>
+  );
+}
+
 export function TodayTasksSkeleton() {
   return (
     <section className="surface-card p-6 md:p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-10 w-10 rounded-xl" />
-            <Skeleton className="h-7 w-36 rounded-lg" />
-          </div>
-          <Skeleton className="h-4 w-28 rounded ml-12" />
-        </div>
-        <Skeleton className="h-9 w-20 rounded-xl" />
-      </div>
+      <WidgetHeaderSkeleton titleWidth="w-36" subtitleWidth="w-28" />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
           <div key={i} className="p-4 surface-subtle flex flex-col justify-between h-[120px] space-y-2">
@@ -105,16 +119,7 @@ export function TodayTasksSkeleton() {
 export function HabitOverviewSkeleton() {
   return (
     <section className="surface-card p-6 md:p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-10 w-10 rounded-xl" />
-            <Skeleton className="h-7 w-44 rounded-lg" />
-          </div>
-          <Skeleton className="h-4 w-48 rounded ml-12" />
-        </div>
-        <Skeleton className="h-9 w-24 rounded-xl" />
-      </div>
+      <WidgetHeaderSkeleton titleWidth="w-44" subtitleWidth="w-48" actionWidth="w-24" />
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
           <div key={i} className="p-4 surface-subtle flex items-center justify-between">
@@ -137,16 +142,7 @@ export function FocusGoalSkeleton() {
   return (
     <section className="surface-card p-6 md:p-8 space-y-6 h-full flex flex-col justify-between">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-10 w-10 rounded-xl" />
-              <Skeleton className="h-7 w-32 rounded-lg" />
-            </div>
-            <Skeleton className="h-4 w-40 rounded ml-12" />
-          </div>
-          <Skeleton className="h-9 w-20 rounded-xl" />
-        </div>
+        <WidgetHeaderSkeleton titleWidth="w-32" subtitleWidth="w-40" />
         <div className="space-y-4">
           <div className="flex items-center justify-between p-4 surface-subtle gap-4">
             <div className="space-y-2 flex-1">
@@ -197,11 +193,13 @@ export function PersonalizedQuoteSkeleton() {
 
 export function QuickActionsSkeleton() {
   return (
-    <div className="surface-card p-6 space-y-4">
-      <Skeleton className="h-6 w-32 rounded-lg" />
-      <div className="grid grid-cols-2 gap-3">
-        <Skeleton className="h-10 rounded-xl" />
-        <Skeleton className="h-10 rounded-xl" />
+    <div className="surface-card p-6">
+      <div className="space-y-4">
+        <Skeleton className="h-6 w-32 rounded-lg" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-10 rounded-xl" />
+          <Skeleton className="h-10 rounded-xl" />
+        </div>
       </div>
     </div>
   );

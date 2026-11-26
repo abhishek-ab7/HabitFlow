@@ -133,6 +133,102 @@ function PrioritySuccessBar({ label, rate, textClass, barClass }: { label: strin
   );
 }
 
+function PlanningAccuracyCard({
+  avgEstTime,
+  avgActTime,
+  estimationErrorPercent,
+}: {
+  avgEstTime: number;
+  avgActTime: number;
+  estimationErrorPercent: number;
+}) {
+  const isUnder = estimationErrorPercent > 0;
+  const biasLabel = isUnder
+    ? `Underestimated by ${estimationErrorPercent}%`
+    : `Overestimated by ${Math.abs(estimationErrorPercent)}%`;
+  const biasTone = isUnder
+    ? 'border-rose-500/20 bg-rose-500/10 text-rose-500'
+    : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500';
+
+  return (
+    <div className="space-y-4">
+      <h4 className="text-xs font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
+        <Clock className="h-4 w-4 text-amber-500" />
+        Planning Accuracy
+      </h4>
+      <div className="bg-muted/20 border border-border/40 p-4 rounded-xl flex flex-col justify-between h-[135px]">
+        {avgEstTime > 0 ? (
+          <>
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Avg. Estimate</div>
+                <div className="text-xl font-extrabold text-foreground">{avgEstTime} mins</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Avg. Actual</div>
+                <div className="text-xl font-extrabold text-foreground">{avgActTime} mins</div>
+              </div>
+            </div>
+            <div className="pt-2 border-t border-border/40 flex justify-between items-center">
+              <span className="text-xs text-muted-foreground">Estimation Bias:</span>
+              <span className={cn('text-xs font-bold px-2 py-0.5 rounded border', biasTone)}>{biasLabel}</span>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-center h-full text-xs text-muted-foreground italic text-center">
+            Log estimated time when creating tasks and enter actual time on cards to view accuracy feedback.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StreakTaskCorrelationCard({
+  completionRateOnHabitDays,
+  completionRateOnNonHabitDays,
+  correlationLift,
+}: {
+  completionRateOnHabitDays: number;
+  completionRateOnNonHabitDays: number;
+  correlationLift: number;
+}) {
+  return (
+    <div className="bg-muted/20 border border-border/40 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="space-y-1">
+        <h4 className="text-xs font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
+          <TrendingUp className="h-4 w-4 text-emerald-500" />
+          Streak &amp; Task Correlation
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          Compares task success rates on days when you completed your habit streaks vs days when you did not.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="text-center">
+          <div className="text-[9px] uppercase font-bold text-muted-foreground/60 tracking-wider">Habit Days</div>
+          <div className="text-lg font-bold text-emerald-500">{completionRateOnHabitDays}%</div>
+        </div>
+        <div className="h-8 w-px bg-border/60" />
+        <div className="text-center">
+          <div className="text-[9px] uppercase font-bold text-muted-foreground/60 tracking-wider">Non-Habit Days</div>
+          <div className="text-lg font-bold text-muted-foreground">{completionRateOnNonHabitDays}%</div>
+        </div>
+        {correlationLift > 0 && (
+          <>
+            <div className="h-8 w-px bg-border/60" />
+            <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-lg px-2.5 py-1 text-center">
+              <div className="text-[9px] uppercase font-bold tracking-wider">Lift Boost</div>
+              <div className="text-lg font-black leading-none">+{correlationLift}%</div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function PredictiveAnalytics() {
   const { habits, completions } = useHabitStore();
   const { tasks } = useTaskStore();
@@ -163,7 +259,6 @@ export function PredictiveAnalytics() {
               <Percent className="h-4 w-4 text-emerald-500" />
               Task Success by Priority
             </h4>
-
             <div className="space-y-3.5 bg-muted/20 border border-border/40 p-4 rounded-xl">
               <PrioritySuccessBar label="High Priority" rate={statistics.highPriorityRate} textClass="text-rose-500" barClass="bg-rose-500" />
               <PrioritySuccessBar label="Medium Priority" rate={statistics.mediumPriorityRate} textClass="text-amber-500" barClass="bg-amber-500" />
@@ -171,86 +266,19 @@ export function PredictiveAnalytics() {
             </div>
           </div>
 
-          {/* Time Estimation Error */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
-              <Clock className="h-4 w-4 text-amber-500" />
-              Planning Accuracy
-            </h4>
-
-            <div className="bg-muted/20 border border-border/40 p-4 rounded-xl flex flex-col justify-between h-[135px]">
-              {statistics.avgEstTime > 0 ? (
-                <>
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Avg. Estimate</div>
-                      <div className="text-xl font-extrabold text-foreground">{statistics.avgEstTime} mins</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Avg. Actual</div>
-                      <div className="text-xl font-extrabold text-foreground">{statistics.avgActTime} mins</div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-border/40 flex justify-between items-center">
-                    <span className="text-xs text-muted-foreground">Estimation Bias:</span>
-                    <span className={cn(
-                      "text-xs font-bold px-2 py-0.5 rounded border",
-                      statistics.estimationErrorPercent > 0
-                        ? "border-rose-500/20 bg-rose-500/10 text-rose-500"
-                        : "border-emerald-500/20 bg-emerald-500/10 text-emerald-500"
-                    )}>
-                      {statistics.estimationErrorPercent > 0 
-                        ? `Underestimated by ${statistics.estimationErrorPercent}%`
-                        : `Overestimated by ${Math.abs(statistics.estimationErrorPercent)}%`
-                      }
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-center h-full text-xs text-muted-foreground italic text-center">
-                  Log estimated time when creating tasks and enter actual time on cards to view accuracy feedback.
-                </div>
-              )}
-            </div>
-          </div>
+          <PlanningAccuracyCard
+            avgEstTime={statistics.avgEstTime}
+            avgActTime={statistics.avgActTime}
+            estimationErrorPercent={statistics.estimationErrorPercent}
+          />
         </div>
 
-        {/* Habits vs Tasks Correlation Lift */}
-        <div className="bg-muted/20 border border-border/40 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h4 className="text-xs font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
-              <TrendingUp className="h-4 w-4 text-emerald-500" />
-              Streak & Task Correlation
-            </h4>
-            <p className="text-xs text-muted-foreground">
-              Compares task success rates on days when you completed your habit streaks vs days when you did not.
-            </p>
-          </div>
+        <StreakTaskCorrelationCard
+          completionRateOnHabitDays={statistics.completionRateOnHabitDays}
+          completionRateOnNonHabitDays={statistics.completionRateOnNonHabitDays}
+          correlationLift={statistics.correlationLift}
+        />
 
-          <div className="flex items-center gap-4 shrink-0">
-            <div className="text-center">
-              <div className="text-[9px] uppercase font-bold text-muted-foreground/60 tracking-wider">Habit Days</div>
-              <div className="text-lg font-bold text-emerald-500">{statistics.completionRateOnHabitDays}%</div>
-            </div>
-            <div className="h-8 w-px bg-border/60" />
-            <div className="text-center">
-              <div className="text-[9px] uppercase font-bold text-muted-foreground/60 tracking-wider">Non-Habit Days</div>
-              <div className="text-lg font-bold text-muted-foreground">{statistics.completionRateOnNonHabitDays}%</div>
-            </div>
-            {statistics.correlationLift > 0 && (
-              <>
-                <div className="h-8 w-px bg-border/60" />
-                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-lg px-2.5 py-1 text-center">
-                  <div className="text-[9px] uppercase font-bold tracking-wider">Lift Boost</div>
-                  <div className="text-lg font-black leading-none">+{statistics.correlationLift}%</div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* AI Predictive Insights List */}
         <div className="space-y-3 pt-4 border-t border-border/40">
           <h4 className="text-xs font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
             <Lightbulb className="h-4 w-4 text-yellow-500" />

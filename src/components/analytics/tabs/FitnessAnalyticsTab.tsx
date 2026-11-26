@@ -129,6 +129,39 @@ function getBodyCompositionSubtitle(
   return `Current ${fitness.latestWaistInches.toFixed(1)}"${deltaPart}`;
 }
 
+function BodyCompositionChart({
+  bodyMetric,
+  weightChartData,
+  waistChartData,
+}: {
+  bodyMetric: 'weight' | 'waist';
+  weightChartData: Array<Record<string, unknown>>;
+  waistChartData: Array<Record<string, unknown>>;
+}) {
+  if (bodyMetric === 'weight') {
+    return (
+      <LineChart data={weightChartData} margin={CHART_MARGIN}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
+        <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+        <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} domain={['auto', 'auto']} tickFormatter={(v) => `${v}kg`} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+        <Tooltip content={<AnalyticsChartTooltip valueFormatter={(v) => `${v.toFixed(1)} kg`} />} />
+        <Line type="monotone" dataKey="weightKg" name="Daily Scale" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="3 3" dot={false} isAnimationActive={false} />
+        <Line type="monotone" dataKey="rolling7DayAvg" name="7D Rolling Avg" stroke="#f97316" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+      </LineChart>
+    );
+  }
+
+  return (
+    <LineChart data={waistChartData} margin={CHART_MARGIN}>
+      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
+      <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+      <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} domain={['auto', 'auto']} tickFormatter={(v) => `${v}"`} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+      <Tooltip content={<AnalyticsChartTooltip valueFormatter={(v) => `${v.toFixed(1)}"`} />} />
+      <Line type="monotone" dataKey="waistInches" name="Waist" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} isAnimationActive={false} />
+    </LineChart>
+  );
+}
+
 function BodyCompositionCard({
   fitness,
   bodyMetric,
@@ -167,24 +200,11 @@ function BodyCompositionCard({
     >
       <div className="h-[215px] sm:h-[245px] w-full">
         <ResponsiveContainer width="100%" height="100%" debounce={150}>
-          {bodyMetric === 'weight' ? (
-            <LineChart data={weightChartData} margin={CHART_MARGIN}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
-              <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-              <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} domain={['auto', 'auto']} tickFormatter={(v) => `${v}kg`} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-              <Tooltip content={<AnalyticsChartTooltip valueFormatter={(v) => `${v.toFixed(1)} kg`} />} />
-              <Line type="monotone" dataKey="weightKg" name="Daily Scale" stroke="var(--muted-foreground)" strokeWidth={1.5} strokeDasharray="3 3" dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="rolling7DayAvg" name="7D Rolling Avg" stroke="#f97316" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-            </LineChart>
-          ) : (
-            <LineChart data={waistChartData} margin={CHART_MARGIN}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
-              <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-              <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} domain={['auto', 'auto']} tickFormatter={(v) => `${v}"`} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-              <Tooltip content={<AnalyticsChartTooltip valueFormatter={(v) => `${v.toFixed(1)}"`} />} />
-              <Line type="monotone" dataKey="waistInches" name="Waist" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} isAnimationActive={false} />
-            </LineChart>
-          )}
+          <BodyCompositionChart
+            bodyMetric={bodyMetric}
+            weightChartData={weightChartData}
+            waistChartData={waistChartData}
+          />
         </ResponsiveContainer>
       </div>
     </AnalyticsChartCard>
@@ -256,6 +276,163 @@ function FuelAdherenceCard({
   );
 }
 
+function WorkoutSplitCard({ fitness }: { fitness: AnalyticsTabProps['snapshot']['fitness'] }) {
+  return (
+    <AnalyticsChartCard
+      title="Gym Split & Progressive Overload"
+      subtitle={`${fitness.workoutCount} sessions · ${fitness.totalWorkoutMinutes} min · ${fitness.totalVolumeKg.toLocaleString('en-IN')} kg volume`}
+      isEmpty={fitness.workoutCount === 0 && fitness.overloadHints.length === 0}
+      emptyTitle="No workouts logged in this range"
+      emptyDescription="Log strength or cardio workouts to unlock split breakdowns and next-session overload targets."
+      emptyActionLabel="Log Workout"
+      emptyActionHref="/fitness?tab=workouts"
+    >
+      <div className="space-y-3">
+        {fitness.workoutTypeBreakdown.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {fitness.workoutTypeBreakdown.map((split) => (
+              <span
+                key={split.type}
+                className="rounded-lg bg-muted/45 border border-border/60 px-2.5 py-1 text-xs font-medium text-foreground capitalize tabular-nums"
+              >
+                {split.type.replace('_', ' ')} · {split.count} ({split.minutes}m)
+              </span>
+            ))}
+          </div>
+        )}
+
+        {fitness.overloadHints.length > 0 && (
+          <div className="space-y-2">
+            {fitness.overloadHints.map((hint) => (
+              <div
+                key={hint.exerciseName}
+                className="flex items-center justify-between gap-2 rounded-xl bg-muted/35 px-3 py-2 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground truncate">{hint.exerciseName}</p>
+                  <p className="text-[11px] text-muted-foreground tabular-nums">
+                    Last: {hint.lastTopWeightKg}kg × {hint.lastTopReps}
+                  </p>
+                </div>
+                <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 tabular-nums shrink-0">
+                  Next: {hint.recommendedWeightKg}kg × {hint.recommendedReps}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </AnalyticsChartCard>
+  );
+}
+
+function StepsRecoveryCard({
+  fitness,
+  hasStepsOrSleep,
+}: {
+  fitness: AnalyticsTabProps['snapshot']['fitness'];
+  hasStepsOrSleep: boolean;
+}) {
+  return (
+    <AnalyticsChartCard
+      title="Daily Steps & Recovery"
+      subtitle={`Avg ${fitness.avgSteps.toLocaleString('en-IN')} steps (target ${fitness.stepsTarget.toLocaleString('en-IN')}) · ${fitness.avgSleepHours !== null ? `${fitness.avgSleepHours}h sleep` : 'Sleep not logged'}`}
+      headerRight={<Footprints className="w-4 h-4 text-muted-foreground" aria-hidden="true" />}
+      isEmpty={!hasStepsOrSleep}
+      emptyTitle="No steps or sleep recovery logs yet"
+      emptyDescription="Track daily step count and sleep duration to spot recovery dips."
+      emptyActionLabel="Open Fitness"
+      emptyActionHref="/fitness"
+    >
+      <div className="h-[210px] sm:h-[230px] w-full">
+        <ResponsiveContainer width="100%" height="100%" debounce={150}>
+          <BarChart data={fitness.dailyFuelSeries} margin={CHART_MARGIN}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
+            <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+            <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`)} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+            <Tooltip content={<AnalyticsChartTooltip valueFormatter={(val) => `${Math.round(val).toLocaleString('en-IN')} steps`} />} />
+            <ReferenceLine y={fitness.stepsTarget} stroke="#0ea5e9" strokeDasharray="4 4" />
+            <Bar dataKey="steps" name="Steps" fill="#0ea5e9" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </AnalyticsChartCard>
+  );
+}
+
+function SupplementInventoryCard({
+  fitness,
+  primaryProteinGrade,
+}: {
+  fitness: AnalyticsTabProps['snapshot']['fitness'];
+  primaryProteinGrade: string;
+}) {
+  return (
+    <AnalyticsChartCard
+      title="Supplement Stock & Protein Economics"
+      subtitle={`Monthly amortized ₹${Math.round(fitness.supplementRoi.totalMonthlySpendInr).toLocaleString('en-IN')} · ${fitness.supplementRoi.lowStockItems.length} low-stock item(s)`}
+      badge={
+        primaryProteinGrade !== 'N/A' ? (
+          <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+            Protein Grade {primaryProteinGrade}
+          </span>
+        ) : null
+      }
+      headerRight={<Pill className="w-4 h-4 text-muted-foreground" aria-hidden="true" />}
+      isEmpty={fitness.supplementRoi.items.length === 0}
+      emptyTitle="No supplements in inventory"
+      emptyDescription="Add whey isolate, creatine, or micronutrients in Supplements to monitor adherence & ₹/25g protein."
+      emptyActionLabel="Add Supplement"
+      emptyActionHref="/fitness?tab=supplements"
+    >
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          {fitness.supplementRoi.items.slice(0, 6).map((item) => (
+            <div
+              key={item.supplement.id}
+              className="rounded-xl bg-muted/35 p-3 space-y-1.5 border border-border/50"
+            >
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-foreground truncate">
+                  {item.supplement.name}
+                </span>
+                <span
+                  className={cn(
+                    'rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums shrink-0',
+                    item.isLowStock
+                      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                      : 'bg-background text-muted-foreground border border-border/60'
+                  )}
+                >
+                  {item.daysRemaining !== null ? `${item.daysRemaining}d left` : `${item.derivedRemainingServings} left`}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground tabular-nums">
+                <span>Adherence {item.adherence30dPct}%</span>
+                <span>
+                  {item.costPer25gProteinInr !== null
+                    ? `₹${Math.round(item.costPer25gProteinInr)}/25g P`
+                    : `₹${Math.round(item.costPerServingInr)}/srv`}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end">
+          <Link
+            href="/fitness?tab=supplements"
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
+            <span>Manage Supplement Inventory</span>
+            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+          </Link>
+        </div>
+      </div>
+    </AnalyticsChartCard>
+  );
+}
+
 function FitnessAnalyticsTabInner({ snapshot }: AnalyticsTabProps) {
   const { fitness, intelligence } = snapshot;
   const [bodyMetric, setBodyMetric] = useState<'weight' | 'waist'>('weight');
@@ -266,7 +443,6 @@ function FitnessAnalyticsTabInner({ snapshot }: AnalyticsTabProps) {
     () => fitness.dailyFuelSeries.some((d) => d.steps > 0 || (d.sleepHours ?? 0) > 0),
     [fitness.dailyFuelSeries]
   );
-  const { gymSupplementRoi } = intelligence.report;
 
   return (
     <div className="space-y-4 sm:space-y-5">
@@ -277,174 +453,15 @@ function FitnessAnalyticsTabInner({ snapshot }: AnalyticsTabProps) {
         <FuelAdherenceCard fitness={fitness} windowLabel={snapshot.window.label} fuelMetric={fuelMetric} onMetricChange={setFuelMetric} />
       </div>
 
-      {/* Gym Volume & Progressive Overload + Steps & Sleep Recovery */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <AnalyticsChartCard
-          title="Gym Split & Progressive Overload"
-          subtitle={`${fitness.workoutCount} sessions · ${fitness.totalWorkoutMinutes} min · ${fitness.totalVolumeKg.toLocaleString('en-IN')} kg volume`}
-          isEmpty={fitness.workoutCount === 0 && fitness.overloadHints.length === 0}
-          emptyTitle="No workouts logged in this range"
-          emptyDescription="Log strength or cardio workouts to unlock split breakdowns and next-session overload targets."
-          emptyActionLabel="Log Workout"
-          emptyActionHref="/fitness?tab=workouts"
-        >
-          <div className="space-y-3">
-            {fitness.workoutTypeBreakdown.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {fitness.workoutTypeBreakdown.map((split) => (
-                  <span
-                    key={split.type}
-                    className="rounded-lg bg-muted/45 border border-border/60 px-2.5 py-1 text-xs font-medium text-foreground capitalize tabular-nums"
-                  >
-                    {split.type.replace('_', ' ')} · {split.count} ({split.minutes}m)
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {fitness.overloadHints.length > 0 && (
-              <div className="space-y-2">
-                {fitness.overloadHints.map((hint) => (
-                  <div
-                    key={hint.exerciseName}
-                    className="flex items-center justify-between gap-2 rounded-xl bg-muted/35 px-3 py-2 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-semibold text-foreground truncate">{hint.exerciseName}</p>
-                      <p className="text-[11px] text-muted-foreground tabular-nums">
-                        Last: {hint.lastTopWeightKg}kg × {hint.lastTopReps}
-                      </p>
-                    </div>
-                    <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 tabular-nums shrink-0">
-                      Next: {hint.recommendedWeightKg}kg × {hint.recommendedReps}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </AnalyticsChartCard>
-
-        <AnalyticsChartCard
-          title="Daily Steps & Recovery"
-          subtitle={`Avg ${fitness.avgSteps.toLocaleString('en-IN')} steps (target ${fitness.stepsTarget.toLocaleString('en-IN')}) · ${fitness.avgSleepHours !== null ? `${fitness.avgSleepHours}h sleep` : 'Sleep not logged'}`}
-          headerRight={<Footprints className="w-4 h-4 text-muted-foreground" aria-hidden="true" />}
-          isEmpty={!hasStepsOrSleep}
-          emptyTitle="No steps or sleep recovery logs yet"
-          emptyDescription="Track daily step count and sleep duration to spot recovery dips."
-          emptyActionLabel="Open Fitness"
-          emptyActionHref="/fitness"
-        >
-          <div className="h-[210px] sm:h-[230px] w-full">
-            <ResponsiveContainer width="100%" height="100%" debounce={150}>
-              <BarChart data={fitness.dailyFuelSeries} margin={CHART_MARGIN}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="var(--border)"
-                  strokeOpacity={0.65}
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={28}
-                  tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
-                />
-                <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`)}
-                  tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
-                />
-                <Tooltip
-                  content={
-                    <AnalyticsChartTooltip
-                      valueFormatter={(val) => `${Math.round(val).toLocaleString('en-IN')} steps`}
-                    />
-                  }
-                />
-                <ReferenceLine y={fitness.stepsTarget} stroke="#0ea5e9" strokeDasharray="4 4" />
-                <Bar
-                  dataKey="steps"
-                  name="Steps"
-                  fill="#0ea5e9"
-                  radius={[4, 4, 0, 0]}
-                  isAnimationActive={false}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </AnalyticsChartCard>
+        <WorkoutSplitCard fitness={fitness} />
+        <StepsRecoveryCard fitness={fitness} hasStepsOrSleep={hasStepsOrSleep} />
       </div>
 
-      {/* Supplement ROI & Low Stock Radar */}
-      <AnalyticsChartCard
-        title="Supplement Stock & Protein Economics"
-        subtitle={`Monthly amortized ₹${Math.round(fitness.supplementRoi.totalMonthlySpendInr).toLocaleString('en-IN')} · ${fitness.supplementRoi.lowStockItems.length} low-stock item(s)`}
-        badge={
-          gymSupplementRoi.primaryProteinGrade !== 'N/A' ? (
-            <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
-              Protein Grade {gymSupplementRoi.primaryProteinGrade}
-            </span>
-          ) : null
-        }
-        headerRight={<Pill className="w-4 h-4 text-muted-foreground" aria-hidden="true" />}
-        isEmpty={fitness.supplementRoi.items.length === 0}
-        emptyTitle="No supplements in inventory"
-        emptyDescription="Add whey isolate, creatine, or micronutrients in Supplements to monitor adherence & ₹/25g protein."
-        emptyActionLabel="Add Supplement"
-        emptyActionHref="/fitness?tab=supplements"
-      >
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {fitness.supplementRoi.items.slice(0, 6).map((item) => (
-              <div
-                key={item.supplement.id}
-                className="rounded-xl bg-muted/35 p-3 space-y-1.5 border border-border/50"
-              >
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="font-semibold text-foreground truncate">
-                    {item.supplement.name}
-                  </span>
-                  <span
-                    className={cn(
-                      'rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums shrink-0',
-                      item.isLowStock
-                        ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
-                        : 'bg-background text-muted-foreground border border-border/60'
-                    )}
-                  >
-                    {item.daysRemaining !== null ? `${item.daysRemaining}d left` : `${item.derivedRemainingServings} left`}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground tabular-nums">
-                  <span>Adherence {item.adherence30dPct}%</span>
-                  <span>
-                    {item.costPer25gProteinInr !== null
-                      ? `₹${Math.round(item.costPer25gProteinInr)}/25g P`
-                      : `₹${Math.round(item.costPerServingInr)}/srv`}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex justify-end">
-            <Link
-              href="/fitness?tab=supplements"
-              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              <span>Manage Supplement Inventory</span>
-              <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
-      </AnalyticsChartCard>
+      <SupplementInventoryCard
+        fitness={fitness}
+        primaryProteinGrade={intelligence.report.gymSupplementRoi.primaryProteinGrade}
+      />
     </div>
   );
 }

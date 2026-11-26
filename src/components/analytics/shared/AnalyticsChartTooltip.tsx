@@ -25,13 +25,24 @@ function formatTooltipLabel(raw?: string): string {
   return raw;
 }
 
+function formatTooltipDisplay(
+  rawValue: number | string | undefined,
+  name: string,
+  valueFormatter?: (value: number, name: string) => string
+): string {
+  const numeric = typeof rawValue === 'number' ? rawValue : Number(rawValue ?? 0);
+  if (valueFormatter) return valueFormatter(numeric, name);
+  return Number.isFinite(numeric) ? numeric.toLocaleString('en-IN') : String(rawValue ?? '');
+}
+
 export function AnalyticsChartTooltip({
   active,
   payload,
   label,
   valueFormatter,
 }: AnalyticsChartTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null;
+  const hasPayload = Boolean(active && payload?.length);
+  if (!hasPayload || !payload) return null;
 
   return (
     <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
@@ -41,12 +52,7 @@ export function AnalyticsChartTooltip({
       <div className="space-y-1">
         {payload.map((entry, idx) => {
           const name = String(entry.name ?? entry.dataKey ?? 'Value');
-          const numeric = typeof entry.value === 'number' ? entry.value : Number(entry.value ?? 0);
-          const display = valueFormatter
-            ? valueFormatter(numeric, name)
-            : Number.isFinite(numeric)
-              ? numeric.toLocaleString('en-IN')
-              : String(entry.value ?? '');
+          const display = formatTooltipDisplay(entry.value, name, valueFormatter);
 
           return (
             <div key={`${name}-${idx}`} className="flex items-center justify-between gap-4">

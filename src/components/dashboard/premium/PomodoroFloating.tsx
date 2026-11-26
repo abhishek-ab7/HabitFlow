@@ -121,36 +121,29 @@ function notifyPomodoroComplete(
     });
     return;
   }
-  if (finishedMode === 'gym_rest') {
-    toast.success('Rest finished — next working set!', {
-      description: taskTitle || 'Back under the bar!',
-      duration: 4500,
-    });
-    return;
-  }
-  if (finishedMode === 'starter_2m') {
-    toast.success('2-Minute Starter complete!', {
-      description: 'Keep going or switch into a 25m Focus session.',
-      duration: 5000,
-    });
-    return;
-  }
-  if (finishedMode === 'focus') {
-    toast.success('Focus session complete! Take a break.', {
-      description: activeTaskTitle ? `You finished focusing on: ${activeTaskTitle}` : 'Great job focusing!',
-      duration: 5000,
-    });
-    return;
-  }
-  toast.success("Break finished! Let's get back to work.", { duration: 5000 });
+  const toastConfig: Record<Exclude<PomodoroMode, 'urge_10m'>, { title: string; description?: string; duration: number }> = {
+    gym_rest: { title: 'Rest finished — next working set!', description: taskTitle || 'Back under the bar!', duration: 4500 },
+    starter_2m: { title: '2-Minute Starter complete!', description: 'Keep going or switch into a 25m Focus session.', duration: 5000 },
+    focus: { title: 'Focus session complete! Take a break.', description: activeTaskTitle ? `You finished focusing on: ${activeTaskTitle}` : 'Great job focusing!', duration: 5000 },
+    short_break: { title: "Break finished! Let's get back to work.", duration: 5000 },
+    long_break: { title: "Break finished! Let's get back to work.", duration: 5000 },
+  };
+  const cfg = toastConfig[finishedMode];
+  toast.success(cfg.title, { description: cfg.description, duration: cfg.duration });
 }
 
+const MODE_ICON_MAP: Record<PomodoroMode, typeof Timer> = {
+  focus: Timer,
+  short_break: Coffee,
+  long_break: Coffee,
+  gym_rest: Dumbbell,
+  urge_10m: ShieldCheck,
+  starter_2m: Zap,
+};
+
 function ModeIcon({ mode, colorClass }: { mode: PomodoroMode; colorClass: string }) {
-  if (mode === 'short_break' || mode === 'long_break') return <Coffee className={cn('h-4 w-4', colorClass)} />;
-  if (mode === 'gym_rest') return <Dumbbell className={cn('h-4 w-4', colorClass)} />;
-  if (mode === 'urge_10m') return <ShieldCheck className={cn('h-4 w-4', colorClass)} />;
-  if (mode === 'starter_2m') return <Zap className={cn('h-4 w-4', colorClass)} />;
-  return <Timer className={cn('h-4 w-4', colorClass)} />;
+  const Icon = MODE_ICON_MAP[mode];
+  return <Icon className={cn('h-4 w-4', colorClass)} />;
 }
 
 function UrgeReflectionPrompt({
@@ -204,6 +197,93 @@ function UrgeReflectionPrompt({
   );
 }
 
+function PomodoroDurationEditor({
+  customMinutes,
+  setCustomMinutes,
+  onSave,
+  onCancel,
+}: {
+  customMinutes: number;
+  setCustomMinutes: (m: number) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        type="number"
+        min="1"
+        max="180"
+        value={customMinutes}
+        onChange={(e) => setCustomMinutes(Math.max(1, Math.min(180, parseInt(e.target.value, 10) || 1)))}
+        className="w-20 text-center text-2xl font-bold font-mono bg-muted/50 border-border h-10"
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSave();
+          else if (e.key === 'Escape') onCancel();
+        }}
+      />
+      <Button size="icon" className="h-9 w-9 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg" onClick={onSave} title="Save duration">
+        <Check className="h-4 w-4" />
+      </Button>
+      <Button size="icon" variant="outline" className="h-9 w-9 rounded-lg" onClick={onCancel} title="Cancel">
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+function PomodoroReadoutRow({
+  timeLeft,
+  isRunning,
+  onStepDown,
+  onStepUp,
+  onStartEdit,
+}: {
+  timeLeft: number;
+  isRunning: boolean;
+  onStepDown: () => void;
+  onStepUp: () => void;
+  onStartEdit: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 group">
+      {!isRunning && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all"
+          onClick={onStepDown}
+          title="Decrease duration"
+        >
+          <Minus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+        </Button>
+      )}
+      <div
+        className={cn(
+          'text-4xl font-extrabold font-mono tracking-tight text-foreground tabular-nums select-all',
+          !isRunning && 'cursor-pointer hover:text-primary transition-colors'
+        )}
+        onClick={onStartEdit}
+        title={!isRunning ? 'Click to edit duration' : undefined}
+      >
+        {formatTimerDisplay(timeLeft)}
+      </div>
+      {!isRunning && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all"
+          onClick={onStepUp}
+          title="Increase duration"
+        >
+          <Plus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function PomodoroTimerDisplay(props: {
   mode: PomodoroMode;
   timeLeft: number;
@@ -222,78 +302,41 @@ function PomodoroTimerDisplay(props: {
     toast.success(`Duration set to ${mins}m`);
   };
 
+  const handleStepDown = () => {
+    const step = mode === 'gym_rest' ? -15 : -60;
+    const minAllowed = mode === 'gym_rest' ? 15 : 60;
+    if (timeLeft > minAllowed) adjustDuration(step);
+    else toast.error(`Minimum duration is ${minAllowed}s`);
+  };
+
+  const handleStepUp = () => {
+    const step = mode === 'gym_rest' ? 15 : 60;
+    if (timeLeft < 180 * 60) adjustDuration(step);
+  };
+
+  const handleStartEdit = () => {
+    if (isRunning) return;
+    setIsEditingTime(true);
+    setCustomMinutes(Math.max(1, Math.floor(timeLeft / 60)));
+  };
+
   return (
     <div className="flex flex-col items-center justify-center py-1 relative">
       {isEditingTime ? (
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            min="1"
-            max="180"
-            value={customMinutes}
-            onChange={(e) => setCustomMinutes(Math.max(1, Math.min(180, parseInt(e.target.value, 10) || 1)))}
-            className="w-20 text-center text-2xl font-bold font-mono bg-muted/50 border-border h-10"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitCustomMinutes();
-              else if (e.key === 'Escape') setIsEditingTime(false);
-            }}
-          />
-          <Button size="icon" className="h-9 w-9 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg" onClick={commitCustomMinutes} title="Save duration">
-            <Check className="h-4 w-4" />
-          </Button>
-          <Button size="icon" variant="outline" className="h-9 w-9 rounded-lg" onClick={() => setIsEditingTime(false)} title="Cancel">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <PomodoroDurationEditor
+          customMinutes={customMinutes}
+          setCustomMinutes={setCustomMinutes}
+          onSave={commitCustomMinutes}
+          onCancel={() => setIsEditingTime(false)}
+        />
       ) : (
-        <div className="flex items-center gap-3 group">
-          {!isRunning && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all"
-              onClick={() => {
-                const step = mode === 'gym_rest' ? -15 : -60;
-                const minAllowed = mode === 'gym_rest' ? 15 : 60;
-                if (timeLeft > minAllowed) adjustDuration(step);
-                else toast.error(`Minimum duration is ${minAllowed}s`);
-              }}
-              title="Decrease duration"
-            >
-              <Minus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-            </Button>
-          )}
-          <div
-            className={cn(
-              'text-4xl font-extrabold font-mono tracking-tight text-foreground tabular-nums select-all',
-              !isRunning && 'cursor-pointer hover:text-primary transition-colors'
-            )}
-            onClick={() => {
-              if (!isRunning) {
-                setIsEditingTime(true);
-                setCustomMinutes(Math.max(1, Math.floor(timeLeft / 60)));
-              }
-            }}
-            title={!isRunning ? 'Click to edit duration' : undefined}
-          >
-            {formatTimerDisplay(timeLeft)}
-          </div>
-          {!isRunning && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-9 w-9 rounded-full opacity-75 md:opacity-0 md:group-hover:opacity-100 transition-all"
-              onClick={() => {
-                const step = mode === 'gym_rest' ? 15 : 60;
-                if (timeLeft < 180 * 60) adjustDuration(step);
-              }}
-              title="Increase duration"
-            >
-              <Plus className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-            </Button>
-          )}
-        </div>
+        <PomodoroReadoutRow
+          timeLeft={timeLeft}
+          isRunning={isRunning}
+          onStepDown={handleStepDown}
+          onStepUp={handleStepUp}
+          onStartEdit={handleStartEdit}
+        />
       )}
       <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground mt-1">
         {MODE_LABELS[mode]}
@@ -496,6 +539,57 @@ function PomodoroExpandedPanel(props: {
   );
 }
 
+interface PomodoroLifecycleParams {
+  timeLeft: number;
+  isRunning: boolean;
+  activeTaskTitle?: string | null;
+  tick: () => void;
+  syncFromClock: () => void;
+  isEditingTime: boolean;
+  setCustomMinutes: (m: number) => void;
+  setIsExpanded: (v: boolean) => void;
+}
+
+function usePomodoroLifecycle(params: PomodoroLifecycleParams) {
+  const { timeLeft, isRunning, activeTaskTitle, tick, syncFromClock, isEditingTime, setCustomMinutes, setIsExpanded } = params;
+  useEffect(() => {
+    if (!isEditingTime) setCustomMinutes(Math.max(1, Math.floor(timeLeft / 60)));
+  }, [timeLeft, isEditingTime, setCustomMinutes]);
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const interval = setInterval(() => tick(), 1000);
+    return () => clearInterval(interval);
+  }, [isRunning, tick]);
+
+  useEffect(() => {
+    const handleResync = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') syncFromClock();
+    };
+    document.addEventListener('visibilitychange', handleResync);
+    window.addEventListener('focus', handleResync);
+    return () => {
+      document.removeEventListener('visibilitychange', handleResync);
+      window.removeEventListener('focus', handleResync);
+    };
+  }, [syncFromClock]);
+
+  useEffect(() => {
+    const handleComplete = (e: Event) => {
+      const detail = (e as CustomEvent<{ mode?: PomodoroMode; taskTitle?: string }>).detail;
+      notifyPomodoroComplete(detail?.mode || 'focus', detail?.taskTitle, activeTaskTitle, () => setIsExpanded(true));
+    };
+    window.addEventListener('pomodoro-complete', handleComplete);
+    return () => window.removeEventListener('pomodoro-complete', handleComplete);
+  }, [activeTaskTitle, setIsExpanded]);
+
+  useEffect(() => {
+    const handleOpen = () => setIsExpanded(true);
+    window.addEventListener('open-pomodoro', handleOpen);
+    return () => window.removeEventListener('open-pomodoro', handleOpen);
+  }, [setIsExpanded]);
+}
+
 export function PomodoroFloating() {
   const store = usePomodoroStore();
   const pathname = usePathname() ?? '';
@@ -505,45 +599,18 @@ export function PomodoroFloating() {
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState(25);
 
+  usePomodoroLifecycle({
+    timeLeft: store.timeLeft,
+    isRunning: store.isRunning,
+    activeTaskTitle: store.activeTaskTitle,
+    tick: store.tick,
+    syncFromClock: store.syncFromClock,
+    isEditingTime,
+    setCustomMinutes,
+    setIsExpanded,
+  });
+
   const isAppRoute = pathname !== '/' && pathname !== '/login' && !pathname.startsWith('/auth');
-
-  useEffect(() => {
-    if (!isEditingTime) setCustomMinutes(Math.max(1, Math.floor(store.timeLeft / 60)));
-  }, [store.timeLeft, isEditingTime]);
-
-  useEffect(() => {
-    if (!store.isRunning) return;
-    const interval = setInterval(() => store.tick(), 1000);
-    return () => clearInterval(interval);
-  }, [store.isRunning, store.tick]);
-
-  useEffect(() => {
-    const handleResync = () => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') store.syncFromClock();
-    };
-    document.addEventListener('visibilitychange', handleResync);
-    window.addEventListener('focus', handleResync);
-    return () => {
-      document.removeEventListener('visibilitychange', handleResync);
-      window.removeEventListener('focus', handleResync);
-    };
-  }, [store.syncFromClock]);
-
-  useEffect(() => {
-    const handleComplete = (e: Event) => {
-      const detail = (e as CustomEvent<{ mode?: PomodoroMode; taskTitle?: string }>).detail;
-      notifyPomodoroComplete(detail?.mode || 'focus', detail?.taskTitle, store.activeTaskTitle, () => setIsExpanded(true));
-    };
-    window.addEventListener('pomodoro-complete', handleComplete);
-    return () => window.removeEventListener('pomodoro-complete', handleComplete);
-  }, [store.activeTaskTitle]);
-
-  useEffect(() => {
-    const handleOpen = () => setIsExpanded(true);
-    window.addEventListener('open-pomodoro', handleOpen);
-    return () => window.removeEventListener('open-pomodoro', handleOpen);
-  }, []);
-
   if (!isAppRoute) return null;
 
   const activeColor = MODE_COLORS[store.mode] || MODE_COLORS.focus;

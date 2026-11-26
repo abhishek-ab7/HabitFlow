@@ -90,37 +90,100 @@ function Sparkline({ data }: { data: { rate: number }[] }) {
   );
 }
 
+function computeFiveDaySparkline(
+  habits: ReturnType<typeof useHabitStore.getState>['habits'],
+  completions: ReturnType<typeof useHabitStore.getState>['completions']
+) {
+  const activeHabits = habits.filter((h) => !h.archived);
+  if (activeHabits.length === 0) return Array(5).fill({ rate: 0 });
+  const activeIds = new Set(activeHabits.map((h) => h.id));
+
+  return Array.from({ length: 5 }).map((_, i) => {
+    const dateStr = formatDate(subDays(new Date(), 4 - i), 'yyyy-MM-dd');
+    const completedCount = completions.filter(
+      (c) => c.date === dateStr && c.completed && c.status !== 'frozen' && activeIds.has(c.habitId)
+    ).length;
+    return { rate: Math.round((completedCount / activeHabits.length) * 100) };
+  });
+}
+
+function FeaturedInsightCard({
+  insight,
+  sparklineData,
+}: {
+  insight: Insight;
+  sparklineData: { rate: number }[];
+}) {
+  return (
+    <StaggerContainer>
+      <StaggerItem>
+        <motion.div
+          whileHover={{ scale: 1.005 }}
+          className="relative p-5 surface-hero border-primary/25 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+        >
+          <div className="flex-1 min-w-0 space-y-2 relative z-10">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-primary/15 text-primary font-bold uppercase tracking-wider text-[9px] border border-primary/25">
+                Featured Insight
+              </Badge>
+              <span className="text-[11px] text-muted-foreground capitalize font-medium">• {insight.type}</span>
+            </div>
+            <h3 className="text-base md:text-lg font-bold text-foreground tracking-tight leading-snug">{insight.title}</h3>
+            <p className="text-xs md:text-sm text-muted-foreground max-w-xl leading-relaxed">{insight.description}</p>
+            {insight.actionLabel && insight.actionHref && (
+              <Link href={insight.actionHref} className="inline-flex items-center text-xs font-semibold mt-2 text-primary hover:underline hover:opacity-90">
+                {insight.actionLabel} &rarr;
+              </Link>
+            )}
+          </div>
+
+          <div className="flex flex-col items-center md:items-end shrink-0 gap-1.5 self-stretch md:self-auto justify-center p-3 surface-subtle">
+            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">5-Day Trend</span>
+            <Sparkline data={sparklineData} />
+          </div>
+        </motion.div>
+      </StaggerItem>
+    </StaggerContainer>
+  );
+}
+
+function InsightGridCard({ insight }: { insight: Insight }) {
+  const style = TYPE_STYLES[insight.type];
+  const IconComponent = INSIGHT_ICONS[insight.icon] || style.icon;
+
+  return (
+    <StaggerItem>
+      <motion.div whileHover={{ scale: 1.01 }} className={cn('flex gap-3 p-4 surface-subtle transition-all duration-200 h-full', style.border)}>
+        <div className={cn('flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border', style.iconColor)}>
+          <IconComponent className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-semibold text-foreground">{insight.title}</h4>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{insight.description}</p>
+          {insight.actionLabel && insight.actionHref && (
+            <Link href={insight.actionHref} className="inline-flex items-center text-xs font-semibold mt-2 text-primary hover:underline hover:opacity-90">
+              {insight.actionLabel} &rarr;
+            </Link>
+          )}
+        </div>
+        <Badge variant="secondary" className={cn('flex-shrink-0 self-start capitalize text-[9px] px-1.5 py-0.5', style.bg)}>
+          {insight.type}
+        </Badge>
+      </motion.div>
+    </StaggerItem>
+  );
+}
+
 export function InsightsCards({ insights }: InsightsCardsProps) {
   const { habits, completions } = useHabitStore();
-
-  const sparklineData = useMemo(() => {
-    const activeHabits = habits.filter(h => !h.archived);
-    if (activeHabits.length === 0) return Array(5).fill({ rate: 0 });
-
-    return Array.from({ length: 5 }).map((_, i) => {
-      const date = subDays(new Date(), 4 - i);
-      const dateStr = formatDate(date, 'yyyy-MM-dd');
-
-      const completedCount = completions.filter(c => 
-        c.date === dateStr && 
-        c.completed && 
-        c.status !== 'frozen' &&
-        activeHabits.some(h => h.id === c.habitId)
-      ).length;
-
-      const rate = Math.round((completedCount / activeHabits.length) * 100);
-      return { rate };
-    });
-  }, [habits, completions]);
+  const sparklineData = useMemo(() => computeFiveDaySparkline(habits, completions), [habits, completions]);
 
   if (insights.length === 0) {
     return (
       <Card>
         <CardContent className="py-8 text-center">
           <Lightbulb className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-          <p className="text-muted-foreground">
-            Keep tracking your habits to unlock insights!
-          </p>
+          <p className="text-muted-foreground">Keep tracking your habits to unlock insights!</p>
         </CardContent>
       </Card>
     );
@@ -133,99 +196,16 @@ export function InsightsCards({ insights }: InsightsCardsProps) {
           <Lightbulb className="h-5 w-5 text-primary" />
           Insights & Suggestions
         </CardTitle>
-        <CardDescription>
-          Personalized insights based on your habit data
-        </CardDescription>
+        <CardDescription>Personalized insights based on your habit data</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Featured Top Insight */}
-        {insights.length > 0 && (
-          <StaggerContainer>
-            <StaggerItem>
-              <motion.div
-                whileHover={{ scale: 1.005 }}
-                className="relative p-5 surface-hero border-primary/25 overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
-              >
-                <div className="flex-1 min-w-0 space-y-2 relative z-10">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="bg-primary/15 text-primary font-bold uppercase tracking-wider text-[9px] border border-primary/25">
-                      Featured Insight
-                    </Badge>
-                    <span className="text-[11px] text-muted-foreground capitalize font-medium">• {insights[0].type}</span>
-                  </div>
-                  <h3 className="text-base md:text-lg font-bold text-foreground tracking-tight leading-snug">
-                    {insights[0].title}
-                  </h3>
-                  <p className="text-xs md:text-sm text-muted-foreground max-w-xl leading-relaxed">
-                    {insights[0].description}
-                  </p>
-                  {insights[0].actionLabel && insights[0].actionHref && (
-                    <Link 
-                      href={insights[0].actionHref}
-                      className="inline-flex items-center text-xs font-semibold mt-2 text-primary hover:underline hover:opacity-90"
-                    >
-                      {insights[0].actionLabel} &rarr;
-                    </Link>
-                  )}
-                </div>
+        <FeaturedInsightCard insight={insights[0]} sparklineData={sparklineData} />
 
-                <div className="flex flex-col items-center md:items-end shrink-0 gap-1.5 self-stretch md:self-auto justify-center p-3 surface-subtle">
-                  <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                    5-Day Trend
-                  </span>
-                  <Sparkline data={sparklineData} />
-                </div>
-              </motion.div>
-            </StaggerItem>
-          </StaggerContainer>
-        )}
-
-        {/* Remaining Insights Grid */}
         {insights.length > 1 && (
           <StaggerContainer className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-            {insights.slice(1).map((insight) => {
-              const style = TYPE_STYLES[insight.type];
-              const IconComponent = INSIGHT_ICONS[insight.icon] || style.icon;
-
-              return (
-                <StaggerItem key={insight.id}>
-                  <motion.div
-                    whileHover={{ scale: 1.01 }}
-                    className={cn(
-                      "flex gap-3 p-4 surface-subtle transition-all duration-200 h-full",
-                      style.border
-                    )}
-                  >
-                    <div className={cn(
-                      "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-background border border-border",
-                      style.iconColor
-                    )}>
-                      <IconComponent className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold text-foreground">{insight.title}</h4>
-                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                        {insight.description}
-                      </p>
-                      {insight.actionLabel && insight.actionHref && (
-                        <Link 
-                          href={insight.actionHref}
-                          className="inline-flex items-center text-xs font-semibold mt-2 text-primary hover:underline hover:opacity-90"
-                        >
-                          {insight.actionLabel} &rarr;
-                        </Link>
-                      )}
-                    </div>
-                    <Badge 
-                      variant="secondary" 
-                      className={cn("flex-shrink-0 self-start capitalize text-[9px] px-1.5 py-0.5", style.bg)}
-                    >
-                      {insight.type}
-                    </Badge>
-                  </motion.div>
-                </StaggerItem>
-              );
-            })}
+            {insights.slice(1).map((insight) => (
+              <InsightGridCard key={insight.id} insight={insight} />
+            ))}
           </StaggerContainer>
         )}
       </CardContent>

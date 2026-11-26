@@ -40,6 +40,39 @@ function partitionHabitsForToday(habits: Habit[], completions: HabitCompletion[]
   return { activeDueHabits: due, restingOrQuotaMetHabits: resting };
 }
 
+interface DayCellToneFlags {
+  isCompleted: boolean;
+  isRest: boolean;
+  isFuture: boolean;
+  isToday: boolean;
+}
+
+function getDayCellTone(flags: DayCellToneFlags): string {
+  if (flags.isCompleted) return 'bg-success/20 text-success';
+  if (flags.isRest) return 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/30';
+  if (flags.isFuture) return 'bg-muted/30 opacity-50 cursor-not-allowed';
+  return flags.isToday ? 'bg-muted border-2 border-dashed border-muted-foreground/30' : 'bg-muted/50';
+}
+
+function DayCellIcon({ isCompleted, isRest }: { isCompleted: boolean; isRest: boolean }) {
+  if (isCompleted) return <Check className="h-4 w-4" />;
+  if (isRest) return <Moon className="h-3.5 w-3.5" />;
+  return null;
+}
+
+function computeDayCellState(params: {
+  comp?: HabitCompletion;
+  isFuture: boolean;
+  isToday: boolean;
+  hasToggle: boolean;
+}) {
+  const isCompleted = Boolean(params.comp?.completed && params.comp?.status !== 'rest' && !params.comp?.skipped);
+  const isRest = Boolean(params.comp && (params.comp.status === 'rest' || params.comp.skipped));
+  const canToggle = !params.isFuture && params.hasToggle;
+  const tone = getDayCellTone({ isCompleted, isRest, isFuture: params.isFuture, isToday: params.isToday });
+  return { isCompleted, isRest, canToggle, tone };
+}
+
 function HabitDayCellButton(props: {
   comp?: HabitCompletion;
   isFuture: boolean;
@@ -47,29 +80,19 @@ function HabitDayCellButton(props: {
   onToggle?: () => Promise<void>;
 }) {
   const { comp, isFuture, isToday, onToggle } = props;
-  const isCompleted = Boolean(comp?.completed && comp?.status !== 'rest' && !comp?.skipped);
-  const isRest = Boolean(comp && (comp.status === 'rest' || comp.skipped));
-  const cellTone = isCompleted
-    ? 'bg-success/20 text-success'
-    : isRest
-      ? 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/30'
-      : isFuture
-        ? 'bg-muted/30 opacity-50 cursor-not-allowed'
-        : isToday
-          ? 'bg-muted border-2 border-dashed border-muted-foreground/30'
-          : 'bg-muted/50';
+  const state = computeDayCellState({ comp, isFuture, isToday, hasToggle: Boolean(onToggle) });
 
   return (
     <button
       onClick={onToggle}
-      disabled={isFuture || !onToggle}
+      disabled={!state.canToggle}
       className={cn(
         'w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition-all',
-        !isFuture && onToggle && 'cursor-pointer hover:scale-105 active:scale-95',
-        cellTone
+        state.canToggle && 'cursor-pointer hover:scale-105 active:scale-95',
+        state.tone
       )}
     >
-      {isCompleted ? <Check className="h-4 w-4" /> : isRest ? <Moon className="h-3.5 w-3.5" /> : null}
+      <DayCellIcon isCompleted={state.isCompleted} isRest={state.isRest} />
     </button>
   );
 }
@@ -152,6 +175,11 @@ function ActiveHabitMatrixRow(props: {
   );
 }
 
+function getRestingStatusLabel(weekProg: ReturnType<typeof getHabitWeekProgress>): string {
+  if (weekProg.quotaMet) return `${weekProg.completedCount}/${weekProg.targetCount} wk ✓`;
+  return weekProg.isAutoRestDay ? 'Scheduled Off' : 'Resting Today';
+}
+
 function RestingHabitsTray(props: {
   items: Array<{ habit: Habit; weekProg: ReturnType<typeof getHabitWeekProgress>; streak: number }>;
   showRestingTray: boolean;
@@ -186,7 +214,7 @@ function RestingHabitsTray(props: {
                 <span>{habit.icon || '🌙'}</span>
                 <span className="font-medium truncate">{habit.name}</span>
                 <span className="text-[10px] font-mono tabular-nums text-teal-600 dark:text-teal-400">
-                  {weekProg.quotaMet ? `${weekProg.completedCount}/${weekProg.targetCount} wk ✓` : weekProg.isAutoRestDay ? 'Scheduled Off' : 'Resting Today'}
+                  {getRestingStatusLabel(weekProg)}
                 </span>
               </div>
               <div className="flex items-center gap-1">
@@ -218,6 +246,33 @@ function RestingHabitsTray(props: {
   );
 }
 
+function HabitOverviewEmptyState() {
+  return (
+    <FadeIn delay={0.2} className="tour-habits-widget">
+      <Card className="rounded-2xl border-border bg-card">
+        <CardContent className="py-12 text-center">
+          <p className="text-muted-foreground mb-4">No habits yet. Start building your routine!</p>
+          <Button asChild><Link href="/habits">Create Your First Habit</Link></Button>
+        </CardContent>
+      </Card>
+    </FadeIn>
+  );
+}
+
+function buildDisplayedDays(isMobile: boolean, today: Date, todayStr: string) {
+  const count = isMobile ? 3 : 7;
+  return Array.from({ length: count }, (_, i) => {
+    const date = subDays(today, count - 1 - i);
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return {
+      date,
+      dateStr,
+      dayLabel: format(date, 'EEE')[0],
+      isToday: dateStr === todayStr,
+    };
+  });
+}
+
 export function HabitOverview({ habits, completions, onToggle }: HabitOverviewProps) {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
@@ -233,18 +288,10 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const displayedDays = useMemo(() => {
-    const count = isMobile ? 3 : 7;
-    return Array.from({ length: count }, (_, i) => {
-      const date = subDays(today, count - 1 - i);
-      return {
-        date,
-        dateStr: format(date, 'yyyy-MM-dd'),
-        dayLabel: format(date, 'EEE')[0],
-        isToday: format(date, 'yyyy-MM-dd') === todayStr,
-      };
-    });
-  }, [isMobile, todayStr]);
+  const displayedDays = useMemo(
+    () => buildDisplayedDays(isMobile, today, todayStr),
+    [isMobile, todayStr]
+  );
 
   const { activeDueHabits, restingOrQuotaMetHabits } = useMemo(
     () => partitionHabitsForToday(habits, completions, today),
@@ -261,18 +308,7 @@ export function HabitOverview({ habits, completions, onToggle }: HabitOverviewPr
     }
   };
 
-  if (habits.length === 0) {
-    return (
-      <FadeIn delay={0.2} className="tour-habits-widget">
-        <Card className="rounded-2xl border-border bg-card">
-          <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground mb-4">No habits yet. Start building your routine!</p>
-            <Button asChild><Link href="/habits">Create Your First Habit</Link></Button>
-          </CardContent>
-        </Card>
-      </FadeIn>
-    );
-  }
+  if (habits.length === 0) return <HabitOverviewEmptyState />;
 
   return (
     <FadeIn delay={0.2} className="h-full flex flex-col tour-habits-widget">

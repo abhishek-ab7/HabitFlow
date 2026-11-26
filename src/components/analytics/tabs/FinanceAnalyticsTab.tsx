@@ -153,6 +153,52 @@ function ModeToggleGroup<T extends string>(props: {
   );
 }
 
+function CashflowBurnChart({ data }: { data: AnalyticsTabProps['snapshot']['finance']['dailyCashflow'] }) {
+  return (
+    <div className="h-[220px] sm:h-[250px] w-full">
+      <ResponsiveContainer width="100%" height="100%" debounce={150}>
+        <BarChart data={data} margin={CHART_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
+          <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+          <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatCompactINR} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+          <Tooltip content={<AnalyticsChartTooltip valueFormatter={(val) => formatINR(val)} />} />
+          <Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="expense" name="Expense" fill="#0ea5e9" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function RunwayForecastChart({ forecast30d }: { forecast30d: AnalyticsTabProps['snapshot']['finance']['forecast30d'] }) {
+  return (
+    <div className="space-y-3">
+      <div className="h-[210px] sm:h-[240px] w-full">
+        <ResponsiveContainer width="100%" height="100%" debounce={150}>
+          <AreaChart data={forecast30d.points} margin={CHART_MARGIN}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
+            <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+            <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatCompactINR} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
+            <Tooltip content={<AnalyticsChartTooltip valueFormatter={(val) => formatINR(val)} />} />
+            <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" />
+            <Area type="monotone" dataKey="projectedBalance" name="Projected Cash" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.14} strokeWidth={2} isAnimationActive={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/35 px-3 py-2 text-xs">
+        <span className="text-muted-foreground tabular-nums">
+          End of 30d: <strong className="text-foreground">{formatINR(forecast30d.endingProjectedBalance)}</strong>
+        </span>
+        <span className={cn('font-medium tabular-nums', forecast30d.crunchDate ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+          {forecast30d.crunchDate
+            ? `Crunch risk on ${formatHumanDate(forecast30d.crunchDate)}`
+            : `Low point ${formatINR(forecast30d.lowestProjectedBalance)}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function CashflowTrajectoryCard({
   finance,
   dateSpanLabel,
@@ -192,45 +238,55 @@ function CashflowTrajectoryCard({
       emptyActionHref="/finance"
     >
       {cashflowMode === 'burn' ? (
-        <div className="h-[220px] sm:h-[250px] w-full">
-          <ResponsiveContainer width="100%" height="100%" debounce={150}>
-            <BarChart data={finance.dailyCashflow} margin={CHART_MARGIN}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
-              <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-              <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatCompactINR} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-              <Tooltip content={<AnalyticsChartTooltip valueFormatter={(val) => formatINR(val)} />} />
-              <Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-              <Bar dataKey="expense" name="Expense" fill="#0ea5e9" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <CashflowBurnChart data={finance.dailyCashflow} />
       ) : (
-        <div className="space-y-3">
-          <div className="h-[210px] sm:h-[240px] w-full">
-            <ResponsiveContainer width="100%" height="100%" debounce={150}>
-              <AreaChart data={finance.forecast30d.points} margin={CHART_MARGIN}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.65} vertical={false} />
-                <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} minTickGap={28} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-                <YAxis stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatCompactINR} tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} />
-                <Tooltip content={<AnalyticsChartTooltip valueFormatter={(val) => formatINR(val)} />} />
-                <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="4 4" />
-                <Area type="monotone" dataKey="projectedBalance" name="Projected Cash" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.14} strokeWidth={2} isAnimationActive={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/35 px-3 py-2 text-xs">
-            <span className="text-muted-foreground tabular-nums">
-              End of 30d: <strong className="text-foreground">{formatINR(finance.forecast30d.endingProjectedBalance)}</strong>
-            </span>
-            <span className={cn('font-medium tabular-nums', finance.forecast30d.crunchDate ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
-              {finance.forecast30d.crunchDate
-                ? `Crunch risk on ${formatHumanDate(finance.forecast30d.crunchDate)}`
-                : `Low point ${formatINR(finance.forecast30d.lowestProjectedBalance)}`}
-            </span>
-          </div>
-        </div>
+        <RunwayForecastChart forecast30d={finance.forecast30d} />
       )}
     </AnalyticsChartCard>
+  );
+}
+
+function CategoryPaceRow({
+  cat,
+}: {
+  cat: AnalyticsTabProps['snapshot']['finance']['categorySpend'][number];
+}) {
+  const budgetPct = cat.budgetLimit > 0 ? Math.round((cat.amount / cat.budgetLimit) * 100) : null;
+  const statusClass =
+    budgetPct !== null && budgetPct >= 100
+      ? 'text-rose-600 dark:text-rose-400'
+      : budgetPct !== null && budgetPct >= 80
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-emerald-600 dark:text-emerald-400';
+
+  return (
+    <div className="space-y-1.5 rounded-xl bg-muted/35 p-2.5">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+          <span className="font-semibold text-foreground truncate">{cat.name}</span>
+        </div>
+        <span className="text-foreground font-semibold tabular-nums shrink-0">
+          {formatINR(cat.amount)}
+          <span className="text-muted-foreground font-normal ml-1">({cat.sharePct}%)</span>
+        </span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{
+            width: `${Math.min(100, Math.max(3, budgetPct ?? cat.sharePct))}%`,
+            backgroundColor: budgetPct !== null && budgetPct >= 100 ? '#ef4444' : cat.color,
+          }}
+        />
+      </div>
+      {budgetPct !== null && (
+        <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+          <span>Budget cap {formatINR(cat.budgetLimit)}</span>
+          <span className={cn('font-medium', statusClass)}>{budgetPct}% used</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -271,45 +327,9 @@ function CategoryBreakdownCard({
         <OverviewCategoryDonut donutCategories={donutCategories} totalSpent={finance.totalExpense} onSelectCategory={onSelectCategory} />
       ) : (
         <div className="space-y-3">
-          {finance.categorySpend.slice(0, 6).map((cat) => {
-            const budgetPct = cat.budgetLimit > 0 ? Math.round((cat.amount / cat.budgetLimit) * 100) : null;
-            const statusClass =
-              budgetPct !== null && budgetPct >= 100
-                ? 'text-rose-600 dark:text-rose-400'
-                : budgetPct !== null && budgetPct >= 80
-                  ? 'text-amber-600 dark:text-amber-400'
-                  : 'text-emerald-600 dark:text-emerald-400';
-
-            return (
-              <div key={cat.categoryId} className="space-y-1.5 rounded-xl bg-muted/35 p-2.5">
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                    <span className="font-semibold text-foreground truncate">{cat.name}</span>
-                  </div>
-                  <span className="text-foreground font-semibold tabular-nums shrink-0">
-                    {formatINR(cat.amount)}
-                    <span className="text-muted-foreground font-normal ml-1">({cat.sharePct}%)</span>
-                  </span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(100, Math.max(3, budgetPct ?? cat.sharePct))}%`,
-                      backgroundColor: budgetPct !== null && budgetPct >= 100 ? '#ef4444' : cat.color,
-                    }}
-                  />
-                </div>
-                {budgetPct !== null && (
-                  <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
-                    <span>Budget cap {formatINR(cat.budgetLimit)}</span>
-                    <span className={cn('font-medium', statusClass)}>{budgetPct}% used</span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {finance.categorySpend.slice(0, 6).map((cat) => (
+            <CategoryPaceRow key={cat.categoryId} cat={cat} />
+          ))}
         </div>
       )}
     </AnalyticsChartCard>
