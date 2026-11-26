@@ -2,82 +2,135 @@
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
-import {
-  type SyncStepResult,
-  missingRemoteFinanceTables,
-  isMissingRelationError,
-  upsertWithColumnFallback,
-  shouldApplyRemote,
-} from './finance-sync-types';
+import type {
+  FinanceCategorizationRule,
+  FinanceNetWorthSnapshot,
+  FinanceTransaction,
+} from '@/lib/types';
+import { type SyncStepResult, upsertWithColumnFallback } from './finance-sync-types';
+import { syncFinanceEntity } from './finance-sync-runner';
+
+function orVal<T>(value: unknown, fallback: T): T {
+  return (value as T) || fallback;
+}
+
+function numOr(value: unknown, fallback = 0): number {
+  return Number(value || fallback);
+}
+
+function isoTimestamps(r: { created_at?: string; updated_at?: string }) {
+  const now = new Date().toISOString();
+  return {
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || now,
+    isDirty: false,
+  };
+}
+
+function mapTxCoreToRemote(tx: FinanceTransaction, userId: string) {
+  const localToday = getLocalIsoDate();
+  const safeMonthKey = tx.monthKey || (tx.date ? tx.date.slice(0, 7) : localToday.slice(0, 7));
+  return {
+    id: tx.id,
+    user_id: userId,
+    title: orVal(tx.title, 'Untitled Transaction'),
+    merchant_name: orVal(tx.merchantName, null),
+    raw_merchant: orVal(tx.rawMerchant, null),
+    amount: numOr(tx.amount),
+    type: orVal(tx.type, 'expense'),
+    category_id: tx.categoryId,
+    subcategory: orVal(tx.subcategory, null),
+    account_id: tx.accountId,
+    to_account_id: orVal(tx.toAccountId, null),
+    date: orVal(tx.date, localToday),
+    month_key: safeMonthKey,
+    notes: orVal(tx.notes, null),
+    tags: Array.isArray(tx.tags) ? tx.tags : [],
+  };
+}
+
+function mapTxLinksToRemote(tx: FinanceTransaction) {
+  return {
+    is_recurring: !!tx.isRecurring,
+    recurrence_rule: orVal(tx.recurrenceRule, null),
+    needs_review: !!tx.needsReview,
+    split_group_id: orVal(tx.splitGroupId, null),
+    linked_commitment_id: orVal(tx.linkedCommitmentId, null),
+    commitment_contribution_type: tx.linkedCommitmentId
+      ? orVal(tx.commitmentContributionType, 'offset_expense')
+      : null,
+    linked_debt_id: orVal(tx.linkedDebtId, null),
+    linked_debt_installment_id: orVal(tx.linkedDebtInstallmentId, null),
+    linked_emi_id: orVal(tx.linkedEmiId, null),
+    linked_sip_id: orVal(tx.linkedSipId, null),
+    statement_cycle_key: tx.statementCycleKey ?? null,
+    paid_statement_id: tx.paidStatementId ?? null,
+    is_credit_card_payment: !!tx.isCreditCardPayment,
+    deleted_at: orVal(tx.deletedAt, null),
+    generation_counter: orVal(tx.generationCounter, 1),
+    created_at: orVal(tx.createdAt, new Date().toISOString()),
+    updated_at: orVal(tx.updatedAt, new Date().toISOString()),
+  };
+}
+
+function mapTxCoreToLocal(r: any, local: FinanceTransaction | undefined) {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    title: r.title,
+    merchantName: r.merchant_name ?? local?.merchantName,
+    rawMerchant: r.raw_merchant ?? local?.rawMerchant,
+    amount: numOr(r.amount),
+    type: orVal(r.type, 'expense') as FinanceTransaction['type'],
+    categoryId: r.category_id,
+    subcategory: orVal(r.subcategory, undefined),
+    accountId: r.account_id,
+    toAccountId: orVal(r.to_account_id, undefined),
+    date: r.date,
+    monthKey: r.month_key || (r.date ? r.date.slice(0, 7) : ''),
+    notes: orVal(r.notes, undefined),
+    tags: Array.isArray(r.tags) ? r.tags : [],
+  };
+}
+
+function mapTxLinksToLocal(r: any, local: FinanceTransaction | undefined) {
+  return {
+    isRecurring: !!r.is_recurring,
+    recurrenceRule: orVal(r.recurrence_rule, undefined),
+    needsReview: r.needs_review ?? local?.needsReview ?? false,
+    splitGroupId: r.split_group_id ?? local?.splitGroupId ?? null,
+    linkedCommitmentId: orVal(r.linked_commitment_id, null),
+    commitmentContributionType: orVal(r.commitment_contribution_type, null),
+    linkedDebtId: orVal(r.linked_debt_id, null),
+    linkedDebtInstallmentId: orVal(r.linked_debt_installment_id, null),
+    linkedEmiId: orVal(r.linked_emi_id, null),
+    linkedSipId: r.linked_sip_id ?? local?.linkedSipId ?? null,
+    statementCycleKey: r.statement_cycle_key ?? local?.statementCycleKey ?? null,
+    paidStatementId: r.paid_statement_id ?? local?.paidStatementId ?? null,
+    isCreditCardPayment: r.is_credit_card_payment ?? local?.isCreditCardPayment ?? false,
+    deletedAt: orVal(r.deleted_at, null),
+    generationCounter: orVal(r.generation_counter, 1),
+    ...isoTimestamps(r),
+  };
+}
 
 export async function syncTransactions(supabase: any, userId: string): Promise<SyncStepResult> {
-  let pushed = 0;
-  let pulled = 0;
-  let hasError = false;
-
-  const dirtyTransactions = await db.financeTransactions
-    .where('userId')
-    .equals(userId)
-    .filter((t) => t.isDirty !== false)
-    .toArray();
-
-  for (const tx of dirtyTransactions) {
-    if (tx.deletedAt) {
-      const { error } = await (supabase.from('finance_transactions') as any)
-        .delete()
-        .eq('id', tx.id)
-        .eq('user_id', userId);
-      if (!error) {
-        await db.financeTransactions.delete(tx.id);
-        pushed++;
-      } else {
-        logger.error('[FinanceSyncEngine] Transaction remote delete failed:', error);
-        hasError = true;
-      }
-      continue;
-    }
-
-    const localToday = getLocalIsoDate();
-    const safeMonthKey = tx.monthKey || (tx.date ? tx.date.slice(0, 7) : localToday.slice(0, 7));
-    const safeDate = tx.date || localToday;
-    const payload = {
-      id: tx.id,
-      user_id: userId,
-      title: tx.title || 'Untitled Transaction',
-      merchant_name: tx.merchantName || null,
-      raw_merchant: tx.rawMerchant || null,
-      amount: Number(tx.amount || 0),
-      type: tx.type || 'expense',
-      category_id: tx.categoryId,
-      subcategory: tx.subcategory || null,
-      account_id: tx.accountId,
-      to_account_id: tx.toAccountId || null,
-      date: safeDate,
-      month_key: safeMonthKey,
-      notes: tx.notes || null,
-      tags: Array.isArray(tx.tags) ? tx.tags : [],
-      is_recurring: !!tx.isRecurring,
-      recurrence_rule: tx.recurrenceRule || null,
-      needs_review: !!tx.needsReview,
-      split_group_id: tx.splitGroupId || null,
-      linked_commitment_id: tx.linkedCommitmentId || null,
-      commitment_contribution_type: tx.linkedCommitmentId ? (tx.commitmentContributionType || 'offset_expense') : null,
-      linked_debt_id: tx.linkedDebtId || null,
-      linked_debt_installment_id: tx.linkedDebtInstallmentId || null,
-      linked_emi_id: tx.linkedEmiId || null,
-      linked_sip_id: tx.linkedSipId || null,
-      statement_cycle_key: tx.statementCycleKey ?? null,
-      paid_statement_id: tx.paidStatementId ?? null,
-      is_credit_card_payment: !!tx.isCreditCardPayment,
-      deleted_at: tx.deletedAt || null,
-      generation_counter: tx.generationCounter || 1,
-      created_at: tx.createdAt || new Date().toISOString(),
-      updated_at: tx.updatedAt || new Date().toISOString(),
-    };
-    let { error } = await upsertWithColumnFallback(supabase, 'finance_transactions', payload);
-    if (error && (error as any).code === '23503') {
-      logger.warn('[FinanceSyncEngine] Foreign key 23503 violation on transaction upsert, retrying with unlinked references:', error);
-      const unlinkedPayload = {
+  return syncFinanceEntity<FinanceTransaction, any>(supabase, userId, {
+    label: 'Transaction',
+    remoteTable: 'finance_transactions',
+    table: db.financeTransactions,
+    deleteOnTombstone: true,
+    toRemotePayload: (tx, uid) => ({
+      ...mapTxCoreToRemote(tx, uid),
+      ...mapTxLinksToRemote(tx),
+    }),
+    retryUpsert: async (sb, payload, _tx, error) => {
+      if (error?.code !== '23503') return { error };
+      logger.warn(
+        '[FinanceSyncEngine] Foreign key 23503 violation on transaction upsert, retrying with unlinked references:',
+        error
+      );
+      return upsertWithColumnFallback(sb, 'finance_transactions', {
         ...payload,
         linked_commitment_id: null,
         commitment_contribution_type: null,
@@ -86,243 +139,107 @@ export async function syncTransactions(supabase: any, userId: string): Promise<S
         linked_emi_id: null,
         linked_sip_id: null,
         paid_statement_id: null,
-      };
-      const retryResult = await upsertWithColumnFallback(supabase, 'finance_transactions', unlinkedPayload);
-      error = retryResult.error;
-    }
-    if (!error) {
-      await db.financeTransactions.update(tx.id, { isDirty: false });
-      pushed++;
-    } else {
-      logger.error('[FinanceSyncEngine] Transaction upsert failed:', error);
-      hasError = true;
-    }
-  }
-
-  // Pull Remote Finance Transactions -> Local
-  try {
-    const { data: remoteTxs, error: pullTxErr } = await (supabase
-      .from('finance_transactions') as any)
-      .select('*')
-      .eq('user_id', userId);
-    if (!pullTxErr && Array.isArray(remoteTxs)) {
-      for (const r of remoteTxs) {
-        const local = await db.financeTransactions.get(r.id);
-        if (shouldApplyRemote(local, r)) {
-          await db.financeTransactions.put({
-            id: r.id,
-            userId: r.user_id,
-            title: r.title,
-            merchantName: r.merchant_name ?? local?.merchantName,
-            rawMerchant: r.raw_merchant ?? local?.rawMerchant,
-            amount: Number(r.amount || 0),
-            type: r.type || 'expense',
-            categoryId: r.category_id,
-            subcategory: r.subcategory || undefined,
-            accountId: r.account_id,
-            toAccountId: r.to_account_id || undefined,
-            date: r.date,
-            monthKey: r.month_key || (r.date ? r.date.slice(0, 7) : ''),
-            notes: r.notes || undefined,
-            tags: Array.isArray(r.tags) ? r.tags : [],
-            isRecurring: !!r.is_recurring,
-            recurrenceRule: r.recurrence_rule || undefined,
-            needsReview: r.needs_review ?? local?.needsReview ?? false,
-            splitGroupId: r.split_group_id ?? local?.splitGroupId ?? null,
-            linkedCommitmentId: r.linked_commitment_id || null,
-            commitmentContributionType: r.commitment_contribution_type || null,
-            linkedDebtId: r.linked_debt_id || null,
-            linkedDebtInstallmentId: r.linked_debt_installment_id || null,
-            linkedEmiId: r.linked_emi_id || null,
-            linkedSipId: r.linked_sip_id ?? local?.linkedSipId ?? null,
-            statementCycleKey: r.statement_cycle_key ?? local?.statementCycleKey ?? null,
-            paidStatementId: r.paid_statement_id ?? local?.paidStatementId ?? null,
-            isCreditCardPayment: r.is_credit_card_payment ?? local?.isCreditCardPayment ?? false,
-            deletedAt: r.deleted_at || null,
-            generationCounter: r.generation_counter || 1,
-            createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-            updatedAt: r.updated_at || new Date().toISOString(),
-            isDirty: false,
-          });
-          pulled++;
-        }
-      }
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  return { pushed, pulled, hasError };
+      });
+    },
+    toLocalRecord: (r, local) => ({
+      ...mapTxCoreToLocal(r, local),
+      ...mapTxLinksToLocal(r, local),
+    }),
+  });
 }
 
 export async function syncCategorizationRules(supabase: any, userId: string): Promise<SyncStepResult> {
-  let pushed = 0;
-  let pulled = 0;
-  let hasError = false;
+  return syncFinanceEntity<FinanceCategorizationRule, any>(supabase, userId, {
+    label: 'Rule',
+    remoteTable: 'finance_categorization_rules',
+    table: db.financeCategorizationRules,
+    reportPullError: true,
+    catchUnexpectedError: true,
+    toRemotePayload: (rule, uid) => ({
+      id: rule.id,
+      user_id: uid,
+      match_pattern: rule.matchPattern,
+      clean_merchant_name: rule.cleanMerchantName,
+      category_id: rule.categoryId,
+      subcategory: orVal(rule.subcategory, null),
+      default_tags: orVal(rule.defaultTags, []),
+      is_active: rule.isActive && !rule.deletedAt,
+      deleted_at: orVal(rule.deletedAt, null),
+      generation_counter: orVal(rule.generationCounter, 1),
+      created_at: rule.createdAt,
+      updated_at: rule.updatedAt,
+    }),
+    toLocalRecord: (r) => ({
+      id: r.id,
+      userId: r.user_id,
+      matchPattern: r.match_pattern,
+      cleanMerchantName: r.clean_merchant_name,
+      categoryId: r.category_id,
+      subcategory: orVal(r.subcategory, undefined),
+      defaultTags: orVal(r.default_tags, []),
+      isActive: !!r.is_active,
+      deletedAt: orVal(r.deleted_at, null),
+      generationCounter: orVal(r.generation_counter, 1),
+      ...isoTimestamps(r),
+    }),
+  });
+}
 
-  try {
-    if (db.financeCategorizationRules) {
-      const dirtyRules = await db.financeCategorizationRules
-        .where('userId')
-        .equals(userId)
-        .filter((r) => r.isDirty !== false)
-        .toArray();
-      for (const rule of dirtyRules) {
-        const { error } = await upsertWithColumnFallback(supabase, 'finance_categorization_rules', {
-          id: rule.id,
-          user_id: userId,
-          match_pattern: rule.matchPattern,
-          clean_merchant_name: rule.cleanMerchantName,
-          category_id: rule.categoryId,
-          subcategory: rule.subcategory || null,
-          default_tags: rule.defaultTags || [],
-          is_active: rule.isActive && !rule.deletedAt,
-          deleted_at: rule.deletedAt || null,
-          generation_counter: rule.generationCounter || 1,
-          created_at: rule.createdAt,
-          updated_at: rule.updatedAt,
-        });
-        if (!error) {
-          await db.financeCategorizationRules.update(rule.id, { isDirty: false });
-          pushed++;
-        } else {
-          logger.error('[FinanceSyncEngine] Rule upsert failed:', error);
-          hasError = true;
-        }
-      }
-      const { data: remoteRules, error: pullErr } = await (supabase.from('finance_categorization_rules') as any)
-        .select('*')
-        .eq('user_id', userId);
-      if (pullErr) {
-        logger.error('[FinanceSyncEngine] Rule pull failed:', pullErr);
-        hasError = true;
-      } else if (Array.isArray(remoteRules)) {
-        for (const r of remoteRules) {
-          const local = await db.financeCategorizationRules.get(r.id);
-          if (shouldApplyRemote(local, r)) {
-            await db.financeCategorizationRules.put({
-              id: r.id,
-              userId: r.user_id,
-              matchPattern: r.match_pattern,
-              cleanMerchantName: r.clean_merchant_name,
-              categoryId: r.category_id,
-              subcategory: r.subcategory || undefined,
-              defaultTags: r.default_tags || [],
-              isActive: !!r.is_active,
-              deletedAt: r.deleted_at || null,
-              generationCounter: r.generation_counter || 1,
-              createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-              updatedAt: r.updated_at || new Date().toISOString(),
-              isDirty: false,
-            });
-            pulled++;
-          }
-        }
-      }
-    }
-  } catch (err) {
-    logger.error('[FinanceSyncEngine] syncCategorizationRules unexpected error:', err);
-    hasError = true;
+const SNAPSHOT_AMOUNT_PAIRS = [
+  ['liquidAssets', 'liquid_assets'],
+  ['investmentAssets', 'investment_assets'],
+  ['friendReceivables', 'friend_receivables'],
+  ['totalAssets', 'total_assets'],
+  ['creditCardLiabilities', 'credit_card_liabilities'],
+  ['emiRemainingPrincipal', 'emi_remaining_principal'],
+  ['friendPayables', 'friend_payables'],
+  ['totalLiabilities', 'total_liabilities'],
+  ['netWorth', 'net_worth'],
+] as const;
+
+function mapSnapshotAmounts(
+  source: Record<string, any>,
+  direction: 'toRemote' | 'toLocal'
+): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const [localKey, remoteKey] of SNAPSHOT_AMOUNT_PAIRS) {
+    const srcKey = direction === 'toRemote' ? localKey : remoteKey;
+    const dstKey = direction === 'toRemote' ? remoteKey : localKey;
+    result[dstKey] = numOr(source[srcKey]);
   }
-
-  return { pushed, pulled, hasError };
+  return result;
 }
 
 export async function syncNetWorthSnapshots(supabase: any, userId: string): Promise<SyncStepResult> {
-  let pushed = 0;
-  let pulled = 0;
-  let hasError = false;
-
-  try {
-    if (db.financeNetWorthSnapshots && !missingRemoteFinanceTables.has('finance_net_worth_snapshots')) {
-      const dirtySnapshots = await db.financeNetWorthSnapshots
-        .where('userId')
-        .equals(userId)
-        .filter((s) => s.isDirty !== false)
-        .toArray();
-      for (const snap of dirtySnapshots) {
-        if (missingRemoteFinanceTables.has('finance_net_worth_snapshots')) break;
-        const { error } = await upsertWithColumnFallback(
-          supabase,
-          'finance_net_worth_snapshots',
-          {
-            id: snap.id,
-            user_id: userId,
-            month_key: snap.monthKey,
-            snapshot_date: snap.snapshotDate,
-            liquid_assets: Number(snap.liquidAssets || 0),
-            investment_assets: Number(snap.investmentAssets || 0),
-            friend_receivables: Number(snap.friendReceivables || 0),
-            total_assets: Number(snap.totalAssets || 0),
-            credit_card_liabilities: Number(snap.creditCardLiabilities || 0),
-            emi_remaining_principal: Number(snap.emiRemainingPrincipal || 0),
-            friend_payables: Number(snap.friendPayables || 0),
-            total_liabilities: Number(snap.totalLiabilities || 0),
-            net_worth: Number(snap.netWorth || 0),
-            deleted_at: snap.deletedAt || null,
-            generation_counter: snap.generationCounter || 1,
-            created_at: snap.createdAt,
-            updated_at: snap.updatedAt,
-          },
-          { onConflict: 'user_id,month_key' }
-        );
-        if (error) {
-          if (isMissingRelationError(error)) {
-            missingRemoteFinanceTables.add('finance_net_worth_snapshots');
-            logger.info('[FinanceSyncEngine] Skipping unmigrated table finance_net_worth_snapshots for this session.');
-            break;
-          } else {
-            logger.error('[FinanceSyncEngine] Net worth snapshot upsert failed:', error);
-            hasError = true;
-          }
-        } else {
-          await db.financeNetWorthSnapshots.update(snap.id, { isDirty: false });
-          pushed++;
-        }
-      }
-      if (!missingRemoteFinanceTables.has('finance_net_worth_snapshots')) {
-        const { data: remoteSnaps, error: pullSnapError } = await (supabase.from('finance_net_worth_snapshots') as any)
-          .select('*')
-          .eq('user_id', userId);
-        if (pullSnapError && isMissingRelationError(pullSnapError)) {
-          missingRemoteFinanceTables.add('finance_net_worth_snapshots');
-        } else if (pullSnapError) {
-          logger.error('[FinanceSyncEngine] Net worth snapshot pull failed:', pullSnapError);
-          hasError = true;
-        } else if (Array.isArray(remoteSnaps)) {
-          for (const r of remoteSnaps) {
-            const local = await db.financeNetWorthSnapshots.get(r.id);
-            if (shouldApplyRemote(local, r)) {
-              await db.financeNetWorthSnapshots.put({
-                id: r.id,
-                userId: r.user_id,
-                monthKey: r.month_key,
-                snapshotDate: r.snapshot_date,
-                liquidAssets: Number(r.liquid_assets || 0),
-                investmentAssets: Number(r.investment_assets || 0),
-                friendReceivables: Number(r.friend_receivables || 0),
-                totalAssets: Number(r.total_assets || 0),
-                creditCardLiabilities: Number(r.credit_card_liabilities || 0),
-                emiRemainingPrincipal: Number(r.emi_remaining_principal || 0),
-                friendPayables: Number(r.friend_payables || 0),
-                totalLiabilities: Number(r.total_liabilities || 0),
-                netWorth: Number(r.net_worth || 0),
-                deletedAt: r.deleted_at || null,
-                generationCounter: r.generation_counter || 1,
-                createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-                updatedAt: r.updated_at || new Date().toISOString(),
-                isDirty: false,
-              });
-              pulled++;
-            }
-          }
-        }
-      }
-    }
-  } catch (err) {
-    logger.error('[FinanceSyncEngine] syncNetWorthSnapshots unexpected error:', err);
-    hasError = true;
-  }
-
-  return { pushed, pulled, hasError };
+  return syncFinanceEntity<FinanceNetWorthSnapshot, any>(supabase, userId, {
+    label: 'Net worth snapshot',
+    remoteTable: 'finance_net_worth_snapshots',
+    table: db.financeNetWorthSnapshots,
+    trackMissingTable: true,
+    reportPullError: true,
+    catchUnexpectedError: true,
+    onConflict: 'user_id,month_key',
+    toRemotePayload: (snap, uid) => ({
+      id: snap.id,
+      user_id: uid,
+      month_key: snap.monthKey,
+      snapshot_date: snap.snapshotDate,
+      deleted_at: orVal(snap.deletedAt, null),
+      generation_counter: orVal(snap.generationCounter, 1),
+      created_at: snap.createdAt,
+      updated_at: snap.updatedAt,
+      ...mapSnapshotAmounts(snap, 'toRemote'),
+    }),
+    toLocalRecord: (r) =>
+      ({
+        id: r.id,
+        userId: r.user_id,
+        monthKey: r.month_key,
+        snapshotDate: r.snapshot_date,
+        deletedAt: orVal(r.deleted_at, null),
+        generationCounter: orVal(r.generation_counter, 1),
+        ...mapSnapshotAmounts(r, 'toLocal'),
+        ...isoTimestamps(r),
+      }) as FinanceNetWorthSnapshot,
+  });
 }

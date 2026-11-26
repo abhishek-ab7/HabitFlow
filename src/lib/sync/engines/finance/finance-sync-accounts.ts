@@ -1,491 +1,383 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { db } from '@/lib/db';
-import { logger } from '@/lib/logger';
 import {
   normalizePaydayOfMonth,
   parsePaydayFromNotes,
   stripPaydayNoteTag,
   upsertPaydayNoteTag,
 } from '@/lib/finance/payday';
+import type {
+  CreditCardStatement,
+  FinanceAccount,
+  FinanceBudget,
+  FinanceCategory,
+} from '@/lib/types';
 import {
   type SyncStepResult,
   missingRemoteFinanceColumns,
-  missingRemoteFinanceTables,
-  isMissingRelationError,
   upsertWithColumnFallback,
   shouldApplyRemote,
 } from './finance-sync-types';
+import { syncFinanceEntity } from './finance-sync-runner';
+
+function orVal<T>(value: unknown, fallback: T): T {
+  return (value as T) || fallback;
+}
+
+function numOr(value: unknown, fallback = 0): number {
+  return Number(value || fallback);
+}
+
+function isoTimestamps(r: { created_at?: string; updated_at?: string }) {
+  const now = new Date().toISOString();
+  return {
+    createdAt: r.created_at || r.updated_at || now,
+    updatedAt: r.updated_at || now,
+    isDirty: false,
+  };
+}
+
+async function resolveCategoryConflict(r: any): Promise<FinanceCategory | undefined> {
+  if (!r.slug) return undefined;
+  const sameSlug = await db.financeCategories
+    .where('userId')
+    .equals(r.user_id)
+    .filter((c) => c.slug === r.slug)
+    .first();
+  if (!sameSlug || sameSlug.id === r.id) return undefined;
+
+  const txs = await db.financeTransactions.where('categoryId').equals(sameSlug.id).toArray();
+  for (const tx of txs) {
+    await db.financeTransactions.update(tx.id, { categoryId: r.id });
+  }
+  await db.financeCategories.delete(sameSlug.id);
+  return sameSlug;
+}
 
 export async function syncCategories(supabase: any, userId: string): Promise<SyncStepResult> {
-  let pushed = 0;
-  let pulled = 0;
-  let hasError = false;
-
-  const dirtyCategories = await db.financeCategories
-    .where('userId')
-    .equals(userId)
-    .filter((c) => c.isDirty !== false)
-    .toArray();
-
-  for (const cat of dirtyCategories) {
-    const payload = {
+  return syncFinanceEntity<FinanceCategory, any>(supabase, userId, {
+    label: 'Category',
+    remoteTable: 'finance_categories',
+    table: db.financeCategories,
+    toRemotePayload: (cat, uid) => ({
       id: cat.id,
-      user_id: userId,
+      user_id: uid,
       name: cat.name,
       slug: cat.slug,
       type: cat.type,
       icon: cat.icon,
       color: cat.color,
-      monthly_budget_limit: Number(cat.monthlyBudgetLimit || 0),
+      monthly_budget_limit: numOr(cat.monthlyBudgetLimit),
       rollover_enabled: !!cat.rolloverEnabled,
-      subcategories: cat.subcategories || [],
+      subcategories: orVal(cat.subcategories, []),
       order_index: cat.order ?? 0,
       is_system: !!cat.isSystem,
       is_archived: !!cat.archived || !!cat.deletedAt,
-      deleted_at: cat.deletedAt || null,
-      generation_counter: cat.generationCounter || 1,
-      created_at: cat.createdAt || new Date().toISOString(),
-      updated_at: cat.updatedAt || new Date().toISOString(),
-    };
-    const { error } = await upsertWithColumnFallback(supabase, 'finance_categories', payload);
-    if (!error) {
-      await db.financeCategories.update(cat.id, { isDirty: false });
-      pushed++;
-    } else {
-      logger.error('[FinanceSyncEngine] Category upsert failed:', error);
-      hasError = true;
-    }
-  }
+      deleted_at: orVal(cat.deletedAt, null),
+      generation_counter: orVal(cat.generationCounter, 1),
+      created_at: orVal(cat.createdAt, new Date().toISOString()),
+      updated_at: orVal(cat.updatedAt, new Date().toISOString()),
+    }),
+    resolveLocalConflict: (r) => resolveCategoryConflict(r),
+    toLocalRecord: (r, local) => ({
+      id: r.id,
+      userId: r.user_id,
+      name: r.name,
+      slug: r.slug,
+      type: r.type,
+      icon: r.icon,
+      color: r.color,
+      monthlyBudgetLimit: numOr(r.monthly_budget_limit),
+      rolloverEnabled: r.rollover_enabled ?? local?.rolloverEnabled ?? false,
+      subcategories: orVal(r.subcategories, []),
+      order: r.order_index ?? 0,
+      isSystem: !!r.is_system,
+      archived: !!r.is_archived,
+      deletedAt: r.deleted_at || (r.is_archived ? r.updated_at : null),
+      generationCounter: orVal(r.generation_counter, 1),
+      ...isoTimestamps(r),
+    }),
+  });
+}
 
-  // Pull Remote Categories -> Local
-  try {
-    const { data: remoteCats, error: pullCatErr } = await (supabase
-      .from('finance_categories') as any)
-      .select('*')
-      .eq('user_id', userId);
-    if (!pullCatErr && Array.isArray(remoteCats)) {
-      for (const r of remoteCats) {
-        let local = await db.financeCategories.get(r.id);
-        if (!local && r.slug) {
-          const sameSlug = await db.financeCategories
-            .where('userId')
-            .equals(r.user_id)
-            .filter((c) => c.slug === r.slug)
-            .first();
-          if (sameSlug && sameSlug.id !== r.id) {
-            const txs = await db.financeTransactions.where('categoryId').equals(sameSlug.id).toArray();
-            for (const tx of txs) {
-              await db.financeTransactions.update(tx.id, { categoryId: r.id });
-            }
-            await db.financeCategories.delete(sameSlug.id);
-            local = sameSlug;
-          }
-        }
-        if (shouldApplyRemote(local, r)) {
-          await db.financeCategories.put({
-            id: r.id,
-            userId: r.user_id,
-            name: r.name,
-            slug: r.slug,
-            type: r.type,
-            icon: r.icon,
-            color: r.color,
-            monthlyBudgetLimit: Number(r.monthly_budget_limit || 0),
-            rolloverEnabled: r.rollover_enabled ?? local?.rolloverEnabled ?? false,
-            subcategories: r.subcategories || [],
-            order: r.order_index ?? 0,
-            isSystem: !!r.is_system,
-            archived: !!r.is_archived,
-            deletedAt: r.deleted_at || (r.is_archived ? r.updated_at : null),
-            generationCounter: r.generation_counter || 1,
-            createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-            updatedAt: r.updated_at || new Date().toISOString(),
-            isDirty: false,
-          });
-          pulled++;
-        }
-      }
-    }
-  } catch {
-    // Non-fatal if remote table unavailable
-  }
+function isUnusedDefaultAccount(acc: FinanceAccount, r: { name: string; type: string }): boolean {
+  return acc.name === r.name && acc.type === r.type && acc.balance === 0 && !acc.archived;
+}
 
-  return { pushed, pulled, hasError };
+async function resolveAccountConflict(r: any): Promise<FinanceAccount | undefined> {
+  if (!r.name || !r.type) return undefined;
+  const sameDefaultAcc = await db.financeAccounts
+    .where('userId')
+    .equals(r.user_id)
+    .filter((a) => isUnusedDefaultAccount(a, r))
+    .first();
+  if (!sameDefaultAcc || sameDefaultAcc.id === r.id) return undefined;
+
+  const txCount = await db.financeTransactions.where('accountId').equals(sameDefaultAcc.id).count();
+  if (txCount > 0) return undefined;
+
+  await db.financeAccounts.delete(sameDefaultAcc.id);
+  return sameDefaultAcc;
+}
+
+function mapAccountToRemote(acc: FinanceAccount, userId: string) {
+  return {
+    id: acc.id,
+    user_id: userId,
+    name: acc.name,
+    type: acc.type,
+    balance: numOr(acc.balance),
+    credit_limit: acc.creditLimit !== undefined ? Number(acc.creditLimit) : null,
+    billing_day: acc.billingDay ?? acc.statementDay ?? null,
+    statement_day: acc.statementDay ?? acc.billingDay ?? null,
+    due_day: acc.dueDay ?? null,
+    grace_period_days: acc.gracePeriodDays ?? null,
+    last_statement_checked_at: acc.lastStatementCheckedAt ?? null,
+    include_in_net_worth: acc.includeInNetWorth !== false,
+    currency: orVal(acc.currency, 'INR'),
+    color: orVal(acc.color, '#10b981'),
+    icon: orVal(acc.icon, 'Landmark'),
+    is_default: !!acc.isDefault,
+    is_archived: !!acc.archived || !!acc.deletedAt,
+    deleted_at: orVal(acc.deletedAt, null),
+    generation_counter: orVal(acc.generationCounter, 1),
+    created_at: orVal(acc.createdAt, new Date().toISOString()),
+    updated_at: orVal(acc.updatedAt, new Date().toISOString()),
+  };
+}
+
+function mapAccountCycleDays(r: any, local: FinanceAccount | undefined) {
+  return {
+    billingDay: r.billing_day ?? r.statement_day ?? local?.billingDay,
+    statementDay: r.statement_day ?? r.billing_day ?? local?.statementDay,
+    dueDay: r.due_day ?? local?.dueDay,
+    gracePeriodDays: r.grace_period_days ?? local?.gracePeriodDays,
+  };
+}
+
+function mapAccountBillingFields(r: any, local: FinanceAccount | undefined) {
+  const hasLimit = r.credit_limit !== null && r.credit_limit !== undefined;
+  return {
+    creditLimit: hasLimit ? Number(r.credit_limit) : local?.creditLimit,
+    lastStatementCheckedAt: r.last_statement_checked_at ?? local?.lastStatementCheckedAt,
+    includeInNetWorth: r.include_in_net_worth ?? local?.includeInNetWorth ?? true,
+    ...mapAccountCycleDays(r, local),
+  };
+}
+
+function mapAccountToLocal(r: any, local: FinanceAccount | undefined): FinanceAccount {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    name: r.name,
+    type: r.type,
+    balance: numOr(r.balance),
+    currency: orVal(r.currency, 'INR'),
+    color: orVal(r.color, '#10b981'),
+    icon: orVal(r.icon, 'Wallet'),
+    isDefault: !!r.is_default,
+    archived: !!r.is_archived,
+    deletedAt: orVal(r.deleted_at, null),
+    generationCounter: orVal(r.generation_counter, 1),
+    ...mapAccountBillingFields(r, local),
+    ...isoTimestamps(r),
+  };
 }
 
 export async function syncAccounts(supabase: any, userId: string): Promise<SyncStepResult> {
-  let pushed = 0;
-  let pulled = 0;
-  let hasError = false;
-
-  const dirtyAccounts = await db.financeAccounts
-    .where('userId')
-    .equals(userId)
-    .filter((a) => a.isDirty !== false)
-    .toArray();
-
-  for (const acc of dirtyAccounts) {
-    const payload = {
-      id: acc.id,
-      user_id: userId,
-      name: acc.name,
-      type: acc.type,
-      balance: Number(acc.balance || 0),
-      credit_limit: acc.creditLimit !== undefined ? Number(acc.creditLimit) : null,
-      billing_day: acc.billingDay ?? acc.statementDay ?? null,
-      statement_day: acc.statementDay ?? acc.billingDay ?? null,
-      due_day: acc.dueDay ?? null,
-      grace_period_days: acc.gracePeriodDays ?? null,
-      last_statement_checked_at: acc.lastStatementCheckedAt ?? null,
-      include_in_net_worth: acc.includeInNetWorth !== false,
-      currency: acc.currency || 'INR',
-      color: acc.color || '#10b981',
-      icon: acc.icon || 'Landmark',
-      is_default: !!acc.isDefault,
-      is_archived: !!acc.archived || !!acc.deletedAt,
-      deleted_at: acc.deletedAt || null,
-      generation_counter: acc.generationCounter || 1,
-      created_at: acc.createdAt || new Date().toISOString(),
-      updated_at: acc.updatedAt || new Date().toISOString(),
-    };
-    const { error } = await upsertWithColumnFallback(supabase, 'finance_accounts', payload);
-    if (!error) {
-      await db.financeAccounts.update(acc.id, { isDirty: false });
-      pushed++;
-    } else {
-      logger.error('[FinanceSyncEngine] Account upsert failed:', error);
-      hasError = true;
-    }
-  }
-
-  // Pull Remote Accounts -> Local
-  try {
-    const { data: remoteAccs, error: pullAccErr } = await (supabase
-      .from('finance_accounts') as any)
-      .select('*')
-      .eq('user_id', userId);
-    if (!pullAccErr && Array.isArray(remoteAccs)) {
-      for (const r of remoteAccs) {
-        let local = await db.financeAccounts.get(r.id);
-        if (!local && r.name && r.type) {
-          const sameDefaultAcc = await db.financeAccounts
-            .where('userId')
-            .equals(r.user_id)
-            .filter((a) => a.name === r.name && a.type === r.type && a.balance === 0 && !a.archived)
-            .first();
-          if (sameDefaultAcc && sameDefaultAcc.id !== r.id) {
-            const txCount = await db.financeTransactions.where('accountId').equals(sameDefaultAcc.id).count();
-            if (txCount === 0) {
-              await db.financeAccounts.delete(sameDefaultAcc.id);
-              local = sameDefaultAcc;
-            }
-          }
-        }
-        if (shouldApplyRemote(local, r)) {
-          await db.financeAccounts.put({
-            id: r.id,
-            userId: r.user_id,
-            name: r.name,
-            type: r.type,
-            balance: Number(r.balance || 0),
-            creditLimit: r.credit_limit !== null && r.credit_limit !== undefined ? Number(r.credit_limit) : local?.creditLimit,
-            billingDay: r.billing_day ?? r.statement_day ?? local?.billingDay,
-            statementDay: r.statement_day ?? r.billing_day ?? local?.statementDay,
-            dueDay: r.due_day ?? local?.dueDay,
-            gracePeriodDays: r.grace_period_days ?? local?.gracePeriodDays,
-            lastStatementCheckedAt: r.last_statement_checked_at ?? local?.lastStatementCheckedAt,
-            includeInNetWorth: r.include_in_net_worth ?? local?.includeInNetWorth ?? true,
-            currency: r.currency || 'INR',
-            color: r.color || '#10b981',
-            icon: r.icon || 'Wallet',
-            isDefault: !!r.is_default,
-            archived: !!r.is_archived,
-            deletedAt: r.deleted_at || null,
-            generationCounter: r.generation_counter || 1,
-            createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-            updatedAt: r.updated_at || new Date().toISOString(),
-            isDirty: false,
-          });
-          pulled++;
-        }
-      }
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  return { pushed, pulled, hasError };
+  return syncFinanceEntity<FinanceAccount, any>(supabase, userId, {
+    label: 'Account',
+    remoteTable: 'finance_accounts',
+    table: db.financeAccounts,
+    toRemotePayload: mapAccountToRemote,
+    resolveLocalConflict: (r) => resolveAccountConflict(r),
+    toLocalRecord: mapAccountToLocal,
+  });
 }
 
-export async function syncCreditCardStatements(supabase: any, userId: string): Promise<SyncStepResult> {
-  let pushed = 0;
-  let pulled = 0;
-  let hasError = false;
+async function resolveStatementConflict(
+  r: any,
+  userId: string
+): Promise<CreditCardStatement | undefined> {
+  if (!r.account_id || !r.cycle_key) return undefined;
+  const sameCycle = await db.creditCardStatements
+    .where('[accountId+cycleKey]')
+    .equals([r.account_id, r.cycle_key])
+    .first();
+  if (!sameCycle || sameCycle.id === r.id) return undefined;
 
-  try {
-    if (db.creditCardStatements && !missingRemoteFinanceTables.has('credit_card_statements')) {
-      const dirtyStatements = await db.creditCardStatements
-        .where('userId')
-        .equals(userId)
-        .filter((s) => s.isDirty !== false)
-        .toArray();
-
-      for (const s of dirtyStatements) {
-        if (s.deletedAt) {
-          const { error } = await (supabase.from('credit_card_statements') as any)
-            .delete()
-            .eq('id', s.id)
-            .eq('user_id', userId);
-          if (error) {
-            if (isMissingRelationError(error)) {
-              missingRemoteFinanceTables.add('credit_card_statements');
-              break;
-            }
-          } else {
-            await db.creditCardStatements.delete(s.id);
-            pushed++;
-          }
-          continue;
-        }
-
-        const payload = {
-          id: s.id,
-          user_id: userId,
-          account_id: s.accountId,
-          cycle_key: s.cycleKey,
-          period_start: s.periodStart,
-          period_end: s.periodEnd,
-          due_date: s.dueDate,
-          calculated_amount: Number(s.calculatedAmount || 0),
-          manual_adjustment: Number(s.manualAdjustment || 0),
-          total_due: Number(s.totalDue || 0),
-          carried_forward_amount: Number(s.carriedForwardAmount || 0),
-          paid_amount: Number(s.paidAmount || 0),
-          remaining_due: Number(s.remainingDue || 0),
-          status: s.status || 'billed',
-          paid_at: s.paidAt || null,
-          notes: s.notes || null,
-          generation_counter: s.generationCounter || 1,
-          created_at: s.createdAt || new Date().toISOString(),
-          updated_at: s.updatedAt || new Date().toISOString(),
-          deleted_at: s.deletedAt || null,
-        };
-        const { error } = await upsertWithColumnFallback(
-          supabase,
-          'credit_card_statements',
-          payload,
-          { onConflict: 'user_id,account_id,cycle_key' }
-        );
-        if (error) {
-          if (isMissingRelationError(error)) {
-            missingRemoteFinanceTables.add('credit_card_statements');
-            logger.info('[FinanceSyncEngine] Skipping unmigrated table credit_card_statements for this session.');
-            break;
-          } else {
-            logger.error('[FinanceSyncEngine] CreditCardStatement upsert failed:', error);
-            hasError = true;
-          }
-        } else {
-          await db.creditCardStatements.update(s.id, { isDirty: false });
-          pushed++;
-        }
-      }
-
-      if (!missingRemoteFinanceTables.has('credit_card_statements')) {
-        const { data: remoteStmts, error: pullStmtError } = await (supabase.from('credit_card_statements') as any)
-          .select('*')
-          .eq('user_id', userId);
-        if (pullStmtError && isMissingRelationError(pullStmtError)) {
-          missingRemoteFinanceTables.add('credit_card_statements');
-        } else if (Array.isArray(remoteStmts)) {
-          for (const r of remoteStmts) {
-            let local = await db.creditCardStatements.get(r.id);
-            if (!local && r.account_id && r.cycle_key) {
-              const sameCycle = await db.creditCardStatements
-                .where('[accountId+cycleKey]')
-                .equals([r.account_id, r.cycle_key])
-                .first();
-              if (sameCycle && sameCycle.id !== r.id) {
-                if (shouldApplyRemote(sameCycle, r)) {
-                  const linkedTxs = await db.financeTransactions
-                    .where('userId')
-                    .equals(userId)
-                    .filter((t) => t.paidStatementId === sameCycle.id)
-                    .toArray();
-                  for (const ltx of linkedTxs) {
-                    await db.financeTransactions.update(ltx.id, { paidStatementId: r.id });
-                  }
-                  await db.creditCardStatements.delete(sameCycle.id);
-                }
-                local = sameCycle;
-              }
-            }
-            if (shouldApplyRemote(local, r)) {
-              await db.creditCardStatements.put({
-                id: r.id,
-                userId: r.user_id,
-                accountId: r.account_id,
-                cycleKey: r.cycle_key,
-                periodStart: r.period_start,
-                periodEnd: r.period_end,
-                dueDate: r.due_date,
-                calculatedAmount: Number(r.calculated_amount || 0),
-                manualAdjustment: Number(r.manualAdjustment || r.manual_adjustment || 0),
-                totalDue: Number(r.total_due || 0),
-                carriedForwardAmount: Number(r.carried_forward_amount || 0),
-                paidAmount: Number(r.paid_amount || 0),
-                remainingDue: Number(r.remaining_due || 0),
-                status: r.status as any,
-                paidAt: r.paid_at || null,
-                notes: r.notes || undefined,
-                generationCounter: r.generation_counter || 1,
-                createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-                updatedAt: r.updated_at || new Date().toISOString(),
-                deletedAt: r.deleted_at || null,
-                isDirty: false,
-              });
-              pulled++;
-            }
-          }
-        }
-      }
+  if (shouldApplyRemote(sameCycle, r)) {
+    const linkedTxs = await db.financeTransactions
+      .where('userId')
+      .equals(userId)
+      .filter((t) => t.paidStatementId === sameCycle.id)
+      .toArray();
+    for (const ltx of linkedTxs) {
+      await db.financeTransactions.update(ltx.id, { paidStatementId: r.id });
     }
-  } catch {
-    // Non-fatal
+    await db.creditCardStatements.delete(sameCycle.id);
   }
+  return sameCycle;
+}
 
-  return { pushed, pulled, hasError };
+export async function syncCreditCardStatements(
+  supabase: any,
+  userId: string
+): Promise<SyncStepResult> {
+  return syncFinanceEntity<CreditCardStatement, any>(supabase, userId, {
+    label: 'CreditCardStatement',
+    remoteTable: 'credit_card_statements',
+    table: db.creditCardStatements,
+    trackMissingTable: true,
+    deleteOnTombstone: true,
+    onConflict: 'user_id,account_id,cycle_key',
+    toRemotePayload: (s, uid) => ({
+      id: s.id,
+      user_id: uid,
+      account_id: s.accountId,
+      cycle_key: s.cycleKey,
+      period_start: s.periodStart,
+      period_end: s.periodEnd,
+      due_date: s.dueDate,
+      calculated_amount: numOr(s.calculatedAmount),
+      manual_adjustment: numOr(s.manualAdjustment),
+      total_due: numOr(s.totalDue),
+      carried_forward_amount: numOr(s.carriedForwardAmount),
+      paid_amount: numOr(s.paidAmount),
+      remaining_due: numOr(s.remainingDue),
+      status: orVal(s.status, 'billed'),
+      paid_at: orVal(s.paidAt, null),
+      notes: orVal(s.notes, null),
+      generation_counter: orVal(s.generationCounter, 1),
+      created_at: orVal(s.createdAt, new Date().toISOString()),
+      updated_at: orVal(s.updatedAt, new Date().toISOString()),
+      deleted_at: orVal(s.deletedAt, null),
+    }),
+    resolveLocalConflict: resolveStatementConflict,
+    toLocalRecord: (r) => ({
+      id: r.id,
+      userId: r.user_id,
+      accountId: r.account_id,
+      cycleKey: r.cycle_key,
+      periodStart: r.period_start,
+      periodEnd: r.period_end,
+      dueDate: r.due_date,
+      calculatedAmount: numOr(r.calculated_amount),
+      manualAdjustment: Number(r.manualAdjustment || r.manual_adjustment || 0),
+      totalDue: numOr(r.total_due),
+      carriedForwardAmount: numOr(r.carried_forward_amount),
+      paidAmount: numOr(r.paid_amount),
+      remainingDue: numOr(r.remaining_due),
+      status: r.status as any,
+      paidAt: orVal(r.paid_at, null),
+      notes: orVal(r.notes, undefined),
+      deletedAt: orVal(r.deleted_at, null),
+      generationCounter: orVal(r.generation_counter, 1),
+      ...isoTimestamps(r),
+    }),
+  });
+}
+
+function buildBudgetNotes(notes: string | undefined, payday: number | undefined): string | null {
+  const hasPaydayMissing = missingRemoteFinanceColumns.get('finance_budgets')?.has('payday_of_month');
+  if (payday !== undefined && hasPaydayMissing) {
+    return upsertPaydayNoteTag(notes, payday);
+  }
+  return stripPaydayNoteTag(notes) || null;
+}
+
+async function resolveBudgetConflict(r: any): Promise<FinanceBudget | undefined> {
+  if (!r.month_key) return undefined;
+  const sameMonth = await db.financeBudgets
+    .where('[userId+monthKey]')
+    .equals([r.user_id, r.month_key])
+    .first();
+  if (!sameMonth || sameMonth.id === r.id) return undefined;
+  await db.financeBudgets.delete(sameMonth.id);
+  return sameMonth;
+}
+
+function mapBudgetMetrics(r: any, local: FinanceBudget | undefined) {
+  const hasAssigned = r.assigned_income !== null && r.assigned_income !== undefined;
+  return {
+    totalBudget: numOr(r.total_budget),
+    expectedIncome: numOr(r.expected_income),
+    plannedSipAmount: r.planned_sip_amount
+      ? Number(r.planned_sip_amount)
+      : local?.plannedSipAmount ?? 0,
+    assignedIncome: hasAssigned ? Number(r.assigned_income) : local?.assignedIncome,
+  };
+}
+
+function mapBudgetToLocal(r: any, local: FinanceBudget | undefined): FinanceBudget {
+  return {
+    id: r.id,
+    userId: r.user_id,
+    monthKey: r.month_key,
+    paydayOfMonth:
+      normalizePaydayOfMonth(r.payday_of_month) ?? parsePaydayFromNotes(r.notes) ?? local?.paydayOfMonth,
+    budgetMode: r.budget_mode === 'zero_based' ? 'zero_based' : local?.budgetMode || 'cap',
+    currency: orVal(r.currency, 'INR'),
+    notes: stripPaydayNoteTag(r.notes),
+    deletedAt: orVal(r.deleted_at, null),
+    generationCounter: orVal(r.generation_counter, 1),
+    ...mapBudgetMetrics(r, local),
+    ...isoTimestamps(r),
+  };
+}
+
+async function retryBudgetPaydayFallback(
+  sb: any,
+  payload: Record<string, any>,
+  budget: FinanceBudget
+) {
+  const normalizedPayday = normalizePaydayOfMonth(budget.paydayOfMonth);
+  if (normalizedPayday === undefined) return { error: null };
+  const isPaydayMissing = missingRemoteFinanceColumns.get('finance_budgets')?.has('payday_of_month');
+  if (!isPaydayMissing || parsePaydayFromNotes(payload.notes)) return { error: null };
+
+  return upsertWithColumnFallback(
+    sb,
+    'finance_budgets',
+    {
+      ...payload,
+      notes: upsertPaydayNoteTag(budget.notes, normalizedPayday),
+      generation_counter: (budget.generationCounter || 1) + 1,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,month_key' }
+  );
 }
 
 export async function syncBudgets(supabase: any, userId: string): Promise<SyncStepResult> {
-  let pushed = 0;
-  let pulled = 0;
-  let hasError = false;
-
-  const dirtyBudgets = await db.financeBudgets
-    .where('userId')
-    .equals(userId)
-    .filter((b) => b.isDirty !== false)
-    .toArray();
-
-  for (const budget of dirtyBudgets) {
-    if (budget.deletedAt) {
-      const { error } = await (supabase.from('finance_budgets') as any)
-        .delete()
-        .eq('id', budget.id)
-        .eq('user_id', userId);
-      if (!error) {
-        await db.financeBudgets.delete(budget.id);
-        pushed++;
-      } else {
-        logger.error('[FinanceSyncEngine] Budget remote delete failed:', error);
-        hasError = true;
-      }
-      continue;
-    }
-
-    const normalizedPayday = normalizePaydayOfMonth(budget.paydayOfMonth);
-    const payload = {
-      id: budget.id,
-      user_id: userId,
-      month_key: budget.monthKey,
-      total_budget: budget.totalBudget,
-      expected_income: budget.expectedIncome,
-      planned_sip_amount: Number(budget.plannedSipAmount || 0),
-      payday_of_month: normalizedPayday ?? null,
-      budget_mode: budget.budgetMode || 'cap',
-      assigned_income: budget.assignedIncome !== undefined ? Number(budget.assignedIncome) : null,
-      currency: budget.currency,
-      notes:
-        normalizedPayday !== undefined &&
-        missingRemoteFinanceColumns.get('finance_budgets')?.has('payday_of_month')
-          ? upsertPaydayNoteTag(budget.notes, normalizedPayday)
-          : stripPaydayNoteTag(budget.notes) || null,
-      deleted_at: budget.deletedAt || null,
-      generation_counter: budget.generationCounter || 1,
-      created_at: budget.createdAt,
-      updated_at: budget.updatedAt,
-    };
-    let { error } = await upsertWithColumnFallback(supabase, 'finance_budgets', payload, {
-      onConflict: 'user_id,month_key',
-    });
-    // If payday_of_month was newly detected as missing on remote, re-sync with [payday:N] in notes
-    if (
-      !error &&
-      normalizedPayday !== undefined &&
-      missingRemoteFinanceColumns.get('finance_budgets')?.has('payday_of_month') &&
-      !parsePaydayFromNotes(payload.notes)
-    ) {
-      const retryRes = await upsertWithColumnFallback(
-        supabase,
-        'finance_budgets',
-        {
-          ...payload,
-          notes: upsertPaydayNoteTag(budget.notes, normalizedPayday),
-          generation_counter: (budget.generationCounter || 1) + 1,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,month_key' }
-      );
-      error = retryRes.error;
-    }
-    if (!error) {
-      await db.financeBudgets.update(budget.id, { isDirty: false });
-      pushed++;
-    } else {
-      logger.error('[FinanceSyncEngine] Budget upsert failed:', error);
-      hasError = true;
-    }
-  }
-
-  // Pull Remote Finance Budgets -> Local
-  try {
-    const { data: remoteBudgets, error: pullBudgetErr } = await (supabase
-      .from('finance_budgets') as any)
-      .select('*')
-      .eq('user_id', userId);
-    if (!pullBudgetErr && Array.isArray(remoteBudgets)) {
-      for (const r of remoteBudgets) {
-        let local = await db.financeBudgets.get(r.id);
-        if (!local && r.month_key) {
-          const sameMonth = await db.financeBudgets
-            .where('[userId+monthKey]')
-            .equals([r.user_id, r.month_key])
-            .first();
-          if (sameMonth && sameMonth.id !== r.id) {
-            await db.financeBudgets.delete(sameMonth.id);
-            local = sameMonth;
-          }
-        }
-        if (shouldApplyRemote(local, r)) {
-          await db.financeBudgets.put({
-            id: r.id,
-            userId: r.user_id,
-            monthKey: r.month_key,
-            totalBudget: Number(r.total_budget || 0),
-            expectedIncome: Number(r.expected_income || 0),
-            plannedSipAmount: r.planned_sip_amount ? Number(r.planned_sip_amount) : (local?.plannedSipAmount ?? 0),
-            paydayOfMonth:
-              normalizePaydayOfMonth(r.payday_of_month) ??
-              parsePaydayFromNotes(r.notes) ??
-              local?.paydayOfMonth,
-            budgetMode: r.budget_mode === 'zero_based' ? 'zero_based' : (local?.budgetMode || 'cap'),
-            assignedIncome: r.assigned_income !== null && r.assigned_income !== undefined ? Number(r.assigned_income) : local?.assignedIncome,
-            currency: r.currency || 'INR',
-            notes: stripPaydayNoteTag(r.notes),
-            deletedAt: r.deleted_at || null,
-            generationCounter: r.generation_counter || 1,
-            createdAt: r.created_at || r.updated_at || new Date().toISOString(),
-            updatedAt: r.updated_at || new Date().toISOString(),
-            isDirty: false,
-          });
-          pulled++;
-        }
-      }
-    }
-  } catch {
-    // Non-fatal
-  }
-
-  return { pushed, pulled, hasError };
+  return syncFinanceEntity<FinanceBudget, any>(supabase, userId, {
+    label: 'Budget',
+    remoteTable: 'finance_budgets',
+    table: db.financeBudgets,
+    deleteOnTombstone: true,
+    onConflict: 'user_id,month_key',
+    toRemotePayload: (budget, uid) => {
+      const normalizedPayday = normalizePaydayOfMonth(budget.paydayOfMonth);
+      return {
+        id: budget.id,
+        user_id: uid,
+        month_key: budget.monthKey,
+        total_budget: budget.totalBudget,
+        expected_income: budget.expectedIncome,
+        planned_sip_amount: numOr(budget.plannedSipAmount),
+        payday_of_month: normalizedPayday ?? null,
+        budget_mode: orVal(budget.budgetMode, 'cap'),
+        assigned_income: budget.assignedIncome !== undefined ? Number(budget.assignedIncome) : null,
+        currency: budget.currency,
+        notes: buildBudgetNotes(budget.notes, normalizedPayday),
+        deleted_at: orVal(budget.deletedAt, null),
+        generation_counter: orVal(budget.generationCounter, 1),
+        created_at: budget.createdAt,
+        updated_at: budget.updatedAt,
+      };
+    },
+    onAfterUpsertSuccess: retryBudgetPaydayFallback,
+    resolveLocalConflict: (r) => resolveBudgetConflict(r),
+    toLocalRecord: mapBudgetToLocal,
+  });
 }
