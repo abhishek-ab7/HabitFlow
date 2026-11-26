@@ -51,261 +51,130 @@ interface YearInReviewProps {
   fitnessSummary?: YearInReviewFitnessProps;
 }
 
-export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewProps = {}) {
-  const { habits, completions } = useHabitStore();
-  const { goals } = useGoalStore();
-  const { tasks } = useTaskStore();
+function compute2026Stats(
+  habits: ReturnType<typeof useHabitStore.getState>['habits'],
+  completions: ReturnType<typeof useHabitStore.getState>['completions'],
+  goals: ReturnType<typeof useGoalStore.getState>['goals'],
+  tasks: ReturnType<typeof useTaskStore.getState>['tasks']
+) {
+  const completions2026 = completions.filter((c) => c.date.startsWith('2026') && c.completed);
+  const completionsByDate: Record<string, number> = {};
+  for (const c of completions2026) {
+    completionsByDate[c.date] = (completionsByDate[c.date] || 0) + 1;
+  }
 
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [progress, setProgress] = useState(0);
+  let bestStreak = 0;
+  let tempStreak = 0;
+  let lastDate: Date | null = null;
+  for (const dateStr of Object.keys(completionsByDate).sort()) {
+    const currentDate = new Date(dateStr);
+    const diffDays = lastDate ? Math.ceil(Math.abs(currentDate.getTime() - lastDate.getTime()) / 86400000) : 0;
+    tempStreak = lastDate && diffDays <= 1 ? tempStreak + 1 : 1;
+    if (tempStreak > bestStreak) bestStreak = tempStreak;
+    lastDate = currentDate;
+  }
 
-  const cardRef = useRef<HTMLDivElement>(null);
+  const categoryCounts: Record<string, number> = {};
+  const habitsMap = new Map(habits.map((h) => [h.id, h]));
+  for (const c of completions2026) {
+    const habit = habitsMap.get(c.habitId);
+    if (habit) categoryCounts[habit.category] = (categoryCounts[habit.category] || 0) + 1;
+  }
 
-  const slideDuration = 8000; // 8 seconds per slide
+  const topEntry = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0];
+  const topCategory = topEntry ? topEntry[0] : 'None';
+  const topCategoryCount = topEntry ? topEntry[1] : 0;
 
-  // 1. Calculate 2026 data
-  const stats2026 = useMemo(() => {
-    const completions2026 = completions.filter(c => c.date.startsWith('2026'));
-    const totalCompletions = completions2026.filter(c => c.completed).length;
+  const completedTasks = tasks.filter((t) => t.status === 'done' && t.due_date?.startsWith('2026')).length;
+  const completedGoals = goals.filter((g) => g.status === 'completed' && g.deadline?.startsWith('2026')).length;
 
-    // Calculate completion rate in 2026
-    const completionsByDate: Record<string, number> = {};
-    completions2026.forEach(c => {
-      if (c.completed) {
-        completionsByDate[c.date] = (completionsByDate[c.date] || 0) + 1;
-      }
-    });
-
-    const activeHabits = habits.filter(h => !h.archived);
-    
-    // Streak calculations for 2026
-    // Sort completion dates
-    const completionDates = Object.keys(completionsByDate).sort();
-    let currentStreak = 0;
-    let bestStreak = 0;
-    let tempStreak = 0;
-    let lastDate: Date | null = null;
-
-    completionDates.forEach(dateStr => {
-      const currentDate = new Date(dateStr);
-      if (lastDate === null) {
-        tempStreak = 1;
-      } else {
-        const diffTime = Math.abs(currentDate.getTime() - lastDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (diffDays <= 1) {
-          tempStreak++;
-        } else {
-          if (tempStreak > bestStreak) {
-            bestStreak = tempStreak;
-          }
-          tempStreak = 1;
-        }
-      }
-      lastDate = currentDate;
-    });
-
-    if (tempStreak > bestStreak) {
-      bestStreak = tempStreak;
-    }
-
-    // Top Category in 2026
-    const categoryCounts: Record<string, number> = {};
-    const habitsMap = new Map(habits.map(h => [h.id, h]));
-    completions2026.forEach(c => {
-      if (c.completed) {
-        const habit = habitsMap.get(c.habitId);
-        if (habit) {
-          categoryCounts[habit.category] = (categoryCounts[habit.category] || 0) + 1;
-        }
-      }
-    });
-
-    let topCategory = 'None';
-    let topCategoryCount = 0;
-    Object.entries(categoryCounts).forEach(([cat, count]) => {
-      if (count > topCategoryCount) {
-        topCategory = cat;
-        topCategoryCount = count;
-      }
-    });
-
-    // Total Tasks & Goals Completed in 2026
-    const completedTasks2026 = tasks.filter(t => t.status === 'done' && t.due_date?.startsWith('2026')).length;
-    const completedGoals2026 = goals.filter(g => g.status === 'completed' && g.deadline?.startsWith('2026')).length;
-    const totalMilestonesCompleted = totalCompletions + completedTasks2026 + completedGoals2026;
-
-    return {
-      totalCompletions,
-      bestStreak,
-      topCategory: topCategory.charAt(0).toUpperCase() + topCategory.slice(1),
-      topCategoryCount,
-      completedTasks: completedTasks2026,
-      completedGoals: completedGoals2026,
-      totalMilestonesCompleted,
-    };
-  }, [habits, completions, goals, tasks]);
-
-  const handleShare = async () => {
-    // Pause playback while rendering / sharing
-    const wasPlaying = isPlaying;
-    setIsPlaying(false);
-
-    const text = `I completed ${stats2026.totalCompletions} habits in 2026 with a ${stats2026.bestStreak} day streak on HabitFlow! 🚀 Check out your 2026 scorecard at habitflow.tech #HabitFlowWrapped`;
-
-    const element = cardRef.current;
-    if (!element) {
-      toast.error('Card element not found.');
-      if (wasPlaying) setIsPlaying(true);
-      return;
-    }
-
-    const shareToastId = toast.loading('Generating your scorecard share card...');
-
-    try {
-      // Dynamic import to optimize page bundle size
-      const html2canvas = (await import('html2canvas-pro')).default;
-
-      const canvas = await html2canvas(element, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 2, // 2x resolution for clean text and shapes
-        backgroundColor: null,
-        onclone: (clonedDoc) => {
-          // Hide controls and overlay elements not desired in the screenshot
-          const toHide = clonedDoc.querySelectorAll('.hide-in-share');
-          toHide.forEach((el) => {
-            (el as HTMLElement).style.display = 'none';
-          });
-
-          // Show elements desired ONLY in screenshot (override Tailwind's 'hidden' utility class)
-          const toShow = clonedDoc.querySelectorAll('.show-in-share');
-          toShow.forEach((el) => {
-            (el as HTMLElement).style.setProperty('display', 'block', 'important');
-          });
-
-          // Standardize dimensions on cloned element
-          const clonedCard = clonedDoc.querySelector('[data-slot="card"]');
-          if (clonedCard) {
-            (clonedCard as HTMLElement).style.height = '520px';
-            (clonedCard as HTMLElement).style.maxHeight = '520px';
-            (clonedCard as HTMLElement).style.borderRadius = '1.5rem';
-            (clonedCard as HTMLElement).style.overflow = 'hidden';
-          }
-        },
-      });
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          toast.dismiss(shareToastId);
-          toast.error('Failed to render card image.');
-          if (wasPlaying) setIsPlaying(true);
-          return;
-        }
-
-        const file = new File([blob], 'habitflow-2026-wrapped.png', { type: 'image/png' });
-
-        // Method 1: Web Share API (native share sheet)
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: 'My 2026 Habit Scorecard | HabitFlow',
-              text: text,
-            });
-            toast.dismiss(shareToastId);
-            toast.success('Stats shared successfully!');
-            if (wasPlaying) setIsPlaying(true);
-            return;
-          } catch (shareErr) {
-            if ((shareErr as Error).name === 'AbortError') {
-              toast.dismiss(shareToastId);
-              if (wasPlaying) setIsPlaying(true);
-              return;
-            }
-            console.error('Web Share failed, running fallbacks:', shareErr);
-          }
-        }
-
-        // Method 2: Copy image + text to clipboard
-        let clipboardSuccess = false;
-        if (navigator.clipboard && navigator.clipboard.write) {
-          try {
-            const textBlob = new Blob([text], { type: 'text/plain' });
-            await navigator.clipboard.write([
-              new ClipboardItem({
-                'image/png': blob,
-                'text/plain': textBlob,
-              })
-            ]);
-            clipboardSuccess = true;
-            toast.dismiss(shareToastId);
-            toast.success('Scorecard image and text copied to clipboard!');
-          } catch (clipErr) {
-            console.error('Copying image to clipboard failed:', clipErr);
-          }
-        }
-
-        // Method 3: Download image + copy text to clipboard
-        if (!clipboardSuccess) {
-          let textCopied = false;
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            try {
-              await navigator.clipboard.writeText(text);
-              textCopied = true;
-            } catch (textErr) {
-              console.error('Clipboard text copy failed:', textErr);
-            }
-          }
-
-          if (!textCopied) {
-            try {
-              const textArea = document.createElement('textarea');
-              textArea.value = text;
-              textArea.style.position = 'fixed';
-              textArea.style.opacity = '0';
-              document.body.appendChild(textArea);
-              textArea.focus();
-              textArea.select();
-              textCopied = document.execCommand('copy');
-              document.body.removeChild(textArea);
-            } catch (err) {
-              console.error('Fallback copy text failed:', err);
-            }
-          }
-
-          try {
-            const link = document.createElement('a');
-            link.download = 'habitflow-2026-wrapped.png';
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-            toast.dismiss(shareToastId);
-            if (textCopied) {
-              toast.success('Stats copied to clipboard & image downloaded!');
-            } else {
-              toast.success('Scorecard image downloaded!');
-            }
-          } catch (downloadErr) {
-            console.error('Image download failed:', downloadErr);
-            toast.dismiss(shareToastId);
-            toast.error('Failed to share or download scorecard.');
-          }
-        }
-
-        if (wasPlaying) setIsPlaying(true);
-      }, 'image/png');
-
-    } catch (err) {
-      console.error('Failed to capture card:', err);
-      toast.dismiss(shareToastId);
-      toast.error('Failed to capture card image.');
-      if (wasPlaying) setIsPlaying(true);
-    }
+  return {
+    totalCompletions: completions2026.length,
+    bestStreak,
+    topCategory: topCategory.charAt(0).toUpperCase() + topCategory.slice(1),
+    topCategoryCount,
+    completedTasks,
+    completedGoals,
+    totalMilestonesCompleted: completions2026.length + completedTasks + completedGoals,
   };
+}
 
-  // Slides configuration
-  const slides = [
+async function copyShareTextFallback(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fall through to execCommand
+    }
+  }
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+async function shareScorecardBlob(blob: Blob, canvas: HTMLCanvasElement, text: string, shareToastId: string | number): Promise<void> {
+  const file = new File([blob], 'habitflow-2026-wrapped.png', { type: 'image/png' });
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'My 2026 Habit Scorecard | HabitFlow', text });
+      toast.dismiss(shareToastId);
+      toast.success('Stats shared successfully!');
+      return;
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        toast.dismiss(shareToastId);
+        return;
+      }
+    }
+  }
+
+  if (navigator.clipboard?.write) {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob, 'text/plain': new Blob([text], { type: 'text/plain' }) })]);
+      toast.dismiss(shareToastId);
+      toast.success('Scorecard image and text copied to clipboard!');
+      return;
+    } catch {
+      // fall through to download
+    }
+  }
+
+  const textCopied = await copyShareTextFallback(text);
+  try {
+    const link = document.createElement('a');
+    link.download = 'habitflow-2026-wrapped.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    toast.dismiss(shareToastId);
+    toast.success(textCopied ? 'Stats copied to clipboard & image downloaded!' : 'Scorecard image downloaded!');
+  } catch {
+    toast.dismiss(shareToastId);
+    toast.error('Failed to share or download scorecard.');
+  }
+}
+
+interface WrappedSlide {
+  id: string;
+  title: string;
+  subtitle: string;
+  gradient: string;
+  content: React.ReactNode;
+}
+
+function buildCoreWrappedSlides(stats2026: ReturnType<typeof compute2026Stats>): WrappedSlide[] {
+  return [
     {
       id: 'welcome',
       title: 'Your 2026 Journey',
@@ -324,25 +193,15 @@ export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewPro
             </div>
           </motion.div>
           <div className="space-y-2">
-            <motion.h2
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="text-4xl font-black tracking-tight text-white"
-            >
+            <motion.h2 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="text-4xl font-black tracking-tight text-white">
               Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">2026</span> in Review
             </motion.h2>
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="text-muted-foreground text-sm max-w-sm"
-            >
-              Let's look back at the consistency, milestones, and discipline that defined your year.
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-muted-foreground text-sm max-w-sm">
+              Let&apos;s look back at the consistency, milestones, and discipline that defined your year.
             </motion.p>
           </div>
         </div>
-      )
+      ),
     },
     {
       id: 'streaks',
@@ -354,10 +213,7 @@ export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewPro
           <motion.div
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: [1, 1.15, 1], opacity: 1 }}
-            transition={{ 
-              scale: { repeat: Infinity, duration: 2, ease: 'easeInOut' },
-              opacity: { duration: 0.5 }
-            }}
+            transition={{ scale: { repeat: Infinity, duration: 2, ease: 'easeInOut' }, opacity: { duration: 0.5 } }}
             className="w-28 h-28 rounded-full bg-gradient-to-tr from-amber-500 to-orange-400 p-0.5 flex items-center justify-center shadow-[0_0_50px_rgba(245,158,11,0.3)]"
           >
             <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
@@ -374,7 +230,7 @@ export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewPro
             </p>
           </div>
         </div>
-      )
+      ),
     },
     {
       id: 'categories',
@@ -406,7 +262,7 @@ export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewPro
             </p>
           </div>
         </div>
-      )
+      ),
     },
     {
       id: 'consistency',
@@ -431,171 +287,238 @@ export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewPro
               {stats2026.totalMilestonesCompleted.toLocaleString()}
             </h2>
             <div className="flex justify-center gap-6 mt-3 text-xs text-muted-foreground bg-slate-950/60 py-2 px-4 rounded-xl border border-white/5">
-              <div>
-                <span className="block font-bold text-white">{stats2026.totalCompletions}</span>
-                Habits
-              </div>
+              <div><span className="block font-bold text-white">{stats2026.totalCompletions}</span>Habits</div>
               <div className="w-px bg-white/10" />
-              <div>
-                <span className="block font-bold text-white">{stats2026.completedTasks}</span>
-                Tasks
-              </div>
+              <div><span className="block font-bold text-white">{stats2026.completedTasks}</span>Tasks</div>
               <div className="w-px bg-white/10" />
-              <div>
-                <span className="block font-bold text-white">{stats2026.completedGoals}</span>
-                Goals
-              </div>
+              <div><span className="block font-bold text-white">{stats2026.completedGoals}</span>Goals</div>
             </div>
           </div>
         </div>
-      )
+      ),
     },
-    {
-      id: 'summary',
-      title: 'Year Overview',
-      subtitle: 'The 2026 Scorecard',
-      gradient: 'from-emerald-950 via-slate-900 to-zinc-900',
-      content: (
-        <div className="flex flex-col items-center justify-center text-center h-full space-y-5 px-6">
-          <Trophy className="h-12 w-12 text-yellow-500 animate-bounce" />
-          <h2 className="text-2xl font-bold text-white">Your 2026 Habit Scorecard</h2>
-          
-          <div className="w-full space-y-3 bg-slate-950/40 p-4 rounded-2xl border border-white/5 text-left text-xs text-muted-foreground">
-            <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span>Total Habit Completions:</span>
-              <span className="font-bold text-white text-sm">{stats2026.totalCompletions}</span>
-            </div>
-            <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span>Best Continuous Streak:</span>
-              <span className="font-bold text-amber-500 text-sm">{stats2026.bestStreak} Days</span>
-            </div>
-            <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span>Top Focus Area:</span>
-              <span className="font-bold text-sky-400 text-sm">{stats2026.topCategory}</span>
-            </div>
-            <div className="flex justify-between items-center py-1">
-              <span>Tasks &amp; Goals Completed:</span>
-              <span className="font-bold text-emerald-400 text-sm">{stats2026.completedTasks} Tasks · {stats2026.completedGoals} Goals</span>
-            </div>
-            {financeSummary?.enabled && (
-              <div className="flex justify-between items-center py-1 border-t border-white/5">
-                <span>2026 Savings Rate:</span>
-                <span className="font-bold text-sky-400 text-sm tabular-nums">{financeSummary.savingsRatePct}%</span>
-              </div>
-            )}
-            {fitnessSummary?.enabled && (
-              <div className="flex justify-between items-center py-1 border-t border-white/5">
-                <span>Workouts Logged:</span>
-                <span className="font-bold text-orange-400 text-sm tabular-nums">{fitnessSummary.workoutCount} sessions</span>
-              </div>
-            )}
-          </div>
+  ];
+}
 
-          <div className="flex gap-2 w-full mt-2 pointer-events-auto hide-in-share">
-            <button
-              onClick={() => {
-                setCurrentSlide(0);
-                setProgress(0);
-                setIsPlaying(true);
-              }}
-              className="flex-1 py-2 px-3 rounded-xl border border-white/10 hover:bg-white/5 text-xs text-white font-medium flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <RotateCcw className="h-3.5 w-3.5" /> Replay
-            </button>
-            <button
-              onClick={handleShare}
-              className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-xs text-white font-bold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <Share2 className="h-3.5 w-3.5" /> Share Stats
-            </button>
+function buildScorecardSlide(params: {
+  stats2026: ReturnType<typeof compute2026Stats>;
+  financeSummary?: YearInReviewFinanceProps;
+  fitnessSummary?: YearInReviewFitnessProps;
+  onReplay: () => void;
+  onShare: () => void;
+}): WrappedSlide {
+  const { stats2026, financeSummary, fitnessSummary, onReplay, onShare } = params;
+  return {
+    id: 'summary',
+    title: 'Year Overview',
+    subtitle: 'The 2026 Scorecard',
+    gradient: 'from-emerald-950 via-slate-900 to-zinc-900',
+    content: (
+      <div className="flex flex-col items-center justify-center text-center h-full space-y-5 px-6">
+        <Trophy className="h-12 w-12 text-yellow-500 animate-bounce" />
+        <h2 className="text-2xl font-bold text-white">Your 2026 Habit Scorecard</h2>
+        <div className="w-full space-y-3 bg-slate-950/40 p-4 rounded-2xl border border-white/5 text-left text-xs text-muted-foreground">
+          <div className="flex justify-between items-center py-1 border-b border-white/5">
+            <span>Total Habit Completions:</span>
+            <span className="font-bold text-white text-sm">{stats2026.totalCompletions}</span>
+          </div>
+          <div className="flex justify-between items-center py-1 border-b border-white/5">
+            <span>Best Continuous Streak:</span>
+            <span className="font-bold text-amber-500 text-sm">{stats2026.bestStreak} Days</span>
+          </div>
+          <div className="flex justify-between items-center py-1 border-b border-white/5">
+            <span>Top Focus Area:</span>
+            <span className="font-bold text-sky-400 text-sm">{stats2026.topCategory}</span>
+          </div>
+          <div className="flex justify-between items-center py-1">
+            <span>Tasks &amp; Goals Completed:</span>
+            <span className="font-bold text-emerald-400 text-sm">{stats2026.completedTasks} Tasks · {stats2026.completedGoals} Goals</span>
+          </div>
+          {financeSummary?.enabled && (
+            <div className="flex justify-between items-center py-1 border-t border-white/5">
+              <span>2026 Savings Rate:</span>
+              <span className="font-bold text-sky-400 text-sm tabular-nums">{financeSummary.savingsRatePct}%</span>
+            </div>
+          )}
+          {fitnessSummary?.enabled && (
+            <div className="flex justify-between items-center py-1 border-t border-white/5">
+              <span>Workouts Logged:</span>
+              <span className="font-bold text-orange-400 text-sm tabular-nums">{fitnessSummary.workoutCount} sessions</span>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 w-full mt-2 pointer-events-auto hide-in-share">
+          <button onClick={onReplay} className="flex-1 py-2 px-3 rounded-xl border border-white/10 hover:bg-white/5 text-xs text-white font-medium flex items-center justify-center gap-1.5 transition-colors">
+            <RotateCcw className="h-3.5 w-3.5" /> Replay
+          </button>
+          <button onClick={onShare} className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-xs text-white font-bold flex items-center justify-center gap-1.5 transition-colors">
+            <Share2 className="h-3.5 w-3.5" /> Share Stats
+          </button>
+        </div>
+      </div>
+    ),
+  };
+}
+
+function buildDomainWrappedSlides(
+  financeSummary?: YearInReviewFinanceProps,
+  fitnessSummary?: YearInReviewFitnessProps
+): WrappedSlide[] {
+  const extra: WrappedSlide[] = [];
+  if (financeSummary?.enabled) {
+    extra.push({
+      id: 'finance-wrapped',
+      title: 'Wealth & Discipline',
+      subtitle: '2026 Finance Wrapped',
+      gradient: 'from-sky-950 via-slate-900 to-zinc-900',
+      content: (
+        <div className="flex flex-col items-center justify-center text-center h-full space-y-6 px-4">
+          <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-400 p-0.5 flex items-center justify-center shadow-[0_0_40px_rgba(14,165,233,0.3)]">
+            <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+              <Wallet className="h-12 w-12 text-sky-400" />
+            </div>
+          </div>
+          <div className="space-y-2 w-full max-w-xs">
+            <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">Savings &amp; Net Worth</h3>
+            <h2 className="text-4xl font-black text-white tabular-nums">
+              {financeSummary.savingsRatePct}% <span className="text-lg text-sky-400 font-semibold">Saved</span>
+            </h2>
+            <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
+              <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                <span className="block text-muted-foreground">Invested</span>
+                <span className="font-bold text-white tabular-nums">₹{financeSummary.totalInvestment.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                <span className="block text-muted-foreground">Net Worth</span>
+                <span className="font-bold text-emerald-400 tabular-nums">₹{Math.round(financeSummary.netWorthInr).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
           </div>
         </div>
-      )
-    },
-    ...(financeSummary?.enabled
-      ? [
-          {
-            id: 'finance-wrapped',
-            title: 'Wealth & Discipline',
-            subtitle: '2026 Finance Wrapped',
-            gradient: 'from-sky-950 via-slate-900 to-zinc-900',
-            content: (
-              <div className="flex flex-col items-center justify-center text-center h-full space-y-6 px-4">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-400 p-0.5 flex items-center justify-center shadow-[0_0_40px_rgba(14,165,233,0.3)]">
-                  <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
-                    <Wallet className="h-12 w-12 text-sky-400" />
-                  </div>
-                </div>
-                <div className="space-y-2 w-full max-w-xs">
-                  <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">
-                    Savings &amp; Net Worth
-                  </h3>
-                  <h2 className="text-4xl font-black text-white tabular-nums">
-                    {financeSummary.savingsRatePct}%{' '}
-                    <span className="text-lg text-sky-400 font-semibold">Saved</span>
-                  </h2>
-                  <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
-                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
-                      <span className="block text-muted-foreground">Invested</span>
-                      <span className="font-bold text-white tabular-nums">
-                        ₹{financeSummary.totalInvestment.toLocaleString('en-IN')}
-                      </span>
-                    </div>
-                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
-                      <span className="block text-muted-foreground">Net Worth</span>
-                      <span className="font-bold text-emerald-400 tabular-nums">
-                        ₹{Math.round(financeSummary.netWorthInr).toLocaleString('en-IN')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+      ),
+    });
+  }
+  if (fitnessSummary?.enabled) {
+    extra.push({
+      id: 'fitness-wrapped',
+      title: 'Body & Iron',
+      subtitle: '2026 Fitness Wrapped',
+      gradient: 'from-orange-950 via-slate-900 to-zinc-900',
+      content: (
+        <div className="flex flex-col items-center justify-center text-center h-full space-y-6 px-4">
+          <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-orange-500 to-amber-400 p-0.5 flex items-center justify-center shadow-[0_0_40px_rgba(249,115,22,0.3)]">
+            <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
+              <Dumbbell className="h-12 w-12 text-orange-400" />
+            </div>
+          </div>
+          <div className="space-y-2 w-full max-w-xs">
+            <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">Training Output</h3>
+            <h2 className="text-4xl font-black text-white tabular-nums">
+              {fitnessSummary.workoutCount} <span className="text-lg text-orange-400 font-semibold">Workouts</span>
+            </h2>
+            <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
+              <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                <span className="block text-muted-foreground">Avg Protein</span>
+                <span className="font-bold text-white tabular-nums">{fitnessSummary.avgProteinG}g / day</span>
               </div>
-            ),
-          },
-        ]
-      : []),
-    ...(fitnessSummary?.enabled
-      ? [
-          {
-            id: 'fitness-wrapped',
-            title: 'Body & Iron',
-            subtitle: '2026 Fitness Wrapped',
-            gradient: 'from-orange-950 via-slate-900 to-zinc-900',
-            content: (
-              <div className="flex flex-col items-center justify-center text-center h-full space-y-6 px-4">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-orange-500 to-amber-400 p-0.5 flex items-center justify-center shadow-[0_0_40px_rgba(249,115,22,0.3)]">
-                  <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center">
-                    <Dumbbell className="h-12 w-12 text-orange-400" />
-                  </div>
-                </div>
-                <div className="space-y-2 w-full max-w-xs">
-                  <h3 className="text-muted-foreground text-xs uppercase font-bold tracking-widest">
-                    Training Output
-                  </h3>
-                  <h2 className="text-4xl font-black text-white tabular-nums">
-                    {fitnessSummary.workoutCount}{' '}
-                    <span className="text-lg text-orange-400 font-semibold">Workouts</span>
-                  </h2>
-                  <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
-                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
-                      <span className="block text-muted-foreground">Avg Protein</span>
-                      <span className="font-bold text-white tabular-nums">
-                        {fitnessSummary.avgProteinG}g / day
-                      </span>
-                    </div>
-                    <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
-                      <span className="block text-muted-foreground">Total Volume</span>
-                      <span className="font-bold text-orange-300 tabular-nums">
-                        {fitnessSummary.totalVolumeKg.toLocaleString('en-IN')} kg
-                      </span>
-                    </div>
-                  </div>
-                </div>
+              <div className="rounded-xl bg-slate-950/60 p-2.5 border border-white/10">
+                <span className="block text-muted-foreground">Total Volume</span>
+                <span className="font-bold text-orange-300 tabular-nums">{fitnessSummary.totalVolumeKg.toLocaleString('en-IN')} kg</span>
               </div>
-            ),
-          },
-        ]
-      : []),
+            </div>
+          </div>
+        </div>
+      ),
+    });
+  }
+  return extra;
+}
+
+export function YearInReview({ financeSummary, fitnessSummary }: YearInReviewProps = {}) {
+  const { habits, completions } = useHabitStore();
+  const { goals } = useGoalStore();
+  const { tasks } = useTaskStore();
+
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [progress, setProgress] = useState(0);
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  const slideDuration = 8000;
+
+  const stats2026 = useMemo(
+    () => compute2026Stats(habits, completions, goals, tasks),
+    [habits, completions, goals, tasks]
+  );
+
+  const handleShare = async () => {
+    const wasPlaying = isPlaying;
+    setIsPlaying(false);
+    const text = `I completed ${stats2026.totalCompletions} habits in 2026 with a ${stats2026.bestStreak} day streak on HabitFlow! 🚀 Check out your 2026 scorecard at habitflow.tech #HabitFlowWrapped`;
+
+    const element = cardRef.current;
+    if (!element) {
+      toast.error('Card element not found.');
+      if (wasPlaying) setIsPlaying(true);
+      return;
+    }
+
+    const shareToastId = toast.loading('Generating your scorecard share card...');
+    try {
+      const html2canvas = (await import('html2canvas-pro')).default;
+      const canvas = await html2canvas(element, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 2,
+        backgroundColor: null,
+        onclone: (clonedDoc) => {
+          clonedDoc.querySelectorAll('.hide-in-share').forEach((el) => {
+            (el as HTMLElement).style.display = 'none';
+          });
+          clonedDoc.querySelectorAll('.show-in-share').forEach((el) => {
+            (el as HTMLElement).style.setProperty('display', 'block', 'important');
+          });
+          const clonedCard = clonedDoc.querySelector('[data-slot="card"]') as HTMLElement | null;
+          if (clonedCard) {
+            clonedCard.style.height = '520px';
+            clonedCard.style.maxHeight = '520px';
+            clonedCard.style.borderRadius = '1.5rem';
+            clonedCard.style.overflow = 'hidden';
+          }
+        },
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          toast.dismiss(shareToastId);
+          toast.error('Failed to render card image.');
+        } else {
+          await shareScorecardBlob(blob, canvas, text, shareToastId);
+        }
+        if (wasPlaying) setIsPlaying(true);
+      }, 'image/png');
+    } catch (err) {
+      console.error('Failed to capture card:', err);
+      toast.dismiss(shareToastId);
+      toast.error('Failed to capture card image.');
+      if (wasPlaying) setIsPlaying(true);
+    }
+  };
+
+  const slides: WrappedSlide[] = [
+    ...buildCoreWrappedSlides(stats2026),
+    buildScorecardSlide({
+      stats2026,
+      financeSummary,
+      fitnessSummary,
+      onReplay: () => {
+        setCurrentSlide(0);
+        setProgress(0);
+        setIsPlaying(true);
+      },
+      onShare: handleShare,
+    }),
+    ...buildDomainWrappedSlides(financeSummary, fitnessSummary),
   ];
 
   const totalSlides = slides.length;
