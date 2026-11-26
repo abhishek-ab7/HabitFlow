@@ -63,6 +63,13 @@ import type {
 
 type FitnessTabId = 'fuel' | 'body' | 'workouts' | 'supplements' | 'routines';
 
+const GOAL_CALORIE_DELTA: Record<FitnessGoalType, number> = {
+  fat_loss: -450,
+  recomposition: -150,
+  muscle_gain: 250,
+  maintenance: 0,
+};
+
 function computeSuggestedTargets(
   weightKg: number,
   goalType: FitnessGoalType,
@@ -76,14 +83,7 @@ function computeSuggestedTargets(
     athlete: 39,
   };
   const maint = Math.round(weightKg * actMult[activity]);
-  const delta =
-    goalType === 'fat_loss'
-      ? -450
-      : goalType === 'recomposition'
-        ? -150
-        : goalType === 'muscle_gain'
-          ? 250
-          : 0;
+  const delta = GOAL_CALORIE_DELTA[goalType] ?? 0;
   const calorieTarget = Math.max(1400, Math.round((maint + delta) / 50) * 50);
   const proteinTargetG = Math.round(weightKg * (goalType === 'fat_loss' ? 1.8 : 1.7));
   return { calorieTarget, proteinTargetG };
@@ -207,6 +207,73 @@ function FitnessGoalSelectors({
   );
 }
 
+function BodyDimensionsGrid({
+  profileForm,
+  setProfileForm,
+  patchNumber,
+}: {
+  profileForm: FitnessProfileFormData;
+  setProfileForm: React.Dispatch<React.SetStateAction<FitnessProfileFormData>>;
+  patchNumber: (key: keyof FitnessProfileFormData, raw: string, fallback: number | null) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Current Weight (kg)</label>
+        <Input
+          type="number"
+          step="0.1"
+          value={profileForm.currentWeightKg ?? ''}
+          onChange={(e) => {
+            const w = e.target.value ? Number(e.target.value) : null;
+            setProfileForm((prev) => {
+              const next = { ...prev, currentWeightKg: w };
+              if (w && w > 30) Object.assign(next, computeSuggestedTargets(w, next.goalType || 'fat_loss', next.activityLevel || 'moderate'));
+              return next;
+            });
+          }}
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Target Weight (kg)</label>
+        <Input type="number" step="0.1" value={profileForm.targetWeightKg ?? ''} onChange={(e) => patchNumber('targetWeightKg', e.target.value, null)} />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Height (cm)</label>
+        <Input type="number" value={profileForm.heightCm ?? ''} onChange={(e) => patchNumber('heightCm', e.target.value, null)} />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs font-medium">Target Waist (in)</label>
+        <Input type="number" step="0.1" value={profileForm.targetWaistInches ?? ''} onChange={(e) => patchNumber('targetWaistInches', e.target.value, null)} />
+      </div>
+    </div>
+  );
+}
+
+function FuelTargetsGrid({
+  profileForm,
+  patchNumber,
+}: {
+  profileForm: FitnessProfileFormData;
+  patchNumber: (key: keyof FitnessProfileFormData, raw: string, fallback: number | null) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-border/60">
+      {FUEL_TARGET_FIELDS.map((field) => (
+        <div key={String(field.key)} className="space-y-1">
+          <label className="text-xs font-medium">{field.label}</label>
+          <Input
+            type="number"
+            step={field.step}
+            value={(profileForm[field.key] as number | null | undefined) ?? field.fallback}
+            onChange={(e) => patchNumber(field.key, e.target.value, field.fallback)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function FitnessTargetsDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -225,52 +292,9 @@ function FitnessTargetsDialog(props: {
           <DialogTitle>Body &amp; Daily Fuel Targets</DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3.5">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Current Weight (kg)</label>
-              <Input
-                type="number"
-                step="0.1"
-                value={profileForm.currentWeightKg ?? ''}
-                onChange={(e) => {
-                  const w = e.target.value ? Number(e.target.value) : null;
-                  setProfileForm((prev) => {
-                    const next = { ...prev, currentWeightKg: w };
-                    if (w && w > 30) Object.assign(next, computeSuggestedTargets(w, next.goalType || 'fat_loss', next.activityLevel || 'moderate'));
-                    return next;
-                  });
-                }}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Target Weight (kg)</label>
-              <Input type="number" step="0.1" value={profileForm.targetWeightKg ?? ''} onChange={(e) => patchNumber('targetWeightKg', e.target.value, null)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Height (cm)</label>
-              <Input type="number" value={profileForm.heightCm ?? ''} onChange={(e) => patchNumber('heightCm', e.target.value, null)} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Target Waist (in)</label>
-              <Input type="number" step="0.1" value={profileForm.targetWaistInches ?? ''} onChange={(e) => patchNumber('targetWaistInches', e.target.value, null)} />
-            </div>
-          </div>
-
+          <BodyDimensionsGrid profileForm={profileForm} setProfileForm={setProfileForm} patchNumber={patchNumber} />
           <FitnessGoalSelectors profileForm={profileForm} setProfileForm={setProfileForm} />
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 border-t border-border/60">
-            {FUEL_TARGET_FIELDS.map((field) => (
-              <div key={String(field.key)} className="space-y-1">
-                <label className="text-xs font-medium">{field.label}</label>
-                <Input
-                  type="number"
-                  step={field.step}
-                  value={(profileForm[field.key] as number | null | undefined) ?? field.fallback}
-                  onChange={(e) => patchNumber(field.key, e.target.value, field.fallback)}
-                />
-              </div>
-            ))}
-          </div>
+          <FuelTargetsGrid profileForm={profileForm} patchNumber={patchNumber} />
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -495,6 +519,27 @@ function useFitnessPageState() {
   };
 }
 
+function FitnessSetupBanner({
+  profile,
+  onConfigure,
+}: {
+  profile: ReturnType<typeof useFitnessStore.getState>['profile'];
+  onConfigure: () => void;
+}) {
+  if (profile && profile.currentWeightKg != null) return null;
+  return (
+    <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p className="text-sm font-semibold text-foreground">30-Second Setup: Set your starting weight &amp; calorie/protein targets</p>
+        <p className="text-xs text-muted-foreground">
+          Currently using defaults ({profile?.calorieTarget ?? 2000} kcal · {profile?.proteinTargetG ?? 130}g protein · {profile?.stepsTarget ?? 8000} steps)
+        </p>
+      </div>
+      <Button size="sm" onClick={onConfigure}>Configure Now</Button>
+    </div>
+  );
+}
+
 export function FitnessPageContent() {
   const f = useFitnessPageState();
   const { isOpen: isTourOpen, startTour, closeTour, completeTour } = f.tour;
@@ -523,17 +568,7 @@ export function FitnessPageContent() {
         onOpenTargets={() => f.setProfileModalOpen(true)}
       />
 
-      {(!f.profile || f.profile.currentWeightKg == null) && (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-foreground">30-Second Setup: Set your starting weight &amp; calorie/protein targets</p>
-            <p className="text-xs text-muted-foreground">
-              Currently using defaults ({f.profile?.calorieTarget ?? 2000} kcal · {f.profile?.proteinTargetG ?? 130}g protein · {f.profile?.stepsTarget ?? 8000} steps)
-            </p>
-          </div>
-          <Button size="sm" onClick={() => f.setProfileModalOpen(true)}>Configure Now</Button>
-        </div>
-      )}
+      <FitnessSetupBanner profile={f.profile} onConfigure={() => f.setProfileModalOpen(true)} />
 
       <FitnessTabBar
         activeTab={f.activeTab}

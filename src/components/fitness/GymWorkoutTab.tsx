@@ -64,16 +64,100 @@ function computeSessionVolume(session: WorkoutSession): number {
   );
 }
 
+interface OverloadTargetArgs {
+  exIdx: number;
+  weightKg: number;
+  reps: number;
+}
+
+interface UpdateSetArgs {
+  exIdx: number;
+  setIdx: number;
+  patch: Partial<{ weightKg: number; reps: number; isWarmup: boolean }>;
+}
+
+interface RemoveSetArgs {
+  exIdx: number;
+  setIdx: number;
+}
+
+interface StartRestArgs {
+  seconds: 60 | 90 | 120;
+  exerciseName?: string;
+}
+
+function WorkoutSetRow({
+  st,
+  exIdx,
+  setIdx,
+  canRemove,
+  onUpdateSet,
+  onRemoveSet,
+}: {
+  st: { weightKg: number; reps: number; isWarmup?: boolean };
+  exIdx: number;
+  setIdx: number;
+  canRemove: boolean;
+  onUpdateSet: (args: UpdateSetArgs) => void;
+  onRemoveSet: (args: RemoveSetArgs) => void;
+}) {
+  return (
+    <div className="grid grid-cols-12 gap-2 items-center">
+      <button
+        type="button"
+        onClick={() => onUpdateSet({ exIdx, setIdx, patch: { isWarmup: !st.isWarmup } })}
+        title="Toggle warmup set"
+        className={cn(
+          'col-span-2 h-8 rounded-lg text-xs font-mono font-bold border transition-colors',
+          st.isWarmup ? 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400' : 'bg-muted/40 border-border text-foreground'
+        )}
+      >
+        {st.isWarmup ? 'W' : `#${setIdx + 1}`}
+      </button>
+      <Input
+        type="number"
+        step="0.5"
+        min={0}
+        aria-label={`Set ${setIdx + 1} weight kg`}
+        value={st.weightKg}
+        onChange={(e) => onUpdateSet({ exIdx, setIdx, patch: { weightKg: Math.max(0, Number(e.target.value) || 0) } })}
+        className="col-span-4 h-8 text-xs font-mono tabular-nums"
+      />
+      <Input
+        type="number"
+        min={0}
+        aria-label={`Set ${setIdx + 1} reps`}
+        value={st.reps}
+        onChange={(e) => onUpdateSet({ exIdx, setIdx, patch: { reps: Math.max(0, Number(e.target.value) || 0) } })}
+        className="col-span-4 h-8 text-xs font-mono tabular-nums"
+      />
+      <div className="col-span-2 flex justify-end">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={!canRemove}
+          onClick={() => onRemoveSet({ exIdx, setIdx })}
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          aria-label="Remove set"
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function WorkoutExerciseCard(props: {
   ex: WorkoutExercise;
   exIdx: number;
   hint?: ReturnType<typeof getProgressiveOverloadHint>;
-  onApplyOverload: (exIdx: number, weightKg: number, reps: number) => void;
-  onStartRest: (seconds: 60 | 90 | 120, exerciseName: string) => void;
+  onApplyOverload: (args: OverloadTargetArgs) => void;
+  onStartRest: (args: StartRestArgs) => void;
   onRemoveExercise: (exIdx: number) => void;
-  onUpdateSet: (exIdx: number, setIdx: number, patch: Partial<{ weightKg: number; reps: number; isWarmup: boolean }>) => void;
+  onUpdateSet: (args: UpdateSetArgs) => void;
   onAddSet: (exIdx: number) => void;
-  onRemoveSet: (exIdx: number, setIdx: number) => void;
+  onRemoveSet: (args: RemoveSetArgs) => void;
 }) {
   const { ex, exIdx, hint, onApplyOverload, onStartRest, onRemoveExercise, onUpdateSet, onAddSet, onRemoveSet } = props;
   return (
@@ -90,7 +174,7 @@ function WorkoutExerciseCard(props: {
               <span className="font-medium">{hint.suggestionText}</span>
               <button
                 type="button"
-                onClick={() => onApplyOverload(exIdx, hint.recommendedWeightKg, hint.recommendedReps)}
+                onClick={() => onApplyOverload({ exIdx, weightKg: hint.recommendedWeightKg, reps: hint.recommendedReps })}
                 className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-semibold hover:bg-emerald-700"
               >
                 <Sparkles className="h-2.5 w-2.5" /> Apply Target
@@ -103,7 +187,7 @@ function WorkoutExerciseCard(props: {
             <button
               key={secs}
               type="button"
-              onClick={() => onStartRest(secs, ex.name)}
+              onClick={() => onStartRest({ seconds: secs, exerciseName: ex.name })}
               className="px-2 py-1 rounded-lg border border-border bg-muted/40 hover:border-cyan-500 text-[11px] font-mono font-semibold text-foreground"
               title={`Start ${secs}s rest timer`}
             >
@@ -124,49 +208,15 @@ function WorkoutExerciseCard(props: {
           <span className="col-span-2 text-right">Act</span>
         </div>
         {ex.sets.map((st, setIdx) => (
-          <div key={setIdx} className="grid grid-cols-12 gap-2 items-center">
-            <button
-              type="button"
-              onClick={() => onUpdateSet(exIdx, setIdx, { isWarmup: !st.isWarmup })}
-              title="Toggle warmup set"
-              className={cn(
-                'col-span-2 h-8 rounded-lg text-xs font-mono font-bold border transition-colors',
-                st.isWarmup ? 'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400' : 'bg-muted/40 border-border text-foreground'
-              )}
-            >
-              {st.isWarmup ? 'W' : `#${setIdx + 1}`}
-            </button>
-            <Input
-              type="number"
-              step="0.5"
-              min={0}
-              aria-label={`Set ${setIdx + 1} weight kg`}
-              value={st.weightKg}
-              onChange={(e) => onUpdateSet(exIdx, setIdx, { weightKg: Math.max(0, Number(e.target.value) || 0) })}
-              className="col-span-4 h-8 text-xs font-mono tabular-nums"
-            />
-            <Input
-              type="number"
-              min={0}
-              aria-label={`Set ${setIdx + 1} reps`}
-              value={st.reps}
-              onChange={(e) => onUpdateSet(exIdx, setIdx, { reps: Math.max(0, Number(e.target.value) || 0) })}
-              className="col-span-4 h-8 text-xs font-mono tabular-nums"
-            />
-            <div className="col-span-2 flex justify-end">
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                disabled={ex.sets.length <= 1}
-                onClick={() => onRemoveSet(exIdx, setIdx)}
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                aria-label="Remove set"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
+          <WorkoutSetRow
+            key={setIdx}
+            st={st}
+            exIdx={exIdx}
+            setIdx={setIdx}
+            canRemove={ex.sets.length > 1}
+            onUpdateSet={onUpdateSet}
+            onRemoveSet={onRemoveSet}
+          />
         ))}
       </div>
 
@@ -175,6 +225,14 @@ function WorkoutExerciseCard(props: {
       </Button>
     </div>
   );
+}
+
+function buildSessionSubtitle(session: WorkoutSession, vol: number): string {
+  const parts = [`${session.date} · ${session.durationMinutes}m`];
+  if (session.exercises.length > 0) parts.push(`${session.exercises.length} exercises`);
+  if (vol > 0) parts.push(`${Math.round(vol).toLocaleString()} kg vol`);
+  if (session.rpe) parts.push(`RPE ${session.rpe}`);
+  return parts.join(' · ');
 }
 
 function WorkoutSessionRow({
@@ -198,12 +256,7 @@ function WorkoutSessionRow({
               <p className="text-sm font-semibold text-foreground truncate">{session.title}</p>
               <Badge variant="outline" className="text-[10px] capitalize">{session.workoutType.replace('_', ' ')}</Badge>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {session.date} · {session.durationMinutes}m
-              {session.exercises.length > 0 ? ` · ${session.exercises.length} exercises` : ''}
-              {vol > 0 ? ` · ${Math.round(vol).toLocaleString()} kg vol` : ''}
-              {session.rpe ? ` · RPE ${session.rpe}` : ''}
-            </p>
+            <p className="text-xs text-muted-foreground">{buildSessionSubtitle(session, vol)}</p>
           </div>
           {session.exercises.length > 0 &&
             (isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />)}
@@ -271,7 +324,22 @@ function WorkoutHistoryList({
   );
 }
 
-function useGymWorkoutState(selectedDate: string, userId: string) {
+function buildInitialExerciseSets(
+  entryOrName: ExerciseLibraryEntry | string,
+  hint: ReturnType<typeof getProgressiveOverloadHint>
+) {
+  const isCustom = typeof entryOrName === 'string';
+  const defaultWeight = hint?.lastTopWeightKg ?? (isCustom ? 20 : entryOrName.defaultWeightKg);
+  const defaultReps = hint?.recommendedReps ?? (isCustom ? 10 : entryOrName.defaultReps);
+  const setsCount = hint?.lastSetsCount ?? (isCustom ? 3 : entryOrName.defaultSets);
+  return Array.from({ length: Math.max(1, Math.min(5, setsCount)) }, () => ({
+    weightKg: defaultWeight,
+    reps: defaultReps,
+    isWarmup: false,
+  }));
+}
+
+function useGymWorkoutState({ selectedDate, userId }: GymWorkoutTabProps) {
   const workoutSessions = useFitnessStore((s) => s.workoutSessions);
   const addWorkoutSession = useFitnessStore((s) => s.addWorkoutSession);
   const deleteWorkoutSession = useFitnessStore((s) => s.deleteWorkoutSession);
@@ -317,18 +385,13 @@ function useGymWorkoutState(selectedDate: string, userId: string) {
     const name = typeof entryOrName === 'string' ? entryOrName.trim() : entryOrName.name;
     if (!name) return;
     const hint = getProgressiveOverloadHint(workoutSessions, name);
-    const defaultWeight = hint?.lastTopWeightKg ?? (typeof entryOrName === 'string' ? 20 : entryOrName.defaultWeightKg);
-    const defaultReps = hint?.recommendedReps ?? (typeof entryOrName === 'string' ? 10 : entryOrName.defaultReps);
-    const setsCount = hint?.lastSetsCount ?? (typeof entryOrName === 'string' ? 3 : entryOrName.defaultSets);
-    setExercises((prev) => [
-      ...prev,
-      { name, sets: Array.from({ length: Math.max(1, Math.min(5, setsCount)) }, () => ({ weightKg: defaultWeight, reps: defaultReps, isWarmup: false })) },
-    ]);
+    const sets = buildInitialExerciseSets(entryOrName, hint);
+    setExercises((prev) => [...prev, { name, sets }]);
     setExerciseQuery('');
     setShowSuggestions(false);
   };
 
-  const handleUpdateSet = (exIdx: number, setIdx: number, patch: Partial<{ weightKg: number; reps: number; isWarmup: boolean }>) => {
+  const handleUpdateSet = ({ exIdx, setIdx, patch }: UpdateSetArgs) => {
     setExercises((prev) =>
       prev.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.map((st, j) => (j === setIdx ? { ...st, ...patch } : st)) } : ex))
     );
@@ -341,20 +404,20 @@ function useGymWorkoutState(selectedDate: string, userId: string) {
     );
   };
 
-  const handleRemoveSet = (exIdx: number, setIdx: number) => {
+  const handleRemoveSet = ({ exIdx, setIdx }: RemoveSetArgs) => {
     setExercises((prev) =>
       prev.map((ex, i) => (i === exIdx && ex.sets.length > 1 ? { ...ex, sets: ex.sets.filter((_, j) => j !== setIdx) } : ex))
     );
   };
 
-  const handleApplyOverloadTarget = (exIdx: number, weightKg: number, reps: number) => {
+  const handleApplyOverloadTarget = ({ exIdx, weightKg, reps }: OverloadTargetArgs) => {
     setExercises((prev) =>
       prev.map((ex, i) => (i === exIdx ? { ...ex, sets: ex.sets.map((st) => (st.isWarmup ? st : { ...st, weightKg, reps })) } : ex))
     );
     toast.success(`Applied target ${weightKg} kg × ${reps} reps`);
   };
 
-  const handleStartRest = (seconds: 60 | 90 | 120, exerciseName?: string) => {
+  const handleStartRest = ({ seconds, exerciseName }: StartRestArgs) => {
     feedback.toggle(true);
     startGymRestTimer(seconds, exerciseName);
     toast.success(`Rest timer started: ${seconds}s`);
@@ -473,7 +536,7 @@ function ExerciseSearchPicker({
 }
 
 export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
-  const g = useGymWorkoutState(selectedDate, userId);
+  const g = useGymWorkoutState({ selectedDate, userId });
 
   return (
     <div className="space-y-5">
@@ -486,7 +549,7 @@ export function GymWorkoutTab({ selectedDate, userId }: GymWorkoutTabProps) {
             </h3>
             <p className="text-xs text-muted-foreground">Split presets, progressive overload targets &amp; mobile rest timer</p>
           </div>
-          <RestTimerBar onStartRest={(secs) => g.handleStartRest(secs, g.exercises[g.exercises.length - 1]?.name)} />
+          <RestTimerBar onStartRest={(secs) => g.handleStartRest({ seconds: secs, exerciseName: g.exercises[g.exercises.length - 1]?.name })} />
         </div>
 
         <div className="flex flex-wrap gap-1.5">
