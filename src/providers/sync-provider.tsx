@@ -23,6 +23,82 @@ interface SyncContextType {
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
 
+function scheduleIdleTask(task: () => void, timeoutMs: number): void {
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback(
+      task,
+      { timeout: timeoutMs }
+    );
+    return;
+  }
+  setTimeout(task, Math.min(timeoutMs, 300));
+}
+
+async function hydrateStoresForRoute(
+  currentPath: string,
+  userId: string,
+  forceRefresh: boolean,
+  isActive: () => boolean
+): Promise<void> {
+  const { useFitnessStore } = await import('@/lib/stores/fitness');
+  if (currentPath.startsWith('/finance')) {
+    await Promise.all([
+      useUserStore.getState().loadUser(forceRefresh),
+      useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
+      useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
+      useHabitStore.getState().loadHabits(forceRefresh),
+      useGoalStore.getState().loadGoals(forceRefresh),
+      useTaskStore.getState().loadTasks(forceRefresh),
+    ]);
+    return;
+  }
+  if (currentPath.startsWith('/fitness')) {
+    await Promise.all([
+      useUserStore.getState().loadUser(forceRefresh),
+      useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
+      useHabitStore.getState().loadHabits(forceRefresh),
+      useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
+    ]);
+    return;
+  }
+  await Promise.all([
+    useUserStore.getState().loadUser(forceRefresh),
+    useGoalStore.getState().loadGoals(forceRefresh),
+    useHabitStore.getState().loadHabits(forceRefresh),
+    useTaskStore.getState().loadTasks(forceRefresh),
+  ]);
+  const loadSecondary = () =>
+    Promise.all([
+      useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
+      useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
+    ]).catch(() => {});
+
+  if (currentPath.startsWith('/dashboard') || currentPath.startsWith('/analytics')) {
+    void loadSecondary();
+  } else {
+    scheduleIdleTask(() => {
+      if (isActive()) void loadSecondary();
+    }, 500);
+  }
+}
+
+async function requestBrowserStoragePersistence(onResult: (granted: boolean) => void): Promise<void> {
+  if (typeof navigator === 'undefined') return;
+  const persistFn = navigator.storage?.persist;
+  if (!persistFn) return;
+  try {
+    const persistent = await navigator.storage.persisted();
+    onResult(persistent);
+    if (persistent) return;
+    const granted = await navigator.storage.persist();
+    onResult(granted);
+    if (granted) console.log('[SyncProvider] Storage persistence granted successfully');
+    else console.warn('[SyncProvider] Storage persistence could not be granted');
+  } catch (err) {
+    console.error('[SyncProvider] Error checking storage persistence:', err);
+  }
+}
+
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuth();
   const userId = user?.id || null;
@@ -38,59 +114,31 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [isDataReady, setIsDataReady] = useState(false);
   const [isStoragePersistent, setIsStoragePersistent] = useState(false);
 
-  // Request WebKit storage persistence on client mount
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
-      navigator.storage.persisted().then((persistent) => {
-        setIsStoragePersistent(persistent);
-        if (!persistent) {
-          navigator.storage.persist().then((granted) => {
-            setIsStoragePersistent(granted);
-            if (granted) {
-              console.log('[SyncProvider] Storage persistence granted successfully');
-            } else {
-              console.warn('[SyncProvider] Storage persistence could not be granted');
-            }
-          }).catch((err) => {
-            console.error('[SyncProvider] Error requesting storage persistence:', err);
-          });
-        }
-      }).catch((err) => {
-        console.error('[SyncProvider] Error checking storage persistence:', err);
-      });
-    }
+    void requestBrowserStoragePersistence(setIsStoragePersistent);
   }, []);
 
-  // Update metadata periodically
   const updateMetadata = useCallback(() => {
-    const syncEngine = getSyncEngine();
-    const metadata = syncEngine.getSyncMetadata();
+    const metadata = getSyncEngine().getSyncMetadata();
     setPendingChanges(metadata.pendingChanges);
     setLastSyncAt(metadata.lastSyncAt);
     setIsOnline(metadata.isOnline);
   }, []);
 
-  // Background sync: Supabase → IndexedDB → Zustand stores
-  // Always renders children immediately — never blocks UI.
   useEffect(() => {
     if (!isAuthenticated || !userId) {
       hasInitializedRef.current = false;
       lastUserIdRef.current = null;
-      setIsDataReady(true); // Not authenticated — nothing to load
+      setIsDataReady(true);
       return;
     }
-
     if (hasInitializedRef.current && lastUserIdRef.current === userId) {
       setIsDataReady(true);
       return;
     }
-
-    if (isInitializingRef.current) {
-      return;
-    }
+    if (isInitializingRef.current) return;
 
     isInitializingRef.current = true;
-
     let active = true;
     let metadataInterval: NodeJS.Timeout | null = null;
     let unsubscribe: (() => void) | null = null;
@@ -98,64 +146,18 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     const initializeData = async () => {
       try {
         const syncEngine = getSyncEngine();
-
         unsubscribe = syncEngine.onSyncStatusChange((status) => {
-          if (active) {
-            setSyncStatus(status);
-            setIsSyncing(status.type === 'syncing');
-          }
+          if (!active) return;
+          setSyncStatus(status);
+          setIsSyncing(status.type === 'syncing');
         });
 
-        // STEP 1: Fast local schema/data migrations
         if (active) setSyncStatus({ type: 'syncing', message: 'Loading local data...', progress: 30 });
         await syncEngine.checkAndRunMigrations();
-
         if (!active) return;
 
-        // STEP 2: Hydrate route-critical stores from local IndexedDB immediately (<50ms)
         const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/dashboard';
-        const hydrateAllLocalStores = async (forceRefresh = false) => {
-          const { useFitnessStore } = await import('@/lib/stores/fitness');
-          if (currentPath.startsWith('/finance')) {
-            await Promise.all([
-              useUserStore.getState().loadUser(forceRefresh),
-              useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
-              useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
-              useHabitStore.getState().loadHabits(forceRefresh),
-              useGoalStore.getState().loadGoals(forceRefresh),
-              useTaskStore.getState().loadTasks(forceRefresh),
-            ]);
-          } else if (currentPath.startsWith('/fitness')) {
-            await Promise.all([
-              useUserStore.getState().loadUser(forceRefresh),
-              useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
-              useHabitStore.getState().loadHabits(forceRefresh),
-              useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
-            ]);
-          } else {
-            await Promise.all([
-              useUserStore.getState().loadUser(forceRefresh),
-              useGoalStore.getState().loadGoals(forceRefresh),
-              useHabitStore.getState().loadHabits(forceRefresh),
-              useTaskStore.getState().loadTasks(forceRefresh),
-            ]);
-            // Hydrate heavy domain stores right after critical paint unless already needed on /dashboard
-            const loadSecondary = () => Promise.all([
-              useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
-              useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
-            ]).catch(() => {});
-            if (currentPath.startsWith('/dashboard') || currentPath.startsWith('/analytics')) {
-              void loadSecondary();
-            } else if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-              (window as any).requestIdleCallback(() => { if (active) void loadSecondary(); }, { timeout: 500 });
-            } else {
-              setTimeout(() => { if (active) void loadSecondary(); }, 50);
-            }
-          }
-        };
-
-        await hydrateAllLocalStores(false);
-
+        await hydrateStoresForRoute(currentPath, userId, false, () => active);
         if (!active) return;
 
         hasInitializedRef.current = true;
@@ -168,38 +170,26 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           if (active) updateMetadata();
         }, 30000);
 
-        // STEP 3: Defer cloud Supabase two-way sync to post-paint idle time so Frame 1 & touch never block
-        const runDeferredCloudSync = async () => {
+        scheduleIdleTask(async () => {
           if (!active) return;
           try {
             await syncEngine.syncAll();
           } catch (syncErr) {
             console.warn('[SyncProvider] Background initial sync failed:', syncErr);
           }
-        };
-
-        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-          (window as any).requestIdleCallback(() => {
-            void runDeferredCloudSync();
-          }, { timeout: 1500 });
-        } else {
-          setTimeout(() => {
-            void runDeferredCloudSync();
-          }, 300);
-        }
-
+        }, 1500);
       } catch (error) {
         console.error('[SyncProvider] Initialization failed:', error);
         if (active) {
           setSyncStatus({ type: 'error', message: 'Failed to load data' });
-          setIsDataReady(true); // Still render even if sync fails
+          setIsDataReady(true);
         }
       } finally {
         isInitializingRef.current = false;
       }
     };
 
-    initializeData();
+    void initializeData();
 
     return () => {
       active = false;

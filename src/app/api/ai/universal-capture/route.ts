@@ -14,62 +14,93 @@ import {
   type UniversalParserContext,
 } from '@/lib/quick-capture/universal-parser';
 
-export async function POST(req: NextRequest) {
-  try {
-    const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+const UNIVERSAL_CAPTURE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    expenses: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          amount: { type: Type.NUMBER },
+          txType: { type: Type.STRING },
+          accountNameHint: { type: Type.STRING },
+          categorySlug: { type: Type.STRING },
+          isJunkFood: { type: Type.BOOLEAN },
+          date: { type: Type.STRING },
+        },
+        required: ['title', 'amount'],
+      },
+    },
+    meals: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          calories: { type: Type.NUMBER },
+          proteinG: { type: Type.NUMBER },
+          carbsG: { type: Type.NUMBER },
+          fatG: { type: Type.NUMBER },
+          mealType: { type: Type.STRING },
+          isJunk: { type: Type.BOOLEAN },
+          date: { type: Type.STRING },
+        },
+        required: ['name', 'calories', 'proteinG'],
+      },
+    },
+    workouts: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          workoutType: { type: Type.STRING },
+          durationMinutes: { type: Type.NUMBER },
+          date: { type: Type.STRING },
+        },
+        required: ['title', 'durationMinutes'],
+      },
+    },
+    bio: {
+      type: Type.OBJECT,
+      properties: {
+        stepsExact: { type: Type.NUMBER },
+        stepsDelta: { type: Type.NUMBER },
+        waterDeltaMl: { type: Type.NUMBER },
+        sleepHours: { type: Type.NUMBER },
+        energyLevel: { type: Type.NUMBER },
+        weightKg: { type: Type.NUMBER },
+        waistInches: { type: Type.NUMBER },
+        date: { type: Type.STRING },
+      },
+    },
+    tasks: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          priority: { type: Type.STRING },
+          category: { type: Type.STRING },
+          dueDate: { type: Type.STRING },
+        },
+        required: ['title'],
+      },
+    },
+  },
+};
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+function buildUniversalCapturePrompt(rawText: string, todayIso: string, context: UniversalParserContext): string {
+  const accountList = (context.accounts || []).map((a) => `${a.name} (${a.type})`).join(', ');
+  const categoryList = (context.categories || []).map((c) => `${c.name} [${c.slug}]`).join(', ');
+  const stapleList = (context.mealTemplates || [])
+    .slice(0, 12)
+    .map((t) => `${t.name} (${t.calories} kcal, ${t.proteinG}g P)`)
+    .join(', ');
 
-    const limitResult = await rateLimit(req, { limit: 25, windowMs: 60 * 1000 });
-    if (!limitResult.success) {
-      return rateLimitResponse(limitResult.retryAfter);
-    }
-
-    const body = await req.json();
-    const rawText = typeof body?.text === 'string' ? body.text.trim() : '';
-    if (!rawText) {
-      return NextResponse.json({ error: 'Capture text is required' }, { status: 400 });
-    }
-
-    const todayIso = getIstIsoDate();
-    const context: UniversalParserContext = {
-      todayIso,
-      accounts: Array.isArray(body?.accounts) ? body.accounts : [],
-      categories: Array.isArray(body?.categories) ? body.categories : [],
-      mealTemplates: Array.isArray(body?.mealTemplates) ? body.mealTemplates : [],
-      supplements: Array.isArray(body?.supplements) ? body.supplements : [],
-    };
-
-    const deterministic = parseUniversalCapture(rawText, context);
-    const apiKeys = resolveGeminiApiKeys();
-
-    if (apiKeys.length === 0) {
-      return NextResponse.json({
-        actions: deterministic.actions,
-        detectedDate: deterministic.detectedDate,
-        summary: deterministic.summary,
-        source: 'deterministic',
-      });
-    }
-
-    try {
-      const accountList = (context.accounts || [])
-        .map((a) => `${a.name} (${a.type})`)
-        .join(', ');
-      const categoryList = (context.categories || [])
-        .map((c) => `${c.name} [${c.slug}]`)
-        .join(', ');
-      const stapleList = (context.mealTemplates || [])
-        .slice(0, 12)
-        .map((t) => `${t.name} (${t.calories} kcal, ${t.proteinG}g P)`)
-        .join(', ');
-
-      const prompt = `Parse this Hinglish/English daily life log into structured HabitFlow actions.
+  return `Parse this Hinglish/English daily life log into structured HabitFlow actions.
 Today (IST): ${todayIso}
 User text: "${rawText}"
 Accounts: ${accountList || 'UPI, Slice CC, Axis CC, Cash'}
@@ -81,258 +112,279 @@ Rules:
 2. Separate compound meals (e.g. "4 eggs + oats + milk") cleanly; keep staple combos like "Oats + Milk" or "Chicken + Rice" together.
 3. Extract workouts (title, workoutType, durationMinutes), steps, water (ml), sleep (hours), energy (1-5), weight (kg), waist (inches), supplement doses, and tasks.
 4. Use YYYY-MM-DD dates anchored on IST ${todayIso}.`;
+}
 
-      const aiResponse = await runWithGeminiFailover(async (ai) => {
-        const res = await ai.models.generateContent({
-          model: DEFAULT_GEMINI_MODEL,
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                expenses: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING },
-                      amount: { type: Type.NUMBER },
-                      txType: { type: Type.STRING },
-                      accountNameHint: { type: Type.STRING },
-                      categorySlug: { type: Type.STRING },
-                      isJunkFood: { type: Type.BOOLEAN },
-                      date: { type: Type.STRING },
-                    },
-                    required: ['title', 'amount'],
-                  },
-                },
-                meals: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      name: { type: Type.STRING },
-                      calories: { type: Type.NUMBER },
-                      proteinG: { type: Type.NUMBER },
-                      carbsG: { type: Type.NUMBER },
-                      fatG: { type: Type.NUMBER },
-                      mealType: { type: Type.STRING },
-                      isJunk: { type: Type.BOOLEAN },
-                      date: { type: Type.STRING },
-                    },
-                    required: ['name', 'calories', 'proteinG'],
-                  },
-                },
-                workouts: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING },
-                      workoutType: { type: Type.STRING },
-                      durationMinutes: { type: Type.NUMBER },
-                      date: { type: Type.STRING },
-                    },
-                    required: ['title', 'durationMinutes'],
-                  },
-                },
-                bio: {
-                  type: Type.OBJECT,
-                  properties: {
-                    stepsExact: { type: Type.NUMBER },
-                    stepsDelta: { type: Type.NUMBER },
-                    waterDeltaMl: { type: Type.NUMBER },
-                    sleepHours: { type: Type.NUMBER },
-                    energyLevel: { type: Type.NUMBER },
-                    weightKg: { type: Type.NUMBER },
-                    waistInches: { type: Type.NUMBER },
-                    date: { type: Type.STRING },
-                  },
-                },
-                tasks: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING },
-                      priority: { type: Type.STRING },
-                      category: { type: Type.STRING },
-                      dueDate: { type: Type.STRING },
-                    },
-                    required: ['title'],
-                  },
-                },
-              },
-            },
-          },
-        });
-        return res.text ? JSON.parse(res.text) : null;
+function resolveMatchedAccount(accs: NonNullable<UniversalParserContext['accounts']>, hintRaw: unknown) {
+  const hint = String(hintRaw || '').toLowerCase();
+  if (!hint) return accs[0];
+  return accs.find((a) => a.name.toLowerCase().includes(hint)) || accs.find((a) => a.type === hint) || accs[0];
+}
+
+function resolveMatchedCategory(
+  cats: NonNullable<UniversalParserContext['categories']>,
+  slugRaw: unknown,
+  isJunkFood: boolean
+) {
+  const slug = String(slugRaw || '').toLowerCase();
+  const bySlug = cats.find((c) => c.slug.toLowerCase() === slug);
+  if (bySlug) return bySlug;
+  if (isJunkFood) {
+    const junkCat = cats.find((c) => c.slug.includes('junk') || c.name.toLowerCase().includes('junk'));
+    if (junkCat) return junkCat;
+  }
+  return cats[0];
+}
+
+function normalizeExpenseTxType(txType: unknown): 'expense' | 'income' | 'investment' {
+  if (txType === 'income' || txType === 'investment') return txType;
+  return 'expense';
+}
+
+function nonNegInt(val: unknown): number {
+  return Math.max(0, Math.round(Number(val) || 0));
+}
+
+function nonNegNum(val: unknown): number {
+  return Math.max(0, Number(val) || 0);
+}
+
+function buildExpenseCategoryProps(matchedCat: { id: string; slug: string; name: string } | undefined, rawSlug: unknown) {
+  const fallbackSlug = String(rawSlug || '').toLowerCase() || 'other-expense';
+  return {
+    categoryId: matchedCat?.id,
+    categorySlug: matchedCat?.slug ?? fallbackSlug,
+    categoryName: matchedCat?.name ?? 'General',
+  };
+}
+
+function mapSingleAiExpense(
+  exp: any,
+  index: number,
+  context: UniversalParserContext,
+  todayIso: string
+): UniversalCaptureAction | null {
+  const amount = Number(exp.amount) || 0;
+  if (amount <= 0) return null;
+  const matchedAcc = resolveMatchedAccount(context.accounts || [], exp.accountNameHint);
+  const matchedCat = resolveMatchedCategory(context.categories || [], exp.categorySlug, Boolean(exp.isJunkFood));
+
+  return {
+    id: `ai_exp_${index}`,
+    kind: 'expense',
+    enabled: true,
+    title: String(exp.title || 'Expense'),
+    amount,
+    txType: normalizeExpenseTxType(exp.txType),
+    accountId: matchedAcc?.id,
+    accountName: matchedAcc?.name ?? exp.accountNameHint ?? 'UPI',
+    ...buildExpenseCategoryProps(matchedCat, exp.categorySlug),
+    date: exp.date ?? todayIso,
+    isJunkFood: Boolean(exp.isJunkFood),
+  };
+}
+
+function mapAiExpenses(
+  expenses: any[],
+  context: UniversalParserContext,
+  todayIso: string
+): { actions: UniversalCaptureAction[]; expenseIds: string[] } {
+  const actions: UniversalCaptureAction[] = [];
+  const expenseIds: string[] = [];
+  expenses.forEach((exp, i) => {
+    const action = mapSingleAiExpense(exp, i, context, todayIso);
+    if (!action) return;
+    expenseIds.push(action.id);
+    actions.push(action);
+  });
+  return { actions, expenseIds };
+}
+
+function mapSingleAiMeal(
+  meal: any,
+  index: number,
+  singleExpenseId: string | undefined,
+  todayIso: string
+): UniversalCaptureAction {
+  return {
+    id: `ai_meal_${index}`,
+    kind: 'meal',
+    enabled: true,
+    name: String(meal.name || 'Meal'),
+    calories: nonNegInt(meal.calories),
+    proteinG: nonNegNum(meal.proteinG),
+    carbsG: nonNegNum(meal.carbsG),
+    fatG: nonNegNum(meal.fatG),
+    mealType: meal.mealType ?? 'snack',
+    isJunk: Boolean(meal.isJunk),
+    templateId: null,
+    date: meal.date ?? todayIso,
+    linkedExpenseActionId: meal.isJunk ? singleExpenseId : undefined,
+  };
+}
+
+function mapAiMeals(meals: any[], expenseIds: string[], todayIso: string): UniversalCaptureAction[] {
+  const singleExpenseId = expenseIds.length === 1 ? expenseIds[0] : undefined;
+  return meals.map((meal, i) => mapSingleAiMeal(meal, i, singleExpenseId, todayIso));
+}
+
+function mapAiWorkouts(workouts: any[], todayIso: string): UniversalCaptureAction[] {
+  return workouts.map((w, i) => {
+    const dur = Math.max(5, Math.round(Number(w.durationMinutes) || 45));
+    return {
+      id: `ai_wo_${i}`,
+      kind: 'workout',
+      enabled: true,
+      title: String(w.title || 'Workout'),
+      workoutType: w.workoutType ?? 'strength',
+      durationMinutes: dur,
+      estimatedCaloriesBurned: dur * 6,
+      exercises: [],
+      date: w.date ?? todayIso,
+    };
+  });
+}
+
+const BIO_FIELD_MAPPERS: Array<[string, (v: unknown) => number]> = [
+  ['stepsExact', (v) => Math.round(Number(v))],
+  ['stepsDelta', (v) => Math.round(Number(v))],
+  ['waterDeltaMl', (v) => Math.round(Number(v))],
+  ['sleepHours', (v) => Number(v)],
+  ['energyLevel', (v) => Math.min(5, Math.max(1, Math.round(Number(v))))],
+  ['weightKg', (v) => Number(v)],
+  ['waistInches', (v) => Number(v)],
+];
+
+function mapAiBio(bio: any, todayIso: string): UniversalCaptureAction | null {
+  if (!bio) return null;
+  const fields: Record<string, number> = {};
+  for (const [key, transform] of BIO_FIELD_MAPPERS) {
+    if (bio[key]) fields[key] = transform(bio[key]);
+  }
+  if (Object.keys(fields).length === 0) return null;
+
+  return { id: 'ai_bio_0', kind: 'bio', enabled: true, date: bio.date ?? todayIso, ...fields };
+}
+
+function normalizeTaskPriority(rawPrio: string): 'high' | 'low' | 'medium' {
+  if (rawPrio === 'urgent' || rawPrio === 'high') return 'high';
+  return rawPrio === 'low' ? 'low' : 'medium';
+}
+
+function normalizeTaskDomain(rawCat: string): 'health' | 'finance' | 'fitness' | 'general' {
+  if (rawCat === 'health' || rawCat === 'finance' || rawCat === 'fitness') return rawCat;
+  return 'general';
+}
+
+function mapAiTasks(tasks: any[], todayIso: string): UniversalCaptureAction[] {
+  return tasks
+    .filter((t) => Boolean(t?.title))
+    .map((t, i) => {
+      const rawPrio = String(t.priority || '').toLowerCase();
+      return {
+        id: `ai_task_${i}`,
+        kind: 'task',
+        enabled: true,
+        title: String(t.title),
+        priority: normalizeTaskPriority(rawPrio),
+        isUrgent: rawPrio === 'urgent',
+        domainTag: normalizeTaskDomain(String(t.category || '').toLowerCase()),
+        dueDate: t.dueDate ?? todayIso,
+      };
+    });
+}
+
+function mapAiResponseToActions(
+  aiResponse: any,
+  context: UniversalParserContext,
+  deterministicActions: UniversalCaptureAction[],
+  todayIso: string
+): UniversalCaptureAction[] {
+  const { actions: expenseActions, expenseIds } = Array.isArray(aiResponse.expenses)
+    ? mapAiExpenses(aiResponse.expenses, context, todayIso)
+    : { actions: [], expenseIds: [] };
+
+  const bioAction = mapAiBio(aiResponse.bio, todayIso);
+  return [
+    ...expenseActions,
+    ...(Array.isArray(aiResponse.meals) ? mapAiMeals(aiResponse.meals, expenseIds, todayIso) : []),
+    ...(Array.isArray(aiResponse.workouts) ? mapAiWorkouts(aiResponse.workouts, todayIso) : []),
+    ...(bioAction ? [bioAction] : []),
+    ...(Array.isArray(aiResponse.tasks) ? mapAiTasks(aiResponse.tasks, todayIso) : []),
+    ...deterministicActions.filter((a) => a.kind === 'supplement'),
+  ];
+}
+
+function deterministicJsonResponse(deterministic: ReturnType<typeof parseUniversalCapture>) {
+  return NextResponse.json({
+    actions: deterministic.actions,
+    detectedDate: deterministic.detectedDate,
+    summary: deterministic.summary,
+    source: 'deterministic',
+  });
+}
+
+const asArray = <T,>(val: unknown): T[] => (Array.isArray(val) ? val : []);
+
+function buildContextFromBody(body: any, todayIso: string): UniversalParserContext {
+  return {
+    todayIso,
+    accounts: asArray(body?.accounts),
+    categories: asArray(body?.categories),
+    mealTemplates: asArray(body?.mealTemplates),
+    supplements: asArray(body?.supplements),
+  };
+}
+
+async function resolveCaptureResponse(params: {
+  rawText: string;
+  todayIso: string;
+  context: UniversalParserContext;
+  deterministic: ReturnType<typeof parseUniversalCapture>;
+}) {
+  const { rawText, todayIso, context, deterministic } = params;
+  if (resolveGeminiApiKeys().length === 0) return deterministicJsonResponse(deterministic);
+  try {
+    const aiResponse = await runWithGeminiFailover(async (ai) => {
+      const res = await ai.models.generateContent({
+        model: DEFAULT_GEMINI_MODEL,
+        contents: buildUniversalCapturePrompt(rawText, todayIso, context),
+        config: { responseMimeType: 'application/json', responseSchema: UNIVERSAL_CAPTURE_SCHEMA },
       });
+      return res.text ? JSON.parse(res.text) : null;
+    });
+    if (!aiResponse) return deterministicJsonResponse(deterministic);
 
-      if (!aiResponse) {
-        return NextResponse.json({
-          actions: deterministic.actions,
-          detectedDate: deterministic.detectedDate,
-          summary: deterministic.summary,
-          source: 'deterministic',
-        });
-      }
+    const actions = mapAiResponseToActions(aiResponse, context, deterministic.actions, todayIso);
+    return NextResponse.json({
+      actions: actions.length > 0 ? actions : deterministic.actions,
+      detectedDate: todayIso,
+      summary: deterministic.summary,
+      source: actions.length > 0 ? 'gemini' : 'deterministic',
+    });
+  } catch {
+    return deterministicJsonResponse(deterministic);
+  }
+}
 
-      const actions: UniversalCaptureAction[] = [];
-      const accs = context.accounts || [];
-      const cats = context.categories || [];
-      const expenseIdsByIndex: string[] = [];
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-      if (Array.isArray(aiResponse.expenses)) {
-        aiResponse.expenses.forEach((exp: any, i: number) => {
-          const amount = Number(exp.amount || 0);
-          if (amount <= 0) return;
-          const hint = String(exp.accountNameHint || '').toLowerCase();
-          const matchedAcc =
-            accs.find((a) => hint && a.name.toLowerCase().includes(hint)) ||
-            accs.find((a) => hint && a.type === hint) ||
-            accs[0];
-          const slug = String(exp.categorySlug || '').toLowerCase();
-          const matchedCat =
-            cats.find((c) => c.slug.toLowerCase() === slug) ||
-            (exp.isJunkFood ? cats.find((c) => c.slug.includes('junk') || c.name.toLowerCase().includes('junk')) : undefined) ||
-            cats[0];
-          const expId = `ai_exp_${i}`;
-          expenseIdsByIndex.push(expId);
+    const limitResult = await rateLimit(req, { limit: 25, windowMs: 60 * 1000 });
+    if (!limitResult.success) return rateLimitResponse(limitResult.retryAfter);
 
-          actions.push({
-            id: expId,
-            kind: 'expense',
-            enabled: true,
-            title: String(exp.title || 'Expense'),
-            amount,
-            txType:
-              exp.txType === 'income' || exp.txType === 'investment' ? exp.txType : 'expense',
-            accountId: matchedAcc?.id,
-            accountName: matchedAcc?.name || exp.accountNameHint || 'UPI',
-            categoryId: matchedCat?.id,
-            categorySlug: matchedCat?.slug || slug || 'other-expense',
-            categoryName: matchedCat?.name || 'General',
-            date: exp.date || todayIso,
-            isJunkFood: Boolean(exp.isJunkFood),
-          });
-        });
-      }
+    const body = await req.json();
+    const rawText = typeof body?.text === 'string' ? body.text.trim() : '';
+    if (!rawText) return NextResponse.json({ error: 'Capture text is required' }, { status: 400 });
 
-      if (Array.isArray(aiResponse.meals)) {
-        aiResponse.meals.forEach((meal: any, i: number) => {
-          const linkedExp = meal.isJunk && expenseIdsByIndex.length === 1 ? expenseIdsByIndex[0] : undefined;
-          actions.push({
-            id: `ai_meal_${i}`,
-            kind: 'meal',
-            enabled: true,
-            name: String(meal.name || 'Meal'),
-            calories: Math.max(0, Math.round(Number(meal.calories || 0))),
-            proteinG: Math.max(0, Number(meal.proteinG || 0)),
-            carbsG: Math.max(0, Number(meal.carbsG || 0)),
-            fatG: Math.max(0, Number(meal.fatG || 0)),
-            mealType: meal.mealType || 'snack',
-            isJunk: Boolean(meal.isJunk),
-            templateId: null,
-            date: meal.date || todayIso,
-            linkedExpenseActionId: linkedExp,
-          });
-        });
-      }
-
-      if (Array.isArray(aiResponse.workouts)) {
-        aiResponse.workouts.forEach((w: any, i: number) => {
-          const dur = Math.max(5, Math.round(Number(w.durationMinutes || 45)));
-          actions.push({
-            id: `ai_wo_${i}`,
-            kind: 'workout',
-            enabled: true,
-            title: String(w.title || 'Workout'),
-            workoutType: w.workoutType || 'strength',
-            durationMinutes: dur,
-            estimatedCaloriesBurned: dur * 6,
-            exercises: [],
-            date: w.date || todayIso,
-          });
-        });
-      }
-
-      const bio = aiResponse.bio;
-      if (
-        bio &&
-        (bio.stepsExact ||
-          bio.stepsDelta ||
-          bio.waterDeltaMl ||
-          bio.sleepHours ||
-          bio.energyLevel ||
-          bio.weightKg ||
-          bio.waistInches)
-      ) {
-        actions.push({
-          id: 'ai_bio_0',
-          kind: 'bio',
-          enabled: true,
-          date: bio.date || todayIso,
-          ...(bio.stepsExact ? { stepsExact: Math.round(Number(bio.stepsExact)) } : {}),
-          ...(bio.stepsDelta ? { stepsDelta: Math.round(Number(bio.stepsDelta)) } : {}),
-          ...(bio.waterDeltaMl ? { waterDeltaMl: Math.round(Number(bio.waterDeltaMl)) } : {}),
-          ...(bio.sleepHours ? { sleepHours: Number(bio.sleepHours) } : {}),
-          ...(bio.energyLevel ? { energyLevel: Math.min(5, Math.max(1, Math.round(Number(bio.energyLevel)))) } : {}),
-          ...(bio.weightKg ? { weightKg: Number(bio.weightKg) } : {}),
-          ...(bio.waistInches ? { waistInches: Number(bio.waistInches) } : {}),
-        });
-      }
-
-      if (Array.isArray(aiResponse.tasks)) {
-        aiResponse.tasks.forEach((t: any, i: number) => {
-          if (!t?.title) return;
-          const rawPrio = String(t.priority || '').toLowerCase();
-          const rawCat = String(t.category || '').toLowerCase();
-          const domainTag =
-            rawCat === 'health' || rawCat === 'finance' || rawCat === 'fitness'
-              ? rawCat
-              : 'general';
-          actions.push({
-            id: `ai_task_${i}`,
-            kind: 'task',
-            enabled: true,
-            title: String(t.title),
-            priority:
-              rawPrio === 'urgent' || rawPrio === 'high'
-                ? 'high'
-                : rawPrio === 'low'
-                  ? 'low'
-                  : 'medium',
-            isUrgent: rawPrio === 'urgent',
-            domainTag,
-            dueDate: t.dueDate || todayIso,
-          });
-        });
-      }
-
-      // Preserve supplement detections from deterministic parser
-      for (const a of deterministic.actions) {
-        if (a.kind === 'supplement') {
-          actions.push(a);
-        }
-      }
-
-      const finalActions = actions.length > 0 ? actions : deterministic.actions;
-      return NextResponse.json({
-        actions: finalActions,
-        detectedDate: todayIso,
-        summary: deterministic.summary,
-        source: actions.length > 0 ? 'gemini' : 'deterministic',
-      });
-    } catch {
-      return NextResponse.json({
-        actions: deterministic.actions,
-        detectedDate: deterministic.detectedDate,
-        summary: deterministic.summary,
-        source: 'deterministic',
-      });
-    }
+    const todayIso = getIstIsoDate();
+    const context = buildContextFromBody(body, todayIso);
+    const deterministic = parseUniversalCapture(rawText, context);
+    return await resolveCaptureResponse({ rawText, todayIso, context, deterministic });
   } catch (err) {
     console.error('[UniversalCapture API] Error:', err);
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

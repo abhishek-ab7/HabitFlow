@@ -89,6 +89,30 @@ function updateThemeColorMeta(colorTheme: ColorThemeId, resolved: 'light' | 'dar
   }
 }
 
+function resolveStoredTheme(): Theme | null {
+  const rawTheme = safeStorageGet('theme');
+  if (rawTheme === 'auto') {
+    safeStorageSet('theme', 'system');
+    return 'system';
+  }
+  if (rawTheme && VALID_THEMES.includes(rawTheme as Theme)) {
+    return rawTheme as Theme;
+  }
+  return null;
+}
+
+function resolveStoredAccentOverride(): AccentOverrideId {
+  const rawAccentOverride = safeStorageGet(ACCENT_OVERRIDE_STORAGE_KEY);
+  if (isValidAccentOverride(rawAccentOverride)) return rawAccentOverride;
+
+  const legacyAccent = safeStorageGet(LEGACY_ACCENT_STORAGE_KEY);
+  if (!legacyAccent || legacyAccent === 'mint') return DEFAULT_ACCENT_OVERRIDE;
+  if (!isValidAccentOverride(legacyAccent)) return DEFAULT_ACCENT_OVERRIDE;
+
+  safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, legacyAccent);
+  return legacyAccent;
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('system');
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
@@ -96,15 +120,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [accentOverride, setAccentOverrideState] = useState<AccentOverrideId>(DEFAULT_ACCENT_OVERRIDE);
   const [mounted, setMounted] = useState(false);
 
-  // Hydrate brightness, colorTheme, and accentOverride from localStorage on client mount
   useEffect(() => {
-    const rawTheme = safeStorageGet('theme');
-    if (rawTheme === 'auto') {
-      safeStorageSet('theme', 'system');
-      setThemeState('system');
-    } else if (rawTheme && VALID_THEMES.includes(rawTheme as Theme)) {
-      setThemeState(rawTheme as Theme);
-    }
+    const initialTheme = resolveStoredTheme();
+    if (initialTheme) setThemeState(initialTheme);
 
     const rawColorTheme = safeStorageGet(COLOR_THEME_STORAGE_KEY);
     const initialColorTheme: ColorThemeId = isValidColorTheme(rawColorTheme)
@@ -113,20 +131,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setColorThemeState(initialColorTheme);
     applyColorThemeToDom(initialColorTheme);
 
-    const rawAccentOverride = safeStorageGet(ACCENT_OVERRIDE_STORAGE_KEY);
-    let initialAccentOverride: AccentOverrideId = DEFAULT_ACCENT_OVERRIDE;
-
-    if (isValidAccentOverride(rawAccentOverride)) {
-      initialAccentOverride = rawAccentOverride;
-    } else {
-      // Seamlessly migrate legacy habitflow_accent preference if present
-      const legacyAccent = safeStorageGet(LEGACY_ACCENT_STORAGE_KEY);
-      if (legacyAccent && legacyAccent !== 'mint' && isValidAccentOverride(legacyAccent)) {
-        initialAccentOverride = legacyAccent;
-        safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, initialAccentOverride);
-      }
-    }
-
+    const initialAccentOverride = resolveStoredAccentOverride();
     setAccentOverrideState(initialAccentOverride);
     applyAccentOverrideToDom(initialAccentOverride);
     setMounted(true);

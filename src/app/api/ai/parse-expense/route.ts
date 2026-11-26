@@ -49,133 +49,107 @@ function extractRelativeDate(rawText: string): string {
   return getIstIsoDate(target);
 }
 
-function parseExpenseDeterministically(rawText: string): ParsedExpenseResult {
-  const text = rawText.trim();
-  const lower = text.toLowerCase();
+const PAYMENT_METHOD_RULES: Array<[RegExp, ParsedExpenseResult['paymentMethodType']]> = [
+  [/\b(credit\s*card|cc|amex|hdfc\s*card|icici\s*card|sbi\s*card)\b/, 'credit_card'],
+  [/\bcash\b/, 'cash'],
+  [/\b(bank|neft|imps|netbanking|debit)\b/, 'bank'],
+  [/\bwallet\b/, 'wallet'],
+];
 
-  const amountMatch =
-    text.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i) ||
-    text.match(/\b([\d,]+(?:\.\d{1,2})?)\s*(?:rs|inr|rupees|bucks)\b/i) ||
-    text.match(/\b(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)\b/);
+const EXPENSE_CATEGORY_RULES: Array<[RegExp, string, string?]> = [
+  [/\b(momos?|samosa|pakora|chaat|pani\s*puri|golgappa|jalebi|fries|chips|kurkure|lays|ice\s*cream|pastry|brownie|waffle|donut|burger|pizza|dominos|kfc|mcdonald|junk\s*food)\b/, 'junk-food', 'Fast Food & Street'],
+  [/\b(zomato|swiggy|food|dinner|lunch|breakfast|coffee|chai|cafe|restaurant)\b/, 'food-dining', 'Online Delivery'],
+  [/\b(zepto|blinkit|instamart|grocery|groceries|bigbasket|dmart|milk|vegetables)\b/, 'groceries-household', 'Supermarket'],
+  [/\b(pharmacy|medicine|doctor|apollo|1mg|protein|whey|supplement|hospital)\b/, 'medical-supplements'],
+  [/\b(electricity|wifi|broadband|recharge|bill|water|gas|jio|airtel)\b/, 'utilities-bills'],
+  [/\b(uber|ola|rapido|metro|fuel|petrol|diesel|cab|auto|flight|train|irctc)\b/, 'transport-fuel'],
+  [/\b(netflix|spotify|prime|movie|gym|subscription|hotstar|youtube)\b/, 'entertainment-subscriptions'],
+  [/\b(mother|mom|father|dad|parents|family|gift)\b/, 'family-commitments'],
+  [/\b(emi|loan|credit card bill|repay)\b/, 'emis-debt-repayment'],
+];
 
-  const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
+function inferTxType(lower: string): ParsedExpenseResult['type'] {
+  if (/\b(salary|received|credited|income|bonus|refund|cashback|dividend)\b/.test(lower)) return 'income';
+  if (/\b(sip|mutual fund|nifty|index fund|stocks|zerodha|groww|invested)\b/.test(lower)) return 'investment';
+  return 'expense';
+}
 
-  let type: 'expense' | 'income' | 'investment' = 'expense';
-  if (/\b(salary|received|credited|income|bonus|refund|cashback|dividend)\b/.test(lower)) {
-    type = 'income';
-  } else if (/\b(sip|mutual fund|nifty|index fund|stocks|zerodha|groww|invested)\b/.test(lower)) {
-    type = 'investment';
-  }
+function inferCategoryAndSub(type: ParsedExpenseResult['type'], lower: string): { categorySlug: string; subcategory: string } {
+  if (type !== 'expense') return { categorySlug: 'investments-savings', subcategory: '' };
+  const match = EXPENSE_CATEGORY_RULES.find(([re]) => re.test(lower));
+  return { categorySlug: match?.[1] ?? 'shopping-personal-care', subcategory: match?.[2] ?? '' };
+}
 
-  let paymentMethodType: ParsedExpenseResult['paymentMethodType'] = 'upi';
-  if (/\b(credit\s*card|cc|amex|hdfc\s*card|icici\s*card|sbi\s*card)\b/.test(lower)) {
-    paymentMethodType = 'credit_card';
-  } else if (/\bcash\b/.test(lower)) {
-    paymentMethodType = 'cash';
-  } else if (/\b(bank|neft|imps|netbanking|debit)\b/.test(lower)) {
-    paymentMethodType = 'bank';
-  } else if (/\bwallet\b/.test(lower)) {
-    paymentMethodType = 'wallet';
-  }
+function inferCommitmentKeyword(lower: string): string | null {
+  if (/\b(mother|mom|mummy|amma)\b/.test(lower)) return 'mother';
+  if (/\b(father|dad|papa)\b/.test(lower)) return 'father';
+  return null;
+}
 
-  let categorySlug = 'shopping-personal-care';
-  let subcategory = '';
-  if (type === 'income' || type === 'investment') {
-    categorySlug = 'investments-savings';
-  } else if (
-    /\b(momos?|samosa|pakora|chaat|pani\s*puri|golgappa|jalebi|fries|chips|kurkure|lays|ice\s*cream|pastry|brownie|waffle|donut|burger|pizza|dominos|kfc|mcdonald|junk\s*food)\b/.test(
-      lower
-    )
-  ) {
-    categorySlug = 'junk-food';
-    subcategory = 'Fast Food & Street';
-  } else if (/\b(zomato|swiggy|food|dinner|lunch|breakfast|coffee|chai|cafe|restaurant)\b/.test(lower)) {
-    categorySlug = 'food-dining';
-    subcategory = 'Online Delivery';
-  } else if (/\b(zepto|blinkit|instamart|grocery|groceries|bigbasket|dmart|milk|vegetables)\b/.test(lower)) {
-    categorySlug = 'groceries-household';
-    subcategory = 'Supermarket';
-  } else if (/\b(pharmacy|medicine|doctor|apollo|1mg|protein|whey|supplement|hospital)\b/.test(lower)) {
-    categorySlug = 'medical-supplements';
-  } else if (/\b(electricity|wifi|broadband|recharge|bill|water|gas|jio|airtel)\b/.test(lower)) {
-    categorySlug = 'utilities-bills';
-  } else if (/\b(uber|ola|rapido|metro|fuel|petrol|diesel|cab|auto|flight|train|irctc)\b/.test(lower)) {
-    categorySlug = 'transport-fuel';
-  } else if (/\b(netflix|spotify|prime|movie|gym|subscription|hotstar|youtube)\b/.test(lower)) {
-    categorySlug = 'entertainment-subscriptions';
-  } else if (/\b(mother|mom|father|dad|parents|family|gift)\b/.test(lower)) {
-    categorySlug = 'family-commitments';
-  } else if (/\b(emi|loan|credit card bill|repay)\b/.test(lower)) {
-    categorySlug = 'emis-debt-repayment';
-  }
-
-  let suggestedCommitmentKeyword: string | null = null;
-  if (/\b(mother|mom|mummy|amma)\b/.test(lower)) {
-    suggestedCommitmentKeyword = 'mother';
-  } else if (/\b(father|dad|papa)\b/.test(lower)) {
-    suggestedCommitmentKeyword = 'father';
-  }
-
-  // Clean title by stripping filler words, amounts, payment cues, and temporal cues
-  const cleanedTitle = text
+function cleanExpenseTitle(text: string, type: ParsedExpenseResult['type']): string {
+  const cleaned = text
     .replace(/(?:₹|rs\.?|inr)\s*[\d,]+(?:\.\d{1,2})?/gi, '')
     .replace(/\b[\d,]+(?:\.\d{1,2})?\s*(?:rs|inr|rupees|bucks)?\b/gi, '')
     .replace(/\b(spent|paid|bought|sent|received|got|for|on|at|to|via|using|by|with|from|yesterday|today|upi|gpay|phonepe|paytm|cash|credit card|card|bank|hdfc|icici|sbi)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const title = cleanedTitle
-    ? cleanedTitle.charAt(0).toUpperCase() + cleanedTitle.slice(1)
-    : type === 'income'
-    ? 'Income Entry'
-    : 'Quick Expense';
+  if (cleaned) return (cleaned.charAt(0).toUpperCase() + cleaned.slice(1)).slice(0, 80);
+  return type === 'income' ? 'Income Entry' : 'Quick Expense';
+}
+
+function parseExpenseDeterministically(rawText: string): ParsedExpenseResult {
+  const text = rawText.trim();
+  const lower = text.toLowerCase();
+  const amountMatch =
+    text.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i) ||
+    text.match(/\b([\d,]+(?:\.\d{1,2})?)\s*(?:rs|inr|rupees|bucks)\b/i) ||
+    text.match(/\b(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)\b/);
+  const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
+
+  const type = inferTxType(lower);
+  const paymentMethodType = PAYMENT_METHOD_RULES.find(([re]) => re.test(lower))?.[1] ?? 'upi';
+  const { categorySlug, subcategory } = inferCategoryAndSub(type, lower);
 
   return {
-    title: title.slice(0, 80),
+    title: cleanExpenseTitle(text, type),
     amount: isNaN(amount) ? 0 : amount,
     type,
     categorySlug,
     subcategory,
     paymentMethodType,
     date: extractRelativeDate(text),
-    suggestedCommitmentKeyword,
+    suggestedCommitmentKeyword: inferCommitmentKeyword(lower),
     tags: [],
     confidence: amount > 0 ? 78 : 40,
   };
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const rawText = typeof body?.rawText === 'string' ? body.rawText.trim() : '';
-    const categories: CategoryInput[] = Array.isArray(body?.categories) ? body.categories : [];
+const EXPENSE_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING },
+    amount: { type: Type.NUMBER },
+    type: { type: Type.STRING, enum: ['expense', 'income', 'investment'] },
+    categorySlug: { type: Type.STRING },
+    subcategory: { type: Type.STRING },
+    paymentMethodType: { type: Type.STRING, enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'] },
+    date: { type: Type.STRING },
+    suggestedCommitmentKeyword: { type: Type.STRING, nullable: true },
+    tags: { type: Type.ARRAY, items: { type: Type.STRING } },
+    confidence: { type: Type.NUMBER },
+  },
+  required: ['title', 'amount', 'type', 'categorySlug', 'paymentMethodType', 'date'],
+};
 
-    if (!rawText) {
-      return NextResponse.json({ error: 'rawText is required' }, { status: 400 });
-    }
+function buildExpensePrompt(rawText: string, categories: CategoryInput[], todayIso: string): string {
+  const categoryCatalog = categories.length
+    ? categories
+        .map((c) => `- slug: "${c.slug}" | name: "${c.name}" | subcategories: [${(c.subcategories || []).join(', ')}]`)
+        .join('\n')
+    : 'junk-food, food-dining, groceries-household, medical-supplements, utilities-bills, family-commitments, shopping-personal-care, transport-fuel, emis-debt-repayment, entertainment-subscriptions, investments-savings';
 
-    const fallback = parseExpenseDeterministically(rawText);
-
-    if (resolveGeminiApiKeys().length === 0) {
-      return NextResponse.json({ data: fallback, source: 'deterministic' });
-    }
-
-    try {
-      const categoryCatalog = categories.length
-        ? categories
-            .map(
-              (c) =>
-                `- slug: "${c.slug}" | name: "${c.name}" | subcategories: [${(c.subcategories || []).join(', ')}]`
-            )
-            .join('\n')
-        : 'junk-food, food-dining, groceries-household, medical-supplements, utilities-bills, family-commitments, shopping-personal-care, transport-fuel, emis-debt-repayment, entertainment-subscriptions, investments-savings';
-
-      const todayIso = getTodayIso();
-
-      const response = await runWithGeminiFailover((ai) =>
-        ai.models.generateContent({
-          model: DEFAULT_GEMINI_MODEL,
-          contents: `Parse this Indian personal finance note or voice transcript into structured transaction JSON.
+  return `Parse this Indian personal finance note or voice transcript into structured transaction JSON.
 Today's date is ${todayIso}.
 
 User input: "${rawText}"
@@ -187,58 +161,75 @@ Rules:
 - Extract clean concise merchant/title (e.g. "Zepto Groceries", "Zomato Dinner", "HDFC SIP").
 - Resolve relative dates like "yesterday" or "2 days ago" to YYYY-MM-DD relative to ${todayIso}.
 - Choose the closest matching categorySlug from the list above.
-- Detect paymentMethodType among: upi, bank, cash, credit_card, wallet.`,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                type: { type: Type.STRING, enum: ['expense', 'income', 'investment'] },
-                categorySlug: { type: Type.STRING },
-                subcategory: { type: Type.STRING },
-                paymentMethodType: {
-                  type: Type.STRING,
-                  enum: ['upi', 'bank', 'cash', 'credit_card', 'wallet'],
-                },
-                date: { type: Type.STRING },
-                suggestedCommitmentKeyword: { type: Type.STRING, nullable: true },
-                tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                confidence: { type: Type.NUMBER },
-              },
-              required: ['title', 'amount', 'type', 'categorySlug', 'paymentMethodType', 'date'],
-            },
-          },
-        })
-      );
+- Detect paymentMethodType among: upi, bank, cash, credit_card, wallet.`;
+}
 
-      const text = response.text?.trim();
-      if (text) {
-        const parsed = JSON.parse(text) as Partial<ParsedExpenseResult>;
-        const merged: ParsedExpenseResult = {
-          title: parsed.title?.trim() || fallback.title,
-          amount: Number(parsed.amount) > 0 ? Number(parsed.amount) : fallback.amount,
-          type:
-            parsed.type === 'income' || parsed.type === 'investment' || parsed.type === 'expense'
-              ? parsed.type
-              : fallback.type,
-          categorySlug: parsed.categorySlug || fallback.categorySlug,
-          subcategory: parsed.subcategory || fallback.subcategory,
-          paymentMethodType: parsed.paymentMethodType || fallback.paymentMethodType,
-          date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.date || '') ? parsed.date! : fallback.date,
-          suggestedCommitmentKeyword:
-            parsed.suggestedCommitmentKeyword ?? fallback.suggestedCommitmentKeyword,
-          tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 4) : [],
-          confidence: Number(parsed.confidence) || 92,
-        };
-        return NextResponse.json({ data: merged, source: 'gemini' });
-      }
-    } catch (aiErr) {
-      console.warn('[parse-expense] Gemini fallback triggered:', aiErr);
+function resolveMergedType(
+  rawType: Partial<ParsedExpenseResult>['type'],
+  fallbackType: ParsedExpenseResult['type']
+): ParsedExpenseResult['type'] {
+  if (rawType === 'income' || rawType === 'investment' || rawType === 'expense') return rawType;
+  return fallbackType;
+}
+
+function resolveParsedDate(rawDate: string | undefined, fallbackDate: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(rawDate || '') ? rawDate! : fallbackDate;
+}
+
+function mergeParsedExpense(parsed: Partial<ParsedExpenseResult>, fallback: ParsedExpenseResult): ParsedExpenseResult {
+  const parsedAmount = Number(parsed.amount);
+  return {
+    title: parsed.title?.trim() || fallback.title,
+    amount: parsedAmount > 0 ? parsedAmount : fallback.amount,
+    type: resolveMergedType(parsed.type, fallback.type),
+    categorySlug: parsed.categorySlug ?? fallback.categorySlug,
+    subcategory: parsed.subcategory ?? fallback.subcategory,
+    paymentMethodType: parsed.paymentMethodType ?? fallback.paymentMethodType,
+    date: resolveParsedDate(parsed.date, fallback.date),
+    suggestedCommitmentKeyword: parsed.suggestedCommitmentKeyword ?? fallback.suggestedCommitmentKeyword,
+    tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 4) : [],
+    confidence: Number(parsed.confidence) || 92,
+  };
+}
+
+async function parseExpenseWithGemini(
+  rawText: string,
+  categories: CategoryInput[],
+  fallback: ParsedExpenseResult
+): Promise<{ data: ParsedExpenseResult; source: 'gemini' | 'deterministic' }> {
+  try {
+    const response = await runWithGeminiFailover((ai) =>
+      ai.models.generateContent({
+        model: DEFAULT_GEMINI_MODEL,
+        contents: buildExpensePrompt(rawText, categories, getTodayIso()),
+        config: { responseMimeType: 'application/json', responseSchema: EXPENSE_RESPONSE_SCHEMA },
+      })
+    );
+    const text = response.text?.trim();
+    if (!text) return { data: fallback, source: 'deterministic' };
+    return {
+      data: mergeParsedExpense(JSON.parse(text) as Partial<ParsedExpenseResult>, fallback),
+      source: 'gemini',
+    };
+  } catch (aiErr) {
+    console.warn('[parse-expense] Gemini fallback triggered:', aiErr);
+    return { data: fallback, source: 'deterministic' };
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const rawText = typeof body?.rawText === 'string' ? body.rawText.trim() : '';
+    if (!rawText) return NextResponse.json({ error: 'rawText is required' }, { status: 400 });
+
+    const categories: CategoryInput[] = Array.isArray(body?.categories) ? body.categories : [];
+    const fallback = parseExpenseDeterministically(rawText);
+    if (resolveGeminiApiKeys().length === 0) {
+      return NextResponse.json({ data: fallback, source: 'deterministic' });
     }
 
-    return NextResponse.json({ data: fallback, source: 'deterministic' });
+    return NextResponse.json(await parseExpenseWithGemini(rawText, categories, fallback));
   } catch (error) {
     console.error('[parse-expense] Unexpected error:', error);
     return NextResponse.json({ error: 'Failed to parse expense text' }, { status: 500 });
