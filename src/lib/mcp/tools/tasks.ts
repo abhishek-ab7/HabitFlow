@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { handleGetTasks, handleManageTask } from './tasks-handlers';
 
-export function registerTasksTools(server: McpServer) {
+function registerGetTasksTool(server: McpServer) {
   server.registerTool(
     'get_tasks',
     {
@@ -10,11 +10,7 @@ export function registerTasksTools(server: McpServer) {
       description:
         'Retrieves tasks with filtering by status, priority, due dates, linked goal, tags, parent task, or text search.',
       inputSchema: {
-        status: z
-          .enum(['todo', 'in_progress', 'done', 'archived', 'all'])
-          .optional()
-          .default('all')
-          .describe('Filter by task status'),
+        status: z.enum(['todo', 'in_progress', 'done', 'archived', 'all']).optional().default('all').describe('Filter by task status'),
         priority: z.enum(['low', 'medium', 'high']).optional().describe('Filter by priority'),
         dueBefore: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Due on or before YYYY-MM-DD'),
         dueAfter: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Due on or after YYYY-MM-DD'),
@@ -23,16 +19,13 @@ export function registerTasksTools(server: McpServer) {
         tag: z.string().optional().describe('Filter by tag'),
         search: z.string().optional().describe('Text search across title, description, and notes'),
       },
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     handleGetTasks
   );
+}
 
+function registerManageTaskTool(server: McpServer) {
   server.registerTool(
     'manage_task',
     {
@@ -56,20 +49,17 @@ export function registerTasksTools(server: McpServer) {
         actualTime: z.number().int().min(0).optional().describe('Actual duration in minutes'),
         isUrgent: z.boolean().optional().describe('Eisenhower Matrix urgent flag'),
         isImportant: z.boolean().optional().describe('Eisenhower Matrix important flag'),
-        metadata: z
-          .record(z.string(), z.any())
-          .optional()
-          .describe('Custom metadata payload (supports MIT pinning: { isMitForDate: "YYYY-MM-DD", mitRank: 1|2|3 })'),
+        metadata: z.record(z.string(), z.any()).optional().describe('Custom metadata payload (supports MIT pinning: { isMitForDate: "YYYY-MM-DD", mitRank: 1|2|3 })'),
         restoreSubtasks: z.boolean().optional().default(false).describe('When restoring, also restore archived descendant subtasks'),
         confirm: z.boolean().optional().describe('Confirmation flag required for destructive actions like archive'),
       },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
     handleManageTask
   );
+}
+
+export function registerTasksTools(server: McpServer) {
+  registerGetTasksTool(server);
+  registerManageTaskTool(server);
 }

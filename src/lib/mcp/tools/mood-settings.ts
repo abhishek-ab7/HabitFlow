@@ -6,7 +6,7 @@ import {
   handleUpdateUserSettings,
 } from './mood-settings-handlers';
 
-export function registerMoodSettingsTools(server: McpServer) {
+function registerManageMoodTool(server: McpServer) {
   server.registerTool(
     'manage_mood',
     {
@@ -15,47 +15,32 @@ export function registerMoodSettingsTools(server: McpServer) {
       inputSchema: {
         action: z.enum(['list', 'log', 'delete']).describe('Action: list historical moods, log a mood, or delete a mood entry'),
         moodId: z.string().uuid().optional().describe('Mood entry UUID (optional for delete)'),
-        date: z
-          .string()
-          .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD')
-          .optional()
-          .describe('Date for mood log (defaults to today in IST)'),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional().describe('Date for mood log (defaults to today in IST)'),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter start date for list action'),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Filter end date for list action'),
-        mood: z
-          .enum(['happy', 'calm', 'neutral', 'sad', 'stressed'])
-          .optional()
-          .describe('Mood state matching MoodType (happy | calm | neutral | sad | stressed)'),
+        mood: z.enum(['happy', 'calm', 'neutral', 'sad', 'stressed']).optional().describe('Mood state matching MoodType (happy | calm | neutral | sad | stressed)'),
         confirm: z.boolean().optional().describe('Confirmation flag required for delete'),
       },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     handleManageMood
   );
+}
 
+function registerGetSettingsTool(server: McpServer) {
   server.registerTool(
     'get_user_settings',
     {
       title: 'Get User Settings',
       description: 'Retrieves user profile preferences, theme accent, dashboard layout, and gamification level/XP stats.',
-      inputSchema: {
-        refresh: z.boolean().optional().describe('Force fresh read from database'),
-      },
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
+      inputSchema: { refresh: z.boolean().optional().describe('Force fresh read from database') },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     handleGetUserSettings
   );
+}
 
+function registerUpdateSettingsTool(server: McpServer) {
   server.registerTool(
     'update_user_settings',
     {
@@ -78,13 +63,14 @@ export function registerMoodSettingsTools(server: McpServer) {
         habitOnlyMode: z.boolean().optional().describe('Toggle minimal Habit-Only Mode'),
         streakShield: z.number().int().min(0).max(99).optional().describe('Adjust available streak shields'),
       },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     handleUpdateUserSettings
   );
+}
+
+export function registerMoodSettingsTools(server: McpServer) {
+  registerManageMoodTool(server);
+  registerGetSettingsTool(server);
+  registerUpdateSettingsTool(server);
 }

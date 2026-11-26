@@ -163,38 +163,7 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     expect(settingsOut.gamification.streakShield).toBe(2);
   });
 
-  it('handles Finance CRUD + bugfixes (fallback category, net worth columns, tx restore, friend installments)', async () => {
-    const today = getIstIsoDate();
-    const monthKey = getIstMonthKey();
-
-    // Seed account
-    const accTool = registeredTools.get('manage_finance_account')!;
-    const bank = parseResult(
-      await accTool.handler({ action: 'create', name: 'HDFC Bank', type: 'bank', balance: 10000 })
-    ).account;
-
-    // 1. Create transaction WITHOUT categoryId -> auto-creates/resolves fallback category
-    const txTool = registeredTools.get('manage_transaction')!;
-    const txRes = parseResult(
-      await txTool.handler({
-        action: 'create',
-        title: 'Metro Ticket',
-        amount: 500,
-        type: 'expense',
-        accountId: bank.id,
-        date: today,
-      })
-    );
-    expect(txRes.transaction.category_id).toBeTruthy();
-    expect(txRes.updatedAccounts[0].newBalance).toBe(9500);
-
-    // Delete reverses balance, Restore re-applies balance
-    const delTx = parseResult(await txTool.handler({ action: 'delete', transactionId: txRes.transaction.id, confirm: true }));
-    expect(delTx.updatedAccounts[0].newBalance).toBe(10000);
-    const resTx = parseResult(await txTool.handler({ action: 'restore', transactionId: txRes.transaction.id }));
-    expect(resTx.updatedAccounts[0].newBalance).toBe(9500);
-
-    // 2. Net Worth Snapshot capture writes snapshot_date + emi_remaining_principal + update/delete/restore
+  async function assertNetWorthAndBudgetCrud(today: string, monthKey: string) {
     const nwTool = registeredTools.get('manage_net_worth_snapshot')!;
     const nwCap = parseResult(await nwTool.handler({ action: 'capture', monthKey }));
     expect(nwCap.snapshot.snapshot_date).toBe(today);
@@ -208,15 +177,20 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     await nwTool.handler({ action: 'restore', monthKey });
     expect(parseResult(await nwTool.handler({ action: 'list' })).count).toBe(1);
 
-    // 3. Friend debt & installments full CRUD without clobbering bucketType
+    const budgetTool = registeredTools.get('manage_finance_budget')!;
+    await budgetTool.handler({ action: 'upsert', monthKey, totalBudget: 25000 });
+    expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(1);
+    await budgetTool.handler({ action: 'delete', monthKey, confirm: true });
+    expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(0);
+    await budgetTool.handler({ action: 'restore', monthKey });
+    expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(1);
+  }
+
+  async function assertFriendLoanInstallmentsCrud(bankId: string) {
     const debtTool = registeredTools.get('manage_friend_debt')!;
     const loan = parseResult(
       await debtTool.handler({
-        action: 'create_entry',
-        personName: 'Amit',
-        direction: 'lent',
-        bucketType: 'long_term_loan',
-        principalAmount: 5000,
+        action: 'create_entry', personName: 'Amit', direction: 'lent', bucketType: 'long_term_loan', principalAmount: 5000,
       })
     ).debtRecord;
 
@@ -226,7 +200,7 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     expect(updatedLoan.bucket_type).toBe('long_term_loan');
 
     const payRes = parseResult(
-      await debtTool.handler({ action: 'record_payment', debtId: loan.id, paymentAmount: 2000, linkedAccountId: bank.id })
+      await debtTool.handler({ action: 'record_payment', debtId: loan.id, paymentAmount: 2000, linkedAccountId: bankId })
     );
     expect(payRes.debtRecord.remaining_amount).toBe(3000);
 
@@ -244,15 +218,31 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
       await debtTool.handler({ action: 'restore_payment', installmentId: payRes.installment.id })
     );
     expect(restPay.debtRecord.remaining_amount).toBe(2500);
+  }
 
-    // 4. Budget list/delete/restore & Obligations restore
-    const budgetTool = registeredTools.get('manage_finance_budget')!;
-    await budgetTool.handler({ action: 'upsert', monthKey, totalBudget: 25000 });
-    expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(1);
-    await budgetTool.handler({ action: 'delete', monthKey, confirm: true });
-    expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(0);
-    await budgetTool.handler({ action: 'restore', monthKey });
-    expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(1);
+  it('handles Finance CRUD + bugfixes (fallback category, net worth columns, tx restore, friend installments)', async () => {
+    const today = getIstIsoDate();
+    const monthKey = getIstMonthKey();
+
+    const accTool = registeredTools.get('manage_finance_account')!;
+    const bank = parseResult(
+      await accTool.handler({ action: 'create', name: 'HDFC Bank', type: 'bank', balance: 10000 })
+    ).account;
+
+    const txTool = registeredTools.get('manage_transaction')!;
+    const txRes = parseResult(
+      await txTool.handler({ action: 'create', title: 'Metro Ticket', amount: 500, type: 'expense', accountId: bank.id, date: today })
+    );
+    expect(txRes.transaction.category_id).toBeTruthy();
+    expect(txRes.updatedAccounts[0].newBalance).toBe(9500);
+
+    const delTx = parseResult(await txTool.handler({ action: 'delete', transactionId: txRes.transaction.id, confirm: true }));
+    expect(delTx.updatedAccounts[0].newBalance).toBe(10000);
+    const resTx = parseResult(await txTool.handler({ action: 'restore', transactionId: txRes.transaction.id }));
+    expect(resTx.updatedAccounts[0].newBalance).toBe(9500);
+
+    await assertNetWorthAndBudgetCrud(today, monthKey);
+    await assertFriendLoanInstallmentsCrud(bank.id);
   });
 
   it('handles Fitness profile & daily body metrics CRUD with Low-Energy gym auto-rest hooks', async () => {

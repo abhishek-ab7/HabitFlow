@@ -160,70 +160,33 @@ describe('MCP Row Mappers & Bug Regression Suite', () => {
     expect(bareStats.totalCompletions).toBe(1);
   });
 
-  it('skips credit-card-linked EMIs in cash-flow forecast while deducting UPI EMIs', () => {
-    const upi = mapFinanceAccountFromRow({
-      id: 'acc-upi',
-      user_id: 'user-1',
-      name: 'UPI',
-      type: 'upi',
-      balance: 10000,
-    });
+  function buildCcEmiForecastFixtures() {
+    const upi = mapFinanceAccountFromRow({ id: 'acc-upi', user_id: 'user-1', name: 'UPI', type: 'upi', balance: 10000 });
     const slice = mapFinanceAccountFromRow({
-      id: 'acc-slice',
-      user_id: 'user-1',
-      name: 'Slice',
-      type: 'credit_card',
-      balance: -5000,
-      billing_day: 20,
-      due_day: 5,
+      id: 'acc-slice', user_id: 'user-1', name: 'Slice', type: 'credit_card', balance: -5000, billing_day: 20, due_day: 5,
     });
-
     const emis = [
       mapEmiTrackerFromRow({
-        id: 'emi-snapmint',
-        user_id: 'user-1',
-        loan_name: 'earbuds',
-        lender_name: 'Snapmint',
-        principal_amount: 3370,
-        emi_amount: 674,
-        tenure_months: 5,
-        paid_months: 2,
-        start_date: '2026-11-20',
-        billing_day_of_month: 3,
-        category_id: 'cat-emi',
-        account_id: 'acc-upi',
-        status: 'active',
+        id: 'emi-snapmint', user_id: 'user-1', loan_name: 'earbuds', lender_name: 'Snapmint',
+        principal_amount: 3370, emi_amount: 674, tenure_months: 5, paid_months: 2,
+        start_date: '2026-11-20', billing_day_of_month: 3, category_id: 'cat-emi', account_id: 'acc-upi', status: 'active',
       }),
       mapEmiTrackerFromRow({
-        id: 'emi-slice-jacket',
-        user_id: 'user-1',
-        loan_name: 'Jacket',
-        lender_name: 'Slice',
-        principal_amount: 1012,
-        emi_amount: 338,
-        tenure_months: 3,
-        paid_months: 1,
-        start_date: '2026-11-20',
-        billing_day_of_month: 5,
-        category_id: 'cat-emi',
-        account_id: 'acc-slice',
-        status: 'active',
+        id: 'emi-slice-jacket', user_id: 'user-1', loan_name: 'Jacket', lender_name: 'Slice',
+        principal_amount: 1012, emi_amount: 338, tenure_months: 3, paid_months: 1,
+        start_date: '2026-11-20', billing_day_of_month: 5, category_id: 'cat-emi', account_id: 'acc-slice', status: 'active',
       }),
     ];
-
     const sliceStmt = mapCreditCardStatementFromRow({
-      id: 'acc-slice_2026-11',
-      user_id: 'user-1',
-      account_id: 'acc-slice',
-      cycle_key: '2026-11',
-      period_start: '2026-10-21',
-      period_end: '2026-11-20',
-      due_date: '2026-12-05',
-      total_due: 5000,
-      remaining_due: 5000,
-      status: 'billed',
+      id: 'acc-slice_2026-11', user_id: 'user-1', account_id: 'acc-slice', cycle_key: '2026-11',
+      period_start: '2026-10-21', period_end: '2026-11-20', due_date: '2026-12-05',
+      total_due: 5000, remaining_due: 5000, status: 'billed',
     });
+    return { upi, slice, emis, sliceStmt };
+  }
 
+  it('skips credit-card-linked EMIs in cash-flow forecast while deducting UPI EMIs', () => {
+    const { upi, slice, emis, sliceStmt } = buildCcEmiForecastFixtures();
     const forecast = buildCashFlowForecast({
       accounts: [upi, slice],
       transactions: [],
@@ -243,7 +206,6 @@ describe('MCP Row Mappers & Bug Regression Suite', () => {
 
     expect(dec3?.scheduledOutflow).toBe(674);
     expect(dec3?.events).toContain('EMI: earbuds');
-    // Dec 5 should only charge the Slice CC statement (5000), NOT double-count Jacket (338)
     expect(dec5?.scheduledOutflow).toBe(5000);
     expect(dec5?.events).not.toContain('EMI: Jacket');
   });

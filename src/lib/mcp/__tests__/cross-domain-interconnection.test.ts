@@ -165,13 +165,11 @@ describe('MCP Cross-Domain Parity (Bugs 1-5)', () => {
     expect(habitsAfterOff.find((h: any) => h.id === completedHabit.id).todayStatus).toBe('completed');
   });
 
-  it('Bug 4 & Bug 5: manage_meals auto-deducts protein supplement inventory & auto-links matching finance transactions without double-deduction', async () => {
-    const todayIst = getIstIsoDate();
+  async function seedSupplementFinanceAndJunkSetup() {
     const accTool = registeredTools.get('manage_finance_account')!;
     const bank = parseResult(
       await accTool.handler({ action: 'create', name: 'HDFC Bank', type: 'bank', balance: 5000 })
     ).account;
-
     const catTool = registeredTools.get('manage_finance_category')!;
     const supCat = parseResult(
       await catTool.handler({ action: 'create', name: 'Health & Supplements', slug: 'medical-supplements' })
@@ -179,7 +177,6 @@ describe('MCP Cross-Domain Parity (Bugs 1-5)', () => {
     const junkCat = parseResult(
       await catTool.handler({ action: 'create', name: 'Junk Food', slug: 'junk-food' })
     ).category;
-
     const supTool = registeredTools.get('manage_supplements')!;
     const nutra = parseResult(
       await supTool.handler({
@@ -191,8 +188,13 @@ describe('MCP Cross-Domain Parity (Bugs 1-5)', () => {
         costInr: 0,
       })
     ).item;
+    return { bank, supCat, junkCat, nutra };
+  }
 
-    // 1. Logging Health & Supplements expense auto-updates cost_inr from 0 -> 1499
+  it('Bug 4 & Bug 5: manage_meals auto-deducts protein supplement inventory & auto-links matching finance transactions without double-deduction', async () => {
+    const todayIst = getIstIsoDate();
+    const { bank, supCat, junkCat, nutra } = await seedSupplementFinanceAndJunkSetup();
+
     const txTool = registeredTools.get('manage_transaction')!;
     const supTxRes = parseResult(
       await txTool.handler({
@@ -208,7 +210,6 @@ describe('MCP Cross-Domain Parity (Bugs 1-5)', () => {
     expect(supTxRes.autoSyncedSupplementCost.supplementId).toBe(nutra.id);
     expect(supTxRes.autoSyncedSupplementCost.costInr).toBe(1499);
 
-    // 2. Logging protein shake meal auto-logs 1 scoop & decrements remainingServings 30 -> 29
     const mealTool = registeredTools.get('manage_meals')!;
     const scoopRes = parseResult(
       await mealTool.handler({
@@ -223,19 +224,11 @@ describe('MCP Cross-Domain Parity (Bugs 1-5)', () => {
     expect(scoopRes.autoLoggedSupplement.servingsTaken).toBe(1);
     expect(scoopRes.autoLoggedSupplement.remainingServings).toBe(29);
 
-    // Non-supplement whole food must NOT auto-deduct
     const eggsRes = parseResult(
-      await mealTool.handler({
-        action: 'log',
-        name: '6 Boiled Eggs',
-        calories: 378,
-        proteinG: 33,
-        date: todayIst,
-      })
+      await mealTool.handler({ action: 'log', name: '6 Boiled Eggs', calories: 378, proteinG: 33, date: todayIst })
     );
     expect(eggsRes.autoLoggedSupplement).toBeUndefined();
 
-    // 3. Food/junk transaction + matching meal auto-links linkedTransactionId
     const pizzaTx = parseResult(
       await txTool.handler({
         action: 'create',
@@ -249,14 +242,7 @@ describe('MCP Cross-Domain Parity (Bugs 1-5)', () => {
     ).transaction;
 
     const pizzaMealRes = parseResult(
-      await mealTool.handler({
-        action: 'log',
-        name: 'Pizza (2 slices)',
-        calories: 560,
-        proteinG: 20,
-        isJunk: true,
-        date: todayIst,
-      })
+      await mealTool.handler({ action: 'log', name: 'Pizza (2 slices)', calories: 560, proteinG: 20, isJunk: true, date: todayIst })
     );
     expect(pizzaMealRes.meal.linkedTransactionId).toBe(pizzaTx.id);
     expect(pizzaMealRes.autoLinkedTransaction.id).toBe(pizzaTx.id);

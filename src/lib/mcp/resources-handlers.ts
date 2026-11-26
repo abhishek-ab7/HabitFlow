@@ -98,37 +98,45 @@ function buildTodayFitnessSummary(params: {
   };
 }
 
-export async function readTodaySummaryResource(uri: URL) {
-  const auth = getMcpAuthContext();
-  if (!hasScope(auth, 'habitflow:read')) return resourceError(uri, 'Forbidden: Missing habitflow:read scope.');
+async function fetchTodaySummaryTables(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string,
+  dateIst: string
+) {
+  return Promise.all([
+    supabase.from('habits').select('*').eq('user_id', userId).eq('is_archived', false),
+    supabase.from('completions').select('*').eq('user_id', userId).eq('date', dateIst),
+    supabase.from('tasks').select('*').eq('user_id', userId).neq('status', 'archived').or(`due_date.lte.${dateIst},status.eq.todo,status.eq.in_progress`),
+    supabase.from('goals').select('*, milestones(*)').eq('user_id', userId).eq('is_archived', false).eq('is_focus', true),
+    supabase.from('mood_logs').select('*').eq('user_id', userId).eq('date', dateIst).maybeSingle(),
+    supabase.from('fitness_profiles').select('*').eq('user_id', userId).is('deleted_at', null).limit(1),
+    supabase.from('fitness_daily_logs').select('*').eq('user_id', userId).eq('date', dateIst).is('deleted_at', null).maybeSingle(),
+    supabase.from('meal_logs').select('*').eq('user_id', userId).eq('date', dateIst).is('deleted_at', null),
+    supabase.from('workout_sessions').select('*').eq('user_id', userId).eq('date', dateIst).is('deleted_at', null),
+  ]);
+}
 
-  const dateIst = getIstIsoDate();
-  const supabase = getSupabaseAdmin();
-  const [habitsRes, compRes, tasksRes, goalsRes, moodRes, fitProfileRes, bioRes, mealRes, workoutRes] =
-    await Promise.all([
-      supabase.from('habits').select('*').eq('user_id', auth.userId).eq('is_archived', false),
-      supabase.from('completions').select('*').eq('user_id', auth.userId).eq('date', dateIst),
-      supabase.from('tasks').select('*').eq('user_id', auth.userId).neq('status', 'archived').or(`due_date.lte.${dateIst},status.eq.todo,status.eq.in_progress`),
-      supabase.from('goals').select('*, milestones(*)').eq('user_id', auth.userId).eq('is_archived', false).eq('is_focus', true),
-      supabase.from('mood_logs').select('*').eq('user_id', auth.userId).eq('date', dateIst).maybeSingle(),
-      supabase.from('fitness_profiles').select('*').eq('user_id', auth.userId).is('deleted_at', null).limit(1),
-      supabase.from('fitness_daily_logs').select('*').eq('user_id', auth.userId).eq('date', dateIst).is('deleted_at', null).maybeSingle(),
-      supabase.from('meal_logs').select('*').eq('user_id', auth.userId).eq('date', dateIst).is('deleted_at', null),
-      supabase.from('workout_sessions').select('*').eq('user_id', auth.userId).eq('date', dateIst).is('deleted_at', null),
-    ]);
+function formatFocusGoalSummary(g: any) {
+  return {
+    id: g.id,
+    title: g.title,
+    progress: g.progress,
+    financialLink: g.financial_link ?? null,
+    fitnessLink: g.fitness_link ?? null,
+  };
+}
 
+function buildTodaySummaryPayload(
+  dateIst: string,
+  tables: Awaited<ReturnType<typeof fetchTodaySummaryTables>>
+) {
+  const [habitsRes, compRes, tasksRes, goalsRes, moodRes, fitProfileRes, bioRes, mealRes, workoutRes] = tables;
   const compMap = new Map((compRes.data || []).map((c) => [c.habit_id, c]));
-  return resourceJson(uri, {
+  return {
     dateIst,
     habitsDue: (habitsRes.data || []).map((h) => formatTodayHabitDue(h, compMap)),
     pendingTasks: (tasksRes.data || []).filter((t) => t.status !== 'done').map((t) => formatTodayPendingTask(t, dateIst)),
-    focusGoals: (goalsRes.data || []).map((g) => ({
-      id: g.id,
-      title: g.title,
-      progress: g.progress,
-      financialLink: g.financial_link ?? null,
-      fitnessLink: g.fitness_link ?? null,
-    })),
+    focusGoals: (goalsRes.data || []).map(formatFocusGoalSummary),
     todayMood: moodRes.data?.mood ?? null,
     fitnessSummary: buildTodayFitnessSummary({
       profileRow: fitProfileRes.data?.[0],
@@ -137,7 +145,16 @@ export async function readTodaySummaryResource(uri: URL) {
       workoutsTodayCount: (workoutRes.data || []).length,
       dateIst,
     }),
-  });
+  };
+}
+
+export async function readTodaySummaryResource(uri: URL) {
+  const auth = getMcpAuthContext();
+  if (!hasScope(auth, 'habitflow:read')) return resourceError(uri, 'Forbidden: Missing habitflow:read scope.');
+
+  const dateIst = getIstIsoDate();
+  const tables = await fetchTodaySummaryTables(getSupabaseAdmin(), auth.userId, dateIst);
+  return resourceJson(uri, buildTodaySummaryPayload(dateIst, tables));
 }
 
 export async function readActiveHabitsResource(uri: URL) {

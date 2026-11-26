@@ -64,6 +64,18 @@ async function logMoodEntry(auth: ReturnType<typeof getMcpAuthContext>, args: an
   }
 }
 
+async function fetchMoodEntryForDelete(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string,
+  args: any
+) {
+  let query = supabase.from('mood_logs').select('*').eq('user_id', userId);
+  query = args.moodId ? query.eq('id', args.moodId) : query.eq('date', args.date || getIstIsoDate());
+  const { data: existing, error } = await query.maybeSingle();
+  if (error) throw error;
+  return existing;
+}
+
 async function deleteMoodEntry(auth: ReturnType<typeof getMcpAuthContext>, args: any) {
   if (!args.confirm) {
     return mcpError('Confirmation Required: Deleting a mood log requires confirm: true.');
@@ -72,17 +84,10 @@ async function deleteMoodEntry(auth: ReturnType<typeof getMcpAuthContext>, args:
   const supabase = getSupabaseAdmin();
 
   try {
-    let query = supabase.from('mood_logs').select('*').eq('user_id', auth.userId);
-    query = args.moodId ? query.eq('id', args.moodId) : query.eq('date', args.date || getIstIsoDate());
-    const { data: existing, error: fetchErr } = await query.maybeSingle();
-    if (fetchErr) throw fetchErr;
+    const existing = await fetchMoodEntryForDelete(supabase, auth.userId, args);
     if (!existing) return mcpError('Mood log entry not found.');
 
-    const { error: delErr } = await supabase
-      .from('mood_logs')
-      .delete()
-      .eq('user_id', auth.userId)
-      .eq('id', existing.id);
+    const { error: delErr } = await supabase.from('mood_logs').delete().eq('user_id', auth.userId).eq('id', existing.id);
     if (delErr) throw delErr;
 
     await logMcpToolInvocation(auth, {

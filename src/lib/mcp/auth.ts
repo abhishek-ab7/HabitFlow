@@ -74,75 +74,68 @@ export function extractBearerToken(request: NextRequest, explicitToken?: string)
 /**
  * Validates the request authentication against Tier 1 (Vercel env var secret) or Tier 2 (OAuth 2.1 access token).
  */
+function tryAuthenticateSecret(token: string): McpAuthContext | null {
+  const configuredSecret = getMcpSecret();
+  const configuredUserId = getMcpUserId();
+  const isSecretMatch = Boolean(configuredSecret && configuredUserId && timingSafeCheck(token, configuredSecret));
+  if (!isSecretMatch || !configuredUserId) return null;
+
+  return {
+    userId: configuredUserId,
+    authMode: 'secret',
+    clientId: 'personal-mcp-owner',
+    scopes: [...MCP_SCOPES],
+  };
+}
+
+async function tryAuthenticateOAuthToken(
+  token: string
+): Promise<{ auth: McpAuthContext | null; errorResponse: NextResponse | null }> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: oauthToken, error } = await supabase
+      .from('mcp_oauth_tokens')
+      .select('user_id, client_id, scopes, resource, expires_at, revoked_at')
+      .eq('token_hash', hashToken(token))
+      .is('revoked_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+
+    if (error || !oauthToken) return { auth: null, errorResponse: null };
+    if (oauthToken.resource && !ACCEPTED_MCP_RESOURCES.includes(oauthToken.resource)) {
+      return { auth: null, errorResponse: create401Response('Token resource indicator mismatch.') };
+    }
+
+    const tokenScopes = Array.isArray(oauthToken.scopes) ? (oauthToken.scopes as McpScope[]) : [];
+    return {
+      auth: {
+        userId: oauthToken.user_id,
+        authMode: 'oauth',
+        clientId: oauthToken.client_id,
+        scopes: tokenScopes,
+      },
+      errorResponse: null,
+    };
+  } catch (err) {
+    console.warn('OAuth token lookup encountered an error:', err);
+    return { auth: null, errorResponse: null };
+  }
+}
+
 export async function authenticateMcpRequest(
   request: NextRequest,
   explicitToken?: string
 ): Promise<{ auth: McpAuthContext | null; errorResponse: NextResponse | null }> {
   const token = extractBearerToken(request, explicitToken);
-
   if (!token) {
-    return {
-      auth: null,
-      errorResponse: create401Response('Missing Bearer authentication token.'),
-    };
+    return { auth: null, errorResponse: create401Response('Missing Bearer authentication token.') };
   }
 
-  // 1. Tier 1: Personal Fast-Track Auth via HABITFLOW_MCP_SECRET
-  const configuredSecret = getMcpSecret();
-  const configuredUserId = getMcpUserId();
+  const secretAuth = tryAuthenticateSecret(token);
+  if (secretAuth) return { auth: secretAuth, errorResponse: null };
 
-  if (configuredSecret && configuredUserId && timingSafeCheck(token, configuredSecret)) {
-    return {
-      auth: {
-        userId: configuredUserId,
-        authMode: 'secret',
-        clientId: 'personal-mcp-owner',
-        scopes: [...MCP_SCOPES], // Owner has all scopes
-      },
-      errorResponse: null,
-    };
-  }
-
-  // 2. Tier 2: OAuth 2.1 Access Token Verification
-  try {
-    const supabase = getSupabaseAdmin();
-    const tokenHash = hashToken(token);
-    const nowIso = new Date().toISOString();
-
-    const { data: oauthToken, error } = await supabase
-      .from('mcp_oauth_tokens')
-      .select('user_id, client_id, scopes, resource, expires_at, revoked_at')
-      .eq('token_hash', tokenHash)
-      .is('revoked_at', null)
-      .gt('expires_at', nowIso)
-      .single();
-
-    if (!error && oauthToken) {
-      // Validate RFC 8707 Resource Indicator / Audience Binding
-      if (oauthToken.resource && !ACCEPTED_MCP_RESOURCES.includes(oauthToken.resource)) {
-        return {
-          auth: null,
-          errorResponse: create401Response('Token resource indicator mismatch.'),
-        };
-      }
-
-      const tokenScopes = Array.isArray(oauthToken.scopes)
-        ? (oauthToken.scopes as McpScope[])
-        : [];
-
-      return {
-        auth: {
-          userId: oauthToken.user_id,
-          authMode: 'oauth',
-          clientId: oauthToken.client_id,
-          scopes: tokenScopes,
-        },
-        errorResponse: null,
-      };
-    }
-  } catch (err) {
-    console.warn('OAuth token lookup encountered an error:', err);
-  }
+  const oauthResult = await tryAuthenticateOAuthToken(token);
+  if (oauthResult.auth || oauthResult.errorResponse) return oauthResult;
 
   return {
     auth: null,

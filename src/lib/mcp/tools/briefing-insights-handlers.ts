@@ -131,6 +131,24 @@ function mapBriefingGoals(goals: any[]) {
   }));
 }
 
+function mapBriefingFitnessBundle(rows: {
+  fitProfileRows: any[];
+  fitDailyRows: any[];
+  mealRows: any[];
+  workoutRows: any[];
+  supRows: any[];
+  supLogRows: any[];
+}) {
+  return {
+    fitProfile: rows.fitProfileRows[0] ? mapFitnessProfileFromRow(rows.fitProfileRows[0]) : null,
+    fitLogs: rows.fitDailyRows.map(mapFitnessDailyLogFromRow),
+    meals: rows.mealRows.map(mapMealLogFromRow),
+    workouts: rows.workoutRows.map(mapWorkoutSessionFromRow),
+    supplements: rows.supRows.map(mapSupplementInventoryFromRow),
+    supLogs: rows.supLogRows.map(mapSupplementLogFromRow),
+  };
+}
+
 async function fetchCoreBriefingRows(params: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   userId: string;
@@ -164,19 +182,20 @@ async function fetchCoreBriefingRows(params: {
     supabase.from('supplement_logs').select('*').eq('user_id', userId).is('deleted_at', null).gte('date', windowStart).lte('date', dateIst),
   ]);
 
-  const fitProfileRows = fitProfileRes.data || [];
   return {
-    habits: habitsRes.data || [],
-    completions: completionsRes.data || [],
-    tasks: tasksRes.data || [],
-    goals: goalsRes.data || [],
-    moodLog: moodRes.data || [],
-    fitProfile: fitProfileRows[0] ? mapFitnessProfileFromRow(fitProfileRows[0]) : null,
-    fitLogs: (fitDailyRes.data || []).map(mapFitnessDailyLogFromRow),
-    meals: (mealRes.data || []).map(mapMealLogFromRow),
-    workouts: (workoutRes.data || []).map(mapWorkoutSessionFromRow),
-    supplements: (supRes.data || []).map(mapSupplementInventoryFromRow),
-    supLogs: (supLogRes.data || []).map(mapSupplementLogFromRow),
+    habits: habitsRes.data ?? [],
+    completions: completionsRes.data ?? [],
+    tasks: tasksRes.data ?? [],
+    goals: goalsRes.data ?? [],
+    moodLog: moodRes.data ?? [],
+    ...mapBriefingFitnessBundle({
+      fitProfileRows: fitProfileRes.data ?? [],
+      fitDailyRows: fitDailyRes.data ?? [],
+      mealRows: mealRes.data ?? [],
+      workoutRows: workoutRes.data ?? [],
+      supRows: supRes.data ?? [],
+      supLogRows: supLogRes.data ?? [],
+    }),
   };
 }
 
@@ -320,6 +339,35 @@ function computeHabitConsistency(params: {
   };
 }
 
+function mapInsightsDomainPayload(
+  userId: string,
+  rows: {
+    fin: any;
+    ccRows: any[];
+    habits: any[];
+    completions: any[];
+    fitDailyRows: any[];
+    mealRows: any[];
+    workoutRows: any[];
+    supRows: any[];
+    supLogRows: any[];
+    moodRows: any[];
+  }
+) {
+  return {
+    fin: rows.fin,
+    ccStatements: rows.ccRows.map(mapCreditCardStatementFromRow),
+    habits: rows.habits,
+    completions: rows.completions,
+    fitDailyLogs: rows.fitDailyRows.map(mapFitnessDailyLogFromRow),
+    meals: rows.mealRows.map(mapMealLogFromRow),
+    workouts: rows.workoutRows.map(mapWorkoutSessionFromRow),
+    supplements: rows.supRows.map(mapSupplementInventoryFromRow),
+    supLogs: rows.supLogRows.map(mapSupplementLogFromRow),
+    moodLogs: rows.moodRows.map((m) => mapMoodLogFromRow(m, userId)),
+  };
+}
+
 async function fetchInsightsDomainRows(params: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   userId: string;
@@ -342,18 +390,18 @@ async function fetchInsightsDomainRows(params: {
       supabase.from('mood_logs').select('*').eq('user_id', userId).gte('date', window30Start).lte('date', referenceDate),
     ]);
 
-  return {
+  return mapInsightsDomainPayload(userId, {
     fin,
-    ccStatements: (ccRes.data || []).map(mapCreditCardStatementFromRow),
-    habits: habitsRes.data || [],
-    completions: compRes.data || [],
-    fitDailyLogs: (fitDailyRes.data || []).map(mapFitnessDailyLogFromRow),
-    meals: (mealRes.data || []).map(mapMealLogFromRow),
-    workouts: (workoutRes.data || []).map(mapWorkoutSessionFromRow),
-    supplements: (supRes.data || []).map(mapSupplementInventoryFromRow),
-    supLogs: (supLogRes.data || []).map(mapSupplementLogFromRow),
-    moodLogs: (moodRes.data || []).map((m) => mapMoodLogFromRow(m, userId)),
-  };
+    ccRows: ccRes.data ?? [],
+    habits: habitsRes.data ?? [],
+    completions: compRes.data ?? [],
+    fitDailyRows: fitDailyRes.data ?? [],
+    mealRows: mealRes.data ?? [],
+    workoutRows: workoutRes.data ?? [],
+    supRows: supRes.data ?? [],
+    supLogRows: supLogRes.data ?? [],
+    moodRows: moodRes.data ?? [],
+  });
 }
 
 export async function handleGetHabitFinanceInsights(args: { days?: number; monthKey?: string }) {

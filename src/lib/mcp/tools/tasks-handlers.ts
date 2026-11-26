@@ -121,6 +121,20 @@ async function cascadeSubtaskStatus(params: {
   return affected;
 }
 
+function buildTaskScheduleAndFlags(args: any) {
+  return {
+    due_date: args.dueDate || null,
+    goal_id: args.goalId || null,
+    parent_task_id: args.parentTaskId || null,
+    tags: args.tags || [],
+    recurrence_rule: args.recurrenceRule || null,
+    estimated_time: args.estimatedTime ?? 0,
+    actual_time: args.actualTime ?? 0,
+    is_urgent: args.isUrgent ?? false,
+    is_important: args.isImportant ?? false,
+  };
+}
+
 function buildNewTaskPayload(userId: string, depth: number, args: any) {
   return {
     user_id: userId,
@@ -129,16 +143,8 @@ function buildNewTaskPayload(userId: string, depth: number, args: any) {
     notes: args.notes || null,
     status: args.status || 'todo',
     priority: args.priority || 'medium',
-    due_date: args.dueDate || null,
-    goal_id: args.goalId || null,
-    parent_task_id: args.parentTaskId || null,
     depth,
-    tags: args.tags || [],
-    recurrence_rule: args.recurrenceRule || null,
-    estimated_time: args.estimatedTime ?? 0,
-    actual_time: args.actualTime ?? 0,
-    is_urgent: args.isUrgent ?? false,
-    is_important: args.isImportant ?? false,
+    ...buildTaskScheduleAndFlags(args),
     metadata: args.metadata || {},
     ...getInsertMetadata(),
   };
