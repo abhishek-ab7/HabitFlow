@@ -43,137 +43,51 @@ describe('MCP Row Mappers & Bug Regression Suite', () => {
     resetSplitRepairMigration();
   });
 
-  it('maps snake_case finance rows accurately for monthly summary, net worth, and credit card cycles', () => {
+  function buildMonthlyFinanceFixtures() {
     const accounts = [
-      mapFinanceAccountFromRow({
-        id: 'acc-upi',
-        user_id: 'user-1',
-        name: 'UPI',
-        type: 'upi',
-        balance: 19726,
-        include_in_net_worth: true,
-      }),
-      mapFinanceAccountFromRow({
-        id: 'acc-slice',
-        user_id: 'user-1',
-        name: 'Slice',
-        type: 'credit_card',
-        balance: -10645,
-        credit_limit: 50000,
-        billing_day: 20,
-        statement_day: 20,
-        due_day: 5,
-        include_in_net_worth: true,
-      }),
-      mapFinanceAccountFromRow({
-        id: 'acc-axis',
-        user_id: 'user-1',
-        name: 'Axis Bank',
-        type: 'credit_card',
-        balance: -409,
-        credit_limit: 81000,
-        billing_day: 15,
-        statement_day: 15,
-        due_day: 2,
-        include_in_net_worth: true,
-      }),
+      mapFinanceAccountFromRow({ id: 'acc-upi', user_id: 'user-1', name: 'UPI', type: 'upi', balance: 19726, include_in_net_worth: true }),
+      mapFinanceAccountFromRow({ id: 'acc-slice', user_id: 'user-1', name: 'Slice', type: 'credit_card', balance: -10645, credit_limit: 50000, billing_day: 20, statement_day: 20, due_day: 5, include_in_net_worth: true }),
+      mapFinanceAccountFromRow({ id: 'acc-axis', user_id: 'user-1', name: 'Axis Bank', type: 'credit_card', balance: -409, credit_limit: 81000, billing_day: 15, statement_day: 15, due_day: 2, include_in_net_worth: true }),
     ];
-
     const categories = [
-      mapFinanceCategoryFromRow({
-        id: 'cat-food',
-        user_id: 'user-1',
-        name: 'Food & Dining',
-        slug: 'food-dining',
-        type: 'expense',
-        monthly_budget_limit: 800,
-        rollover_enabled: false,
-      }),
+      mapFinanceCategoryFromRow({ id: 'cat-food', user_id: 'user-1', name: 'Food & Dining', slug: 'food-dining', type: 'expense', monthly_budget_limit: 800, rollover_enabled: false }),
     ];
-
     const transactions = [
-      mapFinanceTransactionFromRow({
-        id: 'tx-1',
-        user_id: 'user-1',
-        title: 'Oats + milk',
-        amount: 203,
-        type: 'expense',
-        category_id: 'cat-food',
-        account_id: 'acc-axis',
-        date: '2026-11-24',
-        month_key: '2026-11',
-      }),
-      mapFinanceTransactionFromRow({
-        id: 'tx-2',
-        user_id: 'user-1',
-        title: 'Guava',
-        amount: 100,
-        type: 'expense',
-        category_id: 'cat-food',
-        account_id: 'acc-slice',
-        date: '2026-11-24',
-        month_key: '2026-11',
-      }),
+      mapFinanceTransactionFromRow({ id: 'tx-1', user_id: 'user-1', title: 'Oats + milk', amount: 203, type: 'expense', category_id: 'cat-food', account_id: 'acc-axis', date: '2026-11-24', month_key: '2026-11' }),
+      mapFinanceTransactionFromRow({ id: 'tx-2', user_id: 'user-1', title: 'Guava', amount: 100, type: 'expense', category_id: 'cat-food', account_id: 'acc-slice', date: '2026-11-24', month_key: '2026-11' }),
     ];
-
     const budgets = [
-      mapFinanceBudgetFromRow({
-        id: 'bud-1',
-        user_id: 'user-1',
-        month_key: '2026-11',
-        total_budget: 16500,
-        expected_income: 19000,
-        budget_mode: 'zero_based',
-      }),
+      mapFinanceBudgetFromRow({ id: 'bud-1', user_id: 'user-1', month_key: '2026-11', total_budget: 16500, expected_income: 19000, budget_mode: 'zero_based' }),
     ];
+    return { accounts, categories, transactions, budgets };
+  }
+
+  it('maps snake_case finance rows accurately for monthly summary, net worth, and credit card cycles', () => {
+    const { accounts, categories, transactions, budgets } = buildMonthlyFinanceFixtures();
 
     const summary = calculateMonthlySummary({
-      monthKey: '2026-11',
-      transactions,
-      categories,
-      budgets,
-      commitments: [],
-      emiTrackers: [],
-      debtRecords: [],
-      debtInstallments: [],
-      recurringBills: [],
-      sipPlans: [],
+      monthKey: '2026-11', transactions, categories, budgets,
+      commitments: [], emiTrackers: [], debtRecords: [], debtInstallments: [], recurringBills: [], sipPlans: [],
       referenceDate: '2026-11-24',
     });
-
     expect(summary.totalSpent).toBe(303);
     expect(summary.expectedIncome).toBe(19000);
     expect(summary.categoryBreakdown[0].spent).toBe(303);
     expect(summary.categoryBreakdown[0].budgetLimit).toBe(800);
 
-    const netWorth = calculateNetWorthSummary({
-      accounts,
-      sipPlans: [],
-      debtRecords: [],
-      emiTrackers: [],
-    });
+    const netWorth = calculateNetWorthSummary({ accounts, sipPlans: [], debtRecords: [], emiTrackers: [] });
     expect(Number.isNaN(netWorth.netWorth)).toBe(false);
     expect(netWorth.liquidAssets).toBe(19726);
     expect(netWorth.creditCardLiabilities).toBe(11054);
     expect(netWorth.netWorth).toBe(8672);
 
-    const sliceSummary = computeCreditCardSummary({
-      account: accounts[1],
-      transactions,
-      persistedStatements: [],
-      referenceDate: '2026-11-24',
-    });
+    const sliceSummary = computeCreditCardSummary({ account: accounts[1], transactions, persistedStatements: [], referenceDate: '2026-11-24' });
     expect(sliceSummary.creditLimit).toBe(50000);
     expect(sliceSummary.unbilledCycle.periodEnd).toBe('2026-12-20');
     expect(sliceSummary.unbilledCycle.dueDate).toBe('2027-01-05');
     expect(sliceSummary.unbilledSpend).toBe(100);
 
-    const axisSummary = computeCreditCardSummary({
-      account: accounts[2],
-      transactions,
-      persistedStatements: [],
-      referenceDate: '2026-11-24',
-    });
+    const axisSummary = computeCreditCardSummary({ account: accounts[2], transactions, persistedStatements: [], referenceDate: '2026-11-24' });
     expect(axisSummary.creditLimit).toBe(81000);
     expect(axisSummary.unbilledCycle.periodEnd).toBe('2026-12-15');
     expect(axisSummary.unbilledCycle.dueDate).toBe('2027-01-02');
@@ -385,93 +299,46 @@ describe('MCP Row Mappers & Bug Regression Suite', () => {
     expect(decLedger.effectiveTargetAmount).toBe(2567);
   });
 
+  async function seedDuplicateSplitTransactions(splitGroupId: string) {
+    const now = new Date().toISOString();
+    await db.financeAccounts.add({
+      id: 'acc-slice', userId: 'user-1', name: 'Slice', type: 'credit_card', balance: -108,
+      currency: 'INR', color: '#f43f5e', icon: 'CreditCard', isDefault: true, archived: false, createdAt: now, updatedAt: now,
+    });
+    await db.financeTransactions.bulkAdd([
+      {
+        id: 'tx-user', userId: 'user-1', title: 'Toilet cleaner', amount: 54, type: 'expense',
+        categoryId: 'cat-shop', accountId: 'acc-slice', date: '2026-11-22', monthKey: '2026-11',
+        tags: ['aadi', 'split'], isRecurring: false, splitGroupId,
+        createdAt: '2026-11-22T05:14:18.821Z', updatedAt: '2026-11-22T05:14:18.821Z',
+      },
+      {
+        id: 'dup-1', userId: 'user-1', title: "Aadi's Share: Toilet cleaner", amount: 54, type: 'expense',
+        categoryId: 'cat-emi', subcategory: 'Friend Split', accountId: 'acc-slice', date: '2026-11-22', monthKey: '2026-11',
+        notes: 'Friend split portion for Aadi (repaired) · Toilet cleaner', tags: ['aadi', 'split', 'friend-share'],
+        isRecurring: false, splitGroupId, generationCounter: 2,
+        createdAt: '2026-11-23T11:20:17.391Z', updatedAt: '2026-11-23T11:20:17.391Z',
+      },
+      {
+        id: 'dup-2', userId: 'user-1', title: "Aadi's Share: Toilet cleaner", amount: 54, type: 'expense',
+        categoryId: 'cat-emi', subcategory: 'Friend Split', accountId: 'acc-slice', date: '2026-11-22', monthKey: '2026-11',
+        notes: 'Friend split portion for Aadi (repaired) · Toilet cleaner', tags: ['aadi', 'split', 'friend-share'],
+        isRecurring: false, splitGroupId, generationCounter: 2,
+        createdAt: '2026-11-23T12:02:20.071Z', updatedAt: '2026-11-23T12:02:20.071Z',
+      },
+    ]);
+  }
+
   it('derives deterministic repaired split IDs and deduplicates duplicate repaired legs without changing balances', async () => {
     const splitGroupId = '98b617b0-0971-4f70-bee0-0e643d07cb76';
     const id1 = deriveRepairedSplitLegId(splitGroupId);
-    const id2 = deriveRepairedSplitLegId(splitGroupId);
-    expect(id1).toBe(id2);
+    expect(id1).toBe(deriveRepairedSplitLegId(splitGroupId));
     expect(id1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
 
-    const now = new Date().toISOString();
-    await db.financeAccounts.add({
-      id: 'acc-slice',
-      userId: 'user-1',
-      name: 'Slice',
-      type: 'credit_card',
-      balance: -108,
-      currency: 'INR',
-      color: '#f43f5e',
-      icon: 'CreditCard',
-      isDefault: true,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.financeTransactions.bulkAdd([
-      {
-        id: 'tx-user',
-        userId: 'user-1',
-        title: 'Toilet cleaner',
-        amount: 54,
-        type: 'expense',
-        categoryId: 'cat-shop',
-        accountId: 'acc-slice',
-        date: '2026-11-22',
-        monthKey: '2026-11',
-        tags: ['aadi', 'split'],
-        isRecurring: false,
-        splitGroupId,
-        createdAt: '2026-11-22T05:14:18.821Z',
-        updatedAt: '2026-11-22T05:14:18.821Z',
-      },
-      {
-        id: 'dup-1',
-        userId: 'user-1',
-        title: "Aadi's Share: Toilet cleaner",
-        amount: 54,
-        type: 'expense',
-        categoryId: 'cat-emi',
-        subcategory: 'Friend Split',
-        accountId: 'acc-slice',
-        date: '2026-11-22',
-        monthKey: '2026-11',
-        notes: 'Friend split portion for Aadi (repaired) · Toilet cleaner',
-        tags: ['aadi', 'split', 'friend-share'],
-        isRecurring: false,
-        splitGroupId,
-        generationCounter: 2,
-        createdAt: '2026-11-23T11:20:17.391Z',
-        updatedAt: '2026-11-23T11:20:17.391Z',
-      },
-      {
-        id: 'dup-2',
-        userId: 'user-1',
-        title: "Aadi's Share: Toilet cleaner",
-        amount: 54,
-        type: 'expense',
-        categoryId: 'cat-emi',
-        subcategory: 'Friend Split',
-        accountId: 'acc-slice',
-        date: '2026-11-22',
-        monthKey: '2026-11',
-        notes: 'Friend split portion for Aadi (repaired) · Toilet cleaner',
-        tags: ['aadi', 'split', 'friend-share'],
-        isRecurring: false,
-        splitGroupId,
-        generationCounter: 2,
-        createdAt: '2026-11-23T12:02:20.071Z',
-        updatedAt: '2026-11-23T12:02:20.071Z',
-      },
-    ]);
-
+    await seedDuplicateSplitTransactions(splitGroupId);
     await deduplicateFinanceRecordsInDexie('user-1');
 
-    const active = await db.financeTransactions
-      .where('userId')
-      .equals('user-1')
-      .filter((t) => !t.deletedAt)
-      .toArray();
+    const active = await db.financeTransactions.where('userId').equals('user-1').filter((t) => !t.deletedAt).toArray();
     expect(active).toHaveLength(2);
     expect(active.map((t) => t.id).sort()).toEqual(['dup-1', 'tx-user']);
 
@@ -480,11 +347,7 @@ describe('MCP Row Mappers & Bug Regression Suite', () => {
     expect(softDeleted?.isDirty).toBe(true);
     expect(softDeleted?.generationCounter).toBe(3);
 
-    const card = await db.financeAccounts.get('acc-slice');
-    expect(card?.balance).toBe(-108);
-
-    // repairLegacySplitTransactions should also be safe and not create a 3rd leg
-    const res = await repairLegacySplitTransactions('user-1');
-    expect(res.repairedCount).toBe(0);
+    expect((await db.financeAccounts.get('acc-slice'))?.balance).toBe(-108);
+    expect((await repairLegacySplitTransactions('user-1')).repairedCount).toBe(0);
   });
 });

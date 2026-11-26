@@ -21,125 +21,10 @@ const { mockAuthCtx, tableStore } = vi.hoisted(() => ({
   tableStore: new Map<string, any[]>(),
 }));
 
+import { makeMcpSupabaseFake } from './test-supabase-fake';
+
 function makeSupabaseFake() {
-  const createBuilder = (tableName: string) => {
-    const filters: Array<(r: any) => boolean> = [];
-    let pendingAction: 'select' | 'insert' | 'update' = 'select';
-    let payloadData: any = null;
-    let isSingle = false;
-    let orderCol: string | null = null;
-    let orderAsc = true;
-    let maxRows: number | null = null;
-
-    const exec = async () => {
-      const rows = tableStore.get(tableName) || [];
-      const matching = rows.filter((r) => filters.every((fn) => fn(r)));
-
-      if (pendingAction === 'insert') {
-        const toInsert = Array.isArray(payloadData) ? payloadData : [payloadData];
-        const inserted = toInsert.map((item) => ({ ...item }));
-        tableStore.set(tableName, [...rows, ...inserted]);
-        return {
-          data: isSingle ? inserted[0] : inserted,
-          error: null,
-        };
-      }
-
-      if (pendingAction === 'update') {
-        const updatedList: any[] = [];
-        const nextRows = rows.map((r) => {
-          if (filters.every((fn) => fn(r))) {
-            const updated = { ...r, ...payloadData };
-            updatedList.push(updated);
-            return updated;
-          }
-          return r;
-        });
-        tableStore.set(tableName, nextRows);
-        return {
-          data: isSingle ? updatedList[0] ?? null : updatedList,
-          error: null,
-        };
-      }
-
-      let result = [...matching];
-      if (orderCol) {
-        result.sort((a, b) => {
-          const av = String(a[orderCol!] ?? '');
-          const bv = String(b[orderCol!] ?? '');
-          return orderAsc ? av.localeCompare(bv) : bv.localeCompare(av);
-        });
-      }
-      if (maxRows !== null) {
-        result = result.slice(0, maxRows);
-      }
-
-      if (isSingle) {
-        return { data: result[0] ?? null, error: null };
-      }
-      return { data: result, error: null };
-    };
-
-    const builder: any = {
-      select: () => builder,
-      insert: (data: any) => {
-        pendingAction = 'insert';
-        payloadData = data;
-        return builder;
-      },
-      update: (data: any) => {
-        pendingAction = 'update';
-        payloadData = data;
-        return builder;
-      },
-      eq: (col: string, val: any) => {
-        filters.push((r) => r[col] === val);
-        return builder;
-      },
-      neq: (col: string, val: any) => {
-        filters.push((r) => r[col] !== val);
-        return builder;
-      },
-      gte: (col: string, val: any) => {
-        filters.push((r) => String(r[col] ?? '') >= String(val));
-        return builder;
-      },
-      lte: (col: string, val: any) => {
-        filters.push((r) => String(r[col] ?? '') <= String(val));
-        return builder;
-      },
-      is: (col: string, val: any) => {
-        filters.push((r) => (r[col] ?? null) === val);
-        return builder;
-      },
-      or: () => builder,
-      order: (col: string, opts?: { ascending?: boolean }) => {
-        orderCol = col;
-        orderAsc = opts?.ascending !== false;
-        return builder;
-      },
-      limit: (n: number) => {
-        maxRows = n;
-        return builder;
-      },
-      maybeSingle: () => {
-        isSingle = true;
-        return exec();
-      },
-      single: () => {
-        isSingle = true;
-        return exec();
-      },
-      then: (resolve: (val: any) => void, reject?: (err: any) => void) =>
-        exec().then(resolve, reject),
-    };
-
-    return builder;
-  };
-
-  return {
-    from: (tableName: string) => createBuilder(tableName),
-  };
+  return makeMcpSupabaseFake(tableStore);
 }
 
 vi.mock('../auth', () => ({
@@ -184,140 +69,69 @@ describe('MCP Fitness Extension, Mappers, Briefing Fixes & Mood Enum', () => {
     await setupHabitFlowMcpServer(fakeServer);
   });
 
-  it('maps all 7 Slice 2A/2B Fitness tables + Habit polarity/anchorBlock faithfully from Postgres snake_case', () => {
+  it('maps Slice 2A Fitness profile, daily log, meal template, and meal log from Postgres snake_case', () => {
     const profile = mapFitnessProfileFromRow({
-      id: 'fp-1',
-      user_id: 'u1',
-      height_cm: '175.5',
-      current_weight_kg: '78.2',
-      target_weight_kg: '72.0',
-      starting_weight_kg: '84.0',
-      target_waist_inches: '31.5',
-      calorie_target: 1950,
-      protein_target_g: 140,
-      carbs_target_g: 180,
-      fat_target_g: 60,
-      water_target_ml: 3500,
-      steps_target: 9000,
-      sleep_target_hours: '7.5',
-      activity_level: 'active',
-      goal_type: 'fat_loss',
-      diet_preference: 'eggetarian',
-      gym_schedule_days: [1, 3, 5],
-      low_energy_calorie_ceiling: 1700,
-      low_energy_steps_target: 4000,
-      generation_counter: 3,
+      id: 'fp-1', user_id: 'u1', height_cm: '175.5', current_weight_kg: '78.2', target_weight_kg: '72.0',
+      starting_weight_kg: '84.0', target_waist_inches: '31.5', calorie_target: 1950, protein_target_g: 140,
+      carbs_target_g: 180, fat_target_g: 60, water_target_ml: 3500, steps_target: 9000, sleep_target_hours: '7.5',
+      activity_level: 'active', goal_type: 'fat_loss', diet_preference: 'eggetarian', gym_schedule_days: [1, 3, 5],
+      low_energy_calorie_ceiling: 1700, low_energy_steps_target: 4000, generation_counter: 3,
     });
     expect(profile.lowEnergyCalorieCeiling).toBe(1700);
     expect(profile.lowEnergyStepsTarget).toBe(4000);
     expect(profile.generationCounter).toBe(3);
 
     const dailyLog = mapFitnessDailyLogFromRow({
-      id: 'dl-1',
-      user_id: 'u1',
-      date: '2026-11-25',
-      weight_kg: '78.1',
-      waist_inches: '32.2',
-      water_ml: 2500,
-      steps: 8400,
-      sleep_hours: '6.2',
-      sleep_quality: 3,
-      energy_level: 2,
-      soreness_level: 4,
-      low_energy_mode: true,
-      junk_free_override: true,
-      rested_habit_ids: ['h-gym'],
+      id: 'dl-1', user_id: 'u1', date: '2026-11-25', weight_kg: '78.1', waist_inches: '32.2',
+      water_ml: 2500, steps: 8400, sleep_hours: '6.2', sleep_quality: 3, energy_level: 2, soreness_level: 4,
+      low_energy_mode: true, junk_free_override: true, rested_habit_ids: ['h-gym'],
     });
     expect(dailyLog.lowEnergyMode).toBe(true);
     expect(dailyLog.junkFreeOverride).toBe(true);
     expect(dailyLog.restedHabitIds).toEqual(['h-gym']);
 
     const tpl = mapMealTemplateFromRow({
-      id: 'mt-1',
-      user_id: 'u1',
-      name: '4 Boiled Eggs',
-      hindi_aliases: ['anda', '4 eggs'],
-      calories: 300,
-      protein_g: '24',
-      carbs_g: '2',
-      fat_g: '20',
-      serving_label: '4 eggs',
-      meal_type: 'breakfast',
-      is_junk: false,
-      is_pinned: true,
-      order_index: 2,
+      id: 'mt-1', user_id: 'u1', name: '4 Boiled Eggs', hindi_aliases: ['anda', '4 eggs'],
+      calories: 300, protein_g: '24', carbs_g: '2', fat_g: '20', serving_label: '4 eggs',
+      meal_type: 'breakfast', is_junk: false, is_pinned: true, order_index: 2,
     });
     expect(tpl.hindiAliases).toEqual(['anda', '4 eggs']);
     expect(tpl.proteinG).toBe(24);
 
     const meal = mapMealLogFromRow({
-      id: 'ml-1',
-      user_id: 'u1',
-      date: '2026-11-25',
-      meal_type: 'lunch',
-      name: 'Chicken Rice',
-      calories: 650,
-      protein_g: '45',
-      carbs_g: '75',
-      fat_g: '16',
-      quantity_multiplier: '1',
-      is_junk: false,
-      linked_transaction_id: 'tx-9',
-      source: 'mcp',
+      id: 'ml-1', user_id: 'u1', date: '2026-11-25', meal_type: 'lunch', name: 'Chicken Rice',
+      calories: 650, protein_g: '45', carbs_g: '75', fat_g: '16', quantity_multiplier: '1',
+      is_junk: false, linked_transaction_id: 'tx-9', source: 'mcp',
     });
     expect(meal.linkedTransactionId).toBe('tx-9');
     expect(meal.source).toBe('mcp');
+  });
 
+  it('maps Slice 2B workout, supplement inventory/log, and Habit polarity/anchorBlock from Postgres snake_case', () => {
     const workout = mapWorkoutSessionFromRow({
-      id: 'wk-1',
-      user_id: 'u1',
-      date: '2026-11-25',
-      title: 'Push A',
-      workout_type: 'push',
-      duration_minutes: 55,
-      exercises: [{ name: 'Bench Press', sets: [{ reps: 8, weightKg: 60 }] }],
-      rpe: 8,
+      id: 'wk-1', user_id: 'u1', date: '2026-11-25', title: 'Push A', workout_type: 'push',
+      duration_minutes: 55, exercises: [{ name: 'Bench Press', sets: [{ reps: 8, weightKg: 60 }] }], rpe: 8,
     });
     expect(workout.exercises).toHaveLength(1);
     expect(workout.rpe).toBe(8);
 
     const sup = mapSupplementInventoryFromRow({
-      id: 'sup-1',
-      user_id: 'u1',
-      name: 'Whey Isolate',
-      category: 'protein',
-      unit_label: 'scoop',
-      total_servings: 60,
-      remaining_servings: 45,
-      daily_dosage: 1,
-      cost_inr: 4500,
-      protein_per_serving_g: '25',
-      manual_adjustment: -10,
-      anchor_block: 'morning',
-      low_stock_threshold_days: 7,
-      is_active: true,
+      id: 'sup-1', user_id: 'u1', name: 'Whey Isolate', category: 'protein', unit_label: 'scoop',
+      total_servings: 60, remaining_servings: 45, daily_dosage: 1, cost_inr: 4500, protein_per_serving_g: '25',
+      manual_adjustment: -10, anchor_block: 'morning', low_stock_threshold_days: 7, is_active: true,
     });
     expect(sup.proteinPerServingG).toBe(25);
     expect(sup.manualAdjustment).toBe(-10);
     expect(sup.anchorBlock).toBe('morning');
 
     const supLog = mapSupplementLogFromRow({
-      id: 'sl-1',
-      user_id: 'u1',
-      supplement_id: 'sup-1',
-      date: '2026-11-25',
-      servings_taken: '1',
+      id: 'sl-1', user_id: 'u1', supplement_id: 'sup-1', date: '2026-11-25', servings_taken: '1',
     });
     expect(supLog.servingsTaken).toBe(1);
 
     const habit = mapHabitFromRow({
-      id: 'h-1',
-      user_id: 'u1',
-      name: 'No Junk',
-      category: 'health',
-      polarity: 'quit',
-      anchor_block: 'evening',
-      metadata: { source: 'life_os' },
+      id: 'h-1', user_id: 'u1', name: 'No Junk', category: 'health',
+      polarity: 'quit', anchor_block: 'evening', metadata: { source: 'life_os' },
     });
     expect(habit.polarity).toBe('quit');
     expect(habit.anchorBlock).toBe('evening');
@@ -445,85 +259,38 @@ describe('MCP Fitness Extension, Mappers, Briefing Fixes & Mood Enum', () => {
     ).toBe(true);
   });
 
+  function seedCrossDomainInsightFixtures(today: string, month: string) {
+    tableStore.set('tasks', [
+      { id: 't1', user_id: 'user-mcp-1', title: 'MIT Task', status: 'todo', priority: 'high', metadata: { isMitForDate: today, mitRank: 1 }, tags: [] },
+    ]);
+    tableStore.set('habits', [
+      { id: 'h1', user_id: 'user-mcp-1', name: 'Gym', category: 'health', target_days: 7, is_archived: false },
+    ]);
+    tableStore.set('completions', [{ id: 'c1', user_id: 'user-mcp-1', habit_id: 'h1', date: today, completed: true }]);
+    tableStore.set('debt_records', [{
+      id: 'd-idle', user_id: 'user-mcp-1', person_name: 'Amit', direction: 'lent', title: 'Old dinner split',
+      principal_amount: 1200, total_repaid_amount: 0, remaining_amount: 1200, start_date: '2026-09-01',
+      repayment_schedule: 'flexible', status: 'active', bucket_type: 'everyday_split', color: '#000',
+    }]);
+    tableStore.set('finance_categories', [
+      { id: 'c-junk', user_id: 'user-mcp-1', name: 'Junk Food', slug: 'junk-food', type: 'expense', monthly_budget_limit: 500 },
+    ]);
+    tableStore.set('finance_transactions', [
+      { id: 'tx-j', user_id: 'user-mcp-1', title: 'Momos', amount: 300, type: 'expense', category_id: 'c-junk', account_id: 'a1', date: today, month_key: month },
+    ]);
+  }
+
   it('get_tasks exposes metadata MITs and get_habit_finance_insights fixes debtRecords, obligations & habitConsistencyPct drift + attaches crossDomainInsights', async () => {
     const today = getIstIsoDate();
     const month = today.slice(0, 7);
+    seedCrossDomainInsightFixtures(today, month);
 
-    tableStore.set('tasks', [
-      {
-        id: 't1',
-        user_id: 'user-mcp-1',
-        title: 'MIT Task',
-        status: 'todo',
-        priority: 'high',
-        metadata: { isMitForDate: today, mitRank: 1 },
-        tags: [],
-      },
-    ]);
     const tasksRes = await registeredTools.get('get_tasks')!.handler({});
-    expect(JSON.parse(tasksRes.content[0].text).tasks[0].metadata).toEqual({
-      isMitForDate: today,
-      mitRank: 1,
-    });
-
-    tableStore.set('habits', [
-      {
-        id: 'h1',
-        user_id: 'user-mcp-1',
-        name: 'Gym',
-        category: 'health',
-        target_days: 7,
-        is_archived: false,
-      },
-    ]);
-    tableStore.set('completions', [
-      { id: 'c1', user_id: 'user-mcp-1', habit_id: 'h1', date: today, completed: true },
-    ]);
-    tableStore.set('debt_records', [
-      {
-        id: 'd-idle',
-        user_id: 'user-mcp-1',
-        person_name: 'Amit',
-        direction: 'lent',
-        title: 'Old dinner split',
-        principal_amount: 1200,
-        total_repaid_amount: 0,
-        remaining_amount: 1200,
-        start_date: '2026-09-01',
-        repayment_schedule: 'flexible',
-        status: 'active',
-        bucket_type: 'everyday_split',
-        color: '#000',
-      },
-    ]);
-    tableStore.set('finance_categories', [
-      {
-        id: 'c-junk',
-        user_id: 'user-mcp-1',
-        name: 'Junk Food',
-        slug: 'junk-food',
-        type: 'expense',
-        monthly_budget_limit: 500,
-      },
-    ]);
-    tableStore.set('finance_transactions', [
-      {
-        id: 'tx-j',
-        user_id: 'user-mcp-1',
-        title: 'Momos',
-        amount: 300,
-        type: 'expense',
-        category_id: 'c-junk',
-        account_id: 'a1',
-        date: today,
-        month_key: month,
-      },
-    ]);
+    expect(JSON.parse(tasksRes.content[0].text).tasks[0].metadata).toEqual({ isMitForDate: today, mitRank: 1 });
 
     const insightsRes = await registeredTools.get('get_habit_finance_insights')!.handler({ monthKey: month });
     const insightsJson = JSON.parse(insightsRes.content[0].text);
     expect(insightsJson.crossDomainInsights.walletWaistline.spend14dInr).toBe(300);
-    // Uses elapsed days in month rather than naive totalHabits * 30!
     expect(insightsJson.crossDomainSummary.expectedOpportunitiesInPeriod).toBeLessThanOrEqual(31);
     expect(registeredResources.has('fitness_today')).toBe(true);
     expect(registeredPrompts.has('sunday_reset')).toBe(true);

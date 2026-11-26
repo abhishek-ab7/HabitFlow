@@ -91,7 +91,7 @@ abstract class BaseHabitSyncEngine<T extends { id: string; generationCounter?: n
       dexieTable: this.dexieTable,
       userId,
       label: this.label,
-      mapRemote: (r, l) => this.mapRemote(r, l),
+      mapRemote: (r, l) => this.mapRemote(r, l as T | undefined),
     });
   }
 }

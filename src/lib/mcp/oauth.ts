@@ -26,23 +26,51 @@ export function verifyPkce(codeVerifier: string, codeChallenge: string, method: 
   }
 }
 
+const PRIVATE_EXACT_IPS = new Set(['127.0.0.1', 'localhost', '::1', '::']);
+const PRIVATE_PREFIXES = ['10.', '192.168.', '169.254.', '0.', '100.64.', 'fc', 'fd', 'fe80:'];
+
 /**
  * Checks whether an IP address is private, loopback, or link-local (SSRF guard).
  */
 export function isPrivateOrReservedIp(ip: string): boolean {
-  // IPv4 checks
-  if (ip === '127.0.0.1' || ip === 'localhost') return true;
-  if (ip.startsWith('10.') || ip.startsWith('192.168.')) return true;
+  if (PRIVATE_EXACT_IPS.has(ip)) return true;
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
-  if (ip.startsWith('169.254.')) return true; // Link-local
-  if (ip.startsWith('0.') || ip.startsWith('100.64.')) return true;
+  return PRIVATE_PREFIXES.some((prefix) => ip.startsWith(prefix));
+}
 
-  // IPv6 checks
-  if (ip === '::1' || ip === '::') return true;
-  if (ip.startsWith('fc') || ip.startsWith('fd')) return true; // Unique local
-  if (ip.startsWith('fe80:')) return true; // Link-local
-
+async function hasPrivateDnsResolution(hostname: string): Promise<boolean> {
+  const addresses = await dns.lookup(hostname, { all: true });
+  const privateAddr = addresses.find((addr) => isPrivateOrReservedIp(addr.address));
+  if (privateAddr) {
+    console.warn(`SSRF blocked: CIMD hostname ${hostname} resolved to private IP ${privateAddr.address}`);
+    return true;
+  }
   return false;
+}
+
+async function fetchCimdJson(clientId: string): Promise<any | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(clientId, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    return res.ok ? await res.json() : null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function parseCimdMetadata(opts: { data: any; clientId: string; fallbackName: string }): OAuthConfig | null {
+  const { data, clientId, fallbackName } = opts;
+  if (!data || data.client_id !== clientId) return null;
+  if (!Array.isArray(data.redirect_uris) || data.redirect_uris.length === 0) return null;
+  return {
+    clientId: data.client_id,
+    clientName: data.client_name || fallbackName,
+    redirectUris: data.redirect_uris,
+  };
 }
 
 /**
@@ -51,39 +79,11 @@ export function isPrivateOrReservedIp(ip: string): boolean {
 export async function resolveCimdClient(clientId: string): Promise<OAuthConfig | null> {
   try {
     const parsed = new URL(clientId);
-    if (parsed.protocol !== 'https:') {
-      return null;
-    }
+    if (parsed.protocol !== 'https:') return null;
+    if (await hasPrivateDnsResolution(parsed.hostname)) return null;
 
-    // SSRF Check: resolve hostname DNS and reject private IPs
-    const addresses = await dns.lookup(parsed.hostname, { all: true });
-    for (const addr of addresses) {
-      if (isPrivateOrReservedIp(addr.address)) {
-        console.warn(`SSRF blocked: CIMD hostname ${parsed.hostname} resolved to private IP ${addr.address}`);
-        return null;
-      }
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-
-    const res = await fetch(clientId, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    if (data.client_id !== clientId) return null;
-    if (!Array.isArray(data.redirect_uris) || data.redirect_uris.length === 0) return null;
-
-    return {
-      clientId: data.client_id,
-      clientName: data.client_name || parsed.hostname,
-      redirectUris: data.redirect_uris,
-    };
+    const data = await fetchCimdJson(clientId);
+    return parseCimdMetadata({ data, clientId, fallbackName: parsed.hostname });
   } catch (err) {
     console.warn(`Failed to resolve CIMD client ${clientId}:`, err);
     return null;
@@ -162,6 +162,82 @@ export async function issueAuthorizationCode(params: {
   return code;
 }
 
+function assertAuthCodeTiming(authCode: any) {
+  if (authCode.consumed_at) throw new Error('Authorization code has already been consumed.');
+  if (new Date(authCode.expires_at).getTime() <= Date.now()) throw new Error('Authorization code has expired.');
+}
+
+function assertResourceMatches(opts: { expected: string | null | undefined; actual: string | undefined }) {
+  if (!opts.actual || !opts.expected) return;
+  if (opts.actual !== opts.expected) {
+    throw new Error('Requested resource does not match authorization code resource.');
+  }
+}
+
+function assertAuthCodeMatchesParams(
+  authCode: any,
+  params: { clientId: string; redirectUri: string; resource?: string }
+) {
+  if (authCode.client_id !== params.clientId) throw new Error('Client ID mismatch.');
+  if (authCode.redirect_uri !== params.redirectUri) throw new Error('Redirect URI mismatch.');
+  assertResourceMatches({ expected: authCode.resource, actual: params.resource });
+}
+
+function assertAuthCodeValid(authCode: any, params: {
+  codeVerifier: string;
+  clientId: string;
+  redirectUri: string;
+  resource?: string;
+}) {
+  assertAuthCodeTiming(authCode);
+  assertAuthCodeMatchesParams(authCode, params);
+  if (!verifyPkce(params.codeVerifier, authCode.code_challenge, authCode.code_challenge_method)) {
+    throw new Error('Invalid PKCE code verifier.');
+  }
+}
+
+async function issueTokenPair(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  userId: string;
+  clientId: string;
+  resource: string;
+  scopes: string[];
+}) {
+  const accessToken = `mcp_at_${crypto.randomBytes(32).toString('hex')}`;
+  const refreshToken = `mcp_rt_${crypto.randomBytes(32).toString('hex')}`;
+  const accessExpiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
+  const refreshExpiresAt = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
+
+  await Promise.all([
+    params.supabase.from('mcp_oauth_tokens').insert({
+      user_id: params.userId,
+      client_id: params.clientId,
+      token_hash: hashToken(accessToken),
+      token_type: 'access_token',
+      resource: params.resource,
+      scopes: params.scopes,
+      expires_at: accessExpiresAt,
+    }),
+    params.supabase.from('mcp_oauth_tokens').insert({
+      user_id: params.userId,
+      client_id: params.clientId,
+      token_hash: hashToken(refreshToken),
+      token_type: 'refresh_token',
+      resource: params.resource,
+      scopes: params.scopes,
+      expires_at: refreshExpiresAt,
+    }),
+  ]);
+
+  return {
+    accessToken,
+    refreshToken,
+    tokenType: 'Bearer' as const,
+    expiresIn: 3600,
+    scope: (params.scopes || []).join(' '),
+  };
+}
+
 /**
  * Exchanges an authorization code for access and refresh tokens.
  */
@@ -187,81 +263,21 @@ export async function exchangeAuthorizationCode(params: {
     .eq('code_hash', codeHash)
     .single();
 
-  if (error || !authCode) {
-    throw new Error('Invalid authorization code.');
-  }
+  if (error || !authCode) throw new Error('Invalid authorization code.');
+  assertAuthCodeValid(authCode, params);
 
-  if (authCode.consumed_at) {
-    throw new Error('Authorization code has already been consumed.');
-  }
-
-  if (new Date(authCode.expires_at).getTime() <= Date.now()) {
-    throw new Error('Authorization code has expired.');
-  }
-
-  if (authCode.client_id !== params.clientId) {
-    throw new Error('Client ID mismatch.');
-  }
-
-  if (authCode.redirect_uri !== params.redirectUri) {
-    throw new Error('Redirect URI mismatch.');
-  }
-
-  // RFC 8707 Resource validation if provided
-  if (params.resource && authCode.resource && params.resource !== authCode.resource) {
-    throw new Error('Requested resource does not match authorization code resource.');
-  }
-
-  // Verify PKCE
-  const pkceValid = verifyPkce(params.codeVerifier, authCode.code_challenge, authCode.code_challenge_method);
-  if (!pkceValid) {
-    throw new Error('Invalid PKCE code verifier.');
-  }
-
-  // Mark code consumed (single-use)
   await supabase
     .from('mcp_oauth_codes')
     .update({ consumed_at: new Date().toISOString() })
     .eq('code_hash', codeHash);
 
-  // Generate tokens
-  const accessToken = `mcp_at_${crypto.randomBytes(32).toString('hex')}`;
-  const refreshToken = `mcp_rt_${crypto.randomBytes(32).toString('hex')}`;
-
-  const accessHash = hashToken(accessToken);
-  const refreshHash = hashToken(refreshToken);
-
-  const accessExpiresAt = new Date(Date.now() + 3600 * 1000).toISOString(); // 1 hour
-  const refreshExpiresAt = new Date(Date.now() + 30 * 86400 * 1000).toISOString(); // 30 days
-
-  await Promise.all([
-    supabase.from('mcp_oauth_tokens').insert({
-      user_id: authCode.user_id,
-      client_id: authCode.client_id,
-      token_hash: accessHash,
-      token_type: 'access_token',
-      resource: authCode.resource || MCP_ENDPOINT,
-      scopes: authCode.scopes,
-      expires_at: accessExpiresAt,
-    }),
-    supabase.from('mcp_oauth_tokens').insert({
-      user_id: authCode.user_id,
-      client_id: authCode.client_id,
-      token_hash: refreshHash,
-      token_type: 'refresh_token',
-      resource: authCode.resource || MCP_ENDPOINT,
-      scopes: authCode.scopes,
-      expires_at: refreshExpiresAt,
-    }),
-  ]);
-
-  return {
-    accessToken,
-    refreshToken,
-    tokenType: 'Bearer',
-    expiresIn: 3600,
-    scope: (authCode.scopes || []).join(' '),
-  };
+  return issueTokenPair({
+    supabase,
+    userId: authCode.user_id,
+    clientId: authCode.client_id,
+    resource: authCode.resource || MCP_ENDPOINT,
+    scopes: authCode.scopes,
+  });
 }
 
 /**
@@ -289,62 +305,22 @@ export async function refreshAccessToken(params: {
     .is('revoked_at', null)
     .single();
 
-  if (error || !tokenRecord) {
-    throw new Error('Invalid or revoked refresh token.');
-  }
+  if (error || !tokenRecord) throw new Error('Invalid or revoked refresh token.');
+  if (new Date(tokenRecord.expires_at).getTime() <= Date.now()) throw new Error('Refresh token has expired.');
+  if (tokenRecord.client_id !== params.clientId) throw new Error('Client ID mismatch.');
 
-  if (new Date(tokenRecord.expires_at).getTime() <= Date.now()) {
-    throw new Error('Refresh token has expired.');
-  }
-
-  if (tokenRecord.client_id !== params.clientId) {
-    throw new Error('Client ID mismatch.');
-  }
-
-  // Revoke old refresh token (rotation)
   await supabase
     .from('mcp_oauth_tokens')
     .update({ revoked_at: new Date().toISOString() })
     .eq('id', tokenRecord.id);
 
-  // Issue new token pair
-  const newAccessToken = `mcp_at_${crypto.randomBytes(32).toString('hex')}`;
-  const newRefreshToken = `mcp_rt_${crypto.randomBytes(32).toString('hex')}`;
-
-  const accessHash = hashToken(newAccessToken);
-  const newRefreshHash = hashToken(newRefreshToken);
-
-  const accessExpiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
-  const refreshExpiresAt = new Date(Date.now() + 30 * 86400 * 1000).toISOString();
-
-  await Promise.all([
-    supabase.from('mcp_oauth_tokens').insert({
-      user_id: tokenRecord.user_id,
-      client_id: tokenRecord.client_id,
-      token_hash: accessHash,
-      token_type: 'access_token',
-      resource: tokenRecord.resource,
-      scopes: tokenRecord.scopes,
-      expires_at: accessExpiresAt,
-    }),
-    supabase.from('mcp_oauth_tokens').insert({
-      user_id: tokenRecord.user_id,
-      client_id: tokenRecord.client_id,
-      token_hash: newRefreshHash,
-      token_type: 'refresh_token',
-      resource: tokenRecord.resource,
-      scopes: tokenRecord.scopes,
-      expires_at: refreshExpiresAt,
-    }),
-  ]);
-
-  return {
-    accessToken: newAccessToken,
-    refreshToken: newRefreshToken,
-    tokenType: 'Bearer',
-    expiresIn: 3600,
-    scope: (tokenRecord.scopes || []).join(' '),
-  };
+  return issueTokenPair({
+    supabase,
+    userId: tokenRecord.user_id,
+    clientId: tokenRecord.client_id,
+    resource: tokenRecord.resource,
+    scopes: tokenRecord.scopes,
+  });
 }
 
 /**

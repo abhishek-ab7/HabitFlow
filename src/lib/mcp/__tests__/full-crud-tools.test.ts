@@ -11,186 +11,10 @@ const { mockAuthCtx, tableStore } = vi.hoisted(() => ({
   tableStore: new Map<string, any[]>(),
 }));
 
+import { makeMcpSupabaseFake } from './test-supabase-fake';
+
 function makeSupabaseFake() {
-  const createBuilder = (tableName: string) => {
-    const filters: Array<(r: any) => boolean> = [];
-    let pendingAction: 'select' | 'insert' | 'update' | 'delete' = 'select';
-    let payloadData: any = null;
-    let isSingle = false;
-    let countExact = false;
-    let headOnly = false;
-    const orderCols: Array<{ col: string; asc: boolean }> = [];
-    let rangeBounds: [number, number] | null = null;
-    let maxRows: number | null = null;
-
-    const exec = async () => {
-      const rows = tableStore.get(tableName) || [];
-      const matching = rows.filter((r) => filters.every((fn) => fn(r)));
-
-      if (pendingAction === 'insert') {
-        const toInsert = Array.isArray(payloadData) ? payloadData : [payloadData];
-        const inserted = toInsert.map((item) => ({ id: item.id || crypto.randomUUID(), ...item }));
-        tableStore.set(tableName, [...rows, ...inserted]);
-        return {
-          data: isSingle ? inserted[0] : inserted,
-          error: null,
-        };
-      }
-
-      if (pendingAction === 'update') {
-        const updatedList: any[] = [];
-        const nextRows = rows.map((r) => {
-          if (filters.every((fn) => fn(r))) {
-            const updated = { ...r, ...payloadData };
-            updatedList.push(updated);
-            return updated;
-          }
-          return r;
-        });
-        tableStore.set(tableName, nextRows);
-        return {
-          data: isSingle ? updatedList[0] ?? null : updatedList,
-          error: null,
-        };
-      }
-
-      if (pendingAction === 'delete') {
-        const deletedList: any[] = [];
-        const keptRows = rows.filter((r) => {
-          if (filters.every((fn) => fn(r))) {
-            deletedList.push(r);
-            return false;
-          }
-          return true;
-        });
-        tableStore.set(tableName, keptRows);
-        return {
-          data: isSingle ? deletedList[0] ?? null : deletedList,
-          error: null,
-        };
-      }
-
-      let result = [...matching];
-      if (orderCols.length > 0) {
-        result.sort((a, b) => {
-          for (const { col, asc } of orderCols) {
-            const av = a[col] ?? '';
-            const bv = b[col] ?? '';
-            const cmp =
-              typeof av === 'number' && typeof bv === 'number'
-                ? av - bv
-                : String(av).localeCompare(String(bv));
-            if (cmp !== 0) return asc ? cmp : -cmp;
-          }
-          return 0;
-        });
-      }
-
-      const totalCount = result.length;
-      if (rangeBounds) {
-        result = result.slice(rangeBounds[0], rangeBounds[1] + 1);
-      } else if (maxRows !== null) {
-        result = result.slice(0, maxRows);
-      }
-
-      if (headOnly) {
-        return { data: null, count: countExact ? totalCount : null, error: null };
-      }
-
-      if (isSingle) {
-        return {
-          data: result[0] ?? null,
-          count: countExact ? totalCount : undefined,
-          error: null,
-        };
-      }
-
-      return {
-        data: result,
-        count: countExact ? totalCount : undefined,
-        error: null,
-      };
-    };
-
-    const builder: any = {
-      select: (_cols?: string, opts?: { count?: string; head?: boolean }) => {
-        if (opts?.count === 'exact') countExact = true;
-        if (opts?.head) headOnly = true;
-        return builder;
-      },
-      insert: (data: any) => {
-        pendingAction = 'insert';
-        payloadData = data;
-        return builder;
-      },
-      update: (data: any) => {
-        pendingAction = 'update';
-        payloadData = data;
-        return builder;
-      },
-      delete: () => {
-        pendingAction = 'delete';
-        return builder;
-      },
-      eq: (col: string, val: any) => {
-        filters.push((r) => r[col] === val);
-        return builder;
-      },
-      neq: (col: string, val: any) => {
-        filters.push((r) => r[col] !== val);
-        return builder;
-      },
-      in: (col: string, vals: any[]) => {
-        filters.push((r) => vals.includes(r[col]));
-        return builder;
-      },
-      ilike: (col: string, pattern: string) => {
-        const needle = pattern.replace(/%/g, '').toLowerCase();
-        filters.push((r) => String(r[col] ?? '').toLowerCase().includes(needle));
-        return builder;
-      },
-      gte: (col: string, val: any) => {
-        filters.push((r) => String(r[col] ?? '') >= String(val));
-        return builder;
-      },
-      lte: (col: string, val: any) => {
-        filters.push((r) => String(r[col] ?? '') <= String(val));
-        return builder;
-      },
-      is: (col: string, val: any) => {
-        filters.push((r) => (r[col] ?? null) === val);
-        return builder;
-      },
-      or: () => builder,
-      order: (col: string, opts?: { ascending?: boolean }) => {
-        orderCols.push({ col, asc: opts?.ascending !== false });
-        return builder;
-      },
-      range: (from: number, to: number) => {
-        rangeBounds = [from, to];
-        return builder;
-      },
-      limit: (n: number) => {
-        maxRows = n;
-        return builder;
-      },
-      maybeSingle: () => {
-        isSingle = true;
-        return exec();
-      },
-      single: () => {
-        isSingle = true;
-        return exec();
-      },
-      then: (resolve: (val: any) => void, reject?: (err: any) => void) => exec().then(resolve, reject),
-    };
-
-    return builder;
-  };
-
-  return {
-    from: (tableName: string) => createBuilder(tableName),
-  };
+  return makeMcpSupabaseFake(tableStore);
 }
 
 vi.mock('../auth', () => ({
@@ -431,27 +255,12 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(1);
   });
 
-  it('handles Fitness full CRUD & compound expense + Low-Energy gym auto-rest hooks', async () => {
+  it('handles Fitness profile & daily body metrics CRUD with Low-Energy gym auto-rest hooks', async () => {
     const today = getIstIsoDate();
-
-    // Seed finance account + gym habit
-    const bank = parseResult(
-      await registeredTools.get('manage_finance_account')!.handler({
-        action: 'create',
-        name: 'UPI Wallet',
-        type: 'upi',
-        balance: 5000,
-      })
-    ).account;
     const gymHabit = parseResult(
-      await registeredTools.get('manage_habit')!.handler({
-        action: 'create',
-        name: 'Push Day',
-        anchor_block: 'gym',
-      })
+      await registeredTools.get('manage_habit')!.handler({ action: 'create', name: 'Push Day', anchor_block: 'gym' })
     ).habit;
 
-    // 1. manage_fitness_profile full CRUD
     const profTool = registeredTools.get('manage_fitness_profile')!;
     const pUpsert = parseResult(
       await profTool.handler({ action: 'upsert', calorieTarget: 2100, proteinTargetG: 150, lowEnergyCalorieCeiling: 1750 })
@@ -462,103 +271,56 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     await profTool.handler({ action: 'restore' });
     expect(parseResult(await profTool.handler({ action: 'get' })).profile.proteinTargetG).toBe(150);
 
-    // 2. log_daily_body_metrics list, autoRestGymHabits, delete, restore
     const bodyTool = registeredTools.get('log_daily_body_metrics')!;
     const lowRes = parseResult(
-      await bodyTool.handler({
-        action: 'upsert',
-        date: today,
-        lowEnergyMode: true,
-        autoRestGymHabits: true,
-        steps: 4200,
-      })
+      await bodyTool.handler({ action: 'upsert', date: today, lowEnergyMode: true, autoRestGymHabits: true, steps: 4200 })
     );
     expect(lowRes.autoRestedHabitIds).toEqual([gymHabit.id]);
     expect(lowRes.dailyLog.restedHabitIds).toEqual([gymHabit.id]);
-    const listLogs = parseResult(await bodyTool.handler({ action: 'list' }));
-    expect(listLogs.count).toBe(1);
+    expect(parseResult(await bodyTool.handler({ action: 'list' })).count).toBe(1);
     await bodyTool.handler({ action: 'delete', date: today, confirm: true });
     expect(parseResult(await bodyTool.handler({ action: 'list' })).count).toBe(0);
     await bodyTool.handler({ action: 'restore', date: today });
     expect(parseResult(await bodyTool.handler({ action: 'list' })).count).toBe(1);
+  });
 
-    // 3. manage_meals compound expense + update/restore + template delete/restore
+  it('handles Fitness meals, workouts & supplements CRUD with compound expense & stock recompute', async () => {
+    const today = getIstIsoDate();
+    const bank = parseResult(
+      await registeredTools.get('manage_finance_account')!.handler({ action: 'create', name: 'UPI Wallet', type: 'upi', balance: 5000 })
+    ).account;
+
     const mealTool = registeredTools.get('manage_meals')!;
-    const tpl = parseResult(
-      await mealTool.handler({ action: 'upsert_template', name: 'Chicken Bowl', calories: 550, proteinG: 42 })
-    ).template;
-    const paidMeal = parseResult(
-      await mealTool.handler({
-        action: 'log',
-        templateId: tpl.id,
-        date: today,
-        expenseAmount: 320,
-        accountId: bank.id,
-      })
-    );
+    const tpl = parseResult(await mealTool.handler({ action: 'upsert_template', name: 'Chicken Bowl', calories: 550, proteinG: 42 })).template;
+    const paidMeal = parseResult(await mealTool.handler({ action: 'log', templateId: tpl.id, date: today, expenseAmount: 320, accountId: bank.id }));
     expect(paidMeal.meal.linkedTransactionId).toBe(paidMeal.linkedTransaction.id);
     expect(paidMeal.updatedAccounts[0].newBalance).toBe(4680);
 
-    const updMeal = parseResult(
-      await mealTool.handler({ action: 'update', mealId: paidMeal.meal.id, calories: 600 })
-    );
-    expect(updMeal.meal.calories).toBe(600);
+    expect(parseResult(await mealTool.handler({ action: 'update', mealId: paidMeal.meal.id, calories: 600 })).meal.calories).toBe(600);
     await mealTool.handler({ action: 'delete', mealId: paidMeal.meal.id, confirm: true });
     await mealTool.handler({ action: 'restore', mealId: paidMeal.meal.id });
     expect(parseResult(await mealTool.handler({ action: 'list', date: today })).count).toBe(1);
-
     await mealTool.handler({ action: 'delete_template', templateId: tpl.id, confirm: true });
     expect(parseResult(await mealTool.handler({ action: 'list_templates' })).count).toBe(0);
     await mealTool.handler({ action: 'restore_template', templateId: tpl.id });
     expect(parseResult(await mealTool.handler({ action: 'list_templates' })).count).toBe(1);
 
-    // 4. manage_workouts update + restore
     const workoutTool = registeredTools.get('manage_workouts')!;
-    const wLog = parseResult(
-      await workoutTool.handler({ action: 'log', date: today, title: 'Upper A', durationMinutes: 45 })
-    ).workout;
-    const wUpd = parseResult(
-      await workoutTool.handler({ action: 'update', workoutId: wLog.id, durationMinutes: 60, rpe: 8 })
-    ).workout;
-    expect(wUpd.durationMinutes).toBe(60);
+    const wLog = parseResult(await workoutTool.handler({ action: 'log', date: today, title: 'Upper A', durationMinutes: 45 })).workout;
+    expect(parseResult(await workoutTool.handler({ action: 'update', workoutId: wLog.id, durationMinutes: 60, rpe: 8 })).workout.durationMinutes).toBe(60);
     await workoutTool.handler({ action: 'delete', workoutId: wLog.id, confirm: true });
     await workoutTool.handler({ action: 'restore', workoutId: wLog.id });
     expect(parseResult(await workoutTool.handler({ action: 'list' })).count).toBe(1);
 
-    // 5. manage_supplements restock + compound expense + logs update/delete/restore recomputing remainingServings
     const supTool = registeredTools.get('manage_supplements')!;
-    const whey = parseResult(
-      await supTool.handler({ action: 'upsert_item', name: 'Whey Isolate', totalServings: 30, costInr: 2500 })
-    ).item;
-    const dose = parseResult(
-      await supTool.handler({ action: 'log_dose', supplementId: whey.id, date: today, servingsTaken: 2 })
-    );
+    const whey = parseResult(await supTool.handler({ action: 'upsert_item', name: 'Whey Isolate', totalServings: 30, costInr: 2500 })).item;
+    const dose = parseResult(await supTool.handler({ action: 'log_dose', supplementId: whey.id, date: today, servingsTaken: 2 }));
     expect(dose.remainingServings).toBe(28);
+    expect(parseResult(await supTool.handler({ action: 'update_log', logId: dose.log.id, servingsTaken: 3 })).remainingServings).toBe(27);
+    expect(parseResult(await supTool.handler({ action: 'delete_log', logId: dose.log.id, confirm: true })).remainingServings).toBe(30);
+    expect(parseResult(await supTool.handler({ action: 'restore_log', logId: dose.log.id })).remainingServings).toBe(27);
 
-    const updDose = parseResult(
-      await supTool.handler({ action: 'update_log', logId: dose.log.id, servingsTaken: 3 })
-    );
-    expect(updDose.remainingServings).toBe(27);
-
-    const delDose = parseResult(
-      await supTool.handler({ action: 'delete_log', logId: dose.log.id, confirm: true })
-    );
-    expect(delDose.remainingServings).toBe(30);
-
-    const resDose = parseResult(
-      await supTool.handler({ action: 'restore_log', logId: dose.log.id })
-    );
-    expect(resDose.remainingServings).toBe(27);
-
-    const restock = parseResult(
-      await supTool.handler({
-        action: 'restock_item',
-        supplementId: whey.id,
-        addedServings: 30,
-        expenseAmount: 2600,
-        accountId: bank.id,
-      })
-    );
+    const restock = parseResult(await supTool.handler({ action: 'restock_item', supplementId: whey.id, addedServings: 30, expenseAmount: 2600, accountId: bank.id }));
     expect(restock.item.remainingServings).toBe(57);
     expect(restock.item.linkedTransactionId).toBe(restock.linkedTransaction.id);
     expect(restock.updatedAccounts[0].newBalance).toBe(2080);
