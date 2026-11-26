@@ -1,68 +1,15 @@
 'use client';
 
-import { useMemo, useState, useCallback, useEffect, memo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import { format, getDaysInMonth, startOfMonth, getDay, isFuture, isToday } from 'date-fns';
-import { Check, Flame, MoreHorizontal, Pencil, Trash2, Archive, Snowflake, Edit3, Moon, Shield, ShieldCheck, Timer } from 'lucide-react';
-import { getHabitWeekProgress, isHabitAutoRestOnDate } from '@/lib/calculations';
-import { useFeedback } from '@/hooks/use-feedback';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
-
-const CATEGORY_COLORS: Record<Category, string> = {
-    health: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
-    work: 'bg-blue-500/20 text-blue-600 dark:text-blue-400',
-    learning: 'bg-amber-500/20 text-amber-600 dark:text-amber-400',
-    personal: 'bg-pink-500/20 text-pink-600 dark:text-pink-400',
-    finance: 'bg-sky-500/20 text-sky-600 dark:text-sky-400',
-    relationships: 'bg-orange-500/20 text-orange-600 dark:text-orange-400',
-};
-
-const getStreakStyle = (streak: number) => {
-    if (streak >= 100) return 'bg-gradient-to-r from-amber-500 to-orange-500 text-white';
-    if (streak >= 30) return 'bg-gradient-to-r from-orange-400 to-red-500 text-white';
-    if (streak >= 7) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
-    if (streak >= 3) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
-    return '';
-};
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from '@dnd-kit/core';
-import { SmartPointerSensor } from '@/lib/dnd-sensors';
-import { toast } from 'sonner';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-
-import { cn } from '@/lib/utils';
+import { memo, useRef } from 'react';
+import { getHabitWeekProgress } from '@/lib/calculations';
 import { EmptyHabitsIllustration } from '@/components/ui/illustrations';
-import type { Habit, HabitCompletion, Category } from '@/lib/types';
+import type { Habit, HabitCompletion } from '@/lib/types';
+import { HabitGridDesktop } from './grid/HabitGridDesktop';
+import { HabitGridMobileCard } from './grid/HabitGridMobileCard';
+import { HabitGridDialogs } from './grid/HabitGridDialogs';
+import { useHabitGridController } from './grid/useHabitGridController';
 
 const EMPTY_HABIT_COMPLETIONS: HabitCompletion[] = [];
-import { useHabitStore } from '@/lib/stores/habit-store';
-import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
-import { SortableHabitRow } from './SortableHabitRow';
 
 interface HabitGridProps {
   habits: Habit[];
@@ -76,653 +23,88 @@ interface HabitGridProps {
 }
 
 export const HabitGrid = memo(function HabitGrid({
-  habits,
-  completions,
-  selectedMonth,
-  onToggle,
-  onEdit,
-  onDelete,
-  onArchive,
-  streaks,
+  habits, completions, selectedMonth, onToggle, onEdit, onDelete, onArchive, streaks,
 }: HabitGridProps) {
-  const router = useRouter();
-  const [rippleCell, setRippleCell] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
-  );
-  const [showLogModal, setShowLogModal] = useState(false);
-  const [selectedHabitForLog, setSelectedHabitForLog] = useState<Habit | null>(null);
-  const [logDate, setLogDate] = useState('');
-  const [logNote, setLogNote] = useState('');
-  const [logValue, setLogValue] = useState(0);
-
-  const [showNoShieldsDialog, setShowNoShieldsDialog] = useState(false);
-  const feedback = useFeedback();
-
-  const handleOpenLogModal = (habit: Habit) => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const habitsCompletionsMap = completionsMapByHabit.get(habit.id) || new Map();
-    const comp = habitsCompletionsMap.get(todayStr);
-
-    setSelectedHabitForLog(habit);
-    setLogDate(todayStr);
-    setLogNote(comp?.note || '');
-    setLogValue(comp?.value || 0);
-    setShowLogModal(true);
-  };
-
-  const handleSaveLogModal = async () => {
-    if (!selectedHabitForLog) return;
-    feedback.complete();
-    const { updateNote, updateValue } = useHabitStore.getState();
-    await updateNote(selectedHabitForLog.id, logDate, logNote);
-    if (selectedHabitForLog.isQuantitative) {
-      await updateValue(selectedHabitForLog.id, logDate, logValue);
-    }
-    setShowLogModal(false);
-    toast.success('Progress log updated');
-  };
-  const reorder = useHabitStore((s) => s.reorder);
-  const freezeHabit = useHabitStore((s) => s.freezeHabit);
-  const markRestDay = useHabitStore((s) => s.markRestDay);
-  const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
-
-  const handleMobileRest = async (habitId: string, dateStr: string) => {
-    feedback.tap();
-    try {
-      await markRestDay(habitId, dateStr);
-      toast.success('Rest day updated');
-    } catch (err) {
-      toast.error((err as Error).message);
-    }
-  };
-
-  const handleMobileFreeze = async (habitId: string, dateStr: string) => {
-    feedback.tap();
-    try {
-      await freezeHabit(habitId, dateStr);
-    } catch (err) {
-      if ((err as Error).message === 'NO_SHIELDS_LEFT') {
-        setShowNoShieldsDialog(true);
-      } else {
-        toast.error((err as Error).message);
-      }
-    }
-  };
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // Handle window resizing to detect mobile (<1024px matches Tailwind lg breakpoint)
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  const sensors = useSensors(
-    useSensor(SmartPointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 8,
-      },
-    })
-  );
-
-
-
-  // Generate days for the month
-  const days = useMemo(() => {
-    const daysInMonth = getDaysInMonth(selectedMonth);
-    const firstDayOfWeek = getDay(startOfMonth(selectedMonth));
-
-    return Array.from({ length: daysInMonth }, (_, i) => {
-      const day = i + 1;
-      const date = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), day);
-      const dateStr = format(date, 'yyyy-MM-dd');
-      const dayOfWeek = (firstDayOfWeek + i) % 7;
-
-      return {
-        day,
-        dateStr,
-        dayOfWeek,
-        dayLabel: format(date, 'EEE')[0], // M, T, W, etc.
-        isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
-        isFuture: isFuture(date),
-        isToday: isToday(date),
-      };
-    });
-  }, [selectedMonth]);
-
-  // Compute displayed days (always full month for scrollable layout)
-  const displayedDays = useMemo(() => {
-    return days;
-  }, [days]);
-
-  // Group completions per habit once so toggling one habit does not invalidate other rows
-  const completionsByHabit = useMemo(() => {
-    const map = new Map<string, HabitCompletion[]>();
-    for (let i = 0; i < completions.length; i++) {
-      const c = completions[i];
-      let arr = map.get(c.habitId);
-      if (!arr) {
-        arr = [];
-        map.set(c.habitId, arr);
-      }
-      arr.push(c);
-    }
-    return map;
-  }, [completions]);
-
-  const habitIds = useMemo(() => habits.map((h) => h.id), [habits]);
-
-  // Helper to query completions efficiently
-  const completionsMapByHabit = useMemo(() => {
-    const map = new Map<string, Map<string, HabitCompletion>>();
-    for (let i = 0; i < completions.length; i++) {
-      const c = completions[i];
-      if (!map.has(c.habitId)) {
-        map.set(c.habitId, new Map());
-      }
-      map.get(c.habitId)!.set(c.date, c);
-    }
-    return map;
-  }, [completions]);
-
-  const mobileDays = useMemo(() => {
-    const todayIndex = displayedDays.findIndex(d => d.isToday);
-    if (todayIndex !== -1) {
-      const start = Math.max(0, todayIndex - 4);
-      return displayedDays.slice(start, todayIndex + 1);
-    }
-    return displayedDays.slice(-5);
-  }, [displayedDays]);
-
-  // Auto-scroll to center today's date on mobile mount (offsetting for the sticky column width)
-  useEffect(() => {
-    if (isMobile && containerRef.current) {
-      const todayEl = containerRef.current.querySelector('.today-cell-header') as HTMLElement;
-      if (todayEl) {
-        const container = containerRef.current;
-        const viewportWidth = container.clientWidth;
-        const stickyWidth = 176; // w-44 width
-        const visibleCellsWidth = viewportWidth - stickyWidth;
-        
-        const todayRect = todayEl.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        const todayContentCenter = todayRect.left - containerRect.left + container.scrollLeft + todayRect.width / 2;
-        
-        const targetScrollLeft = todayContentCenter - (stickyWidth + visibleCellsWidth / 2);
-        container.scrollLeft = Math.max(0, targetScrollLeft);
-      }
-    }
-  }, [isMobile, displayedDays]);
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldIndex = habits.findIndex((h) => h.id === active.id);
-      const newIndex = habits.findIndex((h) => h.id === over.id);
-
-      const newOrder = arrayMove(habits, oldIndex, newIndex);
-      const orderedIds = newOrder.map(h => h.id);
-
-      // Optimistic update handled by DnD kit conceptually, 
-      // but we call store to update state and persist
-      await reorder(orderedIds);
-    }
-  };
+  const vm = useHabitGridController({ habits, completions, selectedMonth, containerRef });
 
   if (habits.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="mb-4">
-          <EmptyHabitsIllustration />
-        </div>
+        <div className="mb-4"><EmptyHabitsIllustration /></div>
         <h3 className="text-lg font-semibold mb-2">No habits yet</h3>
-        <p className="text-muted-foreground max-w-sm">
-          Create your first habit to start tracking your daily progress
-        </p>
+        <p className="text-muted-foreground max-w-sm">Create your first habit to start tracking your daily progress</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* DESKTOP LAYOUT (mounted only on lg+ viewports) */}
-      {!isMobile && (
-      <div ref={containerRef} className="overflow-x-auto pb-4 scrollbar-hide">
-        <div className="w-fit min-w-full">
-          {/* Header row with days */}
-          <div className="flex items-center sticky top-0 bg-background/95 z-10 pb-2 border-b">
-            <div className="w-44 md:w-64 shrink-0 sticky left-0 bg-background z-20 border-r border-border/40 self-stretch" /> {/* Sticky Left Spacer */}
-            <div className="flex gap-0.5">
-              {displayedDays.map(({ day, dayLabel, isWeekend, isToday: isTodayDate }) => (
-                <div
-                  key={day}
-                  className={cn(
-                    "w-9 h-14 flex flex-col items-center justify-center text-xs",
-                    isWeekend && "text-muted-foreground",
-                    isTodayDate && "font-bold today-cell-header"
-                  )}
-                >
-                  <span className={cn(
-                    "text-[10px] mb-0.5",
-                    isWeekend ? "text-muted-foreground/70" : "text-muted-foreground"
-                  )}>
-                    {dayLabel}
-                  </span>
-                  <span className={cn(
-                    "w-6 h-6 flex items-center justify-center rounded-full",
-                    isTodayDate && "bg-primary text-primary-foreground"
-                  )}>
-                    {day}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="w-16 md:w-24 flex-shrink-0 text-center text-xs text-muted-foreground ml-auto">
-              Progress
-            </div>
-          </div>
-
-          {/* Habit rows */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={habitIds}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="divide-y divide-border/50">
-                {habits.map((habit) => {
-                  const streak = streaks.get(habit.id) || 0;
-                  return (
-                    <SortableHabitRow
-                      key={habit.id}
-                      habit={habit}
-                      days={displayedDays}
-                      completions={completionsByHabit.get(habit.id) || EMPTY_HABIT_COMPLETIONS}
-                      streak={streak}
-                      onToggle={onToggle}
-                      onEdit={onEdit}
-                      onDelete={onDelete}
-                      onArchive={onArchive}
-                      onFreeze={freezeHabit}
-                    />
-                  );
-                })}
-              </div>
-            </SortableContext>
-          </DndContext>
+      {!vm.isMobile ? (
+        <HabitGridDesktop
+          containerRef={containerRef}
+          displayedDays={vm.displayedDays}
+          habits={habits}
+          habitIds={vm.habitIds}
+          completionsByHabit={vm.completionsByHabit}
+          streaks={streaks}
+          sensors={vm.sensors}
+          onDragEnd={vm.handleDragEnd}
+          onToggle={onToggle}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onArchive={onArchive}
+          onFreeze={vm.freezeHabit}
+        />
+      ) : (
+        <div className="space-y-4">
+          {habits.map((habit) => {
+            const habitComps = vm.completionsByHabit.get(habit.id) || EMPTY_HABIT_COMPLETIONS;
+            return (
+              <HabitGridMobileCard
+                key={habit.id}
+                habit={habit}
+                streak={streaks.get(habit.id) || 0}
+                completions={completions}
+                habitsCompletionsMap={vm.completionsMapByHabit.get(habit.id) || new Map()}
+                weekProg={getHabitWeekProgress(habit, habitComps, new Date())}
+                mobileDays={vm.mobileDays}
+                onToggleDay={(dateStr, isCompleted) => {
+                  if (isCompleted) vm.feedback.uncheck();
+                  else vm.feedback.complete();
+                  onToggle(habit.id, dateStr);
+                }}
+                onEdit={() => onEdit(habit)}
+                onOpenLogModal={() => vm.handleOpenLogModal(habit)}
+                onStartUrgeTimer={() => vm.startUrgeTimer(habit.id, habit.name)}
+                onMobileRest={(dateStr) => vm.handleMobileRest(habit.id, dateStr)}
+                onMobileFreeze={(dateStr) => vm.handleMobileFreeze(habit.id, dateStr)}
+                onArchive={() => onArchive(habit.id)}
+                onDelete={() => onDelete(habit.id)}
+              />
+            );
+          })}
         </div>
-      </div>
       )}
 
-      {/* MOBILE LAYOUT (mounted only on <lg viewports) */}
-      {isMobile && (
-      <div className="space-y-4">
-        {habits.map((habit) => {
-          const streak = streaks.get(habit.id) || 0;
-          const habitsCompletionsMap = completionsMapByHabit.get(habit.id) || new Map();
-          const habitComps = completionsByHabit.get(habit.id) || EMPTY_HABIT_COMPLETIONS;
-          const weekProg = getHabitWeekProgress(habit, habitComps, new Date());
-          const isQuit = habit.polarity === 'quit';
-
-          return (
-            <div
-              key={habit.id}
-              className="cv-auto bg-card border rounded-2xl p-4 shadow-sm space-y-4 relative overflow-hidden"
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-3 min-w-0">
-                  {habit.icon && (
-                    <span className="text-2xl shrink-0 p-2 bg-muted rounded-xl">
-                      {habit.icon}
-                    </span>
-                  )}
-                  <div className="min-w-0">
-                    <h4 className="font-bold text-sm text-foreground leading-tight break-words">
-                      {habit.name}
-                    </h4>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <Badge
-                        variant="secondary"
-                        className={cn("text-[9px] px-1.5 py-0 h-4 font-bold uppercase tracking-wider", CATEGORY_COLORS[habit.category])}
-                      >
-                        {habit.category}
-                      </Badge>
-                      {habit.anchorBlock && (
-                        <Badge
-                          variant="outline"
-                          className="text-[9px] px-1.5 py-0 h-4 capitalize text-muted-foreground"
-                        >
-                          {habit.anchorBlock}
-                        </Badge>
-                      )}
-                      {weekProg.targetCount < 7 && (
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            "text-[9px] px-1.5 py-0 h-4 font-mono tabular-nums",
-                            weekProg.quotaMet
-                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                              : "bg-teal-500/10 text-teal-600 dark:text-teal-400"
-                          )}
-                        >
-                          {weekProg.completedCount}/{weekProg.targetCount} wk {weekProg.quotaMet ? '✓' : ''}
-                        </Badge>
-                      )}
-                      {isQuit ? (
-                        <>
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px] px-1.5 py-0 h-4 font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/25 gap-0.5"
-                          >
-                            <Shield className="h-2.5 w-2.5" />
-                            Quit
-                          </Badge>
-                          <Badge
-                            variant="secondary"
-                            className={cn(
-                              "text-[9px] px-1.5 py-0 h-4 font-bold gap-0.5 font-mono tabular-nums",
-                              streak > 0
-                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
-                                : "bg-muted text-muted-foreground"
-                            )}
-                          >
-                            <ShieldCheck className="h-2.5 w-2.5" />
-                            {streak > 0 ? `${streak}d · Clean so far` : 'Clean so far'}
-                          </Badge>
-                          <button
-                            type="button"
-                            onClick={() => startUrgeTimer(habit.id, habit.name)}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0 h-4 rounded-full border border-violet-500/35 bg-violet-500/10 text-[9px] font-bold text-violet-600 dark:text-violet-400"
-                          >
-                            <Timer className="h-2.5 w-2.5" />
-                            10m Urge
-                          </button>
-                        </>
-                      ) : (
-                        streak > 0 && (
-                          <Badge
-                            variant="secondary"
-                            className={cn(
-                              "text-[9px] px-1.5 py-0 h-4 font-bold gap-0.5 font-mono tabular-nums",
-                              getStreakStyle(streak)
-                            )}
-                          >
-                            <Flame className="h-2.5 w-2.5 fill-current" />
-                            {streak}d
-                          </Badge>
-                        )
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dropdown Menu */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={() => onEdit(habit)}>
-                      <Pencil className="h-4 w-4 mr-2" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleOpenLogModal(habit)}>
-                      <Edit3 className="h-4 w-4 mr-2 text-amber-500" />
-                      Log Notes / Progress
-                    </DropdownMenuItem>
-                    {isQuit && (
-                      <DropdownMenuItem onClick={() => startUrgeTimer(habit.id, habit.name)}>
-                        <Timer className="h-4 w-4 mr-2 text-violet-500" />
-                        Start 10m Urge Timer
-                      </DropdownMenuItem>
-                    )}
-                    {weekProg.restAllowedCount > 0 && (
-                      <DropdownMenuItem onClick={() => handleMobileRest(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
-                        <Moon className="h-4 w-4 mr-2 text-teal-500" />
-                        {weekProg.isRestedToday
-                          ? 'Clear Rest Today'
-                          : `Rest Today (${weekProg.restRemainingCount} left)`}
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem onClick={() => handleMobileFreeze(habit.id, format(new Date(), 'yyyy-MM-dd'))}>
-                      <Snowflake className="h-4 w-4 mr-2" />
-                      Freeze Today
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onArchive(habit.id)}>
-                      <Archive className="h-4 w-4 mr-2" />
-                      Archive
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => onDelete(habit.id)}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              {/* Quantitative details */}
-              {habit.isQuantitative && (
-                <div className="text-[10px] text-muted-foreground font-mono bg-muted/30 px-2 py-1 rounded-md w-fit">
-                  Target: {habit.targetValue} {habit.unit}
-                </div>
-              )}
-
-              {/* 5-Day Strip */}
-              <div className="grid grid-cols-5 gap-1.5">
-                {mobileDays.map(({ day, dateStr, isFuture: isFutureDate, isToday: isTodayDate, dayLabel }) => {
-                  const comp = habitsCompletionsMap.get(dateStr);
-                  const isCompleted = !!(comp?.completed && comp?.status !== 'frozen' && comp?.status !== 'rest' && !comp?.skipped);
-                  const isFrozen = comp?.status === 'frozen';
-                  const isRest = !!(comp && (comp.status === 'rest' || comp.skipped));
-                  const isAutoRest = !isCompleted && !isFrozen && !isRest && isHabitAutoRestOnDate(habit, completions, dateStr);
-                  
-                  return (
-                    <button
-                      key={dateStr}
-                      onClick={() => {
-                        if (!isFutureDate) {
-                          if (isCompleted) {
-                            feedback.uncheck();
-                          } else {
-                            feedback.complete();
-                          }
-                          onToggle(habit.id, dateStr);
-                        }
-                      }}
-                      disabled={isFutureDate}
-                      className={cn(
-                        "h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-all relative overflow-hidden border",
-                        isCompleted
-                          ? "bg-success/15 border-success/30 text-success"
-                          : isRest
-                            ? "bg-teal-500/15 border-teal-500/30 text-teal-600 dark:text-teal-400"
-                            : isFrozen
-                              ? "bg-sky-500/15 border-sky-500/30 text-sky-500"
-                              : isAutoRest
-                                ? "bg-muted/20 border-dashed border-border/60 text-muted-foreground/60"
-                                : isFutureDate
-                                  ? "bg-muted/10 border-transparent opacity-30 cursor-not-allowed"
-                                  : isTodayDate
-                                    ? "bg-primary/5 border-dashed border-primary text-primary font-bold"
-                                    : "bg-muted/65 border-border/70 text-foreground/75 hover:bg-muted dark:bg-muted/45 dark:border-border/60 dark:text-muted-foreground"
-                      )}
-                    >
-                      <span className="text-[9px] font-bold uppercase opacity-60">
-                        {dayLabel}
-                      </span>
-                      {isCompleted ? (
-                        isQuit ? (
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                        ) : (
-                          <Check className="h-3.5 w-3.5 stroke-[3]" />
-                        )
-                      ) : isRest || isAutoRest ? (
-                        <Moon className="h-3.5 w-3.5" />
-                      ) : isFrozen ? (
-                        <Snowflake className="h-3 w-3" />
-                      ) : habit.isQuantitative && comp?.value && comp.value > 0 ? (
-                        <span className="text-xs font-mono font-bold leading-none">
-                          {comp.value}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-bold leading-none">
-                          {day}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      )}
-
-      <Dialog open={showLogModal} onOpenChange={setShowLogModal}>
-        <DialogContent className="w-full max-w-sm rounded-2xl p-6 bg-background border shadow-xl">
-          <DialogHeader className="space-y-1">
-            <DialogTitle className="text-lg font-bold text-foreground">Log Progress</DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Update notes or quantitative values for {selectedHabitForLog?.name}.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 my-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Date</Label>
-              <Input
-                type="date"
-                value={logDate}
-                onChange={(e) => setLogDate(e.target.value)}
-                className="h-10 rounded-xl"
-              />
-            </div>
-
-            {selectedHabitForLog?.isQuantitative && (
-              <div className="space-y-2">
-                <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">
-                  Progress ({selectedHabitForLog.unit || 'units'})
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    type="button"
-                    size="icon" 
-                    variant="outline" 
-                    className="h-9 w-9 rounded-lg" 
-                    onClick={() => setLogValue(prev => Math.max(0, prev - 1))}
-                  >
-                    -
-                  </Button>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={logValue}
-                    onChange={(e) => setLogValue(Math.max(0, parseInt(e.target.value) || 0))}
-                    className="h-9 text-center rounded-lg"
-                  />
-                  <Button 
-                    type="button"
-                    size="icon" 
-                    variant="outline" 
-                    className="h-9 w-9 rounded-lg" 
-                    onClick={() => setLogValue(prev => prev + 1)}
-                  >
-                    +
-                  </Button>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap ml-1">
-                    / {selectedHabitForLog.targetValue}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Journal Entry</Label>
-              <Textarea
-                value={logNote}
-                onChange={(e) => setLogNote(e.target.value)}
-                placeholder="Reflect on your progress..."
-                className="min-h-[80px] text-xs resize-none rounded-xl"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="flex gap-2">
-            <Button 
-              type="button"
-              variant="ghost" 
-              onClick={() => setShowLogModal(false)}
-              className="flex-1 rounded-xl"
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="button"
-              onClick={handleSaveLogModal}
-              className="flex-1 rounded-xl"
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* No Streak Shields Remaining Dialog (Mobile / Backup) */}
-      <Dialog open={showNoShieldsDialog} onOpenChange={setShowNoShieldsDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>No Streak Shields Remaining</DialogTitle>
-            <DialogDescription>
-              You&apos;ve used this week&apos;s free freeze and have 0 Streak Shields left. Refill your personal Streak Shields in Settings to protect missed days.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setShowNoShieldsDialog(false)}
-              className="flex-1 rounded-xl"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setShowNoShieldsDialog(false);
-                router.push('/settings');
-              }}
-              className="flex-1 rounded-xl"
-            >
-              Refill in Settings
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <HabitGridDialogs
+        showLogModal={vm.showLogModal}
+        setShowLogModal={vm.setShowLogModal}
+        selectedHabitForLog={vm.selectedHabitForLog}
+        logDate={vm.logDate}
+        setLogDate={vm.setLogDate}
+        logValue={vm.logValue}
+        setLogValue={vm.setLogValue}
+        logNote={vm.logNote}
+        setLogNote={vm.setLogNote}
+        onSaveLogModal={vm.handleSaveLogModal}
+        showNoShieldsDialog={vm.showNoShieldsDialog}
+        setShowNoShieldsDialog={vm.setShowNoShieldsDialog}
+        onGoToSettings={() => {
+          vm.setShowNoShieldsDialog(false);
+          vm.router.push('/settings');
+        }}
+      />
     </div>
   );
 });
