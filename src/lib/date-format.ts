@@ -54,6 +54,23 @@ function getRelativeDayLabel(normalizedYmd: string, now: Date): string | null {
   return null;
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function formatAbsoluteDateLabel(params: {
+  y: number;
+  m: number;
+  d: number;
+  currentYear: number;
+  includeYear?: boolean;
+}): string {
+  const { y, m, d, currentYear, includeYear } = params;
+  const monthLabel = SHORT_MONTHS[m - 1];
+  if (!monthLabel) return `${y}-${pad2(m)}-${pad2(d)}`;
+  return includeYear || y !== currentYear ? `${d} ${monthLabel} ${y}` : `${d} ${monthLabel}`;
+}
+
 export function formatHumanDate(
   dateInput?: string | Date | null,
   options?: { includeYear?: boolean }
@@ -63,14 +80,12 @@ export function formatHumanDate(
   if (typeof parts === 'string') return parts;
 
   const { y, m, d } = parts;
-  const normalizedYmd = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const normalizedYmd = `${y}-${pad2(m)}-${pad2(d)}`;
   const now = new Date();
-  const relative = getRelativeDayLabel(normalizedYmd, now);
-  if (relative) return relative;
-
-  const monthLabel = SHORT_MONTHS[m - 1] || '';
-  if (!monthLabel) return normalizedYmd;
-  return options?.includeYear || y !== now.getFullYear() ? `${d} ${monthLabel} ${y}` : `${d} ${monthLabel}`;
+  return (
+    getRelativeDayLabel(normalizedYmd, now) ??
+    formatAbsoluteDateLabel({ y, m, d, currentYear: now.getFullYear(), includeYear: options?.includeYear })
+  );
 }
 
 /**

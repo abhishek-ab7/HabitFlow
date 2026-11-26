@@ -391,7 +391,7 @@ describe('Cross-Domain Interconnection Fixes (Client & Domain Engines)', () => {
       },
     ];
 
-    it('matches same-day food/junk expenses to unlinked meals and rejects cross-day or non-food expenses', () => {
+    function buildSameDayMatchFixtures() {
       const txPizza: FinanceTransaction = {
         id: 'tx-pizza',
         userId: 'u1',
@@ -423,12 +423,7 @@ describe('Cross-Domain Interconnection Fixes (Client & Domain Engines)', () => {
         createdAt: nowIso,
         updatedAt: nowIso,
       };
-      const txOldDay: FinanceTransaction = {
-        ...txPizza,
-        id: 'tx-old',
-        date: '2026-11-24',
-      };
-
+      const txOldDay: FinanceTransaction = { ...txPizza, id: 'tx-old', date: '2026-11-24' };
       const mealPizza: MealLog = {
         id: 'meal-pizza',
         userId: 'u1',
@@ -446,6 +441,11 @@ describe('Cross-Domain Interconnection Fixes (Client & Domain Engines)', () => {
         createdAt: nowIso,
         updatedAt: nowIso,
       };
+      return { txPizza, txSup, txOldDay, mealPizza };
+    }
+
+    it('matches same-day food/junk expenses to unlinked meals and rejects cross-day or non-food expenses', () => {
+      const { txPizza, txSup, txOldDay, mealPizza } = buildSameDayMatchFixtures();
 
       const best = findBestMealTransactionMatch(
         mealPizza,

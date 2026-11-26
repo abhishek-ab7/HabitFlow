@@ -166,71 +166,82 @@ function detectCashCrunchAlert(accounts: FinanceAccount[], upcomingObligations7d
   };
 }
 
+function formatHikedBillDescription(hikedCount: number, first: FinanceRecurringBill): string {
+  if (hikedCount > 1) {
+    return `${hikedCount} recurring bills increased in price compared to previous billing.`;
+  }
+  const prev = Math.round(first.previousAmount ?? 0).toLocaleString('en-IN');
+  const curr = Math.round(first.amount).toLocaleString('en-IN');
+  return `Moved from ₹${prev} to ₹${curr}.`;
+}
+
 function detectSubscriptionHikeAlert(recurringBills: FinanceRecurringBill[]): FinanceAnomalyAlert | null {
   const hikedBills = recurringBills.filter((b) => b.isActive && !b.deletedAt && b.previousAmount && b.amount > b.previousAmount);
   if (hikedBills.length === 0) return null;
   const first = hikedBills[0];
-  const diff = Math.round(first.amount - (first.previousAmount || 0));
+  const diff = Math.round(first.amount - (first.previousAmount ?? 0));
   return {
     id: `sub-hike-${first.id}`,
     severity: 'warning',
     kind: 'subscription_hike',
     title: `${first.name} increased by ₹${diff.toLocaleString('en-IN')}`,
-    description:
-      hikedBills.length > 1
-        ? `${hikedBills.length} recurring bills increased in price compared to previous billing.`
-        : `Moved from ₹${Math.round(first.previousAmount || 0).toLocaleString('en-IN')} to ₹${Math.round(first.amount).toLocaleString('en-IN')}.`,
+    description: formatHikedBillDescription(hikedBills.length, first),
     amount: diff,
     actionLabel: 'Audit Subscriptions',
     actionTarget: 'trackers',
   };
 }
 
+function formatIdleDebtDescription(totalIdle: number, lentCount: number): string {
+  if (lentCount > 0) {
+    return `₹${totalIdle.toLocaleString('en-IN')} still open (${lentCount} receivable). Consider sending a quick settle reminder.`;
+  }
+  return `₹${totalIdle.toLocaleString('en-IN')} in open friend repayments untouched for 2+ weeks.`;
+}
+
 function detectIdleDebtAlert(debtRecords: DebtRecord[]): FinanceAnomalyAlert | null {
   const idleDebts = debtRecords.filter(
-    (d) => !d.deletedAt && d.status === 'active' && d.remainingAmount > 0 && daysSinceIsoDate(d.updatedAt || d.startDate) >= 14
+    (d) => !d.deletedAt && d.status === 'active' && d.remainingAmount > 0 && daysSinceIsoDate(d.updatedAt ?? d.startDate) >= 14
   );
   if (idleDebts.length === 0) return null;
-  const totalIdle = Math.round(idleDebts.reduce((sum, d) => sum + Number(d.remainingAmount || 0), 0));
+  const totalIdle = Math.round(idleDebts.reduce((sum, d) => sum + Number(d.remainingAmount ?? 0), 0));
   const lentCount = idleDebts.filter((d) => d.direction === 'lent').length;
+  const noun = idleDebts.length === 1 ? 'balance' : 'balances';
   return {
     id: 'idle-friend-balances',
     severity: 'info',
     kind: 'idle_friend_debt',
-    title: `${idleDebts.length} friend ${idleDebts.length === 1 ? 'balance' : 'balances'} idle 14+ days`,
-    description:
-      lentCount > 0
-        ? `₹${totalIdle.toLocaleString('en-IN')} still open (${lentCount} receivable). Consider sending a quick settle reminder.`
-        : `₹${totalIdle.toLocaleString('en-IN')} in open friend repayments untouched for 2+ weeks.`,
+    title: `${idleDebts.length} friend ${noun} idle 14+ days`,
+    description: formatIdleDebtDescription(totalIdle, lentCount),
     amount: totalIdle,
     actionLabel: 'Open Friends Ledger',
     actionTarget: 'trackers',
   };
 }
 
+function detectReviewBacklogAlert(activeTxs: FinanceTransaction[]): FinanceAnomalyAlert | null {
+  const needsReviewCount = activeTxs.filter((t) => t.needsReview).length;
+  if (needsReviewCount < 3) return null;
+  return {
+    id: 'needs-review-backlog',
+    severity: 'info',
+    kind: 'review_backlog',
+    title: `${needsReviewCount} transactions waiting for review`,
+    description: 'Approve auto-imported SMS or receipt entries to keep category analytics accurate.',
+    amount: needsReviewCount,
+    actionLabel: 'Triage Inbox',
+    actionTarget: 'activity',
+  };
+}
+
 export function detectSpendingAnomalies(input: AnomalyDetectionInput): FinanceAnomalyAlert[] {
   const activeTxs = input.transactions.filter((t) => !t.deletedAt);
-  const needsReviewCount = activeTxs.filter((t) => t.needsReview).length;
-  const reviewAlert: FinanceAnomalyAlert | null =
-    needsReviewCount >= 3
-      ? {
-          id: 'needs-review-backlog',
-          severity: 'info',
-          kind: 'review_backlog',
-          title: `${needsReviewCount} transactions waiting for review`,
-          description: 'Approve auto-imported SMS or receipt entries to keep category analytics accurate.',
-          amount: needsReviewCount,
-          actionLabel: 'Triage Inbox',
-          actionTarget: 'activity',
-        }
-      : null;
-
   return [
     detectCategorySpikeAlert(input.selectedMonth, activeTxs, input.categories),
     detectCashCrunchAlert(input.accounts, input.upcomingObligations7d),
     detectSubscriptionHikeAlert(input.recurringBills),
     detectIdleDebtAlert(input.debtRecords),
-    reviewAlert,
+    detectReviewBacklogAlert(activeTxs),
   ]
     .filter((a): a is FinanceAnomalyAlert => a !== null)
     .slice(0, 4);
@@ -363,19 +374,23 @@ function computeCrossDomainForQA(params: {
   });
 }
 
+function filterDailyLogsInWindow(fLogs: FitnessDailyLog[], startIso: string, endIso: string): FitnessDailyLog[] {
+  return fLogs.filter((l) => {
+    const d = normalizeIsoDate(l.date);
+    return d >= startIso && d <= endIso;
+  });
+}
+
 function buildLifeOsQAContext(
   transactions: FinanceTransaction[],
   categories: FinanceCategory[],
   debtRecords: DebtRecord[],
   fitness?: LifeOsQAContextInput
 ) {
-  const todayIso = normalizeIsoDate(fitness?.todayDate || getIstIsoDate()) || getIstIsoDate();
+  const todayIso = normalizeIsoDate(fitness?.todayDate ?? getIstIsoDate()) ?? getIstIsoDate();
   const window14Start = addDays(todayIso, -13);
   const fLogs = filterActiveLogs(fitness?.fitnessDailyLogs);
-  const logs14d = fLogs.filter((l) => {
-    const d = normalizeIsoDate(l.date);
-    return d >= window14Start && d <= todayIso;
-  });
+  const logs14d = filterDailyLogsInWindow(fLogs, window14Start, todayIso);
   const crossDomain = computeCrossDomainForQA({ todayIso, transactions, categories, debtRecords, fLogs, fitness });
 
   return {

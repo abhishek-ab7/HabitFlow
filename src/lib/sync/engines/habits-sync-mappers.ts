@@ -1,15 +1,16 @@
 import type { Habit, HabitCompletion } from '@/lib/types';
 
 function mapHabitScheduleToRemote(h: Habit) {
+  const defaultFreq = h.targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily';
   return {
     target_days: h.targetDaysPerWeek,
-    frequency_type: h.frequencyType || (h.targetDaysPerWeek < 7 ? 'weekly_flexible' : 'daily'),
-    scheduled_days: h.scheduledDays || null,
-    interval_days: h.intervalDays || null,
+    frequency_type: h.frequencyType ?? defaultFreq,
+    scheduled_days: h.scheduledDays ?? null,
+    interval_days: h.intervalDays ?? null,
     allow_bonus_completions: h.allowBonusCompletions ?? true,
-    auto_track_rule: h.autoTrackRule || null,
-    polarity: h.polarity || 'build',
-    anchor_block: h.anchorBlock || null,
+    auto_track_rule: h.autoTrackRule ?? null,
+    polarity: h.polarity ?? 'build',
+    anchor_block: h.anchorBlock ?? null,
   };
 }
 
@@ -18,15 +19,15 @@ export function mapHabitToLegacyRow(userId: string, h: Habit) {
     id: h.id,
     user_id: userId,
     name: h.name,
-    icon: h.icon || '✓',
+    icon: h.icon ?? '✓',
     category: h.category,
     target_days: h.targetDaysPerWeek,
     is_archived: h.archived,
     order_index: h.order,
-    is_quantitative: h.isQuantitative || false,
-    target_value: h.targetValue || 0,
-    unit: h.unit || '',
-    generation_counter: h.generationCounter || 1,
+    is_quantitative: h.isQuantitative ?? false,
+    target_value: h.targetValue ?? 0,
+    unit: h.unit ?? '',
+    generation_counter: h.generationCounter ?? 1,
     updated_at: new Date().toISOString(),
   };
 }
@@ -59,12 +60,13 @@ function mapRemoteHabitSchedule(remote: any, local: Habit | undefined) {
   const fallbackFreq = targetDays < 7 ? 'weekly_flexible' : 'daily';
   return {
     targetDaysPerWeek: targetDays,
-    frequencyType: remote.frequency_type || local?.frequencyType || fallbackFreq,
+    frequencyType: remote.frequency_type ?? local?.frequencyType ?? fallbackFreq,
     ...resolveScheduleExtras(remote, local),
   };
 }
 
 export function mapRemoteToLocalHabit(remote: any, local: Habit | undefined): Habit {
+  const nowIso = new Date().toISOString();
   return {
     id: remote.id,
     userId: remote.user_id,
@@ -78,26 +80,26 @@ export function mapRemoteToLocalHabit(remote: any, local: Habit | undefined): Ha
     isQuantitative: remote.is_quantitative,
     targetValue: remote.target_value,
     unit: remote.unit,
-    generationCounter: remote.generation_counter || 1,
-    createdAt: remote.created_at || remote.updated_at || new Date().toISOString(),
+    generationCounter: remote.generation_counter ?? 1,
+    createdAt: remote.created_at ?? remote.updated_at ?? nowIso,
     updatedAt: remote.updated_at,
     isDirty: false,
   };
 }
 
 export function mapCompletionToRemoteRow(userId: string, c: HabitCompletion) {
-  const status = c.status || (c.skipped ? 'rest' : c.completed ? 'completed' : null);
+  const fallbackStatus = c.skipped ? 'rest' : c.completed ? 'completed' : null;
   return {
     id: c.id,
     user_id: userId,
     habit_id: c.habitId,
     date: c.date,
     completed: c.completed,
-    status,
+    status: c.status ?? fallbackStatus,
     skipped: c.skipped ?? c.status === 'rest',
-    rest_reason: c.restReason || null,
-    notes: c.note || null,
-    value: c.value || 0,
+    rest_reason: c.restReason ?? null,
+    notes: c.note ?? null,
+    value: c.value ?? 0,
     generation_counter: c.generationCounter || 1,
     updated_at: new Date().toISOString(),
   };

@@ -9,6 +9,9 @@ import { getSupabaseClient } from '../supabase/client';
 import type { Task, TaskFormData, TaskStatus } from '../types';
 import { getSyncEngine } from '../sync';
 
+export type TaskId = string;
+export type TaskDateIso = string;
+
 interface TaskState {
     tasks: Task[];
     isLoading: boolean;
@@ -19,14 +22,14 @@ interface TaskState {
     // Actions
     loadTasks: (force?: boolean) => Promise<void>;
     addTask: (data: TaskFormData) => Promise<Task>;
-    editTask: (id: string, data: Partial<Task>) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    toggleTaskComplete: (id: string) => Promise<void>;
+    editTask: (id: TaskId, data: Partial<Task>) => Promise<void>;
+    removeTask: (id: TaskId) => Promise<void>;
+    toggleTaskComplete: (id: TaskId) => Promise<void>;
 
     // Computed
     getActiveTasks: () => Task[];
     getCompletedTasks: () => Task[];
-    getTasksByDate: (date: string) => Task[]; // date in YYYY-MM-DD
+    getTasksByDate: (date: TaskDateIso) => Task[]; // date in YYYY-MM-DD
 }
 
 function nextWeekdayDate(nextDate: Date): void {

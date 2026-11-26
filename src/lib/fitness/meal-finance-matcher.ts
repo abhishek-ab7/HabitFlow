@@ -240,19 +240,24 @@ function countUnlinkedDayJunkMeals(allMeals: MealLog[], mealDay: string): number
   return allMeals.filter((m) => !m.deletedAt && m.isJunk && !m.linkedTransactionId && m.date.slice(0, 10) === mealDay).length;
 }
 
+function isUnlinkedDayJunkTx(params: {
+  tx: FinanceTransaction;
+  mealDay: string;
+  alreadyLinkedTxIds: Set<string>;
+  catMap: Map<string, FinanceCategory>;
+}): boolean {
+  const { tx, mealDay, alreadyLinkedTxIds, catMap } = params;
+  if (alreadyLinkedTxIds.has(tx.id) || tx.date.slice(0, 10) !== mealDay) return false;
+  return isFoodOrJunkTransaction(tx, catMap) && isTransactionJunk(tx, catMap);
+}
+
 function countUnlinkedDayJunkTxs(
   transactions: FinanceTransaction[],
   mealDay: string,
   alreadyLinkedTxIds: Set<string>,
   catMap: Map<string, FinanceCategory>
 ): number {
-  return transactions.filter(
-    (t) =>
-      !alreadyLinkedTxIds.has(t.id) &&
-      t.date.slice(0, 10) === mealDay &&
-      isFoodOrJunkTransaction(t, catMap) &&
-      isTransactionJunk(t, catMap)
-  ).length;
+  return transactions.filter((tx) => isUnlinkedDayJunkTx({ tx, mealDay, alreadyLinkedTxIds, catMap })).length;
 }
 
 function hasUniqueSameDayJunkPair(params: {

@@ -51,29 +51,33 @@ function formatShortLabel(d: Date): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-function clampDayForMonth(dayOfMonth: number, year: number, monthIndex: number): number {
-  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-  return Math.min(Math.max(1, dayOfMonth || 1), daysInMonth);
+function clampDayForMonth(params: { dayOfMonth: number; year: number; monthIndex: number }): number {
+  const daysInMonth = new Date(params.year, params.monthIndex + 1, 0).getDate();
+  return Math.min(Math.max(1, params.dayOfMonth || 1), daysInMonth);
 }
 
-function isRecentDiscretionaryTx(
-  t: FinanceTransaction,
-  thirtyDaysAgoStr: string,
-  todayStr: string
-): boolean {
+function isRecentDiscretionaryTx(params: {
+  t: FinanceTransaction;
+  thirtyDaysAgoStr: string;
+  todayStr: string;
+}): boolean {
+  const { t, thirtyDaysAgoStr, todayStr } = params;
   if (t.deletedAt || t.type !== 'expense') return false;
   if (t.date < thirtyDaysAgoStr || t.date > todayStr) return false;
   return !t.linkedEmiId && !t.linkedCommitmentId && !t.linkedSipId && !t.isRecurring;
 }
 
-function computeDailyBurn(
-  transactions: FinanceTransaction[],
-  thirtyDaysAgoStr: string,
-  todayStr: string,
-  includeDiscretionaryBurn: boolean
-): number {
+function computeDailyBurn(params: {
+  transactions: FinanceTransaction[];
+  thirtyDaysAgoStr: string;
+  todayStr: string;
+  includeDiscretionaryBurn: boolean;
+}): number {
+  const { transactions, thirtyDaysAgoStr, todayStr, includeDiscretionaryBurn } = params;
   if (!includeDiscretionaryBurn) return 0;
-  const recentDiscretionary = transactions.filter((t) => isRecentDiscretionaryTx(t, thirtyDaysAgoStr, todayStr));
+  const recentDiscretionary = transactions.filter((t) =>
+    isRecentDiscretionaryTx({ t, thirtyDaysAgoStr, todayStr })
+  );
   return Math.round(recentDiscretionary.reduce((sum, t) => sum + Number(t.amount || 0), 0) / 30);
 }
 
@@ -86,7 +90,12 @@ function findIncomeAvg(recentIncomes: FinanceTransaction[]): number {
   return vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
 }
 
-function resolveEstimatedIncome(budgets: FinanceBudget[], currentMonthKey: string, recentAvg: number): number {
+function resolveEstimatedIncome(params: {
+  budgets: FinanceBudget[];
+  currentMonthKey: string;
+  recentAvg: number;
+}): number {
+  const { budgets, currentMonthKey, recentAvg } = params;
   const currentBudget = budgets.find((b) => b.monthKey === currentMonthKey && !b.deletedAt);
   if (currentBudget && currentBudget.expectedIncome > 0) {
     return Math.round(currentBudget.expectedIncome);
@@ -97,17 +106,22 @@ function resolveEstimatedIncome(budgets: FinanceBudget[], currentMonthKey: strin
   return Math.round(recentBudget ? recentBudget.expectedIncome : recentAvg);
 }
 
-function estimateMonthlyIncomeAndPayday(
-  transactions: FinanceTransaction[],
-  budgets: FinanceBudget[],
-  currentMonthKey: string,
-  paydayOverride?: number
-) {
+function estimateMonthlyIncomeAndPayday(params: {
+  transactions: FinanceTransaction[];
+  budgets: FinanceBudget[];
+  currentMonthKey: string;
+  paydayOverride?: number;
+}) {
+  const { transactions, budgets, currentMonthKey, paydayOverride } = params;
   const recentIncomes = transactions
     .filter((t) => !t.deletedAt && t.type === 'income' && t.amount > 0)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const estimatedMonthlyIncome = resolveEstimatedIncome(budgets, currentMonthKey, findIncomeAvg(recentIncomes));
+  const estimatedMonthlyIncome = resolveEstimatedIncome({
+    budgets,
+    currentMonthKey,
+    recentAvg: findIncomeAvg(recentIncomes),
+  });
   const configuredPayday = resolveEffectivePaydayOfMonth(budgets, currentMonthKey, paydayOverride);
   const largestIncome = recentIncomes.reduce<FinanceTransaction | null>(
     (best, tx) => (!best || tx.amount > best.amount ? tx : best),
@@ -141,7 +155,9 @@ interface DayCalendarInfo {
 
 function isBillDueOnDay(bill: FinanceRecurringBill, cal: DayCalendarInfo, todayMonth: number): boolean {
   if (bill.lastPaidMonthKey === cal.monthKey) return false;
-  if (cal.dom !== clampDayForMonth(bill.dueDayOfMonth, cal.year, cal.monthIdx)) return false;
+  if (cal.dom !== clampDayForMonth({ dayOfMonth: bill.dueDayOfMonth, year: cal.year, monthIndex: cal.monthIdx })) {
+    return false;
+  }
   if (bill.cadence === 'quarterly') return cal.monthIdx % 3 === todayMonth % 3;
   if (bill.cadence === 'yearly') return cal.monthIdx === todayMonth;
   return true;
@@ -159,16 +175,17 @@ function collectBillOutflows(ctx: DayProjectionContext, cal: DayCalendarInfo) {
 }
 
 function collectActiveEmiOutflows(ctx: DayProjectionContext, cal: DayCalendarInfo) {
-  let outflow = 0;
-  const events: string[] = [];
-  for (const emi of ctx.activeEmis) {
-    if (emi.accountId && ctx.creditCardAccountIds.has(emi.accountId)) continue;
-    if (emi.lastPaidMonthKey === cal.monthKey || emi.paidMonths >= emi.tenureMonths) continue;
-    if (cal.dom !== clampDayForMonth(emi.billingDayOfMonth, cal.year, cal.monthIdx)) continue;
-    outflow += Number(emi.emiAmount || 0);
-    events.push(`EMI: ${emi.loanName}`);
-  }
-  return { outflow, events };
+  return collectScheduledDayItems({
+    items: ctx.activeEmis,
+    cal,
+    getDay: (emi) => emi.billingDayOfMonth,
+    getAmount: (emi) => emi.emiAmount,
+    getLabel: (emi) => `EMI: ${emi.loanName}`,
+    shouldSkip: (emi) =>
+      Boolean(emi.accountId && ctx.creditCardAccountIds.has(emi.accountId)) ||
+      emi.lastPaidMonthKey === cal.monthKey ||
+      emi.paidMonths >= emi.tenureMonths,
+  });
 }
 
 interface ScheduledDayItemConfig<T> {
@@ -186,7 +203,7 @@ function collectScheduledDayItems<T>(config: ScheduledDayItemConfig<T>) {
   const events: string[] = [];
   for (const item of items) {
     if (shouldSkip?.(item)) continue;
-    if (cal.dom !== clampDayForMonth(getDay(item), cal.year, cal.monthIdx)) continue;
+    if (cal.dom !== clampDayForMonth({ dayOfMonth: getDay(item), year: cal.year, monthIndex: cal.monthIdx })) continue;
     outflow += Number(getAmount(item) || 0);
     events.push(getLabel(item));
   }
@@ -239,7 +256,7 @@ function computeDayFlows(ctx: DayProjectionContext, d: Date, dateStr: string) {
   let scheduledInflow = 0;
   const events: string[] = [];
 
-  if (ctx.estimatedMonthlyIncome > 0 && cal.dom === clampDayForMonth(ctx.paydayOfMonth, cal.year, cal.monthIdx)) {
+  if (ctx.estimatedMonthlyIncome > 0 && cal.dom === clampDayForMonth({ dayOfMonth: ctx.paydayOfMonth, year: cal.year, monthIndex: cal.monthIdx })) {
     scheduledInflow += ctx.estimatedMonthlyIncome;
     events.push(`Expected Income (+₹${ctx.estimatedMonthlyIncome.toLocaleString('en-IN')})`);
   }
@@ -262,30 +279,40 @@ interface ForecastHorizonParams {
   ctx: DayProjectionContext;
 }
 
+function createInitialForecastPoint(dateStr: string, d: Date, startingLiquidBalance: number): CashFlowForecastPoint {
+  return {
+    dayOffset: 0,
+    dateStr,
+    label: formatShortLabel(d),
+    projectedBalance: startingLiquidBalance,
+    scheduledInflow: 0,
+    scheduledOutflow: 0,
+    discretionaryBurn: 0,
+    events: [],
+  };
+}
+
 function simulateForecastHorizon(params: ForecastHorizonParams) {
   const { today, horizonDays, startingLiquidBalance, dailyDiscretionaryBurn, ctx } = params;
-  const points: CashFlowForecastPoint[] = [];
+  const points: CashFlowForecastPoint[] = [createInitialForecastPoint(toIsoDate(today), today, startingLiquidBalance)];
   let runningBalance = startingLiquidBalance;
   let lowestProjectedBalance = startingLiquidBalance;
   let lowestBalanceDate: string | null = toIsoDate(today);
   let crunchDate: string | null = null;
   let totalScheduledOutflows = 0;
 
-  for (let offset = 0; offset <= horizonDays; offset++) {
+  for (let offset = 1; offset <= horizonDays; offset++) {
     const d = new Date(today);
     d.setDate(today.getDate() + offset);
     const dateStr = toIsoDate(d);
-    const flows = offset > 0 ? computeDayFlows(ctx, d, dateStr) : { scheduledInflow: 0, scheduledOutflow: 0, events: [] };
-
-    if (offset > 0) {
-      totalScheduledOutflows += flows.scheduledOutflow;
-      runningBalance = Math.round(runningBalance + flows.scheduledInflow - flows.scheduledOutflow - dailyDiscretionaryBurn);
-      if (runningBalance < lowestProjectedBalance) {
-        lowestProjectedBalance = runningBalance;
-        lowestBalanceDate = dateStr;
-      }
-      if (crunchDate === null && runningBalance < 0) crunchDate = dateStr;
+    const flows = computeDayFlows(ctx, d, dateStr);
+    totalScheduledOutflows += flows.scheduledOutflow;
+    runningBalance = Math.round(runningBalance + flows.scheduledInflow - flows.scheduledOutflow - dailyDiscretionaryBurn);
+    if (runningBalance < lowestProjectedBalance) {
+      lowestProjectedBalance = runningBalance;
+      lowestBalanceDate = dateStr;
     }
+    if (crunchDate === null && runningBalance < 0) crunchDate = dateStr;
 
     points.push({
       dayOffset: offset,
@@ -294,7 +321,7 @@ function simulateForecastHorizon(params: ForecastHorizonParams) {
       projectedBalance: runningBalance,
       scheduledInflow: flows.scheduledInflow,
       scheduledOutflow: flows.scheduledOutflow,
-      discretionaryBurn: offset === 0 ? 0 : dailyDiscretionaryBurn,
+      discretionaryBurn: dailyDiscretionaryBurn,
       events: flows.events,
     });
   }
@@ -325,18 +352,18 @@ export function buildCashFlowForecast(input: CashFlowForecastInput): CashFlowFor
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const dailyDiscretionaryBurn = computeDailyBurn(
-    input.transactions,
-    toIsoDate(thirtyDaysAgo),
-    toIsoDate(today),
-    input.includeDiscretionaryBurn ?? true
-  );
-  const { estimatedMonthlyIncome, paydayOfMonth } = estimateMonthlyIncomeAndPayday(
-    input.transactions,
-    input.budgets,
+  const dailyDiscretionaryBurn = computeDailyBurn({
+    transactions: input.transactions,
+    thirtyDaysAgoStr: toIsoDate(thirtyDaysAgo),
+    todayStr: toIsoDate(today),
+    includeDiscretionaryBurn: input.includeDiscretionaryBurn ?? true,
+  });
+  const { estimatedMonthlyIncome, paydayOfMonth } = estimateMonthlyIncomeAndPayday({
+    transactions: input.transactions,
+    budgets: input.budgets,
     currentMonthKey,
-    input.paydayOfMonth
-  );
+    paydayOverride: input.paydayOfMonth,
+  });
 
   const ctx: DayProjectionContext = {
     todayMonth: today.getMonth(),

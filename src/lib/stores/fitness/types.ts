@@ -30,53 +30,57 @@ export interface FitnessStoreState {
   currentUserId: string | null;
 }
 
+export type FitnessEntityId = string;
+export type FitnessIsoDate = string;
+export type FitnessUserId = string;
+
 export interface FitnessStoreActions {
-  loadFitnessData: (userId?: string, force?: boolean) => Promise<void>;
+  loadFitnessData: (userId?: FitnessUserId, force?: boolean) => Promise<void>;
   clearFitnessState: () => void;
 
   // Bio & Profile slice
   upsertProfile: (
     data: FitnessProfileFormData,
-    userIdOverride?: string
+    userIdOverride?: FitnessUserId
   ) => Promise<FitnessProfile>;
   upsertDailyLog: (
-    date: string,
+    date: FitnessIsoDate,
     patch: FitnessDailyLogPatch,
-    userIdOverride?: string
+    userIdOverride?: FitnessUserId
   ) => Promise<FitnessDailyLog>;
   incrementWater: (
     deltaMl: number,
-    date?: string,
-    userIdOverride?: string
+    date?: FitnessIsoDate,
+    userIdOverride?: FitnessUserId
   ) => Promise<FitnessDailyLog>;
   incrementSteps: (
     deltaSteps: number,
-    date?: string,
-    userIdOverride?: string
+    date?: FitnessIsoDate,
+    userIdOverride?: FitnessUserId
   ) => Promise<FitnessDailyLog>;
   toggleLowEnergyMode: (
-    date?: string,
+    date?: FitnessIsoDate,
     enabled?: boolean,
-    userIdOverride?: string
+    userIdOverride?: FitnessUserId
   ) => Promise<FitnessDailyLog & { restedHabitIds: string[] }>;
 
   // Diet & Staples slice
-  seedStarterStaplesIfEmpty: (userId: string) => Promise<void>;
-  addMealLog: (data: MealLogFormData, userIdOverride?: string) => Promise<MealLog>;
+  seedStarterStaplesIfEmpty: (userId: FitnessUserId) => Promise<void>;
+  addMealLog: (data: MealLogFormData, userIdOverride?: FitnessUserId) => Promise<MealLog>;
   updateMealLog: (
-    id: string,
-    patch: Partial<MealLogFormData & { date: string }>
+    id: FitnessEntityId,
+    patch: Partial<MealLogFormData & { date: FitnessIsoDate }>
   ) => Promise<MealLog | null>;
-  deleteMealLog: (id: string) => Promise<void>;
+  deleteMealLog: (id: FitnessEntityId) => Promise<void>;
   logFromTemplate: (
-    templateId: string,
+    templateId: FitnessEntityId,
     options?: {
-      date?: string;
+      date?: FitnessIsoDate;
       multiplier?: number;
       mealType?: MealType;
       source?: MealLogSource;
     },
-    userIdOverride?: string
+    userIdOverride?: FitnessUserId
   ) => Promise<MealLog | null>;
   addMealTemplate: (
     data: MealTemplateFormData,
@@ -118,48 +122,50 @@ export interface FitnessStoreActions {
   // Workout slice
   addWorkoutSession: (
     data: WorkoutSessionFormData,
-    userIdOverride?: string
+    userIdOverride?: FitnessUserId
   ) => Promise<WorkoutSession>;
   updateWorkoutSession: (
-    id: string,
-    patch: Partial<WorkoutSessionFormData & { date: string }>
+    id: FitnessEntityId,
+    patch: Partial<WorkoutSessionFormData & { date: FitnessIsoDate }>
   ) => Promise<WorkoutSession | null>;
-  deleteWorkoutSession: (id: string) => Promise<void>;
+  deleteWorkoutSession: (id: FitnessEntityId) => Promise<void>;
 
   // Supplement slice
   addSupplement: (
     data: SupplementInventoryFormData,
-    userIdOverride?: string
+    userIdOverride?: FitnessUserId
   ) => Promise<SupplementInventory>;
   updateSupplement: (
-    id: string,
+    id: FitnessEntityId,
     patch: Partial<SupplementInventoryFormData>
   ) => Promise<SupplementInventory | null>;
-  deleteSupplement: (id: string) => Promise<void>;
+  deleteSupplement: (id: FitnessEntityId) => Promise<void>;
   restockSupplement: (
-    supplementId: string,
+    supplementId: FitnessEntityId,
     params: {
       servingsAdded?: number;
       costInr?: number;
-      linkedTransactionId?: string | null;
-      date?: string;
+      linkedTransactionId?: FitnessEntityId | null;
+      date?: FitnessIsoDate;
     }
   ) => Promise<SupplementInventory | null>;
   takeSupplementDose: (
-    supplementId: string,
-    servings?: number,
-    date?: string,
-    notes?: string | null,
-    userIdOverride?: string
+    supplementId: FitnessEntityId,
+    params?: {
+      servings?: number;
+      date?: FitnessIsoDate;
+      notes?: string | null;
+      userIdOverride?: FitnessUserId;
+    }
   ) => Promise<SupplementLog | null>;
-  deleteSupplementLog: (id: string) => Promise<void>;
+  deleteSupplementLog: (id: FitnessEntityId) => Promise<void>;
   adjustSupplementStock: (
-    supplementId: string,
+    supplementId: FitnessEntityId,
     params: { delta?: number; targetRemaining?: number }
   ) => Promise<SupplementInventory | null>;
   takeTodaySupplementStack: (
-    date?: string,
-    userIdOverride?: string
+    date?: FitnessIsoDate,
+    userIdOverride?: FitnessUserId
   ) => Promise<SupplementLog[]>;
 }
 

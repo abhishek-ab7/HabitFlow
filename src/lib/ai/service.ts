@@ -8,6 +8,9 @@ import type { AIFeature } from './types';
 
 // Module type definition for isolated key pools
 export type AIModule = 'dashboard' | 'tasks' | 'habits';
+export type PromptText = string;
+export type CacheKey = string;
+export type ApiKeyString = string;
 
 interface KeyHealth {
   lastFailureTime: number;
@@ -46,71 +49,53 @@ export class HabitFlowAI {
     console.log(`[AI Service] Initialized for module: ${module} with ${keys.length} keys`);
   }
 
+  private static loadModuleKeys(mod: AIModule, fallbackKey?: string): string[] {
+    const moduleUpper = mod.toUpperCase();
+    const keys: string[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const apiKey = process.env[`GEMINI_KEY_${moduleUpper}_${i}`];
+      if (apiKey) keys.push(apiKey);
+    }
+    if (keys.length > 0) return keys;
+    if (fallbackKey) return [fallbackKey];
+    console.warn(`[AI Service] No keys configured for ${mod} (set GEMINI_API_KEY or GEMINI_KEY_${moduleUpper}_1..3)`);
+    return [];
+  }
+
   // Static initializer: Load keys from environment on first import
   private static initializeKeyPools(): Record<AIModule, string[]> {
     const modules: AIModule[] = ['dashboard', 'tasks', 'habits'];
     const pools: Record<AIModule, string[]> = {} as any;
     const fallbackKey = process.env.GEMINI_API_KEY;
-
     for (const mod of modules) {
-      const moduleUpper = mod.toUpperCase();
-      const keys: string[] = [];
-
-      for (let i = 1; i <= 3; i++) {
-        const envKey = `GEMINI_KEY_${moduleUpper}_${i}`;
-        const apiKey = process.env[envKey];
-        if (apiKey) {
-          keys.push(apiKey);
-        }
-      }
-
-      if (keys.length === 0 && fallbackKey) {
-        keys.push(fallbackKey);
-      } else if (keys.length === 0) {
-        console.warn(`[AI Service] No keys configured for ${mod} (set GEMINI_API_KEY or GEMINI_KEY_${moduleUpper}_1..3)`);
-      }
-
-      pools[mod] = keys;
+      pools[mod] = HabitFlowAI.loadModuleKeys(mod, fallbackKey);
     }
-
     return pools;
+  }
+
+  private isKeyCoolingDown(healthKey: string, now: number): boolean {
+    const health = HabitFlowAI.keyHealth.get(healthKey);
+    if (!health) return false;
+    const elapsed = now - health.lastFailureTime;
+    if (elapsed < health.cooldownMs) {
+      console.log(`[AI Key Health] Skipping ${healthKey} (cooldown: ${Math.round((health.cooldownMs - elapsed) / 1000)}s remaining)`);
+      return true;
+    }
+    HabitFlowAI.keyHealth.delete(healthKey);
+    return false;
   }
 
   // Key selection with health tracking
   private selectHealthyKey(): string | null {
     const keys = HabitFlowAI.KEY_POOLS[this.module];
-    const poolSize = keys.length;
     const now = Date.now();
-
-    // Try all keys starting from current index (round-robin)
-    for (let i = 0; i < poolSize; i++) {
-      const keyIndex = (this.currentKeyIndex + i) % poolSize;
-      const key = keys[keyIndex];
-      const healthKey = `${this.module}:${keyIndex}`;
-      const health = HabitFlowAI.keyHealth.get(healthKey);
-
-      // Check if key is in cooldown
-      if (health) {
-        const timeSinceFailure = now - health.lastFailureTime;
-        if (timeSinceFailure < health.cooldownMs) {
-          console.log(
-            `[AI Key Health] Skipping ${this.module} key #${keyIndex + 1} ` +
-            `(cooldown: ${Math.round((health.cooldownMs - timeSinceFailure) / 1000)}s remaining)`
-          );
-          continue;
-        } else {
-          // Cooldown expired, clear health record
-          HabitFlowAI.keyHealth.delete(healthKey);
-        }
-      }
-
-      // Key is healthy, use it
+    for (let i = 0; i < keys.length; i++) {
+      const keyIndex = (this.currentKeyIndex + i) % keys.length;
+      if (this.isKeyCoolingDown(`${this.module}:${keyIndex}`, now)) continue;
       this.currentKeyIndex = keyIndex;
       console.log(`[AI Key Rotation] Using ${this.module} key #${keyIndex + 1} (round-robin)`);
-      return key;
+      return keys[keyIndex];
     }
-
-    // All keys unhealthy
     console.error(`[AI Key Health] All keys for ${this.module} are in cooldown!`);
     return null;
   }
@@ -149,158 +134,142 @@ export class HabitFlowAI {
     return result;
   }
 
-  async generate<T>(
-    feature: AIFeature,
-    prompt: string,
-    schema?: any,
-    cacheKey?: string,
-    cacheTTL?: number
-  ): Promise<T> {
-    // 1. Check Cache First
-    if (cacheKey) {
-      const cached = await getCachedResponse<T>(cacheKey);
-      if (cached) {
-        console.log(`[AI Cache HIT] ${feature} - key: ${cacheKey}`);
-        return cached;
-      }
-      console.log(`[AI Cache MISS] ${feature} - key: ${cacheKey}`);
+  private async tryReadCache<T>(feature: AIFeature, cacheKey?: CacheKey): Promise<T | null> {
+    if (!cacheKey) return null;
+    const cached = await getCachedResponse<T>(cacheKey);
+    if (cached) {
+      console.log(`[AI Cache HIT] ${feature} - key: ${cacheKey}`);
+      return cached;
     }
-
-    // 2. Select Healthy Key
-    const apiKey = this.selectHealthyKey();
-    if (!apiKey) {
-      // All keys exhausted - try cache fallback
-      if (cacheKey) {
-        const staleCache = await getCachedResponse<T>(cacheKey);
-        if (staleCache) {
-          console.warn(`[AI Fallback] Returning stale cache for ${feature} (all keys unhealthy)`);
-          return staleCache;
-        }
-      }
-      throw new Error(
-        `All API keys for module "${this.module}" are rate-limited. ` +
-        `Please try again in 60 seconds or check your rate limits.`
-      );
-    }
-
-    // 3. Execute with Rotation & Retry
-    const result = await this.processInQueue(async () => {
-      const currentKeyIndex = this.currentKeyIndex;
-
-      try {
-        return await retryWithBackoff(
-          async () => {
-            const client = new GoogleGenAI({ apiKey });
-            const config: any = {};
-            if (schema) {
-              config.responseMimeType = 'application/json';
-              config.responseSchema = schema;
-            }
-
-            const response = await client.models.generateContent({
-              model: this.model,
-              contents: prompt,
-              ...(Object.keys(config).length > 0 && { config })
-            });
-
-            return response.text || '';
-          },
-          {
-            maxRetries: 3,
-            feature
-          }
-        );
-      } catch (error: any) {
-        // Check if 429 rate limit error
-        if (error?.message?.includes('429') || error?.status === 429) {
-          this.markKeyUnhealthy(currentKeyIndex);
-
-          // Retry with next key (recursive call advances index internally)
-          console.log(`[AI Retry] 429 error detected, retrying with next key...`);
-          return this.generate<T>(feature, prompt, schema, cacheKey, cacheTTL) as any as string;
-        }
-        throw error;
-      }
-    });
-
-    // 4. Advance to next key (round-robin)
-    const keys = HabitFlowAI.KEY_POOLS[this.module];
-    this.currentKeyIndex = (this.currentKeyIndex + 1) % keys.length;
-
-    // 5. Parse & Cache
-    let data: T;
-    try {
-      if (!result) throw new Error('Empty response from AI');
-      data = JSON.parse(result);
-    } catch (error) {
-      console.error(`[AI] Failed to parse JSON for ${feature}:`, result);
-      throw new Error(`Failed to parse AI response for ${feature}`);
-    }
-
-    if (cacheKey && cacheTTL) {
-      await setCachedResponse(cacheKey, data, cacheTTL);
-      console.log(`[AI] Cached ${feature} for ${cacheTTL}s - key: ${cacheKey}`);
-    }
-
-    return data;
+    return null;
   }
 
-  private async resolveTextCacheFallback(feature: AIFeature, cacheKey?: string): Promise<string> {
+  private async resolveCacheFallback<T>(feature: AIFeature, cacheKey?: CacheKey): Promise<T> {
     if (cacheKey) {
-      const staleCache = await getCachedResponse<string>(cacheKey);
+      const staleCache = await getCachedResponse<T>(cacheKey);
       if (staleCache) {
         console.warn(`[AI Fallback] Returning stale cache for ${feature} (all keys unhealthy)`);
         return staleCache;
       }
     }
-    throw new Error(`All API keys for module "${this.module}" are rate-limited.`);
+    throw new Error(
+      `All API keys for module "${this.module}" are rate-limited. ` +
+      `Please try again in 60 seconds or check your rate limits.`
+    );
   }
 
-  private async executeTextPromptWithKey(apiKey: string, feature: AIFeature, prompt: string): Promise<string> {
+  private parseJsonResponse<T>(feature: AIFeature, result: string): T {
+    try {
+      if (!result) throw new Error('Empty response from AI');
+      return JSON.parse(result) as T;
+    } catch {
+      console.error(`[AI] Failed to parse JSON for ${feature}:`, result);
+      throw new Error(`Failed to parse AI response for ${feature}`);
+    }
+  }
+
+  private async executePromptWithKey(params: {
+    apiKey: ApiKeyString;
+    feature: AIFeature;
+    prompt: PromptText;
+    schema?: any;
+  }): Promise<string> {
+    const { apiKey, feature, prompt, schema } = params;
     return retryWithBackoff(
       async () => {
         const client = new GoogleGenAI({ apiKey });
-        const response = await client.models.generateContent({ model: this.model, contents: prompt });
+        const config = schema ? { responseMimeType: 'application/json', responseSchema: schema } : undefined;
+        const response = await client.models.generateContent({
+          model: this.model,
+          contents: prompt,
+          ...(config && { config }),
+        });
         return response.text || '';
       },
       { maxRetries: 3, feature }
     );
   }
 
-  async generateWithoutSchema(
-    feature: AIFeature,
-    prompt: string,
-    cacheKey?: string,
-    cacheTTL?: number
-  ): Promise<string> {
-    if (cacheKey) {
-      const cached = await getCachedResponse<string>(cacheKey);
-      if (cached) {
-        console.log(`[AI Cache HIT] ${feature} - key: ${cacheKey}`);
-        return cached;
-      }
-    }
-
-    const apiKey = this.selectHealthyKey();
-    if (!apiKey) return this.resolveTextCacheFallback(feature, cacheKey);
-
-    const result = await this.processInQueue(async () => {
+  private async runWithKeyRotation(params: {
+    apiKey: ApiKeyString;
+    feature: AIFeature;
+    prompt: PromptText;
+    schema?: any;
+    onRetry: () => Promise<string>;
+  }): Promise<string> {
+    const { apiKey, feature, prompt, schema, onRetry } = params;
+    return this.processInQueue(async () => {
       const currentKeyIndex = this.currentKeyIndex;
       try {
-        return await this.executeTextPromptWithKey(apiKey, feature, prompt);
+        return await this.executePromptWithKey({ apiKey, feature, prompt, schema });
       } catch (error: any) {
         const isRateLimit = error?.message?.includes('429') || error?.status === 429;
         if (!isRateLimit) throw error;
         this.markKeyUnhealthy(currentKeyIndex);
         console.log(`[AI Retry] 429 error detected, retrying with next key...`);
-        const keys = HabitFlowAI.KEY_POOLS[this.module];
-        this.currentKeyIndex = (this.currentKeyIndex + 1) % keys.length;
-        return this.generateWithoutSchema(feature, prompt, cacheKey, cacheTTL);
+        return onRetry();
       }
     });
+  }
 
+  private advanceKeyIndex(): void {
     const keys = HabitFlowAI.KEY_POOLS[this.module];
     this.currentKeyIndex = (this.currentKeyIndex + 1) % keys.length;
+  }
+
+  async generate<T>(
+    feature: AIFeature,
+    prompt: PromptText,
+    schema?: any,
+    cacheKey?: CacheKey,
+    cacheTTL?: number
+  ): Promise<T> {
+    const cached = await this.tryReadCache<T>(feature, cacheKey);
+    if (cached) return cached;
+
+    const apiKey = this.selectHealthyKey();
+    if (!apiKey) return this.resolveCacheFallback<T>(feature, cacheKey);
+
+    const result = await this.runWithKeyRotation({
+      apiKey,
+      feature,
+      prompt,
+      schema,
+      onRetry: () => this.generate<T>(feature, prompt, schema, cacheKey, cacheTTL) as any as Promise<string>,
+    });
+
+    this.advanceKeyIndex();
+    const data = this.parseJsonResponse<T>(feature, result);
+    if (cacheKey && cacheTTL) {
+      await setCachedResponse(cacheKey, data, cacheTTL);
+      console.log(`[AI] Cached ${feature} for ${cacheTTL}s - key: ${cacheKey}`);
+    }
+    return data;
+  }
+
+  async generateWithoutSchema(
+    feature: AIFeature,
+    prompt: PromptText,
+    cacheKey?: CacheKey,
+    cacheTTL?: number
+  ): Promise<string> {
+    const cached = await this.tryReadCache<string>(feature, cacheKey);
+    if (cached) return cached;
+
+    const apiKey = this.selectHealthyKey();
+    if (!apiKey) return this.resolveCacheFallback<string>(feature, cacheKey);
+
+    const result = await this.runWithKeyRotation({
+      apiKey,
+      feature,
+      prompt,
+      onRetry: () => {
+        this.advanceKeyIndex();
+        return this.generateWithoutSchema(feature, prompt, cacheKey, cacheTTL);
+      },
+    });
+
+    this.advanceKeyIndex();
     if (cacheKey && cacheTTL) await setCachedResponse(cacheKey, result, cacheTTL);
     return result;
   }

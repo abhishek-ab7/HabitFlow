@@ -272,52 +272,65 @@ describe('Ask Life OS (buildFinanceQAContext & buildDeterministicFinanceAnswer)'
     expect(ans).toContain('₹9,000');
   });
 
-  it('answers plural "empty calories" phrasing and social hangout food balance queries accurately', () => {
-    const emptyCalAns = buildDeterministicFinanceAnswer('How many empty calories did I consume?', context);
-    expect(emptyCalAns).toContain('1,540 empty kcal');
+  const SOCIAL_TX_FIXTURE = {
+    id: 'tx-social-food',
+    userId: 'u1',
+    title: 'Friends cafe pizza',
+    amount: 1200,
+    type: 'expense' as const,
+    categoryId: 'cat-food',
+    accountId: 'acc-1',
+    date: '2026-11-21',
+    monthKey: '2026-11',
+    tags: ['split', 'hangout'],
+    splitGroupId: 'sp-hangout',
+    isRecurring: false,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
 
-    const socialCtx = buildFinanceQAContext({
+  const SOCIAL_CATEGORY_FIXTURE = {
+    id: 'cat-food',
+    userId: 'u1',
+    name: 'Food & Dining',
+    slug: 'food-dining',
+    type: 'expense' as const,
+    icon: 'Utensils',
+    color: '#10b981',
+    monthlyBudgetLimit: 3000,
+    subcategories: [],
+    order: 1,
+    isSystem: false,
+    archived: false,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+
+  const SOCIAL_MEAL_FIXTURE = {
+    id: 'meal-social-1',
+    userId: 'u1',
+    date: '2026-11-21',
+    mealType: 'dinner' as const,
+    name: 'Pizza & Shake',
+    calories: 2100,
+    proteinG: 40,
+    carbsG: 220,
+    fatG: 90,
+    quantityMultiplier: 1,
+    isJunk: true,
+    source: 'manual' as const,
+    loggedAt: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+
+  function buildSocialHangoutContext() {
+    return buildFinanceQAContext({
       selectedMonth: '2026-11',
       summary: baseSummary,
       netWorth: baseNetWorth,
-      transactions: [
-        ...transactions,
-        {
-          id: 'tx-social-food',
-          userId: 'u1',
-          title: 'Friends cafe pizza',
-          amount: 1200,
-          type: 'expense',
-          categoryId: 'cat-food',
-          accountId: 'acc-1',
-          date: '2026-11-21',
-          monthKey: '2026-11',
-          tags: ['split', 'hangout'],
-          splitGroupId: 'sp-hangout',
-          isRecurring: false,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        },
-      ],
-      categories: [
-        ...categories,
-        {
-          id: 'cat-food',
-          userId: 'u1',
-          name: 'Food & Dining',
-          slug: 'food-dining',
-          type: 'expense',
-          icon: 'Utensils',
-          color: '#10b981',
-          monthlyBudgetLimit: 3000,
-          subcategories: [],
-          order: 1,
-          isSystem: false,
-          archived: false,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        },
-      ],
+      transactions: [...transactions, SOCIAL_TX_FIXTURE],
+      categories: [...categories, SOCIAL_CATEGORY_FIXTURE],
       accounts,
       recurringBills: [],
       emiTrackers: [],
@@ -327,35 +340,21 @@ describe('Ask Life OS (buildFinanceQAContext & buildDeterministicFinanceAnswer)'
       fitness: {
         todayDate: '2026-11-25',
         fitnessDailyLogs,
-        mealLogs: [
-          ...mealLogs,
-          {
-            id: 'meal-social-1',
-            userId: 'u1',
-            date: '2026-11-21',
-            mealType: 'dinner',
-            name: 'Pizza & Shake',
-            calories: 2100,
-            proteinG: 40,
-            carbsG: 220,
-            fatG: 90,
-            quantityMultiplier: 1,
-            isJunk: true,
-            source: 'manual',
-            loggedAt: nowIso,
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          },
-        ],
+        mealLogs: [...mealLogs, SOCIAL_MEAL_FIXTURE],
         workoutSessions,
         supplementInventory,
         supplementLogs,
       },
     });
+  }
+
+  it('answers plural "empty calories" phrasing and social hangout food balance queries accurately', () => {
+    const emptyCalAns = buildDeterministicFinanceAnswer('How many empty calories did I consume?', context);
+    expect(emptyCalAns).toContain('1,540 empty kcal');
 
     const socialAns = buildDeterministicFinanceAnswer(
       'How do social hangouts affect my food spending and diet balance?',
-      socialCtx
+      buildSocialHangoutContext()
     );
     expect(socialAns).toContain('1 hangout');
     expect(socialAns).toContain('₹1,200');

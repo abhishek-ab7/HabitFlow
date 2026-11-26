@@ -259,7 +259,7 @@ describe('MCP Fitness Extension, Mappers, Briefing Fixes & Mood Enum', () => {
     ).toBe(true);
   });
 
-  function seedCrossDomainInsightFixtures(today: string, month: string) {
+  function seedCrossDomainInsightFixtures({ today, month }: { today: string; month: string }) {
     tableStore.set('tasks', [
       { id: 't1', user_id: 'user-mcp-1', title: 'MIT Task', status: 'todo', priority: 'high', metadata: { isMitForDate: today, mitRank: 1 }, tags: [] },
     ]);
@@ -283,7 +283,7 @@ describe('MCP Fitness Extension, Mappers, Briefing Fixes & Mood Enum', () => {
   it('get_tasks exposes metadata MITs and get_habit_finance_insights fixes debtRecords, obligations & habitConsistencyPct drift + attaches crossDomainInsights', async () => {
     const today = getIstIsoDate();
     const month = today.slice(0, 7);
-    seedCrossDomainInsightFixtures(today, month);
+    seedCrossDomainInsightFixtures({ today, month });
 
     const tasksRes = await registeredTools.get('get_tasks')!.handler({});
     expect(JSON.parse(tasksRes.content[0].text).tasks[0].metadata).toEqual({ isMitForDate: today, mitRank: 1 });

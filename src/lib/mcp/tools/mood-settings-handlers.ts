@@ -22,6 +22,28 @@ async function listMoodEntries(userId: string, args: any) {
   return mcpJson({ count: (data || []).length, moods: data });
 }
 
+async function upsertMoodRow(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  userId: string,
+  dateIst: string,
+  mood: string
+) {
+  const { data: existing } = await supabase
+    .from('mood_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('date', dateIst)
+    .maybeSingle();
+
+  const query = existing
+    ? supabase.from('mood_logs').update({ mood, ...getUpdateMetadata(existing) }).eq('id', existing.id)
+    : supabase.from('mood_logs').insert({ user_id: userId, date: dateIst, mood, ...getInsertMetadata() });
+
+  const { data, error } = await query.select().single();
+  if (error) throw error;
+  return data;
+}
+
 async function logMoodEntry(auth: ReturnType<typeof getMcpAuthContext>, args: any) {
   if (!args.mood) return mcpError('Validation Error: mood is required for log action.');
   const dateIst = args.date || getIstIsoDate();
@@ -29,19 +51,7 @@ async function logMoodEntry(auth: ReturnType<typeof getMcpAuthContext>, args: an
   const supabase = getSupabaseAdmin();
 
   try {
-    const { data: existing } = await supabase
-      .from('mood_logs')
-      .select('*')
-      .eq('user_id', auth.userId)
-      .eq('date', dateIst)
-      .maybeSingle();
-
-    const query = existing
-      ? supabase.from('mood_logs').update({ mood: args.mood, ...getUpdateMetadata(existing) }).eq('id', existing.id)
-      : supabase.from('mood_logs').insert({ user_id: auth.userId, date: dateIst, mood: args.mood, ...getInsertMetadata() });
-
-    const { data, error } = await query.select().single();
-    if (error) throw error;
+    const data = await upsertMoodRow(supabase, auth.userId, dateIst, args.mood);
 
     await logMcpToolInvocation(auth, {
       toolName: 'manage_mood',
@@ -123,21 +133,8 @@ export async function handleManageMood(args: any) {
   return mcpError(`Unknown action: ${args.action}`);
 }
 
-export async function handleGetUserSettings() {
-  const auth = getMcpAuthContext();
-  if (!hasScope(auth, 'habitflow:read')) return mcpError('Forbidden: Missing habitflow:read scope.');
-
-  const supabase = getSupabaseAdmin();
-  const { data: settings, error } = await supabase
-    .from('user_settings')
-    .select('*')
-    .eq('user_id', auth.userId)
-    .maybeSingle();
-
-  if (error) return mcpError(`Failed to fetch user settings: ${error.message}`);
-  if (!settings) return mcpJson({ message: 'No custom settings recorded yet. Using defaults.' });
-
-  return mcpJson({
+function formatUserSettingsPayload(settings: any) {
+  return {
     userName: settings.user_name,
     avatarId: settings.avatar_id,
     weekStartDay: settings.week_start_day,
@@ -159,9 +156,26 @@ export async function handleGetUserSettings() {
       gems: settings.gems,
       streakShield: settings.streak_shield,
       stats: settings.stats,
-      unlockedThemes: settings.unlocked_themes || [],
+      unlockedThemes: settings.unlocked_themes ?? [],
     },
-  });
+  };
+}
+
+export async function handleGetUserSettings() {
+  const auth = getMcpAuthContext();
+  if (!hasScope(auth, 'habitflow:read')) return mcpError('Forbidden: Missing habitflow:read scope.');
+
+  const supabase = getSupabaseAdmin();
+  const { data: settings, error } = await supabase
+    .from('user_settings')
+    .select('*')
+    .eq('user_id', auth.userId)
+    .maybeSingle();
+
+  if (error) return mcpError(`Failed to fetch user settings: ${error.message}`);
+  if (!settings) return mcpJson({ message: 'No custom settings recorded yet. Using defaults.' });
+
+  return mcpJson(formatUserSettingsPayload(settings));
 }
 
 const SETTINGS_FIELD_MAP: Array<[string, string, ((v: any) => any)?]> = [

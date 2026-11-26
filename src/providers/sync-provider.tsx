@@ -34,6 +34,34 @@ function scheduleIdleTask(task: () => void, timeoutMs: number): void {
   setTimeout(task, Math.min(timeoutMs, 300));
 }
 
+async function hydrateDefaultRouteStores(
+  currentPath: string,
+  userId: string,
+  forceRefresh: boolean,
+  isActive: () => boolean
+): Promise<void> {
+  const { useFitnessStore } = await import('@/lib/stores/fitness');
+  await Promise.all([
+    useUserStore.getState().loadUser(forceRefresh),
+    useGoalStore.getState().loadGoals(forceRefresh),
+    useHabitStore.getState().loadHabits(forceRefresh),
+    useTaskStore.getState().loadTasks(forceRefresh),
+  ]);
+  const loadSecondary = () =>
+    Promise.all([
+      useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
+      useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
+    ]).catch(() => {});
+
+  if (currentPath.startsWith('/dashboard') || currentPath.startsWith('/analytics')) {
+    void loadSecondary();
+    return;
+  }
+  scheduleIdleTask(() => {
+    if (isActive()) void loadSecondary();
+  }, 500);
+}
+
 async function hydrateStoresForRoute(
   currentPath: string,
   userId: string,
@@ -61,25 +89,7 @@ async function hydrateStoresForRoute(
     ]);
     return;
   }
-  await Promise.all([
-    useUserStore.getState().loadUser(forceRefresh),
-    useGoalStore.getState().loadGoals(forceRefresh),
-    useHabitStore.getState().loadHabits(forceRefresh),
-    useTaskStore.getState().loadTasks(forceRefresh),
-  ]);
-  const loadSecondary = () =>
-    Promise.all([
-      useFinanceStore.getState().loadFinanceData(userId, forceRefresh),
-      useFitnessStore.getState().loadFitnessData(userId, forceRefresh),
-    ]).catch(() => {});
-
-  if (currentPath.startsWith('/dashboard') || currentPath.startsWith('/analytics')) {
-    void loadSecondary();
-  } else {
-    scheduleIdleTask(() => {
-      if (isActive()) void loadSecondary();
-    }, 500);
-  }
+  await hydrateDefaultRouteStores(currentPath, userId, forceRefresh, isActive);
 }
 
 async function requestBrowserStoragePersistence(onResult: (granted: boolean) => void): Promise<void> {

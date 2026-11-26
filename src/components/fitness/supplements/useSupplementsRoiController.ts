@@ -126,7 +126,12 @@ export function useSupplementsRoiController(params: { selectedDate: string; user
 
   const handleTakeDose = async (sup: SupplementInventory) => {
     feedback.complete();
-    const log = await takeSupplementDose(sup.id, sup.dailyDosage, selectedDate, null, userId);
+    const log = await takeSupplementDose(sup.id, {
+      servings: sup.dailyDosage,
+      date: selectedDate,
+      notes: null,
+      userIdOverride: userId,
+    });
     if (log) {
       toast.success(`Logged ${sup.name}`, { action: { label: 'Undo', onClick: () => deleteSupplementLog(log.id) } });
     }

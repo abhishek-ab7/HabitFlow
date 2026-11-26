@@ -35,29 +35,29 @@ function makeCat(id: string, name: string, slug: string): FinanceCategory {
   };
 }
 
-function makeTx(
-  id: string,
-  date: string,
-  amount: number,
-  categoryId: string,
-  title: string,
-  extra: Partial<FinanceTransaction> = {}
-): FinanceTransaction {
+function makeTx(params: {
+  id: string;
+  date: string;
+  amount: number;
+  categoryId: string;
+  title: string;
+  extra?: Partial<FinanceTransaction>;
+}): FinanceTransaction {
   return {
-    id,
+    id: params.id,
     userId: 'u1',
-    title,
-    amount,
+    title: params.title,
+    amount: params.amount,
     type: 'expense',
-    categoryId,
+    categoryId: params.categoryId,
     accountId: 'acc-upi',
-    date,
-    monthKey: date.slice(0, 7),
+    date: params.date,
+    monthKey: params.date.slice(0, 7),
     tags: [],
     isRecurring: false,
     createdAt: nowIso,
     updatedAt: nowIso,
-    ...extra,
+    ...params.extra,
   };
 }
 
@@ -75,20 +75,20 @@ describe('Cross-Domain Intelligence Engine (computeCrossDomainInsights)', () => 
     expect(report.alerts).toEqual([]);
   });
 
-function makeMealLog(
-  id: string,
-  date: string,
-  name: string,
-  calories: number,
-  extra: Partial<MealLog> = {}
-): MealLog {
+function makeMealLog(params: {
+  id: string;
+  date: string;
+  name: string;
+  calories: number;
+  extra?: Partial<MealLog>;
+}): MealLog {
   return {
-    id,
+    id: params.id,
     userId: 'u1',
-    date,
+    date: params.date,
     mealType: 'snack',
-    name,
-    calories,
+    name: params.name,
+    calories: params.calories,
     proteinG: 20,
     carbsG: 60,
     fatG: 20,
@@ -98,23 +98,23 @@ function makeMealLog(
     loggedAt: nowIso,
     createdAt: nowIso,
     updatedAt: nowIso,
-    ...extra,
+    ...params.extra,
   };
 }
 
   function buildWalletWaistlineFixtures() {
     const categories = [makeCat('cat-junk', 'Junk Food', 'junk-food'), makeCat('cat-food', 'Food & Dining', 'food-dining')];
     const transactions = [
-      makeTx('tx-1', '2026-11-24', 350, 'cat-junk', 'Momos & Cold Drink'),
-      makeTx('tx-2', '2026-11-18', 650, 'cat-junk', 'Pizza Night'),
-      makeTx('tx-3', '2026-11-05', 1000, 'cat-junk', 'Burger Combo'),
-      makeTx('tx-4', '2026-11-22', 200, 'cat-food', 'Boiled Eggs & Oats'),
+      makeTx({ id: 'tx-1', date: '2026-11-24', amount: 350, categoryId: 'cat-junk', title: 'Momos & Cold Drink' }),
+      makeTx({ id: 'tx-2', date: '2026-11-18', amount: 650, categoryId: 'cat-junk', title: 'Pizza Night' }),
+      makeTx({ id: 'tx-3', date: '2026-11-05', amount: 1000, categoryId: 'cat-junk', title: 'Burger Combo' }),
+      makeTx({ id: 'tx-4', date: '2026-11-22', amount: 200, categoryId: 'cat-food', title: 'Boiled Eggs & Oats' }),
     ];
     const mealLogs: MealLog[] = [
-      makeMealLog('m1', '2026-11-24', 'Momos & Cold Drink', 700, { linkedTransactionId: 'tx-1', source: 'finance_bridge' }),
-      makeMealLog('m1-dup', '2026-11-24', 'Momos & Cold Drink (Dup)', 700, { linkedTransactionId: 'tx-1', source: 'finance_bridge' }),
-      makeMealLog('m2', '2026-11-18', 'Pizza Night', 1400, { mealType: 'dinner', linkedTransactionId: 'tx-2', source: 'finance_bridge' }),
-      makeMealLog('m3', '2026-11-05', 'Burger Combo', 1750, { mealType: 'lunch', linkedTransactionId: null }),
+      makeMealLog({ id: 'm1', date: '2026-11-24', name: 'Momos & Cold Drink', calories: 700, extra: { linkedTransactionId: 'tx-1', source: 'finance_bridge' } }),
+      makeMealLog({ id: 'm1-dup', date: '2026-11-24', name: 'Momos & Cold Drink (Dup)', calories: 700, extra: { linkedTransactionId: 'tx-1', source: 'finance_bridge' } }),
+      makeMealLog({ id: 'm2', date: '2026-11-18', name: 'Pizza Night', calories: 1400, extra: { mealType: 'dinner', linkedTransactionId: 'tx-2', source: 'finance_bridge' } }),
+      makeMealLog({ id: 'm3', date: '2026-11-05', name: 'Burger Combo', calories: 1750, extra: { mealType: 'lunch', linkedTransactionId: null } }),
     ];
     return { categories, transactions, mealLogs };
   }
@@ -136,7 +136,7 @@ function makeMealLog(
 
 function buildGymRoiFixtures() {
   const categories = [makeCat('cat-health', 'Health & Gym', 'health-gym')];
-  const transactions = [makeTx('tx-gym', '2026-11-02', 2400, 'cat-health', 'Cult Gym Monthly')];
+  const transactions = [makeTx({ id: 'tx-gym', date: '2026-11-02', amount: 2400, categoryId: 'cat-health', title: 'Cult Gym Monthly' })];
   const supplementInventory: SupplementInventory[] = [{
     id: 'sup-whey', userId: 'u1', name: 'ON Gold Whey', category: 'protein', unitLabel: 'scoop',
     totalServings: 60, remainingServings: 50, dailyDosage: 1, costInr: 4800, proteinPerServingG: 24,
@@ -211,10 +211,10 @@ function buildGymRoiFixtures() {
     ];
     const transactions = [
       // Trigger days: 20th & 21st -> ₹600 + ₹400 = ₹1000 total (avg ₹500/day)
-      makeTx('tx-t1', '2026-11-20', 600, 'cat-junk', 'Late night Swiggy junk'),
-      makeTx('tx-t2', '2026-11-21', 400, 'cat-misc', 'idk random snack'),
+      makeTx({ id: 'tx-t1', date: '2026-11-20', amount: 600, categoryId: 'cat-junk', title: 'Late night Swiggy junk' }),
+      makeTx({ id: 'tx-t2', date: '2026-11-21', amount: 400, categoryId: 'cat-misc', title: 'idk random snack' }),
       // Baseline days: 22nd & 23rd -> ₹200 + ₹0 = ₹200 total (avg ₹100/day)
-      makeTx('tx-b1', '2026-11-22', 200, 'cat-junk', 'Ice cream'),
+      makeTx({ id: 'tx-b1', date: '2026-11-22', amount: 200, categoryId: 'cat-junk', title: 'Ice cream' }),
     ];
 
     const report = computeCrossDomainInsights({
@@ -243,12 +243,12 @@ function buildGymRoiFixtures() {
       repaymentSchedule: 'flexible', status: 'active', bucketType: 'everyday_split', color: '#000', createdAt: nowIso, updatedAt: nowIso,
     }];
     const transactions = [
-      makeTx('tx-social', '2026-11-24', 900, 'cat-food', 'Group cafe dinner', { splitGroupId: 'split-1', linkedDebtId: 'd-split' }),
-      makeTx('tx-solo', '2026-11-23', 180, 'cat-food', 'Solo chicken bowl'),
+      makeTx({ id: 'tx-social', date: '2026-11-24', amount: 900, categoryId: 'cat-food', title: 'Group cafe dinner', extra: { splitGroupId: 'split-1', linkedDebtId: 'd-split' } }),
+      makeTx({ id: 'tx-solo', date: '2026-11-23', amount: 180, categoryId: 'cat-food', title: 'Solo chicken bowl' }),
     ];
     const mealLogs: MealLog[] = [
-      makeMealLog('ms1', '2026-11-24', 'Cafe pizza & shake', 1900, { mealType: 'dinner' }),
-      makeMealLog('ms2', '2026-11-23', 'Chicken rice bowl', 650, { mealType: 'dinner', isJunk: false, proteinG: 45 }),
+      makeMealLog({ id: 'ms1', date: '2026-11-24', name: 'Cafe pizza & shake', calories: 1900, extra: { mealType: 'dinner' } }),
+      makeMealLog({ id: 'ms2', date: '2026-11-23', name: 'Chicken rice bowl', calories: 650, extra: { mealType: 'dinner', isJunk: false, proteinG: 45 } }),
     ];
 
     const report = computeCrossDomainInsights({ todayDate: '2026-11-25', categories, debtRecords, transactions, mealLogs });
@@ -267,14 +267,21 @@ function buildGymRoiFixtures() {
     ];
     const transactions = [
       // Mirrors splitTransactionWithFriend(): user share + friend-share debt leg sharing splitGroupId & tags
-      makeTx('tx-user-share', '2026-11-24', 500, 'cat-junk', 'Pizza Hut Split', {
-        splitGroupId: 'split-grp-1',
-        tags: ['split', 'Rahul', 'junk'],
+      makeTx({
+        id: 'tx-user-share',
+        date: '2026-11-24',
+        amount: 500,
+        categoryId: 'cat-junk',
+        title: 'Pizza Hut Split',
+        extra: { splitGroupId: 'split-grp-1', tags: ['split', 'Rahul', 'junk'] },
       }),
-      makeTx('tx-friend-leg', '2026-11-24', 500, 'cat-debt', 'Pizza Hut Split', {
-        subcategory: 'Friend Split',
-        splitGroupId: 'split-grp-1',
-        tags: ['split', 'Rahul', 'junk', 'friend-share'],
+      makeTx({
+        id: 'tx-friend-leg',
+        date: '2026-11-24',
+        amount: 500,
+        categoryId: 'cat-debt',
+        title: 'Pizza Hut Split',
+        extra: { subcategory: 'Friend Split', splitGroupId: 'split-grp-1', tags: ['split', 'Rahul', 'junk', 'friend-share'] },
       }),
     ];
     const debtRecords: DebtRecord[] = [
@@ -347,7 +354,7 @@ function buildGymRoiFixtures() {
         status: 'completed',
       },
     ];
-    const transactions = [makeTx('tx-today', '2026-11-25', 300, 'cat-junk', 'Evening snack')];
+    const transactions = [makeTx({ id: 'tx-today', date: '2026-11-25', amount: 300, categoryId: 'cat-junk', title: 'Evening snack' })];
 
     const report = computeCrossDomainInsights({
       todayDate: '2026-11-25',

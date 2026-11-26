@@ -84,16 +84,20 @@ describe('Finance <-> Diet & Supplement Bridge (Decision 4)', () => {
     expect(unknownJunk.calories).toBe(550); // >=350 INR heuristic
   });
 
-  it('never double-logs Junk Food in UI bridge, logs Food & Dining only when opted-in, and restocks/creates supplements', async () => {
+  function setupBridgeMocks() {
     const upsertMealFromCapture = vi.fn().mockResolvedValue({});
     const restockSupplement = vi.fn().mockResolvedValue(makeSupp({ id: 'sup_whey', name: 'Whey Isolate' }));
     const addSupplement = vi.fn().mockResolvedValue(makeSupp({ id: 'sup_new', name: 'Creatine Monohydrate' }));
-
     useFitnessStore.setState({
       upsertMealFromCapture,
       restockSupplement,
       addSupplement,
     } as Partial<ReturnType<typeof useFitnessStore.getState>> as never);
+    return { upsertMealFromCapture, restockSupplement, addSupplement };
+  }
+
+  it('never double-logs Junk Food in UI bridge and logs Food & Dining only when opted-in', async () => {
+    const { upsertMealFromCapture } = setupBridgeMocks();
 
     // 1. Junk Food is auto-logged via CrossDomainActionMediator.onFinanceEvent -> bridge skips
     const junkRes = await executeFinanceFitnessBridge({
@@ -132,8 +136,11 @@ describe('Finance <-> Diet & Supplement Bridge (Decision 4)', () => {
         source: 'finance_bridge',
       })
     );
+  });
 
-    // 4. Health & Supplements restocking existing item
+  it('restocks existing supplements, creates new ones, and ignores income', async () => {
+    const { restockSupplement, addSupplement } = setupBridgeMocks();
+
     const restockRes = await executeFinanceFitnessBridge({
       bridgeKind: 'health_supplements',
       transaction: { id: 'tx_s1', title: 'Whey 1kg', amount: 1299, date: '2026-11-24', type: 'expense' },
@@ -149,7 +156,6 @@ describe('Finance <-> Diet & Supplement Bridge (Decision 4)', () => {
       date: '2026-11-24',
     });
 
-    // 5. Health & Supplements creating new item
     const createRes = await executeFinanceFitnessBridge({
       bridgeKind: 'health_supplements',
       transaction: { id: 'tx_s2', title: 'Creatine Monohydrate', amount: 899, date: '2026-11-24', type: 'expense' },
@@ -170,7 +176,6 @@ describe('Finance <-> Diet & Supplement Bridge (Decision 4)', () => {
       'u1'
     );
 
-    // 6. Income / non-expense never bridges
     const incomeRes = await executeFinanceFitnessBridge({
       bridgeKind: 'health_supplements',
       transaction: { id: 'tx_inc', title: 'Refund', amount: 500, date: '2026-11-24', type: 'income' },

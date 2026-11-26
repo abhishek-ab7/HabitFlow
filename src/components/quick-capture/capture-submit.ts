@@ -163,7 +163,12 @@ async function submitSupplementActions(params: {
       toast.info(`Add "${action.supplementName}" in Fitness → Supplements to track stock`);
       continue;
     }
-    await params.takeSupplementDose(target.id, action.servings, action.date, null, params.uid);
+    await params.takeSupplementDose(target.id, {
+      servings: action.servings,
+      date: action.date,
+      notes: null,
+      userIdOverride: params.uid,
+    });
     params.logsSummary.push(target.name);
   }
 }

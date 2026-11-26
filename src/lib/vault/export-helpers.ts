@@ -27,6 +27,31 @@ export function sanitizeCsvCell(value: unknown): string {
   return str;
 }
 
+function toCsvDocument(headers: string[], rows: unknown[][]): string {
+  const body = rows.map((row) => row.map(sanitizeCsvCell).join(','));
+  return [headers.join(','), ...body].join('\r\n');
+}
+
+function formatTransactionCsvRow(
+  t: FinanceTransaction,
+  accountMap: Map<string, FinanceAccount>,
+  categoryMap: Map<string, string>
+): unknown[] {
+  const acc = accountMap.get(t.accountId);
+  return [
+    t.id,
+    t.date,
+    t.title,
+    t.merchantName ?? '',
+    t.type,
+    t.amount.toFixed(2),
+    categoryMap.get(t.categoryId) ?? 'General',
+    acc?.name ?? '',
+    acc?.type ?? '',
+    t.notes ?? '',
+  ];
+}
+
 export function exportTransactionsCSV(
   transactions: FinanceTransaction[],
   accounts: FinanceAccount[],
@@ -34,77 +59,37 @@ export function exportTransactionsCSV(
 ): string {
   const accountMap = new Map(accounts.map((a) => [a.id, a]));
   const categoryMap = new Map(categories.map((c) => [c.id, c.name]));
-
-  const headers = [
-    'ID',
-    'Date',
-    'Title',
-    'Merchant',
-    'Type',
-    'Amount',
-    'Category',
-    'Account',
-    'AccountType',
-    'Notes',
-  ];
-
+  const headers = ['ID', 'Date', 'Title', 'Merchant', 'Type', 'Amount', 'Category', 'Account', 'AccountType', 'Notes'];
   const rows = transactions
     .filter((t) => !t.deletedAt)
     .sort((a, b) => b.date.localeCompare(a.date))
-    .map((t) => {
-      const acc = accountMap.get(t.accountId);
-      return [
-        sanitizeCsvCell(t.id),
-        sanitizeCsvCell(t.date),
-        sanitizeCsvCell(t.title),
-        sanitizeCsvCell(t.merchantName || ''),
-        sanitizeCsvCell(t.type),
-        sanitizeCsvCell(t.amount.toFixed(2)),
-        sanitizeCsvCell(categoryMap.get(t.categoryId) || 'General'),
-        sanitizeCsvCell(acc?.name || ''),
-        sanitizeCsvCell(acc?.type || ''),
-        sanitizeCsvCell(t.notes || ''),
-      ];
-    });
-
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    .map((t) => formatTransactionCsvRow(t, accountMap, categoryMap));
+  return toCsvDocument(headers, rows);
 }
 
 export function exportFriendsDebtCSV(debts: DebtRecord[]): string {
   const headers = [
-    'ID',
-    'PersonName',
-    'Bucket',
-    'Title',
-    'Direction',
-    'PrincipalAmount',
-    'RemainingAmount',
-    'RepaidAmount',
-    'StartDate',
-    'IsEmi',
-    'Status',
-    'Notes',
+    'ID', 'PersonName', 'Bucket', 'Title', 'Direction',
+    'PrincipalAmount', 'RemainingAmount', 'RepaidAmount', 'StartDate', 'IsEmi', 'Status', 'Notes',
   ];
-
   const rows = debts
     .filter((d) => !d.deletedAt)
     .sort((a, b) => a.personName.localeCompare(b.personName) || b.startDate.localeCompare(a.startDate))
     .map((d) => [
-      sanitizeCsvCell(d.id),
-      sanitizeCsvCell(d.personName),
-      sanitizeCsvCell(d.bucketType || 'long_term_loan'),
-      sanitizeCsvCell(d.title),
-      sanitizeCsvCell(d.direction === 'borrowed' ? 'I Borrowed (I Owe)' : 'I Lent (They Owe)'),
-      sanitizeCsvCell(d.principalAmount.toFixed(2)),
-      sanitizeCsvCell(d.remainingAmount.toFixed(2)),
-      sanitizeCsvCell((d.totalRepaidAmount || 0).toFixed(2)),
-      sanitizeCsvCell(d.startDate),
-      sanitizeCsvCell(d.isEmi ? 'Yes' : 'No'),
-      sanitizeCsvCell(d.status),
-      sanitizeCsvCell(d.notes || ''),
+      d.id,
+      d.personName,
+      d.bucketType ?? 'long_term_loan',
+      d.title,
+      d.direction === 'borrowed' ? 'I Borrowed (I Owe)' : 'I Lent (They Owe)',
+      d.principalAmount.toFixed(2),
+      d.remainingAmount.toFixed(2),
+      (d.totalRepaidAmount ?? 0).toFixed(2),
+      d.startDate,
+      d.isEmi ? 'Yes' : 'No',
+      d.status,
+      d.notes ?? '',
     ]);
-
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+  return toCsvDocument(headers, rows);
 }
 
 export function exportHabitsCSV(
@@ -112,41 +97,28 @@ export function exportHabitsCSV(
   completions: HabitCompletion[]
 ): string {
   const completionCounts = new Map<string, number>();
-  completions.forEach((c) => {
-    if (c.completed) {
-      completionCounts.set(c.habitId, (completionCounts.get(c.habitId) || 0) + 1);
-    }
-  });
-
+  for (const c of completions) {
+    if (c.completed) completionCounts.set(c.habitId, (completionCounts.get(c.habitId) ?? 0) + 1);
+  }
   const headers = [
-    'ID',
-    'Name',
-    'Category',
-    'TargetDaysPerWeek',
-    'FrequencyType',
-    'Difficulty',
-    'AutoTrackRule',
-    'Archived',
-    'TotalCompletions',
-    'CreatedAt',
+    'ID', 'Name', 'Category', 'TargetDaysPerWeek', 'FrequencyType',
+    'Difficulty', 'AutoTrackRule', 'Archived', 'TotalCompletions', 'CreatedAt',
   ];
-
   const rows = habits
     .filter((h) => !h.archived)
     .map((h) => [
-      sanitizeCsvCell(h.id),
-      sanitizeCsvCell(h.name),
-      sanitizeCsvCell(h.category),
-      sanitizeCsvCell(h.targetDaysPerWeek),
-      sanitizeCsvCell(h.frequencyType || 'daily'),
-      sanitizeCsvCell(h.difficulty || 'medium'),
-      sanitizeCsvCell(h.autoTrackRule || 'none'),
-      sanitizeCsvCell(h.archived ? 'Yes' : 'No'),
-      sanitizeCsvCell(completionCounts.get(h.id) || 0),
-      sanitizeCsvCell(h.createdAt),
+      h.id,
+      h.name,
+      h.category,
+      h.targetDaysPerWeek,
+      h.frequencyType ?? 'daily',
+      h.difficulty ?? 'medium',
+      h.autoTrackRule ?? 'none',
+      h.archived ? 'Yes' : 'No',
+      completionCounts.get(h.id) ?? 0,
+      h.createdAt,
     ]);
-
-  return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+  return toCsvDocument(headers, rows);
 }
 
 export const ALL_WORKSPACE_TABLES = [

@@ -50,8 +50,10 @@ type ComparableRecord = {
 
 function resolveByCompletion<T extends ComparableRecord>(
   local: T,
-  remote: T
+  remote: T,
+  preferCompleted?: boolean
 ): ConflictResolutionResult<T> | null {
+  if (!preferCompleted) return null;
   if (!('completed' in local) || !('completed' in remote)) return null;
   const localDone = local.completed === true;
   const remoteDone = remote.completed === true;
@@ -64,8 +66,9 @@ function resolveByCompletion<T extends ComparableRecord>(
 function resolveByStatus<T extends ComparableRecord>(
   local: T,
   remote: T,
-  completedStatuses: string[]
+  completedStatuses?: string[]
 ): ConflictResolutionResult<T> | null {
+  if (!completedStatuses) return null;
   if (!('status' in local) || !('status' in remote)) return null;
   const localStatus = local.status as string;
   const remoteStatus = remote.status as string;
@@ -77,35 +80,37 @@ function resolveByStatus<T extends ComparableRecord>(
     : { winner: 'remote', data: remote, reason: `✅ Remote has completed status: ${remoteStatus} (completed status wins)` };
 }
 
+function compareNumericField<T>(local: T, remote: T, field: keyof any): ConflictResolutionResult<T> | null {
+  const localValue = (local as any)[field];
+  const remoteValue = (remote as any)[field];
+  if (typeof localValue !== 'number' || typeof remoteValue !== 'number') return null;
+  if (localValue === remoteValue) return null;
+  const winner = localValue > remoteValue ? 'local' : 'remote';
+  const high = Math.max(localValue, remoteValue);
+  const low = Math.min(localValue, remoteValue);
+  const label = winner === 'local' ? 'Local' : 'Remote';
+  return {
+    winner,
+    data: winner === 'local' ? local : remote,
+    reason: `🏆 ${label} has higher ${String(field)}: ${high} > ${low} (highest value wins)`,
+  };
+}
+
 function resolveByHigherValue<T>(
   local: T,
   remote: T,
-  fields: Array<keyof any>
+  fields?: Array<keyof any>
 ): ConflictResolutionResult<T> | null {
+  if (!fields?.length) return null;
   for (const field of fields) {
-    const localValue = (local as any)[field];
-    const remoteValue = (remote as any)[field];
-    if (typeof localValue !== 'number' || typeof remoteValue !== 'number') continue;
-    if (localValue > remoteValue) {
-      return {
-        winner: 'local',
-        data: local,
-        reason: `🏆 Local has higher ${String(field)}: ${localValue} > ${remoteValue} (highest value wins)`,
-      };
-    }
-    if (remoteValue > localValue) {
-      return {
-        winner: 'remote',
-        data: remote,
-        reason: `🏆 Remote has higher ${String(field)}: ${remoteValue} > ${localValue} (highest value wins)`,
-      };
-    }
+    const res = compareNumericField(local, remote, field);
+    if (res) return res;
   }
   return null;
 }
 
 function extractRecordTime(record: any): number {
-  const raw = record.updated_at || record.updatedAt || record.created_at || record.createdAt || 0;
+  const raw = record.updated_at ?? record.updatedAt ?? record.created_at ?? record.createdAt ?? 0;
   return new Date(raw).getTime();
 }
 
@@ -141,21 +146,17 @@ export function resolveConflict<T extends ComparableRecord>(
   remote: T,
   options: ConflictResolutionOptions = {}
 ): ConflictResolutionResult<T> {
-  const candidates = [
+  const resolvers: Array<() => ConflictResolutionResult<T> | null> = [
     () => resolveByCustom(local, remote, options.customComparison),
-    () => (options.preferCompleted ? resolveByCompletion(local, remote) : null),
-    () => (options.completedStatuses ? resolveByStatus(local, remote, options.completedStatuses) : null),
-    () =>
-      options.preferHigherValues?.length
-        ? resolveByHigherValue(local, remote, options.preferHigherValues)
-        : null,
+    () => resolveByCompletion(local, remote, options.preferCompleted),
+    () => resolveByStatus(local, remote, options.completedStatuses),
+    () => resolveByHigherValue(local, remote, options.preferHigherValues),
   ];
 
-  for (const check of candidates) {
+  for (const check of resolvers) {
     const res = check();
     if (res) return res;
   }
-
   return resolveByTimestamp(local, remote);
 }
 

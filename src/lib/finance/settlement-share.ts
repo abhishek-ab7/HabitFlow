@@ -3,7 +3,10 @@ import type { FriendLedgerGroup } from '@/lib/types';
 /**
  * Validates standard Indian UPI VPA (e.g., username@okhdfcbank, 9876543210@paytm)
  */
-export function validateUpiId(upiId: string): boolean {
+export type UpiVpa = string;
+export type ShareText = string;
+
+export function validateUpiId(upiId: UpiVpa): boolean {
   if (!upiId || typeof upiId !== 'string') return false;
   const trimmed = upiId.trim();
   // Standard UPI ID pattern: 2-256 chars alphanumeric + dot, dash, underscore followed by @ and handle
@@ -51,22 +54,21 @@ export interface SettlementShareOptions {
 /**
  * Formats a clean, readable text summary isolating Everyday Tab and Long-Term Loans.
  */
+function formatNetSubtotal(net: number): string {
+  if (net > 0) return `You owe ₹${net.toLocaleString('en-IN')}`;
+  if (net < 0) return `I owe ₹${Math.abs(net).toLocaleString('en-IN')}`;
+  return 'Even (₹0)';
+}
+
 function appendEverydayTabLines(lines: string[], group: FriendLedgerGroup) {
   lines.push(`*1. Everyday Splits Tab*`);
   if (group.everydayRecords.length === 0) {
-    lines.push(`• Status: Settled (₹0)`);
-  } else {
-    if (group.everydayLentRemaining > 0) lines.push(`• You owe me: ₹${group.everydayLentRemaining.toLocaleString('en-IN')}`);
-    if (group.everydayBorrowedRemaining > 0) lines.push(`• I owe you: ₹${group.everydayBorrowedRemaining.toLocaleString('en-IN')}`);
-    const subtotal =
-      group.everydayNet > 0
-        ? `You owe ₹${group.everydayNet.toLocaleString('en-IN')}`
-        : group.everydayNet < 0
-          ? `I owe ₹${Math.abs(group.everydayNet).toLocaleString('en-IN')}`
-          : 'Even (₹0)';
-    lines.push(`• Tab Subtotal: ${subtotal}`);
+    lines.push(`• Status: Settled (₹0)`, '');
+    return;
   }
-  lines.push('');
+  if (group.everydayLentRemaining > 0) lines.push(`• You owe me: ₹${group.everydayLentRemaining.toLocaleString('en-IN')}`);
+  if (group.everydayBorrowedRemaining > 0) lines.push(`• I owe you: ₹${group.everydayBorrowedRemaining.toLocaleString('en-IN')}`);
+  lines.push(`• Tab Subtotal: ${formatNetSubtotal(group.everydayNet)}`, '');
 }
 
 function formatLoanLine(loan: NonNullable<FriendLedgerGroup['longTermLoans']>[number]): string {
@@ -84,13 +86,7 @@ function appendLoansTabLines(lines: string[], group: FriendLedgerGroup) {
     return;
   }
   activeLoans.forEach((loan) => lines.push(formatLoanLine(loan)));
-  const subtotal =
-    group.longTermNetPosition > 0
-      ? `You owe ₹${group.longTermNetPosition.toLocaleString('en-IN')}`
-      : group.longTermNetPosition < 0
-        ? `I owe ₹${Math.abs(group.longTermNetPosition).toLocaleString('en-IN')}`
-        : 'Even (₹0)';
-  lines.push(`• Loan Subtotal: ${subtotal}`, '');
+  lines.push(`• Loan Subtotal: ${formatNetSubtotal(group.longTermNetPosition)}`, '');
 }
 
 function appendNetSettleUpLines(lines: string[], targetNet: number) {
@@ -144,7 +140,7 @@ export function formatSettlementShareText(
 /**
  * Generates direct WhatsApp share URL
  */
-export function generateWhatsAppShareUrl(text: string, phone?: string): string {
+export function generateWhatsAppShareUrl(text: ShareText, phone?: ShareText): string {
   const cleanPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
   const encodedText = encodeURIComponent(text);
   if (cleanPhone) {
@@ -164,7 +160,7 @@ export function getSavedUpiId(): string {
   }
 }
 
-export function setSavedUpiId(upiId: string): void {
+export function setSavedUpiId(upiId: UpiVpa): void {
   if (typeof window === 'undefined') return;
   try {
     if (upiId && validateUpiId(upiId)) {

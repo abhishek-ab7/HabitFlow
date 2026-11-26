@@ -90,6 +90,35 @@ let cachedStreaks: Map<string, number> | null = null;
 let lastHabitsRef: Habit[] | null = null;
 let lastCompletionsRef: HabitCompletion[] | null = null;
 
+async function getOptionalHabitUserId(): Promise<string> {
+  const { data: { session } } = await getSupabaseClient().auth.getSession();
+  return session?.user?.id ?? 'local-user';
+}
+
+function isRestDayCompletion(c?: HabitCompletion): boolean {
+  return c?.status === 'rest' || c?.skipped === true;
+}
+
+async function executeMarkRestDay(params: {
+  habitId: HabitId;
+  date: IsoDate;
+  reason?: string;
+  habits: Habit[];
+  completions: HabitCompletion[];
+  set: (fn: (state: HabitState) => Partial<HabitState> | HabitState) => void;
+}) {
+  const { habitId, date, reason, habits, completions, set } = params;
+  const userId = await getOptionalHabitUserId();
+  const habit = habits.find((h) => h.id === habitId);
+  if (!habit) throw new Error('Habit not found');
+
+  const existing = completions.find((c) => c.habitId === habitId && c.date === date);
+  const result = isRestDayCompletion(existing)
+    ? await clearRestCompletion(habitId, date, userId)
+    : (assertRestDayAllowed(habit, completions, date), await markRestCompletion(habitId, date, userId, reason));
+  await updateLocalAndSync(set, result);
+}
+
 async function updateLocalAndSync(
   set: (fn: (state: HabitState) => Partial<HabitState> | HabitState) => void,
   result: HabitCompletion
@@ -162,7 +191,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
   },
 
-  loadCompletions: async (startDate: string, endDate: string) => {
+  loadCompletions: async (startDate: IsoDate, endDate: IsoDate) => {
     if (isRangeAlreadyLoaded(get().loadedRange, startDate, endDate)) {
       return;
     }
@@ -224,7 +253,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     return habit;
   },
 
-  editHabit: async (id: string, data: Partial<Habit>) => {
+  editHabit: async (id: HabitId, data: Partial<Habit>) => {
     await updateHabit(id, data);
     const fullHabit = await db.habits.get(id);
 
@@ -241,7 +270,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
   },
 
-  removeHabit: async (id: string) => {
+  removeHabit: async (id: HabitId) => {
     await deleteHabit(id);
     set(state => ({
       habits: state.habits.filter(h => h.id !== id),
@@ -257,7 +286,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
   },
 
-  toggle: async (habitId: string, date: string) => {
+  toggle: async (habitId: HabitId, date: IsoDate) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
@@ -267,7 +296,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateLocalAndSync(set, result);
   },
 
-  freezeHabit: async (habitId: string, date: string) => {
+  freezeHabit: async (habitId: HabitId, date: IsoDate) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
@@ -287,25 +316,17 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateLocalAndSync(set, result);
   },
 
-  markRestDay: async (habitId, date, reason) => {
-    const { data: { session } } = await getSupabaseClient().auth.getSession();
-    const userId = session?.user?.id || 'local-user';
-    const habit = get().habits.find(h => h.id === habitId);
-    if (!habit) throw new Error("Habit not found");
+  markRestDay: async (habitId, date, reason) =>
+    executeMarkRestDay({
+      habitId,
+      date,
+      reason,
+      habits: get().habits,
+      completions: get().completions,
+      set,
+    }),
 
-    const existing = get().completions.find(c => c.habitId === habitId && c.date === date);
-    const isRest = existing?.status === 'rest' || existing?.skipped === true;
-    if (isRest) {
-      const result = await clearRestCompletion(habitId, date, userId);
-      await updateLocalAndSync(set, result);
-      return;
-    }
-    assertRestDayAllowed(habit, get().completions, date);
-    const result = await markRestCompletion(habitId, date, userId, reason);
-    await updateLocalAndSync(set, result);
-  },
-
-  clearRestDay: async (habitId: string, date: string) => {
+  clearRestDay: async (habitId: HabitId, date: IsoDate) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     const userId = session?.user?.id || 'local-user';
@@ -314,7 +335,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateLocalAndSync(set, result);
   },
 
-  updateNote: async (habitId: string, date: string, note: string) => {
+  updateNote: async (habitId: HabitId, date: IsoDate, note: HabitId) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
@@ -323,7 +344,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateLocalAndSync(set, result);
   },
 
-  updateValue: async (habitId: string, date: string, value: number) => {
+  updateValue: async (habitId: HabitId, date: IsoDate, value: number) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
@@ -333,7 +354,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateLocalAndSync(set, result);
   },
 
-  ensureComplete: async (habitId: string, date: string) => {
+  ensureComplete: async (habitId: HabitId, date: IsoDate) => {
     const { completions, toggle } = get();
     const isCompleted = completions.some(c => c.habitId === habitId && c.date === date && c.completed);
 
@@ -342,7 +363,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     }
   },
 
-  batchComplete: async (habitIds: string[], date: string) => {
+  batchComplete: async (habitIds: HabitId[], date: IsoDate) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");

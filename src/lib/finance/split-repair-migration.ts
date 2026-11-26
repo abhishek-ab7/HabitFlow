@@ -55,6 +55,11 @@ export function deriveRepairedSplitLegId(splitGroupId: string): string {
  * or "Split with Bob (Bob owes: ₹1,000)"
  * or "Rahul owes: ₹54"
  */
+function extractSplitFriendName(match: RegExpMatchArray): string {
+  const raw = match[1] ?? match[2] ?? 'Friend';
+  return raw.trim();
+}
+
 export function parseSplitNote(notes: string): { friendName: string; amount: number } | null {
   if (!notes) return null;
 
@@ -63,7 +68,7 @@ export function parseSplitNote(notes: string): { friendName: string; amount: num
   );
   if (!match) return null;
 
-  const friendName = (match[1] || match[2] || 'Friend').trim();
+  const friendName = extractSplitFriendName(match);
   const amount = match[3] ? parseFloat(match[3].replace(/,/g, '')) : 0;
   return !isNaN(amount) && amount > 0 ? { friendName, amount } : null;
 }
@@ -173,9 +178,9 @@ function buildRepairedFriendTx(params: {
     subcategory: 'Friend Split',
     accountId: singleTx.accountId,
     date: singleTx.date,
-    monthKey: singleTx.monthKey || singleTx.date.slice(0, 7),
+    monthKey: singleTx.monthKey ?? singleTx.date.slice(0, 7),
     notes: `Friend split portion for ${friendName} (repaired) · ${singleTx.title}`,
-    tags: Array.from(new Set([...(singleTx.tags || []), 'split', friendName.toLowerCase(), 'friend-share'])),
+    tags: Array.from(new Set([...(singleTx.tags ?? []), 'split', friendName.toLowerCase(), 'friend-share'])),
     isRecurring: false,
     recurrenceRule: undefined,
     linkedCommitmentId: null,
@@ -184,7 +189,7 @@ function buildRepairedFriendTx(params: {
     linkedDebtInstallmentId: null,
     linkedEmiId: null,
     linkedSipId: null,
-    statementCycleKey: singleTx.statementCycleKey || null,
+    statementCycleKey: singleTx.statementCycleKey ?? null,
     paidStatementId: null,
     isCreditCardPayment: false,
     merchantName: singleTx.merchantName,
@@ -209,6 +214,12 @@ function groupTransactionsBySplitId(txs: FinanceTransaction[]): Map<string, Fina
   return groups;
 }
 
+function isDebtCategory(c: { slug?: string; name: string }): boolean {
+  if (c.slug === 'emis-debt-repayment') return true;
+  const lower = c.name.toLowerCase();
+  return lower.includes('debt') || lower.includes('emi');
+}
+
 async function loadSplitRepairDependencies(userId: string) {
   const userAccounts = await fetchWithUserFallback(
     () => db.financeAccounts.where('userId').equals(userId).filter((a) => !a.deletedAt).toArray(),
@@ -222,10 +233,7 @@ async function loadSplitRepairDependencies(userId: string) {
     () => db.debtRecords.where('userId').equals(userId).filter((d) => !d.deletedAt).toArray(),
     () => db.debtRecords.filter((d) => !d.deletedAt).toArray()
   );
-  const debtCat =
-    userCategories.find((c) => c.slug === 'emis-debt-repayment') ||
-    userCategories.find((c) => c.name.toLowerCase().includes('debt') || c.name.toLowerCase().includes('emi')) ||
-    userCategories[0];
+  const debtCat = userCategories.find(isDebtCategory) ?? userCategories[0];
 
   return { userAccounts, userDebts, debtCatId: debtCat?.id };
 }
@@ -275,20 +283,13 @@ async function syncAffectedCards(
   }
 }
 
-export async function repairLegacySplitTransactions(
-  userId: string,
-  syncCardStatementsFn?: (cardId: string) => Promise<void>
-): Promise<SplitRepairResult> {
-  if (!userId) return { repairedCount: 0, affectedCardIds: [] };
-
-  const allSplitTxs = await fetchWithUserFallback(
-    () => db.financeTransactions.where('userId').equals(userId).filter((t) => Boolean(t.splitGroupId)).toArray(),
-    () => db.financeTransactions.filter((t) => Boolean(t.splitGroupId)).toArray()
-  );
-  if (allSplitTxs.length === 0) return { repairedCount: 0, affectedCardIds: [] };
-
-  const groups = groupTransactionsBySplitId(allSplitTxs);
-  const { userAccounts, userDebts, debtCatId } = await loadSplitRepairDependencies(userId);
+async function repairAllSplitGroups(params: {
+  groups: Map<string, FinanceTransaction[]>;
+  userAccounts: FinanceAccount[];
+  userDebts: DebtRecord[];
+  debtCatId?: string;
+}) {
+  const { groups, userAccounts, userDebts, debtCatId } = params;
   const affectedCardSet = new Set<string>();
   const now = new Date().toISOString();
   let repairedCount = 0;
@@ -305,8 +306,30 @@ export async function repairLegacySplitTransactions(
     if (outcome.repaired) repairedCount++;
     if (outcome.cardAccountId) affectedCardSet.add(outcome.cardAccountId);
   }
+  return { repairedCount, affectedCardIds: Array.from(affectedCardSet) };
+}
 
-  const affectedCardIds = Array.from(affectedCardSet);
+export async function repairLegacySplitTransactions(
+  userId: string,
+  syncCardStatementsFn?: (cardId: string) => Promise<void>
+): Promise<SplitRepairResult> {
+  if (!userId) return { repairedCount: 0, affectedCardIds: [] };
+
+  const allSplitTxs = await fetchWithUserFallback(
+    () => db.financeTransactions.where('userId').equals(userId).filter((t) => Boolean(t.splitGroupId)).toArray(),
+    () => db.financeTransactions.filter((t) => Boolean(t.splitGroupId)).toArray()
+  );
+  if (allSplitTxs.length === 0) return { repairedCount: 0, affectedCardIds: [] };
+
+  const groups = groupTransactionsBySplitId(allSplitTxs);
+  const { userAccounts, userDebts, debtCatId } = await loadSplitRepairDependencies(userId);
+  const { repairedCount, affectedCardIds } = await repairAllSplitGroups({
+    groups,
+    userAccounts,
+    userDebts,
+    debtCatId,
+  });
+
   await syncAffectedCards(affectedCardIds, syncCardStatementsFn);
   return { repairedCount, affectedCardIds };
 }

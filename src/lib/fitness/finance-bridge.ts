@@ -48,18 +48,19 @@ export function classifyCategoryBridgeKind(
   return BRIDGE_CLASSIFIERS.find((c) => c.match(slug, combined))?.kind ?? 'none';
 }
 
+const SUPPLEMENT_CATEGORY_RULES: Array<[RegExp, SupplementCategory]> = [
+  [/\b(whey|casein|protein|isolate|plant protein)\b/i, 'protein'],
+  [/\b(creatine|monohydrate)\b/i, 'creatine'],
+  [/\b(omega|fish oil|epa|dha)\b/i, 'omega'],
+  [/\b(pre[\s-]?workout|caffeine|citrulline)\b/i, 'pre_workout'],
+  [/\b(zinc|magnesium|calcium|iron)\b/i, 'mineral'],
+  [/\b(electrolyte|ors|hydration)\b/i, 'other'],
+  [/\b(vitamin|vit\s*d|d3|b12|multivitamin)\b/i, 'vitamin'],
+];
+
 export function inferSupplementCategoryFromTitle(title: string): SupplementCategory {
   const q = title.toLowerCase();
-  if (/\b(whey|casein|protein|isolate|plant protein)\b/i.test(q)) return 'protein';
-  if (/\b(creatine|monohydrate)\b/i.test(q)) return 'creatine';
-  if (/\b(omega|fish oil|epa|dha)\b/i.test(q)) return 'omega';
-  if (/\b(pre[\s-]?workout|caffeine|citrulline)\b/i.test(q)) return 'pre_workout';
-  if (/\b(zinc|magnesium|calcium|iron)\b/i.test(q)) return 'mineral';
-  if (/\b(electrolyte|ors|hydration)\b/i.test(q)) return 'other';
-  if (/\b(vitamin|vit\s*d|d3|b12|multivitamin)\b/i.test(q)) {
-    return 'vitamin';
-  }
-  return 'other';
+  return SUPPLEMENT_CATEGORY_RULES.find(([re]) => re.test(q))?.[1] ?? 'other';
 }
 
 export function findMatchingSupplementId(
@@ -102,6 +103,19 @@ export function estimateDietBridgePreview(title: string, amountInr: number, isJu
   };
 }
 
+function resolveBridgeMealMacros(params: {
+  title: string;
+  amount: number;
+  dietCalories?: number;
+  dietProteinG?: number;
+}) {
+  const preview = estimateDietBridgePreview(params.title, params.amount, false);
+  const calories = params.dietCalories && params.dietCalories > 0 ? Math.round(params.dietCalories) : preview.calories;
+  const proteinG =
+    params.dietProteinG !== undefined && params.dietProteinG >= 0 ? Number(params.dietProteinG) : preview.proteinG;
+  return { preview, calories, proteinG };
+}
+
 async function handleFoodDiningBridge(params: {
   transaction: Pick<FinanceTransaction, 'id' | 'title' | 'amount' | 'date'>;
   userId?: string;
@@ -109,10 +123,12 @@ async function handleFoodDiningBridge(params: {
   dietProteinG?: number;
 }) {
   const fitness = useFitnessStore.getState();
-  const preview = estimateDietBridgePreview(params.transaction.title, params.transaction.amount, false);
-  const calories = params.dietCalories && params.dietCalories > 0 ? Math.round(params.dietCalories) : preview.calories;
-  const proteinG =
-    params.dietProteinG !== undefined && params.dietProteinG >= 0 ? Number(params.dietProteinG) : preview.proteinG;
+  const { preview, calories, proteinG } = resolveBridgeMealMacros({
+    title: params.transaction.title,
+    amount: params.transaction.amount,
+    dietCalories: params.dietCalories,
+    dietProteinG: params.dietProteinG,
+  });
 
   await fitness.upsertMealFromCapture({
     userId: params.userId,

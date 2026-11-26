@@ -50,20 +50,40 @@ function useLifeOsHydration(params: {
   }, [hydrate, userId, showFinance, showFitness]);
 }
 
-export function useLifeOsAnalytics(
-  range: AnalyticsRangeKey,
-  options: { hydrate?: boolean } = {}
-): {
-  snapshot: LifeOsAnalyticsSnapshot;
-  showFinance: boolean;
-  showFitness: boolean;
-} {
-  const { hydrate = true } = options;
-  const { user } = useAuth();
-  const settings = useGamificationStore((s) => s.settings);
-  const showFinance = isFinanceModuleEnabled(settings);
-  const showFitness = isFitnessModuleEnabled(settings);
+function useFinanceAnalyticsSlice() {
+  return useFinanceStore(
+    useShallow((s) => ({
+      accounts: s.accounts,
+      transactions: s.transactions,
+      categories: s.categories,
+      budgets: s.budgets,
+      commitments: s.commitments,
+      debtRecords: s.debtRecords,
+      debtInstallments: s.debtInstallments,
+      emiTrackers: s.emiTrackers,
+      sipPlans: s.sipPlans,
+      recurringBills: s.recurringBills,
+      creditCardStatements: s.creditCardStatements,
+      loadFinanceData: s.loadFinanceData,
+    }))
+  );
+}
 
+function useFitnessAnalyticsSlice() {
+  return useFitnessStore(
+    useShallow((s) => ({
+      profile: s.profile,
+      dailyLogs: s.dailyLogs,
+      mealLogs: s.mealLogs,
+      workoutSessions: s.workoutSessions,
+      supplementInventory: s.supplementInventory,
+      supplementLogs: s.supplementLogs,
+      loadFitnessData: s.loadFitnessData,
+    }))
+  );
+}
+
+function useCoreLifeOsSlices() {
   const { habits, completions, loadHabits, loadCompletions } = useHabitStore(
     useShallow((s) => ({
       habits: s.habits,
@@ -86,45 +106,51 @@ export function useLifeOsAnalytics(
   const { moodLogs, loadMoodLogs } = useMoodStore(
     useShallow((s) => ({ moodLogs: s.moodLogs, loadMoodLogs: s.loadMoodLogs }))
   );
-  const financeSlice = useFinanceStore(
-    useShallow((s) => ({
-      accounts: s.accounts,
-      transactions: s.transactions,
-      categories: s.categories,
-      budgets: s.budgets,
-      commitments: s.commitments,
-      debtRecords: s.debtRecords,
-      debtInstallments: s.debtInstallments,
-      emiTrackers: s.emiTrackers,
-      sipPlans: s.sipPlans,
-      recurringBills: s.recurringBills,
-      creditCardStatements: s.creditCardStatements,
-      loadFinanceData: s.loadFinanceData,
-    }))
-  );
-  const fitnessSlice = useFitnessStore(
-    useShallow((s) => ({
-      profile: s.profile,
-      dailyLogs: s.dailyLogs,
-      mealLogs: s.mealLogs,
-      workoutSessions: s.workoutSessions,
-      supplementInventory: s.supplementInventory,
-      supplementLogs: s.supplementLogs,
-      loadFitnessData: s.loadFitnessData,
-    }))
-  );
+  return {
+    habits,
+    completions,
+    loadHabits,
+    loadCompletions,
+    goals,
+    milestones,
+    loadGoals,
+    loadAllMilestones,
+    tasks,
+    loadTasks,
+    moodLogs,
+    loadMoodLogs,
+  };
+}
+
+export function useLifeOsAnalytics(
+  range: AnalyticsRangeKey,
+  options: { hydrate?: boolean } = {}
+): {
+  snapshot: LifeOsAnalyticsSnapshot;
+  showFinance: boolean;
+  showFitness: boolean;
+} {
+  const { hydrate = true } = options;
+  const { user } = useAuth();
+  const settings = useGamificationStore((s) => s.settings);
+  const showFinance = isFinanceModuleEnabled(settings);
+  const showFitness = isFitnessModuleEnabled(settings);
+
+  const core = useCoreLifeOsSlices();
+  const financeSlice = useFinanceAnalyticsSlice();
+  const fitnessSlice = useFitnessAnalyticsSlice();
 
   useLifeOsHydration({
     hydrate,
     userId: user?.id,
     showFinance,
     showFitness,
-    loadHabits,
-    loadCompletions,
-    loadGoals,
-    loadAllMilestones,
-    loadTasks,
-    loadMoodLogs,
+    loadHabits: core.loadHabits,
+    loadCompletions: core.loadCompletions,
+    loadGoals: core.loadGoals,
+    loadAllMilestones: core.loadAllMilestones,
+    loadTasks: core.loadTasks,
+    loadMoodLogs: core.loadMoodLogs,
     loadFinanceData: financeSlice.loadFinanceData,
     loadFitnessData: fitnessSlice.loadFitnessData,
   });
@@ -134,12 +160,12 @@ export function useLifeOsAnalytics(
       computeLifeOsAnalytics({
         range,
         settings,
-        habits,
-        completions,
-        goals,
-        milestones,
-        tasks,
-        moodLogs,
+        habits: core.habits,
+        completions: core.completions,
+        goals: core.goals,
+        milestones: core.milestones,
+        tasks: core.tasks,
+        moodLogs: core.moodLogs,
         ...financeSlice,
         fitnessProfile: fitnessSlice.profile,
         dailyLogs: fitnessSlice.dailyLogs,
@@ -148,7 +174,7 @@ export function useLifeOsAnalytics(
         supplementInventory: fitnessSlice.supplementInventory,
         supplementLogs: fitnessSlice.supplementLogs,
       }),
-    [range, settings, habits, completions, goals, milestones, tasks, moodLogs, financeSlice, fitnessSlice]
+    [range, settings, core, financeSlice, fitnessSlice]
   );
 
   return { snapshot, showFinance, showFitness };

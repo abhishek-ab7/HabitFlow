@@ -24,6 +24,9 @@ import {
   syncNewGoalAndMilestones,
 } from './goal-store-helpers';
 
+export type GoalId = string;
+export type MilestoneId = string;
+
 interface GoalState {
   goals: Goal[];
   milestones: Milestone[];
@@ -39,22 +42,22 @@ interface GoalState {
   loadGoals: (force?: boolean) => Promise<void>;
   loadAllMilestones: (force?: boolean) => Promise<void>;
   addGoal: (data: GoalFormData) => Promise<Goal>;
-  editGoal: (id: string, data: Partial<Goal>) => Promise<void>;
-  removeGoal: (id: string) => Promise<void>;
-  setFocus: (goalId: string) => Promise<void>;
-  addMilestone: (goalId: string, data: MilestoneFormData) => Promise<Milestone>;
-  editMilestone: (id: string, data: Partial<Milestone>) => Promise<void>;
-  removeMilestone: (id: string) => Promise<void>;
-  toggleMilestoneComplete: (id: string) => Promise<void>;
+  editGoal: (id: GoalId, data: Partial<Goal>) => Promise<void>;
+  removeGoal: (id: GoalId) => Promise<void>;
+  setFocus: (goalId: GoalId) => Promise<void>;
+  addMilestone: (goalId: GoalId, data: MilestoneFormData) => Promise<Milestone>;
+  editMilestone: (id: MilestoneId, data: Partial<Milestone>) => Promise<void>;
+  removeMilestone: (id: MilestoneId) => Promise<void>;
+  toggleMilestoneComplete: (id: MilestoneId) => Promise<void>;
   setStatusFilter: (statuses: GoalStatus[]) => void;
   setAreaFilter: (areas: AreaOfLife[]) => void;
 
   // Computed
-  getGoalStats: (goalId: string) => ReturnType<typeof calculateGoalStats>;
-  getGoalMilestones: (goalId: string) => Milestone[];
+  getGoalStats: (goalId: GoalId) => ReturnType<typeof calculateGoalStats>;
+  getGoalMilestones: (goalId: GoalId) => Milestone[];
   getFocusGoal: () => Goal | undefined;
   getFocusGoals: () => Goal[];
-  getGoalDeadlineStatus: (goalId: string) => ReturnType<typeof getDeadlineStatus>;
+  getGoalDeadlineStatus: (goalId: GoalId) => ReturnType<typeof getDeadlineStatus>;
   getFilteredGoals: () => Goal[];
   getActiveGoalsCount: () => number;
   getUpcomingDeadlines: (days?: number) => Goal[];
@@ -149,7 +152,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     return goal;
   },
 
-  editGoal: async (id: string, data: Partial<Goal>) => {
+  editGoal: async (id: GoalId, data: Partial<Goal>) => {
     await updateGoal(id, data);
     const updatedGoal = get().goals.find(g => g.id === id);
 
@@ -168,7 +171,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     }
   },
 
-  removeGoal: async (id: string) => {
+  removeGoal: async (id: GoalId) => {
     await deleteGoal(id);
     set(state => ({
       goals: state.goals.filter(g => g.id !== id),
@@ -184,7 +187,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     }
   },
 
-  setFocus: async (goalId: string) => {
+  setFocus: async (goalId: GoalId) => {
     const currentGoal = get().goals.find(g => g.id === goalId);
     if (!currentGoal) return;
 
@@ -221,7 +224,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     }
   },
 
-  addMilestone: async (goalId: string, data: MilestoneFormData) => {
+  addMilestone: async (goalId: GoalId, data: MilestoneFormData) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
@@ -242,7 +245,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     return milestone;
   },
 
-  editMilestone: async (id: string, data: Partial<Milestone>) => {
+  editMilestone: async (id: MilestoneId, data: Partial<Milestone>) => {
     await updateMilestone(id, data);
     const updatedMilestone = get().milestones.find(m => m.id === id);
 
@@ -261,7 +264,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     }
   },
 
-  removeMilestone: async (id: string) => {
+  removeMilestone: async (id: MilestoneId) => {
     await deleteMilestone(id);
     set(state => ({
       milestones: state.milestones.filter(m => m.id !== id),
@@ -276,7 +279,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     }
   },
 
-  toggleMilestoneComplete: async (id: string) => {
+  toggleMilestoneComplete: async (id: MilestoneId) => {
     const updated = await toggleMilestone(id);
     if (updated) {
       set(state => ({

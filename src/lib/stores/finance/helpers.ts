@@ -33,13 +33,16 @@ import type {
   CreditCardCycleSummary,
 } from '@/lib/types';
 
+export type FinanceMonthKey = string;
+export type FinanceUserId = string;
+
 export function getCurrentMonthKey(date: Date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
 }
 
-export function getPreviousMonthKey(monthKey: string): string {
+export function getPreviousMonthKey(monthKey: FinanceMonthKey): string {
   const [yStr, mStr] = monthKey.split('-');
   let year = parseInt(yStr, 10);
   let month = parseInt(mStr, 10) - 1;
@@ -221,8 +224,8 @@ export const INITIAL_FILTERS: FinanceFilterState = {
 };
 
 export async function resolveCurrentUserId(
-  customUserId?: string,
-  storeUserId?: string | null
+  customUserId?: FinanceUserId,
+  storeUserId?: FinanceUserId | null
 ): Promise<string> {
   if (customUserId && customUserId !== 'local-demo-user') return customUserId;
   try {
@@ -265,7 +268,12 @@ function getDemoMigratableTables() {
   ].filter(Boolean);
 }
 
-async function migrateDemoTableRecords(table: any, demoUserId: string, targetUserId: string): Promise<boolean> {
+async function migrateDemoTableRecords(params: {
+  table: any;
+  demoUserId: FinanceUserId;
+  targetUserId: FinanceUserId;
+}): Promise<boolean> {
+  const { table, demoUserId, targetUserId } = params;
   const demoRecords = await table.where('userId').equals(demoUserId).toArray();
   if (demoRecords.length === 0) return false;
   const now = new Date().toISOString();
@@ -280,10 +288,12 @@ async function migrateDemoTableRecords(table: any, demoUserId: string, targetUse
   return true;
 }
 
-export async function migrateLocalDemoFinanceRecords(targetUserId: string) {
+export async function migrateLocalDemoFinanceRecords(targetUserId: FinanceUserId) {
   try {
     const results = await Promise.all(
-      getDemoMigratableTables().map((table) => migrateDemoTableRecords(table, 'local-demo-user', targetUserId))
+      getDemoMigratableTables().map((table) =>
+        migrateDemoTableRecords({ table, demoUserId: 'local-demo-user', targetUserId })
+      )
     );
     if (results.some(Boolean)) notifyFinanceSync();
   } catch (err) {
@@ -313,10 +323,10 @@ export interface FinanceStore {
   error: string | null;
 
   // Core Lifecycle
-  loadFinanceData: (customUserId?: string, force?: boolean) => Promise<void>;
-  seedInitialFinanceData: (userId: string) => Promise<void>;
+  loadFinanceData: (customUserId?: FinanceUserId, force?: boolean) => Promise<void>;
+  seedInitialFinanceData: (userId: FinanceUserId) => Promise<void>;
   resetAllFinanceData: (keepCategories?: boolean) => Promise<void>;
-  setSelectedMonth: (monthKey: string) => void;
+  setSelectedMonth: (monthKey: FinanceMonthKey) => void;
   setFilters: (filters: Partial<FinanceFilterState>) => void;
   resetFilters: () => void;
 
@@ -324,29 +334,29 @@ export interface FinanceStore {
   addTransaction: (data: FinanceTransactionFormData) => Promise<FinanceTransaction>;
   addSplitTransactions: (params: {
     base: Omit<FinanceTransactionFormData, 'amount' | 'categoryId'>;
-    splits: Array<{ categoryId: string; amount: number; subcategory?: string; note?: string }>;
+    splits: Array<{ categoryId: FinanceUserId; amount: number; subcategory?: string; note?: string }>;
   }) => Promise<FinanceTransaction[]>;
-  updateTransaction: (id: string, data: Partial<FinanceTransactionFormData>) => Promise<void>;
-  deleteTransaction: (id: string) => Promise<void>;
-  approveReviewedTransaction: (id: string) => Promise<void>;
+  updateTransaction: (id: FinanceUserId, data: Partial<FinanceTransactionFormData>) => Promise<void>;
+  deleteTransaction: (id: FinanceUserId) => Promise<void>;
+  approveReviewedTransaction: (id: FinanceUserId) => Promise<void>;
   bulkUpdateTransactions: (
-    ids: string[],
+    ids: FinanceUserId[],
     updates: Partial<Pick<FinanceTransaction, 'categoryId' | 'needsReview' | 'tags'>>
   ) => Promise<void>;
-  bulkDeleteTransactions: (ids: string[]) => Promise<void>;
+  bulkDeleteTransactions: (ids: FinanceUserId[]) => Promise<void>;
   splitTransactionWithFriend: (params: {
     txData: FinanceTransactionFormData;
-    friendName: string;
+    friendName: FinanceUserId;
     friendShareAmount: number;
-    existingDebtId?: string;
+    existingDebtId?: FinanceUserId;
   }) => Promise<{ transaction: FinanceTransaction; debt: DebtRecord }>;
   importTransactionsCsv: (
-    csvText: string,
-    defaultAccountId?: string
+    csvText: FinanceUserId,
+    defaultAccountId?: FinanceUserId
   ) => Promise<{ importedCount: number; skippedCount: number }>;
   attachTransactionToCommitment: (
-    transactionId: string,
-    commitmentId: string | null,
+    transactionId: FinanceUserId,
+    commitmentId: FinanceUserId | null,
     contributionType?: CommitmentContributionType
   ) => Promise<void>;
 
@@ -354,12 +364,12 @@ export interface FinanceStore {
   addCommitment: (
     data: Omit<MonthlyCommitment, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<MonthlyCommitment>;
-  updateCommitment: (id: string, data: Partial<MonthlyCommitment>) => Promise<void>;
-  deleteCommitment: (id: string) => Promise<void>;
+  updateCommitment: (id: FinanceUserId, data: Partial<MonthlyCommitment>) => Promise<void>;
+  deleteCommitment: (id: FinanceUserId) => Promise<void>;
   settleCommitmentBalance: (
-    commitmentId: string,
-    accountId?: string,
-    monthKey?: string
+    commitmentId: FinanceUserId,
+    accountId?: FinanceUserId,
+    monthKey?: FinanceMonthKey
   ) => Promise<FinanceTransaction | null>;
 
   // Lend & Borrow
@@ -370,38 +380,38 @@ export interface FinanceStore {
     >
   ) => Promise<DebtRecord>;
   updateDebtRecord: (
-    id: string,
+    id: FinanceUserId,
     data: Partial<Omit<DebtRecord, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
   ) => Promise<void>;
   recordDebtInstallment: (params: {
-    debtId: string;
+    debtId: FinanceUserId;
     amount: number;
-    date?: string;
+    date?: FinanceMonthKey;
     paymentMethod: DebtPaymentMethod;
-    accountId?: string;
-    categoryId?: string;
-    note?: string;
-    splitGroupId?: string;
+    accountId?: FinanceUserId;
+    categoryId?: FinanceUserId;
+    note?: FinanceUserId;
+    splitGroupId?: FinanceUserId;
   }) => Promise<DebtInstallment | null>;
   updateDebtInstallment: (
-    id: string,
+    id: FinanceUserId,
     data: Partial<Pick<DebtInstallment, 'amount' | 'date' | 'paymentMethod' | 'note'>>
   ) => Promise<void>;
-  deleteDebtInstallment: (id: string) => Promise<void>;
-  topUpDebt: (debtId: string, additionalAmount: number, note?: string) => Promise<void>;
-  deleteDebtRecord: (id: string) => Promise<void>;
+  deleteDebtInstallment: (id: FinanceUserId) => Promise<void>;
+  topUpDebt: (debtId: FinanceUserId, additionalAmount: number, note?: FinanceUserId) => Promise<void>;
+  deleteDebtRecord: (id: FinanceUserId) => Promise<void>;
   settleEverydayTab: (
-    normalizedFriendName: string,
+    normalizedFriendName: FinanceUserId,
     options: {
-      accountId?: string;
+      accountId?: FinanceUserId;
       paymentMethod: DebtPaymentMethod;
-      date?: string;
-      note?: string;
+      date?: FinanceMonthKey;
+      note?: FinanceUserId;
     }
   ) => Promise<FinanceTransaction | null>;
   offsetSplitAgainstLoan: (
-    friendKey: string,
-    loanId: string,
+    friendKey: FinanceUserId,
+    loanId: FinanceUserId,
     amount: number
   ) => Promise<boolean>;
 
@@ -410,38 +420,38 @@ export interface FinanceStore {
     data: Omit<EmiTracker, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<EmiTracker>;
   updateEmiTracker: (
-    id: string,
+    id: FinanceUserId,
     data: Partial<Omit<EmiTracker, 'id' | 'userId' | 'createdAt' | 'updatedAt'>>
   ) => Promise<void>;
   payMonthlyEmi: (
-    emiId: string,
-    accountId?: string,
-    date?: string
+    emiId: FinanceUserId,
+    accountId?: FinanceUserId,
+    date?: FinanceMonthKey
   ) => Promise<FinanceTransaction | null>;
-  deleteEmiTracker: (id: string) => Promise<void>;
+  deleteEmiTracker: (id: FinanceUserId) => Promise<void>;
 
   // SIP Plans
   addSipPlan: (
     data: Omit<FinanceSipPlan, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceSipPlan>;
-  updateSipPlan: (id: string, data: Partial<FinanceSipPlan>) => Promise<void>;
-  deleteSipPlan: (id: string) => Promise<void>;
+  updateSipPlan: (id: FinanceUserId, data: Partial<FinanceSipPlan>) => Promise<void>;
+  deleteSipPlan: (id: FinanceUserId) => Promise<void>;
   payMonthlySip: (
-    sipId: string,
-    accountId?: string,
-    date?: string
+    sipId: FinanceUserId,
+    accountId?: FinanceUserId,
+    date?: FinanceMonthKey
   ) => Promise<FinanceTransaction | null>;
 
   // Recurring Bills
   addRecurringBill: (
     data: Omit<FinanceRecurringBill, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceRecurringBill>;
-  updateRecurringBill: (id: string, data: Partial<FinanceRecurringBill>) => Promise<void>;
-  deleteRecurringBill: (id: string) => Promise<void>;
+  updateRecurringBill: (id: FinanceUserId, data: Partial<FinanceRecurringBill>) => Promise<void>;
+  deleteRecurringBill: (id: FinanceUserId) => Promise<void>;
   payRecurringBill: (
-    billId: string,
-    accountId?: string,
-    date?: string
+    billId: FinanceUserId,
+    accountId?: FinanceUserId,
+    date?: FinanceMonthKey
   ) => Promise<FinanceTransaction | null>;
 
   // Smart Categorization Rules
@@ -449,68 +459,68 @@ export interface FinanceStore {
     data: Omit<FinanceCategorizationRule, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceCategorizationRule>;
   updateCategorizationRule: (
-    id: string,
+    id: FinanceUserId,
     data: Partial<FinanceCategorizationRule>
   ) => Promise<void>;
-  deleteCategorizationRule: (id: string) => Promise<void>;
-  applyCategorizationRules: (rawTextOrMerchant: string) => {
+  deleteCategorizationRule: (id: FinanceUserId) => Promise<void>;
+  applyCategorizationRules: (rawTextOrMerchant: FinanceUserId) => {
     rule?: FinanceCategorizationRule;
-    categoryId?: string;
-    cleanMerchantName?: string;
-    tags?: string[];
+    categoryId?: FinanceUserId;
+    cleanMerchantName?: FinanceUserId;
+    tags?: FinanceUserId[];
   };
 
   // Accounts, Categories, Budgets & Reconciliation
   addAccount: (
     data: Omit<FinanceAccount, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceAccount>;
-  updateAccount: (id: string, data: Partial<FinanceAccount>) => Promise<void>;
-  setDefaultAccount: (accountId: string) => Promise<void>;
-  deleteAccount: (id: string) => Promise<void>;
+  updateAccount: (id: FinanceUserId, data: Partial<FinanceAccount>) => Promise<void>;
+  setDefaultAccount: (accountId: FinanceUserId) => Promise<void>;
+  deleteAccount: (id: FinanceUserId) => Promise<void>;
   // Credit Card Statements & Multi-Card Engine
-  syncCardStatements: (accountId?: string) => Promise<void>;
+  syncCardStatements: (accountId?: FinanceUserId) => Promise<void>;
   payCreditCardBill: (params: {
-    cardAccountId: string;
-    fromAccountId: string;
+    cardAccountId: FinanceUserId;
+    fromAccountId: FinanceUserId;
     amount: number;
-    date?: string;
-    statementId?: string;
-    note?: string;
+    date?: FinanceMonthKey;
+    statementId?: FinanceUserId;
+    note?: FinanceUserId;
   }) => Promise<FinanceTransaction>;
   reconcileCreditCardStatement: (params: {
-    cardAccountId: string;
-    cycleKey: string;
+    cardAccountId: FinanceUserId;
+    cycleKey: FinanceMonthKey;
     actualStatementAmount: number;
-    note?: string;
+    note?: FinanceUserId;
   }) => Promise<CreditCardStatement>;
   moveTransactionToCycle: (
-    transactionId: string,
-    targetCycleKey: string | null
+    transactionId: FinanceUserId,
+    targetCycleKey: FinanceMonthKey | null
   ) => Promise<void>;
   getCreditCardSummary: (
-    accountId: string,
-    referenceDate?: string
+    accountId: FinanceUserId,
+    referenceDate?: FinanceMonthKey
   ) => CreditCardCycleSummary | null;
   reconcileAccountBalance: (
-    accountId: string,
+    accountId: FinanceUserId,
     actualBalance: number,
     logAdjustmentTransaction?: boolean
   ) => Promise<{ variance: number; adjusted: boolean }>;
-  recordCurrentNetWorthSnapshot: (monthKey?: string) => Promise<void>;
+  recordCurrentNetWorthSnapshot: (monthKey?: FinanceMonthKey) => Promise<void>;
   addCategory: (
     data: Omit<FinanceCategory, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
   ) => Promise<FinanceCategory>;
-  updateCategory: (id: string, data: Partial<FinanceCategory>) => Promise<void>;
-  deleteCategory: (id: string) => Promise<void>;
-  updateCategoryBudget: (categoryId: string, monthlyBudgetLimit: number) => Promise<void>;
+  updateCategory: (id: FinanceUserId, data: Partial<FinanceCategory>) => Promise<void>;
+  deleteCategory: (id: FinanceUserId) => Promise<void>;
+  updateCategoryBudget: (categoryId: FinanceUserId, monthlyBudgetLimit: number) => Promise<void>;
   setMonthlyBudget: (
-    monthKey: string,
+    monthKey: FinanceMonthKey,
     totalBudget: number,
     expectedIncome?: number,
     plannedSipAmount?: number
   ) => Promise<void>;
   saveMonthlyBudgetSettings: (
-    monthKey: string,
+    monthKey: FinanceMonthKey,
     totalBudget: number,
     categoryLimits: Record<string, number>,
     options?: {
@@ -522,40 +532,40 @@ export interface FinanceStore {
       assignedIncome?: number;
     }
   ) => Promise<void>;
-  exportTransactionsCsv: (monthKey?: string) => string;
+  exportTransactionsCsv: (monthKey?: FinanceMonthKey) => string;
 
   // Selectors
-  getMonthlySummary: (monthKey?: string) => MonthlyFinanceSummary;
+  getMonthlySummary: (monthKey?: FinanceMonthKey) => MonthlyFinanceSummary;
   getNetWorthSummary: () => NetWorthSummary;
   getNetWorthHistory: (months?: number) => Array<{
-    monthKey: string;
+    monthKey: FinanceMonthKey;
     label: string;
     netWorth: number;
     totalAssets: number;
     totalLiabilities: number;
   }>;
-  getDailySpendingPace: (monthKey?: string) => DailyPacePoint[];
-  getCommitmentLedger: (commitmentId: string, monthKey?: string) => CommitmentLedgerSummary | null;
-  getAllCommitmentLedgers: (monthKey?: string) => CommitmentLedgerSummary[];
+  getDailySpendingPace: (monthKey?: FinanceMonthKey) => DailyPacePoint[];
+  getCommitmentLedger: (commitmentId: FinanceUserId, monthKey?: FinanceMonthKey) => CommitmentLedgerSummary | null;
+  getAllCommitmentLedgers: (monthKey?: FinanceMonthKey) => CommitmentLedgerSummary[];
   getFriendLedgerGroups: () => FriendLedgerGroup[];
   getDebtSummary: () => DebtSummaryBreakdown;
-  getDebtInstallments: (debtId: string) => DebtInstallment[];
+  getDebtInstallments: (debtId: FinanceUserId) => DebtInstallment[];
   getUpcomingFinancialObligations: (withinDays?: number) => FinancialObligationItem[];
-  getFilteredTransactions: (monthKey?: string) => FinanceTransaction[];
+  getFilteredTransactions: (monthKey?: FinanceMonthKey) => FinanceTransaction[];
   getSixMonthSpendingTrends: (
-    endMonthKey?: string,
-    categoryId?: string
+    endMonthKey?: FinanceMonthKey,
+    categoryId?: FinanceUserId
   ) => SixMonthTrendPoint[];
   getYearlySpendingTrends: (
-    endMonthKey?: string,
-    categoryId?: string,
+    endMonthKey?: FinanceMonthKey,
+    categoryId?: FinanceUserId,
     yearCount?: number
   ) => SixMonthTrendPoint[];
   getCashFlowForecast: (
     horizonDays?: 30 | 60 | 90,
     includeDiscretionaryBurn?: boolean
   ) => CashFlowForecastResult;
-  getSpendingAnomalies: (monthKey?: string) => FinanceAnomalyAlert[];
+  getSpendingAnomalies: (monthKey?: FinanceMonthKey) => FinanceAnomalyAlert[];
 }
 
 export type FinanceSliceCreator<T> = StateCreator<FinanceStore, [], [], T>;

@@ -11,6 +11,18 @@ function mcpJson(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
+function applyTaskDateAndSearchFilters<Q extends { lte: any; gte: any; or: any }>(query: Q, args: any): Q {
+  let next = query;
+  if (args.dueBefore) next = next.lte('due_date', args.dueBefore);
+  if (args.dueAfter) next = next.gte('due_date', args.dueAfter);
+  if (args.search) {
+    next = next.or(
+      `title.ilike.%${args.search}%,description.ilike.%${args.search}%,notes.ilike.%${args.search}%`
+    );
+  }
+  return next;
+}
+
 function buildTasksQuery(supabase: ReturnType<typeof getSupabaseAdmin>, userId: string, args: any) {
   let query = supabase.from('tasks').select('*').eq('user_id', userId);
   const eqFilters: Array<[string, any]> = [
@@ -22,14 +34,7 @@ function buildTasksQuery(supabase: ReturnType<typeof getSupabaseAdmin>, userId: 
   for (const [col, val] of eqFilters) {
     if (val) query = query.eq(col, val);
   }
-  if (args.dueBefore) query = query.lte('due_date', args.dueBefore);
-  if (args.dueAfter) query = query.gte('due_date', args.dueAfter);
-  if (args.search) {
-    query = query.or(
-      `title.ilike.%${args.search}%,description.ilike.%${args.search}%,notes.ilike.%${args.search}%`
-    );
-  }
-  return query.order('created_at', { ascending: false });
+  return applyTaskDateAndSearchFilters(query, args).order('created_at', { ascending: false });
 }
 
 function countSubtasks(tasks: any[]): Map<string, number> {
@@ -84,6 +89,37 @@ export async function handleGetTasks(args: any) {
   return mcpJson({ count: result.length, tasks: result });
 }
 
+async function cascadeFrontierLevel(params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  userId: string;
+  frontier: string[];
+  targetStatus: 'archived' | 'todo';
+  onlyFromStatus?: string;
+  affected: string[];
+}): Promise<string[]> {
+  const { data: children } = await params.supabase
+    .from('tasks')
+    .select('id, status, generation_counter')
+    .eq('user_id', params.userId)
+    .in('parent_task_id', params.frontier);
+
+  const nextFrontier: string[] = [];
+  for (const sub of children ?? []) {
+    if (params.affected.includes(sub.id)) continue;
+    if (!params.onlyFromStatus || sub.status === params.onlyFromStatus) {
+      const subMeta = getUpdateMetadata(sub);
+      await params.supabase
+        .from('tasks')
+        .update({ status: params.targetStatus, ...subMeta })
+        .eq('user_id', params.userId)
+        .eq('id', sub.id);
+      params.affected.push(sub.id);
+    }
+    nextFrontier.push(sub.id);
+  }
+  return nextFrontier;
+}
+
 async function cascadeSubtaskStatus(params: {
   supabase: ReturnType<typeof getSupabaseAdmin>;
   userId: string;
@@ -95,39 +131,18 @@ async function cascadeSubtaskStatus(params: {
   let frontier: string[] = [params.rootTaskId];
 
   while (frontier.length > 0) {
-    const { data: children } = await params.supabase
-      .from('tasks')
-      .select('id, status, generation_counter')
-      .eq('user_id', params.userId)
-      .in('parent_task_id', frontier);
-
-    const nextFrontier: string[] = [];
-    for (const sub of children || []) {
-      if (affected.includes(sub.id)) continue;
-      if (!params.onlyFromStatus || sub.status === params.onlyFromStatus) {
-        const subMeta = getUpdateMetadata(sub);
-        await params.supabase
-          .from('tasks')
-          .update({ status: params.targetStatus, ...subMeta })
-          .eq('user_id', params.userId)
-          .eq('id', sub.id);
-        affected.push(sub.id);
-      }
-      nextFrontier.push(sub.id);
-    }
-    frontier = nextFrontier;
+    frontier = await cascadeFrontierLevel({ ...params, frontier, affected });
   }
-
   return affected;
 }
 
 function buildTaskScheduleAndFlags(args: any) {
   return {
-    due_date: args.dueDate || null,
-    goal_id: args.goalId || null,
-    parent_task_id: args.parentTaskId || null,
-    tags: args.tags || [],
-    recurrence_rule: args.recurrenceRule || null,
+    due_date: args.dueDate ?? null,
+    goal_id: args.goalId ?? null,
+    parent_task_id: args.parentTaskId ?? null,
+    tags: args.tags ?? [],
+    recurrence_rule: args.recurrenceRule ?? null,
     estimated_time: args.estimatedTime ?? 0,
     actual_time: args.actualTime ?? 0,
     is_urgent: args.isUrgent ?? false,
@@ -139,13 +154,13 @@ function buildNewTaskPayload(userId: string, depth: number, args: any) {
   return {
     user_id: userId,
     title: args.title.trim(),
-    description: args.description || null,
-    notes: args.notes || null,
-    status: args.status || 'todo',
-    priority: args.priority || 'medium',
+    description: args.description ?? null,
+    notes: args.notes ?? null,
+    status: args.status ?? 'todo',
+    priority: args.priority ?? 'medium',
     depth,
     ...buildTaskScheduleAndFlags(args),
-    metadata: args.metadata || {},
+    metadata: args.metadata ?? {},
     ...getInsertMetadata(),
   };
 }

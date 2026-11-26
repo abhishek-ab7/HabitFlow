@@ -46,31 +46,34 @@ let audioUnlocked = false;
 let cachedPrefs: SensoryPreferences | null = null;
 let lastTapAt = 0;
 
+function parseStoredSensoryPrefs(): SensoryPreferences | null {
+  const rawPrimary = window.localStorage.getItem(SENSORY_PREFS_STORAGE_KEY);
+  if (rawPrimary) {
+    const parsed = JSON.parse(rawPrimary) as Partial<SensoryPreferences>;
+    return {
+      soundEnabled: parsed.soundEnabled !== false,
+      hapticsEnabled: parsed.hapticsEnabled !== false,
+    };
+  }
+  const rawLegacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (!rawLegacy) return null;
+  const parsed = JSON.parse(rawLegacy) as { sound?: boolean; haptics?: boolean };
+  return {
+    soundEnabled: parsed.sound !== false,
+    hapticsEnabled: parsed.haptics !== false,
+  };
+}
+
 function safeReadStorage(): SensoryPreferences | null {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
     return null;
   }
   try {
-    const rawPrimary = window.localStorage.getItem(SENSORY_PREFS_STORAGE_KEY);
-    if (rawPrimary) {
-      const parsed = JSON.parse(rawPrimary) as Partial<SensoryPreferences>;
-      return {
-        soundEnabled: parsed.soundEnabled !== false,
-        hapticsEnabled: parsed.hapticsEnabled !== false,
-      };
-    }
-    const rawLegacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (rawLegacy) {
-      const parsed = JSON.parse(rawLegacy) as { sound?: boolean; haptics?: boolean };
-      return {
-        soundEnabled: parsed.sound !== false,
-        hapticsEnabled: parsed.haptics !== false,
-      };
-    }
+    return parseStoredSensoryPrefs();
   } catch {
     // Ignore storage read errors in restricted WebViews or private mode
+    return null;
   }
-  return null;
 }
 
 function safeWriteStorage(prefs: SensoryPreferences): void {

@@ -595,28 +595,29 @@ const CATEGORY_MATCH_RULES: Array<{
   },
 ];
 
-function matchesCommitmentName(lower: string, recipientName: string): boolean {
+function matchesCommitmentName({ lower, recipientName }: { lower: string; recipientName: string }): boolean {
   const recLower = recipientName.toLowerCase();
   if (lower.includes(recLower)) return true;
   return recLower === 'mother' && /\b(mother|mom|mummy|maa|ammi)\b/.test(lower);
 }
 
-function isDirectCommitmentPayment(lower: string, categorySlug: string): boolean {
+function isDirectCommitmentPayment({ lower, categorySlug }: { lower: string; categorySlug: string }): boolean {
   if (categorySlug !== 'family-commitments') return false;
   if (lower.includes('deduct') || lower.includes('offset')) return false;
   return /\b(allowance|transfer|settle|direct|monthly support)\b/.test(lower);
 }
 
-function detectDeterministicCommitment(
-  lower: string,
-  categorySlug: string,
-  commitments: NonNullable<ExpenseParseInput['commitments']>
-) {
-  const match = commitments.find((c) => matchesCommitmentName(lower, c.recipientName));
+function detectDeterministicCommitment(params: {
+  lower: string;
+  categorySlug: string;
+  commitments: NonNullable<ExpenseParseInput['commitments']>;
+}) {
+  const { lower, categorySlug, commitments } = params;
+  const match = commitments.find((c) => matchesCommitmentName({ lower, recipientName: c.recipientName }));
   if (!match) {
     return { matchedCommitmentId: null, matchedCommitmentRecipient: null, commitmentContributionType: null };
   }
-  const isDirect = isDirectCommitmentPayment(lower, categorySlug);
+  const isDirect = isDirectCommitmentPayment({ lower, categorySlug });
   return {
     matchedCommitmentId: match.id,
     matchedCommitmentRecipient: match.recipientName,
@@ -624,11 +625,12 @@ function detectDeterministicCommitment(
   };
 }
 
-function detectDeterministicDebt(
-  lower: string,
-  categorySlug: string,
-  debts: NonNullable<ExpenseParseInput['debts']>
-) {
+function detectDeterministicDebt(params: {
+  lower: string;
+  categorySlug: string;
+  debts: NonNullable<ExpenseParseInput['debts']>;
+}) {
+  const { lower, categorySlug, debts } = params;
   for (const debt of debts) {
     const firstName = debt.personName.split(' ')[0].toLowerCase();
     if (!firstName || !lower.includes(firstName)) continue;
@@ -638,7 +640,7 @@ function detectDeterministicDebt(
   return { matchedDebtId: null, matchedDebtPerson: null, overrideToDebtCategory: false };
 }
 
-function formatDeterministicExpenseTitle(text: string, fallbackCategoryName: string): string {
+function formatDeterministicExpenseTitle({ text, fallbackCategoryName }: { text: string; fallbackCategoryName: string }): string {
   const cleanTitle = text
     .replace(/^(paid|spent|bought|ordered|logged|sent|gave)\s+/i, '')
     .replace(/\b(via|by|using)\s+(upi|gpay|phonepe|cash|card|credit card|bank)\b/gi, '')
@@ -647,42 +649,61 @@ function formatDeterministicExpenseTitle(text: string, fallbackCategoryName: str
   return cleanTitle.length > 0 ? cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1) : `${fallbackCategoryName} Expense`;
 }
 
-function buildDeterministicExpenseTags(
-  categorySlug: string,
-  comm: ReturnType<typeof detectDeterministicCommitment>,
-  debt: ReturnType<typeof detectDeterministicDebt>
-): string[] {
+function buildDeterministicExpenseTags(params: {
+  categorySlug: string;
+  comm: ReturnType<typeof detectDeterministicCommitment>;
+  debt: ReturnType<typeof detectDeterministicDebt>;
+}): string[] {
+  const { categorySlug, comm, debt } = params;
   const tags: string[] = [categorySlug.split('-')[0]];
   if (comm.matchedCommitmentRecipient) tags.push(comm.matchedCommitmentRecipient.toLowerCase(), 'offset');
   if (debt.matchedDebtPerson) tags.push(debt.matchedDebtPerson.split(' ')[0].toLowerCase(), 'debt');
   return tags;
 }
 
-export function parseExpenseDeterministically(input: ExpenseParseInput): ExpenseParseOutput {
-  const text = (input.rawText || '').trim();
-  const lower = text.toLowerCase();
-
+function extractDeterministicAmount(text: string): number {
   const amountMatches = text.match(/(?:₹|rs\.?|inr\s*)?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/gi);
-  const amount = amountMatches?.[0] ? parseInt(amountMatches[0].replace(/[₹,a-zA-Z.\s]/g, ''), 10) || 0 : 0;
+  if (!amountMatches?.[0]) return 0;
+  return parseInt(amountMatches[0].replace(/[₹,a-zA-Z.\s]/g, ''), 10) || 0;
+}
 
-  const paymentMethodType = PAYMENT_METHOD_RULES.find(([re]) => re.test(lower))?.[1] ?? 'upi';
-  const type: ExpenseParseOutput['type'] = /\b(salary|received|credited|income|freelance|refund)\b/.test(lower) ? 'income' : 'expense';
-
+function resolveDeterministicCategory(params: {
+  lower: string;
+  type: ExpenseParseOutput['type'];
+  commitments: ExpenseParseInput['commitments'];
+  debts: ExpenseParseInput['debts'];
+}) {
+  const { lower, type, commitments, debts } = params;
   const catRule = CATEGORY_MATCH_RULES.find((r) => r.pattern.test(lower));
   let categorySlug = catRule?.slug ?? 'shopping-personal-care';
   let categoryName = catRule?.name ?? 'Shopping & Personal Care';
   let subcategory: string | undefined = catRule?.getSubcategory(lower, type);
 
-  const comm = detectDeterministicCommitment(lower, categorySlug, input.commitments || []);
-  const debt = detectDeterministicDebt(lower, categorySlug, input.debts || []);
+  const comm = detectDeterministicCommitment({ lower, categorySlug, commitments: commitments ?? [] });
+  const debt = detectDeterministicDebt({ lower, categorySlug, debts: debts ?? [] });
   if (debt.overrideToDebtCategory) {
     categorySlug = 'emis-debt-repayment';
     categoryName = 'EMIs & Debt Repayment';
     subcategory = 'Friend Debt Repayment';
   }
+  return { categorySlug, categoryName, subcategory, comm, debt };
+}
+
+export function parseExpenseDeterministically(input: ExpenseParseInput): ExpenseParseOutput {
+  const text = (input.rawText ?? '').trim();
+  const lower = text.toLowerCase();
+  const amount = extractDeterministicAmount(text);
+  const paymentMethodType = PAYMENT_METHOD_RULES.find(([re]) => re.test(lower))?.[1] ?? 'upi';
+  const type: ExpenseParseOutput['type'] = /\b(salary|received|credited|income|freelance|refund)\b/.test(lower) ? 'income' : 'expense';
+  const { categorySlug, categoryName, subcategory, comm, debt } = resolveDeterministicCategory({
+    lower,
+    type,
+    commitments: input.commitments,
+    debts: input.debts,
+  });
 
   return {
-    title: formatDeterministicExpenseTitle(text, categoryName),
+    title: formatDeterministicExpenseTitle({ text, fallbackCategoryName: categoryName }),
     amount,
     type,
     categorySlug,
@@ -693,7 +714,7 @@ export function parseExpenseDeterministically(input: ExpenseParseInput): Expense
     matchedDebtPerson: debt.matchedDebtPerson,
     matchedDebtId: debt.matchedDebtId,
     notes: text,
-    tags: buildDeterministicExpenseTags(categorySlug, comm, debt),
+    tags: buildDeterministicExpenseTags({ categorySlug, comm, debt }),
     confidence: amount > 0 ? 94 : 60,
   };
 }

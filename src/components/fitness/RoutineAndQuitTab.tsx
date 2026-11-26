@@ -600,7 +600,12 @@ export function RoutineAndQuitTab({ selectedDate, userId }: RoutineAndQuitTabPro
               onToggleHabit={s.handleToggleHabit}
               onTakeSupplement={async (sup) => {
                 s.feedback.complete();
-                await s.takeSupplementDose(sup.id, sup.dailyDosage, selectedDate, null, userId);
+                await s.takeSupplementDose(sup.id, {
+                  servings: sup.dailyDosage,
+                  date: selectedDate,
+                  notes: null,
+                  userIdOverride: userId,
+                });
                 toast.success(`Took ${sup.name}`);
               }}
               onAddWater={() => {

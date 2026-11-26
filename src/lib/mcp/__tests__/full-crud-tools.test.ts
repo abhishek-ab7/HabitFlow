@@ -163,7 +163,7 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     expect(settingsOut.gamification.streakShield).toBe(2);
   });
 
-  async function assertNetWorthAndBudgetCrud(today: string, monthKey: string) {
+  async function assertNetWorthAndBudgetCrud({ today, monthKey }: { today: string; monthKey: string }) {
     const nwTool = registeredTools.get('manage_net_worth_snapshot')!;
     const nwCap = parseResult(await nwTool.handler({ action: 'capture', monthKey }));
     expect(nwCap.snapshot.snapshot_date).toBe(today);
@@ -186,7 +186,7 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     expect(parseResult(await budgetTool.handler({ action: 'list' })).count).toBe(1);
   }
 
-  async function assertFriendLoanInstallmentsCrud(bankId: string) {
+  async function assertFriendLoanInstallmentsCrud({ bankId }: { bankId: string }) {
     const debtTool = registeredTools.get('manage_friend_debt')!;
     const loan = parseResult(
       await debtTool.handler({
@@ -241,8 +241,8 @@ describe('Complete HabitFlow MCP CRUD Suite (36 Tools Across Habits, Finance & F
     const resTx = parseResult(await txTool.handler({ action: 'restore', transactionId: txRes.transaction.id }));
     expect(resTx.updatedAccounts[0].newBalance).toBe(9500);
 
-    await assertNetWorthAndBudgetCrud(today, monthKey);
-    await assertFriendLoanInstallmentsCrud(bank.id);
+    await assertNetWorthAndBudgetCrud({ today, monthKey });
+    await assertFriendLoanInstallmentsCrud({ bankId: bank.id });
   });
 
   it('handles Fitness profile & daily body metrics CRUD with Low-Energy gym auto-rest hooks', async () => {

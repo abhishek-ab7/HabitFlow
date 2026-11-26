@@ -32,7 +32,9 @@ export function getMcpAuthContext(): McpAuthContext {
 /**
  * Timing-safe string comparison using SHA-256 digests.
  */
-export function timingSafeCheck(provided: string, expected: string): boolean {
+export type AuthTokenString = string;
+
+export function timingSafeCheck(provided: AuthTokenString, expected: AuthTokenString): boolean {
   if (!provided || !expected) return false;
   try {
     const a = crypto.createHash('sha256').update(provided).digest();
@@ -46,14 +48,14 @@ export function timingSafeCheck(provided: string, expected: string): boolean {
 /**
  * Hashes an OAuth token with SHA-256 for secure storage & lookup.
  */
-export function hashToken(token: string): string {
+export function hashToken(token: AuthTokenString): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 /**
  * Extracts Bearer token from the standard Authorization header or optional fallback path/query.
  */
-export function extractBearerToken(request: NextRequest, explicitToken?: string): string | null {
+export function extractBearerToken(request: NextRequest, explicitToken?: AuthTokenString): string | null {
   if (explicitToken) return explicitToken.trim();
 
   const authHeader = request.headers.get('authorization');
@@ -74,7 +76,7 @@ export function extractBearerToken(request: NextRequest, explicitToken?: string)
 /**
  * Validates the request authentication against Tier 1 (Vercel env var secret) or Tier 2 (OAuth 2.1 access token).
  */
-function tryAuthenticateSecret(token: string): McpAuthContext | null {
+function tryAuthenticateSecret(token: AuthTokenString): McpAuthContext | null {
   const configuredSecret = getMcpSecret();
   const configuredUserId = getMcpUserId();
   const isSecretMatch = Boolean(configuredSecret && configuredUserId && timingSafeCheck(token, configuredSecret));
@@ -89,7 +91,7 @@ function tryAuthenticateSecret(token: string): McpAuthContext | null {
 }
 
 async function tryAuthenticateOAuthToken(
-  token: string
+  token: AuthTokenString
 ): Promise<{ auth: McpAuthContext | null; errorResponse: NextResponse | null }> {
   try {
     const supabase = getSupabaseAdmin();

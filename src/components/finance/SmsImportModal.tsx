@@ -399,6 +399,29 @@ async function runSmsFitnessBridge(params: {
   };
 }
 
+function buildSmsTransactionPayload(params: {
+  item: ParsedSmsExpense;
+  fallbackCat: string;
+  fallbackAcc: string;
+  reviewed: boolean;
+}) {
+  const { item, fallbackCat, fallbackAcc, reviewed } = params;
+  const trimmedTitle = item.title.trim();
+  return {
+    title: trimmedTitle || 'SMS Expense',
+    merchantName: trimmedTitle || undefined,
+    rawMerchant: item.rawMerchant || undefined,
+    amount: Number(item.amount),
+    type: item.type,
+    categoryId: item.categoryId || fallbackCat,
+    accountId: item.accountId || fallbackAcc,
+    date: item.date,
+    needsReview: reviewed,
+    notes: `Imported from SMS/Notification: ${item.rawText.slice(0, 160)}`,
+    tags: buildSmsImportTags(item),
+  };
+}
+
 async function importSingleSmsItem(params: {
   item: ParsedSmsExpense;
   fallbackCat: string;
@@ -411,20 +434,7 @@ async function importSingleSmsItem(params: {
 }): Promise<{ reviewed: boolean; dietLogged: boolean; suppRestocked: boolean }> {
   const { item, fallbackCat, fallbackAcc, sendToReviewInbox, categories, addTransaction, itemBridge, supplementInventory } = params;
   const reviewed = sendToReviewInbox && !item.matchedRuleId;
-  const trimmedTitle = item.title.trim();
-  const createdTx = await addTransaction({
-    title: trimmedTitle || 'SMS Expense',
-    merchantName: trimmedTitle || undefined,
-    rawMerchant: item.rawMerchant || undefined,
-    amount: Number(item.amount),
-    type: item.type,
-    categoryId: item.categoryId || fallbackCat,
-    accountId: item.accountId || fallbackAcc,
-    date: item.date,
-    needsReview: reviewed,
-    notes: `Imported from SMS/Notification: ${item.rawText.slice(0, 160)}`,
-    tags: buildSmsImportTags(item),
-  });
+  const createdTx = await addTransaction(buildSmsTransactionPayload({ item, fallbackCat, fallbackAcc, reviewed }));
 
   const bridged = await runSmsFitnessBridge({
     item,
@@ -619,22 +629,39 @@ function useSmsModalSyncEffects(params: {
   }, [open, initialText]);
 }
 
+function useSmsStoreDependencies() {
+  return {
+    categories: useFinanceStore((s) => s.categories),
+    accounts: useFinanceStore((s) => s.accounts),
+    transactions: useFinanceStore((s) => s.transactions),
+    categorizationRules: useFinanceStore((s) => s.categorizationRules),
+    addTransaction: useFinanceStore((s) => s.addTransaction),
+    loadFinanceData: useFinanceStore((s) => s.loadFinanceData),
+    supplementInventory: useFitnessStore((s) => s.supplementInventory),
+    isFitnessEnabled: isFitnessModuleEnabled(useGamificationStore((s) => s.settings)),
+    fitnessHasLoaded: useFitnessStore((s) => s.hasLoaded),
+    loadFitnessData: useFitnessStore((s) => s.loadFitnessData),
+  };
+}
+
 function useSmsImportController(params: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialText?: string | null;
 }) {
   const { open, onOpenChange, initialText } = params;
-  const categories = useFinanceStore((s) => s.categories);
-  const accounts = useFinanceStore((s) => s.accounts);
-  const transactions = useFinanceStore((s) => s.transactions);
-  const categorizationRules = useFinanceStore((s) => s.categorizationRules);
-  const addTransaction = useFinanceStore((s) => s.addTransaction);
-  const loadFinanceData = useFinanceStore((s) => s.loadFinanceData);
-  const supplementInventory = useFitnessStore((s) => s.supplementInventory);
-  const isFitnessEnabled = isFitnessModuleEnabled(useGamificationStore((s) => s.settings));
-  const fitnessHasLoaded = useFitnessStore((s) => s.hasLoaded);
-  const loadFitnessData = useFitnessStore((s) => s.loadFitnessData);
+  const {
+    categories,
+    accounts,
+    transactions,
+    categorizationRules,
+    addTransaction,
+    loadFinanceData,
+    supplementInventory,
+    isFitnessEnabled,
+    fitnessHasLoaded,
+    loadFitnessData,
+  } = useSmsStoreDependencies();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [rawText, setRawText] = useState('');

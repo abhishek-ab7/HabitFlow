@@ -261,20 +261,28 @@ describe('Credit Card Cycle Engine (credit-card-cycles.ts)', () => {
       createMockTransaction({ id: 'tx-2', amount: 20000, date: '2026-11-23' }),
     ];
 
-    it('partial payment: paying ₹10,000 marks statement partial and updates remainingDue', () => {
-      const partialPayTx = createMockTransaction({
-        id: 'tx-pay-1',
-        amount: 10000,
+    function runPaymentSummaryScenario(opts: { id: string; amount: number; date: string; referenceDate: string }) {
+      const payTx = createMockTransaction({
+        id: opts.id,
+        amount: opts.amount,
         type: 'transfer',
         accountId: 'acc-bank-1',
         toAccountId: 'acc-slice-1',
         isCreditCardPayment: true,
-        date: '2026-11-26',
+        date: opts.date,
       });
-
-      const summary = computeCreditCardSummary({
+      return computeCreditCardSummary({
         account,
-        transactions: [...billedTxs, ...unbilledTxs, partialPayTx],
+        transactions: [...billedTxs, ...unbilledTxs, payTx],
+        referenceDate: opts.referenceDate,
+      });
+    }
+
+    it('partial payment: paying ₹10,000 marks statement partial and updates remainingDue', () => {
+      const summary = runPaymentSummaryScenario({
+        id: 'tx-pay-1',
+        amount: 10000,
+        date: '2026-11-26',
         referenceDate: '2026-11-27',
       });
 
@@ -287,19 +295,10 @@ describe('Credit Card Cycle Engine (credit-card-cycles.ts)', () => {
     });
 
     it('full payment: paying ₹22,000 marks statement paid and clears billed dues', () => {
-      const fullPayTx = createMockTransaction({
+      const summary = runPaymentSummaryScenario({
         id: 'tx-pay-full',
         amount: 22000,
-        type: 'transfer',
-        accountId: 'acc-bank-1',
-        toAccountId: 'acc-slice-1',
-        isCreditCardPayment: true,
         date: '2026-11-28',
-      });
-
-      const summary = computeCreditCardSummary({
-        account,
-        transactions: [...billedTxs, ...unbilledTxs, fullPayTx],
         referenceDate: '2026-11-29',
       });
 
@@ -311,19 +310,10 @@ describe('Credit Card Cycle Engine (credit-card-cycles.ts)', () => {
     });
 
     it('overpayment spillover: paying ₹25,000 clears ₹22k bill and offsets ₹3,000 against unbilled spends', () => {
-      const overPayTx = createMockTransaction({
+      const summary = runPaymentSummaryScenario({
         id: 'tx-pay-over',
         amount: 25000,
-        type: 'transfer',
-        accountId: 'acc-bank-1',
-        toAccountId: 'acc-slice-1',
-        isCreditCardPayment: true,
         date: '2026-11-28',
-      });
-
-      const summary = computeCreditCardSummary({
-        account,
-        transactions: [...billedTxs, ...unbilledTxs, overPayTx],
         referenceDate: '2026-11-29',
       });
 
@@ -461,42 +451,41 @@ describe('Credit Card Cycle Engine (credit-card-cycles.ts)', () => {
       },
     ];
 
-    it('allocates to oldest statement first when no target is specified', () => {
+    function assertStatementAllocation(opts: {
+      paymentAmount: number;
+      targetId?: string;
+      stmt0: { paid: number; remaining: number; status?: string };
+      stmt1: { paid: number; remaining: number; status: string };
+    }) {
       const { updatedStatements, unallocatedAmount } = allocatePaymentToStatements(
         mockStatements,
-        8000
+        opts.paymentAmount,
+        opts.targetId
       );
-
-      // Stmt-1 (5000) fully paid
-      expect(updatedStatements[0].paidAmount).toBe(5000);
-      expect(updatedStatements[0].remainingDue).toBe(0);
-      expect(updatedStatements[0].status).toBe('paid');
-
-      // Stmt-2 received remaining 3000
-      expect(updatedStatements[1].paidAmount).toBe(3000);
-      expect(updatedStatements[1].remainingDue).toBe(7000);
-      expect(updatedStatements[1].status).toBe('partial');
-
+      expect(updatedStatements[0].paidAmount).toBe(opts.stmt0.paid);
+      expect(updatedStatements[0].remainingDue).toBe(opts.stmt0.remaining);
+      if (opts.stmt0.status) expect(updatedStatements[0].status).toBe(opts.stmt0.status);
+      expect(updatedStatements[1].paidAmount).toBe(opts.stmt1.paid);
+      expect(updatedStatements[1].remainingDue).toBe(opts.stmt1.remaining);
+      expect(updatedStatements[1].status).toBe(opts.stmt1.status);
       expect(unallocatedAmount).toBe(0);
+    }
+
+    it('allocates to oldest statement first when no target is specified', () => {
+      assertStatementAllocation({
+        paymentAmount: 8000,
+        stmt0: { paid: 5000, remaining: 0, status: 'paid' },
+        stmt1: { paid: 3000, remaining: 7000, status: 'partial' },
+      });
     });
 
     it('allocates to target statement first when targetStatementId is specified', () => {
-      const { updatedStatements, unallocatedAmount } = allocatePaymentToStatements(
-        mockStatements,
-        7000,
-        'stmt-2'
-      );
-
-      // Stmt-2 targeted
-      expect(updatedStatements[1].paidAmount).toBe(7000);
-      expect(updatedStatements[1].remainingDue).toBe(3000);
-      expect(updatedStatements[1].status).toBe('partial');
-
-      // Stmt-1 untouched
-      expect(updatedStatements[0].paidAmount).toBe(0);
-      expect(updatedStatements[0].remainingDue).toBe(5000);
-
-      expect(unallocatedAmount).toBe(0);
+      assertStatementAllocation({
+        paymentAmount: 7000,
+        targetId: 'stmt-2',
+        stmt0: { paid: 0, remaining: 5000 },
+        stmt1: { paid: 7000, remaining: 3000, status: 'partial' },
+      });
     });
 
     it('returns unallocated credit on total overpayment', () => {

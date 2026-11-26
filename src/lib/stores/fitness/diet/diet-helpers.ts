@@ -124,10 +124,7 @@ export async function autoSyncProteinSupplement(params: {
   memoryLogs: SupplementLog[];
   takeSupplementDose: (
     supplementId: string,
-    servings?: number,
-    date?: string,
-    notes?: string,
-    userIdOverride?: string
+    params?: { servings?: number; date?: string; notes?: string | null; userIdOverride?: string }
   ) => Promise<unknown>;
 }): Promise<void> {
   const { meal, userId, memoryInventory, memoryLogs, takeSupplementDose } = params;
@@ -140,13 +137,12 @@ export async function autoSyncProteinSupplement(params: {
     const existingLogs = await loadSupplementLogs(memoryLogs, supMatch.supplement.id);
     if (hasAutoMealSupplementLog(existingLogs, meal.id, supMatch.supplement.id)) return;
 
-    await takeSupplementDose(
-      supMatch.supplement.id,
-      supMatch.servings,
-      meal.date,
-      `Auto-synced from meal: ${meal.name} ${buildAutoMealSupplementNoteTag(meal.id)}`,
-      userId
-    );
+    await takeSupplementDose(supMatch.supplement.id, {
+      servings: supMatch.servings,
+      date: meal.date,
+      notes: `Auto-synced from meal: ${meal.name} ${buildAutoMealSupplementNoteTag(meal.id)}`,
+      userIdOverride: userId,
+    });
   } catch (err) {
     logger.warn('[FitnessStore] Meal->Supplement auto-sync skipped:', err);
   }

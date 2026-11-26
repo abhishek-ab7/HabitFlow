@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
 
   if (!code) {
     console.error('No code provided in callback');
-    return buildAuthErrorRedirect(requestUrl.origin, 'No code provided');
+    return NextResponse.redirect(`${requestUrl.origin}/auth/auth-code-error?error=No+code+provided`);
   }
 
   try {

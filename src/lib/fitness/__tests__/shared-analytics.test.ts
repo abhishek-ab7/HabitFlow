@@ -74,82 +74,87 @@ describe('Fitness Shared Analytics & Hinglish Estimator', () => {
     expect(trend.totalDeltaInches).toBe(-0.8);
   });
 
-  it('computes Daily Fuel summary for calories, protein, water, steps, junk count', () => {
-    const profile: FitnessProfile = {
-      id: 'p1',
+  const DAILY_FUEL_PROFILE: FitnessProfile = {
+    id: 'p1',
+    userId: 'u1',
+    calorieTarget: 2000,
+    proteinTargetG: 130,
+    waterTargetMl: 3000,
+    stepsTarget: 8000,
+    sleepTargetHours: 7.5,
+    activityLevel: 'moderate',
+    goalType: 'fat_loss',
+    dietPreference: 'non_veg',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+
+  const DAILY_FUEL_MEALS: MealLog[] = [
+    {
+      id: 'm1',
       userId: 'u1',
-      calorieTarget: 2000,
-      proteinTargetG: 130,
-      waterTargetMl: 3000,
-      stepsTarget: 8000,
-      sleepTargetHours: 7.5,
-      activityLevel: 'moderate',
-      goalType: 'fat_loss',
-      dietPreference: 'non_veg',
+      date: '2026-11-24',
+      mealType: 'breakfast',
+      name: '4 Boiled Eggs',
+      calories: 280,
+      proteinG: 24,
+      carbsG: 2,
+      fatG: 20,
+      quantityMultiplier: 1,
+      isJunk: false,
+      source: 'staple',
+      loggedAt: nowIso,
       createdAt: nowIso,
       updatedAt: nowIso,
-    };
+    },
+    {
+      id: 'm2',
+      userId: 'u1',
+      date: '2026-11-24',
+      mealType: 'snack',
+      name: 'Momos',
+      calories: 350,
+      proteinG: 10,
+      carbsG: 45,
+      fatG: 14,
+      quantityMultiplier: 1,
+      isJunk: true,
+      source: 'finance_bridge',
+      loggedAt: nowIso,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+    {
+      id: 'm3',
+      userId: 'u1',
+      date: '2026-11-23', // different day -> excluded
+      mealType: 'dinner',
+      name: 'Old Meal',
+      calories: 999,
+      proteinG: 50,
+      carbsG: 10,
+      fatG: 10,
+      quantityMultiplier: 1,
+      isJunk: false,
+      source: 'manual',
+      loggedAt: nowIso,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+  ];
 
-    const meals: MealLog[] = [
-      {
-        id: 'm1',
-        userId: 'u1',
-        date: '2026-11-24',
-        mealType: 'breakfast',
-        name: '4 Boiled Eggs',
-        calories: 280,
-        proteinG: 24,
-        carbsG: 2,
-        fatG: 20,
-        quantityMultiplier: 1,
-        isJunk: false,
-        source: 'staple',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: 'm2',
-        userId: 'u1',
-        date: '2026-11-24',
-        mealType: 'snack',
-        name: 'Momos',
-        calories: 350,
-        proteinG: 10,
-        carbsG: 45,
-        fatG: 14,
-        quantityMultiplier: 1,
-        isJunk: true,
-        source: 'finance_bridge',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: 'm3',
-        userId: 'u1',
-        date: '2026-11-23', // different day -> excluded
-        mealType: 'dinner',
-        name: 'Old Meal',
-        calories: 999,
-        proteinG: 50,
-        carbsG: 10,
-        fatG: 10,
-        quantityMultiplier: 1,
-        isJunk: false,
-        source: 'manual',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-    ];
-
+  function buildDailyFuelFixtures() {
     const todayLog = makeDailyLog('2026-11-24', {
       waterMl: 1500,
       steps: 6400,
       sleepHours: 7.5,
       energyLevel: 4,
     });
+    return { profile: DAILY_FUEL_PROFILE, meals: DAILY_FUEL_MEALS, todayLog };
+  }
+
+  it('computes Daily Fuel summary for calories, protein, water, steps, junk count', () => {
+    const { profile, meals, todayLog } = buildDailyFuelFixtures();
 
     const fuel = calculateDailyFuelSummary(meals, todayLog, profile, '2026-11-24');
     expect(fuel.caloriesConsumed).toBe(630);

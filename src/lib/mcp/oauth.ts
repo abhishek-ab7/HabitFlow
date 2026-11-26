@@ -14,7 +14,9 @@ export interface OAuthConfig {
  * Validates PKCE S256 code challenge against the provided code verifier.
  * SHA-256 base64url-encoded.
  */
-export function verifyPkce(codeVerifier: string, codeChallenge: string, method: string = 'S256'): boolean {
+export type OAuthString = string;
+
+export function verifyPkce(codeVerifier: OAuthString, codeChallenge: OAuthString, method: OAuthString = 'S256'): boolean {
   if (method !== 'S256') {
     return false; // HabitFlow MCP strictly requires S256; rejects plain
   }
@@ -32,13 +34,13 @@ const PRIVATE_PREFIXES = ['10.', '192.168.', '169.254.', '0.', '100.64.', 'fc', 
 /**
  * Checks whether an IP address is private, loopback, or link-local (SSRF guard).
  */
-export function isPrivateOrReservedIp(ip: string): boolean {
+export function isPrivateOrReservedIp(ip: OAuthString): boolean {
   if (PRIVATE_EXACT_IPS.has(ip)) return true;
   if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
   return PRIVATE_PREFIXES.some((prefix) => ip.startsWith(prefix));
 }
 
-async function hasPrivateDnsResolution(hostname: string): Promise<boolean> {
+async function hasPrivateDnsResolution(hostname: OAuthString): Promise<boolean> {
   const addresses = await dns.lookup(hostname, { all: true });
   const privateAddr = addresses.find((addr) => isPrivateOrReservedIp(addr.address));
   if (privateAddr) {
@@ -48,7 +50,7 @@ async function hasPrivateDnsResolution(hostname: string): Promise<boolean> {
   return false;
 }
 
-async function fetchCimdJson(clientId: string): Promise<any | null> {
+async function fetchCimdJson(clientId: OAuthString): Promise<any | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3000);
   try {
@@ -76,7 +78,7 @@ function parseCimdMetadata(opts: { data: any; clientId: string; fallbackName: st
 /**
  * Fetches and verifies a Client ID Metadata Document (CIMD) over HTTPS with strict SSRF guardrails.
  */
-export async function resolveCimdClient(clientId: string): Promise<OAuthConfig | null> {
+export async function resolveCimdClient(clientId: OAuthString): Promise<OAuthConfig | null> {
   try {
     const parsed = new URL(clientId);
     if (parsed.protocol !== 'https:') return null;
@@ -93,23 +95,29 @@ export async function resolveCimdClient(clientId: string): Promise<OAuthConfig |
 /**
  * Validates a client_id (CIMD or DCR / static registration) and verifies redirect_uri.
  */
-export async function validateOAuthClient(
-  clientId: string,
-  redirectUri: string
+async function validateCimdClient(
+  clientId: OAuthString,
+  redirectUri: OAuthString
 ): Promise<{ valid: boolean; clientName: string; error?: string }> {
-  // 1. CIMD check (URL client_id)
+  const cimd = await resolveCimdClient(clientId);
+  if (!cimd) {
+    return { valid: false, clientName: clientId, error: 'Invalid or unreachable Client ID Metadata Document.' };
+  }
+  if (!cimd.redirectUris.includes(redirectUri)) {
+    return { valid: false, clientName: cimd.clientName, error: 'Redirect URI does not match CIMD registration.' };
+  }
+  return { valid: true, clientName: cimd.clientName };
+}
+
+export async function validateOAuthClient(
+  clientId: OAuthString,
+  redirectUri: OAuthString
+): Promise<{ valid: boolean; clientName: string; error?: string }> {
   if (clientId.startsWith('https://')) {
-    const cimd = await resolveCimdClient(clientId);
-    if (!cimd) {
-      return { valid: false, clientName: clientId, error: 'Invalid or unreachable Client ID Metadata Document.' };
-    }
-    if (!cimd.redirectUris.includes(redirectUri)) {
-      return { valid: false, clientName: cimd.clientName, error: 'Redirect URI does not match CIMD registration.' };
-    }
-    return { valid: true, clientName: cimd.clientName };
+    return validateCimdClient(clientId, redirectUri);
   }
 
-  // 2. Dynamic Client Registration / Static registration check in DB
+  // Dynamic Client Registration / Static registration check in DB
   const supabase = getSupabaseAdmin();
   const { data: client, error } = await supabase
     .from('mcp_oauth_clients')

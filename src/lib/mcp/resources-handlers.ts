@@ -126,23 +126,29 @@ function formatFocusGoalSummary(g: any) {
   };
 }
 
+function safeRows<T>(res: { data?: T[] | null }): T[] {
+  return res.data ?? [];
+}
+
 function buildTodaySummaryPayload(
   dateIst: string,
   tables: Awaited<ReturnType<typeof fetchTodaySummaryTables>>
 ) {
   const [habitsRes, compRes, tasksRes, goalsRes, moodRes, fitProfileRes, bioRes, mealRes, workoutRes] = tables;
-  const compMap = new Map((compRes.data || []).map((c) => [c.habit_id, c]));
+  const compMap = new Map(safeRows(compRes).map((c) => [c.habit_id, c]));
   return {
     dateIst,
-    habitsDue: (habitsRes.data || []).map((h) => formatTodayHabitDue(h, compMap)),
-    pendingTasks: (tasksRes.data || []).filter((t) => t.status !== 'done').map((t) => formatTodayPendingTask(t, dateIst)),
-    focusGoals: (goalsRes.data || []).map(formatFocusGoalSummary),
+    habitsDue: safeRows(habitsRes).map((h) => formatTodayHabitDue(h, compMap)),
+    pendingTasks: safeRows(tasksRes)
+      .filter((t) => t.status !== 'done')
+      .map((t) => formatTodayPendingTask(t, dateIst)),
+    focusGoals: safeRows(goalsRes).map(formatFocusGoalSummary),
     todayMood: moodRes.data?.mood ?? null,
     fitnessSummary: buildTodayFitnessSummary({
-      profileRow: fitProfileRes.data?.[0],
+      profileRow: safeRows(fitProfileRes)[0],
       bioRow: bioRes.data,
-      mealRows: mealRes.data || [],
-      workoutsTodayCount: (workoutRes.data || []).length,
+      mealRows: safeRows(mealRes),
+      workoutsTodayCount: safeRows(workoutRes).length,
       dateIst,
     }),
   };

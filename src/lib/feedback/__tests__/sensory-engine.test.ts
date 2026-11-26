@@ -74,47 +74,47 @@ describe('sensory-engine', () => {
   const originalWebkitAudioContext = window.webkitAudioContext;
   const originalVibrate = navigator.vibrate;
 
-  beforeEach(() => {
-    resetSensoryEngineForTests();
-    window.localStorage.clear();
+  function configureSensoryGlobals(opts: {
+    audioContext: typeof AudioContext | undefined;
+    webkitAudioContext: typeof AudioContext | undefined;
+    vibrate: typeof navigator.vibrate;
+  }) {
     delete window.median;
     delete window.gonative;
     Object.defineProperty(window, 'AudioContext', {
       configurable: true,
       writable: true,
-      value: undefined,
+      value: opts.audioContext,
     });
     Object.defineProperty(window, 'webkitAudioContext', {
       configurable: true,
       writable: true,
-      value: undefined,
+      value: opts.webkitAudioContext,
     });
     Object.defineProperty(navigator, 'vibrate', {
       configurable: true,
       writable: true,
-      value: vi.fn(() => true),
+      value: opts.vibrate,
+    });
+  }
+
+  beforeEach(() => {
+    resetSensoryEngineForTests();
+    window.localStorage.clear();
+    configureSensoryGlobals({
+      audioContext: undefined,
+      webkitAudioContext: undefined,
+      vibrate: vi.fn(() => true),
     });
   });
 
   afterEach(() => {
     vi.useRealTimers();
     resetSensoryEngineForTests();
-    delete window.median;
-    delete window.gonative;
-    Object.defineProperty(window, 'AudioContext', {
-      configurable: true,
-      writable: true,
-      value: originalAudioContext,
-    });
-    Object.defineProperty(window, 'webkitAudioContext', {
-      configurable: true,
-      writable: true,
-      value: originalWebkitAudioContext,
-    });
-    Object.defineProperty(navigator, 'vibrate', {
-      configurable: true,
-      writable: true,
-      value: originalVibrate,
+    configureSensoryGlobals({
+      audioContext: originalAudioContext,
+      webkitAudioContext: originalWebkitAudioContext,
+      vibrate: originalVibrate,
     });
   });
 

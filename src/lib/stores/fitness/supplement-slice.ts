@@ -131,8 +131,8 @@ export const createSupplementSlice: FitnessSliceCreator<
       { requireActive: true }
     ),
 
-  takeSupplementDose: async (...args: Parameters<FitnessStoreActions['takeSupplementDose']>) => {
-    const [supplementId, servings, date, notes, userIdOverride] = args;
+  takeSupplementDose: async (supplementId, params) => {
+    const { servings, date, notes, userIdOverride } = params ?? {};
     const item = await findSupplement(get().supplementInventory, supplementId);
     if (!item || item.deletedAt) return null;
 
@@ -178,13 +178,12 @@ export const createSupplementSlice: FitnessSliceCreator<
     const created: SupplementLog[] = [];
     for (const sup of activeSupps) {
       if (existingLogsToday.some((l) => l.supplementId === sup.id)) continue;
-      const log = await get().takeSupplementDose(
-        sup.id,
-        sup.dailyDosage,
-        targetDate,
-        'Daily stack',
-        userIdOverride
-      );
+      const log = await get().takeSupplementDose(sup.id, {
+        servings: sup.dailyDosage,
+        date: targetDate,
+        notes: 'Daily stack',
+        userIdOverride,
+      });
       if (log) created.push(log);
     }
     return created;

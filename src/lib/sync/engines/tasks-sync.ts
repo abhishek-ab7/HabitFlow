@@ -6,45 +6,46 @@ import type { ISynchronizer } from '../types';
 
 function mapTaskMetaToRemote(task: any) {
   return {
-    parent_task_id: task.parentTaskId || null,
-    depth: task.depth || 0,
-    tags: task.tags || [],
-    metadata: task.metadata || {},
-    recurrence_rule: task.recurrenceRule || '',
-    estimated_time: task.estimatedTime || 0,
-    actual_time: task.actualTime || 0,
+    parent_task_id: task.parentTaskId ?? null,
+    depth: task.depth ?? 0,
+    tags: task.tags ?? [],
+    metadata: task.metadata ?? {},
+    recurrence_rule: task.recurrenceRule ?? '',
+    estimated_time: task.estimatedTime ?? 0,
+    actual_time: task.actualTime ?? 0,
     is_urgent: task.isUrgent ?? false,
     is_important: task.isImportant ?? false,
   };
 }
 
 function mapTaskToRemoteRow(userId: string, task: any) {
+  const nowIso = new Date().toISOString();
   return {
     id: task.id,
     user_id: userId,
     title: task.title,
-    description: task.description || null,
-    notes: task.notes || null,
+    description: task.description ?? null,
+    notes: task.notes ?? null,
     status: task.status,
     priority: task.priority,
     due_date: task.due_date,
-    goal_id: task.goal_id || null,
+    goal_id: task.goal_id ?? null,
     ...mapTaskMetaToRemote(task),
-    generation_counter: task.generationCounter || 1,
-    created_at: task.created_at || new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    generation_counter: task.generationCounter ?? 1,
+    created_at: task.created_at ?? nowIso,
+    updated_at: nowIso,
   };
 }
 
 function mapRemoteTaskMeta(remote: any, existingMetadata?: any) {
   return {
-    parentTaskId: remote.parent_task_id || null,
-    depth: remote.depth || 0,
-    tags: remote.tags || [],
+    parentTaskId: remote.parent_task_id ?? null,
+    depth: remote.depth ?? 0,
+    tags: remote.tags ?? [],
     metadata: remote.metadata ?? existingMetadata ?? {},
-    recurrenceRule: remote.recurrence_rule || '',
-    estimatedTime: remote.estimated_time || 0,
-    actualTime: remote.actual_time || 0,
+    recurrenceRule: remote.recurrence_rule ?? '',
+    estimatedTime: remote.estimated_time ?? 0,
+    actualTime: remote.actual_time ?? 0,
     isUrgent: remote.is_urgent ?? false,
     isImportant: remote.is_important ?? false,
   };
@@ -55,16 +56,16 @@ function mapRemoteToLocalTask(remote: any, existingMetadata?: any, userIdOverrid
     id: remote.id,
     userId: userIdOverride ?? remote.user_id,
     title: remote.title,
-    description: remote.description || null,
-    notes: remote.notes || null,
+    description: remote.description ?? null,
+    notes: remote.notes ?? null,
     status: remote.status,
-    priority: remote.priority || 'medium',
+    priority: remote.priority ?? 'medium',
     due_date: remote.due_date,
     goal_id: remote.goal_id,
     ...mapRemoteTaskMeta(remote, existingMetadata),
-    generationCounter: remote.generation_counter || 1,
+    generationCounter: remote.generation_counter ?? 1,
     created_at: remote.created_at,
-    updated_at: remote.updated_at || remote.created_at,
+    updated_at: remote.updated_at ?? remote.created_at,
     isDirty: false,
   };
 }

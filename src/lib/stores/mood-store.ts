@@ -4,20 +4,20 @@ import { getSupabaseClient } from '../supabase/client';
 import { getSyncEngine } from '../sync';
 import type { MoodLog, MoodType } from '../types';
 
+export type IsoDateString = string;
+export type UserIdentifier = string | null;
+
 interface MoodState {
   moodLogs: MoodLog[];
   isLoading: boolean;
-  loadedRange: { start: string; end: string; userId: string } | null;
+  loadedRange: { start: IsoDateString; end: IsoDateString; userId: string } | null;
   error: string | null;
 
   // Actions
-  loadMoodLogs: (startDate: string, endDate: string, force?: boolean) => Promise<void>;
-  logMood: (date: string, mood: MoodType) => Promise<void>;
-  getMoodForDate: (date: string) => MoodType | undefined;
+  loadMoodLogs: (startDate: IsoDateString, endDate: IsoDateString, force?: boolean) => Promise<void>;
+  logMood: (date: IsoDateString, mood: MoodType) => Promise<void>;
+  getMoodForDate: (date: IsoDateString) => MoodType | undefined;
 }
-
-export type IsoDateString = string;
-export type UserIdentifier = string | null;
 
 type LoadedRange = { start: IsoDateString; end: IsoDateString; userId: string } | null;
 
@@ -40,7 +40,7 @@ export const useMoodStore = create<MoodState>((set, get) => ({
   loadedRange: null,
   error: null,
 
-  loadMoodLogs: async (startDate: string, endDate: string, force = false) => {
+  loadMoodLogs: async (startDate: IsoDateString, endDate: IsoDateString, force = false) => {
     const state = get();
     try {
       const supabase = getSupabaseClient();
@@ -73,7 +73,7 @@ export const useMoodStore = create<MoodState>((set, get) => ({
     }
   },
 
-  logMood: async (date: string, mood: MoodType) => {
+  logMood: async (date: IsoDateString, mood: MoodType) => {
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
@@ -94,7 +94,7 @@ export const useMoodStore = create<MoodState>((set, get) => ({
     }
   },
 
-  getMoodForDate: (date: string) => {
+  getMoodForDate: (date: IsoDateString) => {
     return get().moodLogs.find(l => l.date === date)?.mood;
   }
 }));
