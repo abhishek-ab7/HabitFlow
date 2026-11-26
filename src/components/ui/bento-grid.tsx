@@ -33,6 +33,22 @@ interface BentoGridItemProps {
     disableHover?: boolean;
 }
 
+const BENTO_SPAN_CLASSES: Record<1 | 2 | 3, string> = {
+    1: '',
+    2: 'md:col-span-2',
+    3: 'md:col-span-3',
+};
+
+function BentoItemHeader({ icon, title }: { icon?: React.ReactNode; title?: string | React.ReactNode }) {
+    if (!icon && !title) return null;
+    return (
+        <div className="flex items-center gap-3 mb-1.5">
+            {icon}
+            {title && <div className="font-semibold text-foreground text-base tracking-tight">{title}</div>}
+        </div>
+    );
+}
+
 export const BentoGridItem = ({
     className,
     title,
@@ -55,19 +71,13 @@ export const BentoGridItem = ({
                 'surface-card group/bento transition-all duration-200 p-6 row-span-1 shadow-xs',
                 !disableHover && 'hover:border-primary/30 hover:shadow-md',
                 onClick && 'cursor-pointer',
-                span === 2 && 'md:col-span-2',
-                span === 3 && 'md:col-span-3',
+                BENTO_SPAN_CLASSES[span],
                 className
             )}
         >
             {header}
             <div className="h-full flex flex-col">
-                {(icon || title) && (
-                    <div className="flex items-center gap-3 mb-1.5">
-                        {icon}
-                        {title && <div className="font-semibold text-foreground text-base tracking-tight">{title}</div>}
-                    </div>
-                )}
+                <BentoItemHeader icon={icon} title={title} />
                 {description && (
                     <div className="font-sans font-normal text-muted-foreground text-sm mb-2">
                         {description}

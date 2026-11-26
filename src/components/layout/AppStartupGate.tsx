@@ -12,7 +12,8 @@ export function AppStartupGate({ children }: { children: React.ReactNode }) {
 
   // Redirect authenticated users from '/' to '/dashboard' immediately on client-side
   useEffect(() => {
-    if (!isLoading && isAuthenticated && pathname === '/') {
+    const canRedirect = !isLoading && isAuthenticated;
+    if (canRedirect && pathname === '/') {
       router.replace('/dashboard');
     }
   }, [isLoading, isAuthenticated, pathname, router]);

@@ -18,6 +18,70 @@ interface HabitDescriptionEditorProps {
   onDescriptionChange: (description: string) => void;
 }
 
+async function persistHabitDescriptionMetadata(
+  supabase: ReturnType<typeof createClient>,
+  habitId: string,
+  data: HabitDescriptionOutput
+) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error: saveError } = await (supabase.from('habit_descriptions') as any).insert({
+      habit_id: habitId,
+      user_id: user.id,
+      ai_description: data.description,
+      benefits: data.benefits,
+      tips: data.tips,
+      common_pitfalls: data.commonPitfalls || [],
+      difficulty_assessment: data.difficultyAssessment,
+      estimated_time_minutes: data.estimatedTimeMinutes,
+      scientific_backing: data.scientificBacking || null,
+    });
+    if (saveError) console.error('Failed to save description metadata:', saveError);
+  } catch (dbError) {
+    console.error('Database save error:', dbError);
+  }
+}
+
+function CollapsibleBulletSection({
+  title,
+  items,
+  bulletColorClass,
+  isOpen,
+  onToggle,
+}: {
+  title: string;
+  items: string[];
+  bulletColorClass: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center justify-between w-full text-sm font-medium mb-2 hover:text-primary transition"
+      >
+        <span className="flex items-center gap-2">
+          {title} ({items.length})
+        </span>
+        {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {isOpen && (
+        <ul className="space-y-1 text-sm text-muted-foreground">
+          {items.map((item, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className={cn('mt-0.5 shrink-0', bulletColorClass)}>•</span>
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export function HabitDescriptionEditor({ 
   habitName, 
   habitCategory,
@@ -61,34 +125,8 @@ export function HabitDescriptionEditor({
       setAiData(data);
       onDescriptionChange(data.description);
       
-      // Save to database if we have a habitId (editing existing habit)
       if (habitId) {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { error: saveError } = await (supabase
-              .from('habit_descriptions') as any)
-              .insert({
-                habit_id: habitId,
-                user_id: user.id,
-                ai_description: data.description,
-                benefits: data.benefits,
-                tips: data.tips,
-                common_pitfalls: data.commonPitfalls || [],
-                difficulty_assessment: data.difficultyAssessment,
-                estimated_time_minutes: data.estimatedTimeMinutes,
-                scientific_backing: data.scientificBacking || null
-              });
-
-            if (saveError) {
-              console.error('Failed to save description metadata:', saveError);
-              // Don't fail the operation if saving metadata fails
-            }
-          }
-        } catch (dbError) {
-          console.error('Database save error:', dbError);
-          // Don't fail the main operation
-        }
+        await persistHabitDescriptionMetadata(supabase, habitId, data);
       }
 
       toast.success('AI description generated!');
@@ -126,81 +164,30 @@ export function HabitDescriptionEditor({
 
       {aiData && (
         <div className="space-y-3 border-t pt-4">
-          {/* Benefits */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowBenefits(!showBenefits)}
-              className="flex items-center justify-between w-full text-sm font-medium mb-2 hover:text-primary transition"
-            >
-              <span className="flex items-center gap-2">
-                ✅ Benefits ({aiData.benefits.length})
-              </span>
-              {showBenefits ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-            {showBenefits && (
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                {aiData.benefits.map((benefit, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="text-green-500 mt-0.5 shrink-0">•</span>
-                    <span>{benefit}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Tips */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowTips(!showTips)}
-              className="flex items-center justify-between w-full text-sm font-medium mb-2 hover:text-primary transition"
-            >
-              <span className="flex items-center gap-2">
-                💡 Tips for Success ({aiData.tips.length})
-              </span>
-              {showTips ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-            {showTips && (
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                {aiData.tips.map((tip, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="text-blue-500 mt-0.5 shrink-0">•</span>
-                    <span>{tip}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Common Pitfalls */}
+          <CollapsibleBulletSection
+            title="✅ Benefits"
+            items={aiData.benefits}
+            bulletColorClass="text-green-500"
+            isOpen={showBenefits}
+            onToggle={() => setShowBenefits(!showBenefits)}
+          />
+          <CollapsibleBulletSection
+            title="💡 Tips for Success"
+            items={aiData.tips}
+            bulletColorClass="text-blue-500"
+            isOpen={showTips}
+            onToggle={() => setShowTips(!showTips)}
+          />
           {aiData.commonPitfalls && aiData.commonPitfalls.length > 0 && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowPitfalls(!showPitfalls)}
-                className="flex items-center justify-between w-full text-sm font-medium mb-2 hover:text-primary transition"
-              >
-                <span className="flex items-center gap-2">
-                  ⚠️ Common Pitfalls ({aiData.commonPitfalls.length})
-                </span>
-                {showPitfalls ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </button>
-              {showPitfalls && (
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {aiData.commonPitfalls.map((pitfall, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-amber-500 mt-0.5 shrink-0">•</span>
-                      <span>{pitfall}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <CollapsibleBulletSection
+              title="⚠️ Common Pitfalls"
+              items={aiData.commonPitfalls}
+              bulletColorClass="text-amber-500"
+              isOpen={showPitfalls}
+              onToggle={() => setShowPitfalls(!showPitfalls)}
+            />
           )}
 
-          {/* Meta Info */}
           <div className="flex gap-2 flex-wrap pt-2">
             <Badge variant="secondary" className="text-xs">
               {aiData.difficultyAssessment}

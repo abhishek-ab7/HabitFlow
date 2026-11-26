@@ -114,12 +114,85 @@ function SmartDetailsPanel({ analysisData }: { analysisData: SmartAnalysisData }
   );
 }
 
-export function SMARTGoalAnalysis({ goal }: SMARTGoalAnalysisProps) {
+function SmartRecommendationsPanel({ recommendations }: { recommendations: string[] }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-3 pt-1">
+      {recommendations.map((rec, idx) => (
+        <div key={idx} className="flex gap-2.5 items-start p-3 bg-muted/20 border border-border/30 rounded-lg">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary border border-primary/20">
+            {idx + 1}
+          </div>
+          <p className="text-xs text-foreground leading-relaxed">{rec}</p>
+        </div>
+      ))}
+    </motion.div>
+  );
+}
+
+function SmartAnalysisEmptyState({ analyzing, onAnalyze }: { analyzing: boolean; onAnalyze: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
+      <div className="p-4 bg-muted/30 rounded-full border border-border/40">
+        <Target className="h-10 w-10 text-muted-foreground animate-pulse" />
+      </div>
+      <div className="space-y-2 max-w-sm">
+        <h5 className="font-bold text-sm">SMART Goal Analysis</h5>
+        <p className="text-xs text-muted-foreground">
+          Let Gemini analyze your goal parameters (title, description, and timelines) to evaluate compliance with SMART guidelines.
+        </p>
+      </div>
+      <Button onClick={onAnalyze} disabled={analyzing} className="w-full sm:w-auto gap-2">
+        {analyzing ? <><RefreshCw className="h-4 w-4 animate-spin" />Analyzing Goal...</> : <><Sparkles className="h-4 w-4" />Analyze with Gemini</>}
+      </Button>
+    </div>
+  );
+}
+
+const SMART_TABS = [
+  ['overall', 'Overview'],
+  ['details', 'Metric Details'],
+  ['recommendations', 'Recommendations'],
+] as const;
+
+function SmartAnalysisTabsPanel({
+  analysisData,
+  activeTab,
+  onTabChange,
+}: {
+  analysisData: SmartAnalysisData;
+  activeTab: 'overall' | 'details' | 'recommendations';
+  onTabChange: (tab: 'overall' | 'details' | 'recommendations') => void;
+}) {
+  return (
+    <div className="flex-1 flex flex-col space-y-4">
+      <div className="flex bg-muted/30 p-1 rounded-lg border border-border/30 text-xs">
+        {SMART_TABS.map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => onTabChange(key)}
+            className={cn('flex-1 py-1.5 px-3 rounded-md font-medium transition-colors', activeTab === key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto max-h-[320px] pr-1 space-y-3">
+        <AnimatePresence mode="wait">
+          {activeTab === 'overall' && <SmartOverviewPanel analysisData={analysisData} />}
+          {activeTab === 'details' && <SmartDetailsPanel analysisData={analysisData} />}
+          {activeTab === 'recommendations' && (
+            <SmartRecommendationsPanel recommendations={analysisData.recommendations} />
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function useSmartGoalAnalysis(goal: Goal) {
   const { editGoal } = useGoalStore();
   const [analyzing, setAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overall' | 'details' | 'recommendations'>('overall');
-
-  const analysisData: SmartAnalysisData | undefined = goal.metadata?.smartAnalysis;
 
   const handleRunAnalysis = async (force = false) => {
     setAnalyzing(true);
@@ -140,6 +213,15 @@ export function SMARTGoalAnalysis({ goal }: SMARTGoalAnalysisProps) {
     }
   };
 
+  return { analyzing, handleRunAnalysis };
+}
+
+export function SMARTGoalAnalysis({ goal }: SMARTGoalAnalysisProps) {
+  const { analyzing, handleRunAnalysis } = useSmartGoalAnalysis(goal);
+  const [activeTab, setActiveTab] = useState<'overall' | 'details' | 'recommendations'>('overall');
+
+  const analysisData: SmartAnalysisData | undefined = goal.metadata?.smartAnalysis;
+
   return (
     <div className="bg-card border border-border/60 rounded-xl p-6 shadow-md relative overflow-hidden flex flex-col h-full">
       <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-primary/5 to-transparent blur-2xl pointer-events-none" />
@@ -158,53 +240,9 @@ export function SMARTGoalAnalysis({ goal }: SMARTGoalAnalysisProps) {
       </div>
 
       {!analysisData ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-4">
-          <div className="p-4 bg-muted/30 rounded-full border border-border/40">
-            <Target className="h-10 w-10 text-muted-foreground animate-pulse" />
-          </div>
-          <div className="space-y-2 max-w-sm">
-            <h5 className="font-bold text-sm">SMART Goal Analysis</h5>
-            <p className="text-xs text-muted-foreground">
-              Let Gemini analyze your goal parameters (title, description, and timelines) to evaluate compliance with SMART guidelines.
-            </p>
-          </div>
-          <Button onClick={() => handleRunAnalysis(false)} disabled={analyzing} className="w-full sm:w-auto gap-2">
-            {analyzing ? <><RefreshCw className="h-4 w-4 animate-spin" />Analyzing Goal...</> : <><Sparkles className="h-4 w-4" />Analyze with Gemini</>}
-          </Button>
-        </div>
+        <SmartAnalysisEmptyState analyzing={analyzing} onAnalyze={() => handleRunAnalysis(false)} />
       ) : (
-        <div className="flex-1 flex flex-col space-y-4">
-          <div className="flex bg-muted/30 p-1 rounded-lg border border-border/30 text-xs">
-            {([['overall', 'Overview'], ['details', 'Metric Details'], ['recommendations', 'Recommendations']] as const).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={cn('flex-1 py-1.5 px-3 rounded-md font-medium transition-colors', activeTab === key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 overflow-y-auto max-h-[320px] pr-1 space-y-3">
-            <AnimatePresence mode="wait">
-              {activeTab === 'overall' && <SmartOverviewPanel analysisData={analysisData} />}
-              {activeTab === 'details' && <SmartDetailsPanel analysisData={analysisData} />}
-              {activeTab === 'recommendations' && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-3 pt-1">
-                  {analysisData.recommendations.map((rec, idx) => (
-                    <div key={idx} className="flex gap-2.5 items-start p-3 bg-muted/20 border border-border/30 rounded-lg">
-                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary border border-primary/20">
-                        {idx + 1}
-                      </div>
-                      <p className="text-xs text-foreground leading-relaxed">{rec}</p>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+        <SmartAnalysisTabsPanel analysisData={analysisData} activeTab={activeTab} onTabChange={setActiveTab} />
       )}
     </div>
   );

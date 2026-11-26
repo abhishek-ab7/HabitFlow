@@ -72,7 +72,109 @@ function GeneratedMilestoneRow({
   );
 }
 
-export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGeneratorProps) {
+const PACE_OPTIONS = [
+  ['relaxed', 'Relaxed Pace', 'outline'],
+  ['balanced', 'Balanced (Recommended)', 'default'],
+  ['aggressive', 'Fast Track', 'outline'],
+] as const;
+
+function MilestonePacePicker({
+  goalTitle,
+  loading,
+  onSelectPace,
+}: {
+  goalTitle: string;
+  loading: boolean;
+  onSelectPace: (pref: 'aggressive' | 'balanced' | 'relaxed') => void;
+}) {
+  return (
+    <div className="text-center py-6 space-y-4">
+      <p className="text-sm text-muted-foreground">Let AI break down &quot;{goalTitle}&quot; into achievable milestones</p>
+      <div className="flex gap-2 justify-center flex-wrap">
+        {PACE_OPTIONS.map(([pref, label, variant]) => (
+          <Button
+            key={pref}
+            onClick={() => onSelectPace(pref)}
+            disabled={loading}
+            variant={variant}
+            size="sm"
+            className={cn('gap-1', pref === 'balanced' && 'bg-invest hover:bg-invest/90 text-white')}
+          >
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            {label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GeneratedMilestonesList({
+  milestones,
+  selectedMilestones,
+  confidenceScore,
+  totalWeeks,
+  loading,
+  onToggle,
+  onRegenerate,
+  onAccept,
+  onCancel,
+}: {
+  milestones: GeneratedMilestone[];
+  selectedMilestones: Set<number>;
+  confidenceScore: number;
+  totalWeeks: number;
+  loading: boolean;
+  onToggle: (orderIndex: number) => void;
+  onRegenerate: () => void;
+  onAccept: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex gap-4">
+          <span className="text-muted-foreground">{milestones.length} milestones • {totalWeeks} weeks</span>
+          <Badge variant="secondary" className="gap-1"><Sparkles className="h-3 w-3" />{confidenceScore}% confidence</Badge>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onRegenerate} disabled={loading} className="h-7 gap-1">
+          <RefreshCw className="h-3 w-3" />
+          Regenerate
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        <AnimatePresence>
+          {milestones.map((milestone, index) => (
+            <GeneratedMilestoneRow
+              key={milestone.orderIndex}
+              milestone={milestone}
+              index={index}
+              selected={selectedMilestones.has(milestone.orderIndex)}
+              onToggle={onToggle}
+            />
+          ))}
+        </AnimatePresence>
+      </div>
+
+      <div className="flex gap-2 pt-2">
+        <Button onClick={onAccept} disabled={selectedMilestones.size === 0} className="flex-1 bg-invest hover:bg-invest/90 text-white">
+          <Check className="h-4 w-4 mr-1" />
+          Accept {selectedMilestones.size > 0 && `(${selectedMilestones.size})`}
+        </Button>
+        <Button onClick={onCancel} variant="outline">
+          <X className="h-4 w-4 mr-1" />
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function useMilestoneGenerator(
+  goal: Goal,
+  onMilestonesAccepted?: (milestones: GeneratedMilestone[]) => void
+) {
   const [loading, setLoading] = useState(false);
   const [milestones, setMilestones] = useState<GeneratedMilestone[] | null>(null);
   const [selectedMilestones, setSelectedMilestones] = useState<Set<number>>(new Set());
@@ -121,6 +223,32 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
     toast.success(`Added ${accepted.length} milestones to your goal!`);
   };
 
+  return {
+    loading,
+    milestones,
+    setMilestones,
+    selectedMilestones,
+    confidenceScore,
+    totalWeeks,
+    generateMilestones,
+    toggleMilestone,
+    acceptMilestones,
+  };
+}
+
+export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGeneratorProps) {
+  const {
+    loading,
+    milestones,
+    setMilestones,
+    selectedMilestones,
+    confidenceScore,
+    totalWeeks,
+    generateMilestones,
+    toggleMilestone,
+    acceptMilestones,
+  } = useMilestoneGenerator(goal, onMilestonesAccepted);
+
   return (
     <Card className="surface-card border-invest/25">
       <CardHeader>
@@ -131,64 +259,19 @@ export function MilestoneGenerator({ goal, onMilestonesAccepted }: MilestoneGene
       </CardHeader>
       <CardContent className="space-y-4">
         {!milestones ? (
-          <div className="text-center py-6 space-y-4">
-            <p className="text-sm text-muted-foreground">Let AI break down &quot;{goal.title}&quot; into achievable milestones</p>
-            <div className="flex gap-2 justify-center flex-wrap">
-              {([['relaxed', 'Relaxed Pace', 'outline'], ['balanced', 'Balanced (Recommended)', 'default'], ['aggressive', 'Fast Track', 'outline']] as const).map(
-                ([pref, label, variant]) => (
-                  <Button
-                    key={pref}
-                    onClick={() => generateMilestones(pref)}
-                    disabled={loading}
-                    variant={variant}
-                    size="sm"
-                    className={cn('gap-1', pref === 'balanced' && 'bg-invest hover:bg-invest/90 text-white')}
-                  >
-                    {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                    {label}
-                  </Button>
-                )
-              )}
-            </div>
-          </div>
+          <MilestonePacePicker goalTitle={goal.title} loading={loading} onSelectPace={generateMilestones} />
         ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-sm">
-              <div className="flex gap-4">
-                <span className="text-muted-foreground">{milestones.length} milestones • {totalWeeks} weeks</span>
-                <Badge variant="secondary" className="gap-1"><Sparkles className="h-3 w-3" />{confidenceScore}% confidence</Badge>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => generateMilestones('balanced')} disabled={loading} className="h-7 gap-1">
-                <RefreshCw className="h-3 w-3" />
-                Regenerate
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              <AnimatePresence>
-                {milestones.map((milestone, index) => (
-                  <GeneratedMilestoneRow
-                    key={milestone.orderIndex}
-                    milestone={milestone}
-                    index={index}
-                    selected={selectedMilestones.has(milestone.orderIndex)}
-                    onToggle={toggleMilestone}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <Button onClick={acceptMilestones} disabled={selectedMilestones.size === 0} className="flex-1 bg-invest hover:bg-invest/90 text-white">
-                <Check className="h-4 w-4 mr-1" />
-                Accept {selectedMilestones.size > 0 && `(${selectedMilestones.size})`}
-              </Button>
-              <Button onClick={() => setMilestones(null)} variant="outline">
-                <X className="h-4 w-4 mr-1" />
-                Cancel
-              </Button>
-            </div>
-          </div>
+          <GeneratedMilestonesList
+            milestones={milestones}
+            selectedMilestones={selectedMilestones}
+            confidenceScore={confidenceScore}
+            totalWeeks={totalWeeks}
+            loading={loading}
+            onToggle={toggleMilestone}
+            onRegenerate={() => generateMilestones('balanced')}
+            onAccept={acceptMilestones}
+            onCancel={() => setMilestones(null)}
+          />
         )}
       </CardContent>
     </Card>
