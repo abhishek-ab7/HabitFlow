@@ -22,9 +22,20 @@ import {
 import { getSupabaseClient } from '../supabase/client';
 import type { Habit, HabitCompletion, HabitFormData, Category } from '../types';
 import { calculateCurrentStreak, calculateHabitStats, getHabitWeekProgress, type HabitWeekProgress } from '../calculations';
-import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek, parseISO, differenceInCalendarDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { getSyncEngine } from '../sync';
-import { useGamificationStore } from './gamification-store';
+import {
+  applyHabitEditToList,
+  assertRestDayAllowed,
+  calculateUnionRange,
+  computeTodayHabitProgress,
+  handleWeeklyFreezeVerification,
+  isRangeAlreadyLoaded,
+  syncBatchCompletions,
+} from './habit-store-helpers';
+
+type HabitId = string;
+type IsoDate = string;
 
 interface HabitState {
   habits: Habit[];
@@ -40,30 +51,30 @@ interface HabitState {
   // Actions
   loadHabits: (force?: boolean) => Promise<void>;
   loadArchivedHabits: () => Promise<Habit[]>;
-  loadCompletions: (startDate: string, endDate: string) => Promise<void>;
+  loadCompletions: (startDate: IsoDate, endDate: IsoDate) => Promise<void>;
   loadAllCompletions: () => Promise<void>;
   addHabit: (data: HabitFormData) => Promise<Habit>;
-  editHabit: (id: string, data: Partial<Habit>) => Promise<void>;
-  removeHabit: (id: string) => Promise<void>;
-  toggle: (habitId: string, date: string) => Promise<void>;
-  freezeHabit: (habitId: string, date: string) => Promise<void>;
-  markRestDay: (habitId: string, date: string, reason?: string) => Promise<void>;
-  clearRestDay: (habitId: string, date: string) => Promise<void>;
-  updateNote: (habitId: string, date: string, note: string) => Promise<void>;
-  updateValue: (habitId: string, date: string, value: number) => Promise<void>;
-  ensureComplete: (habitId: string, date: string) => Promise<void>;
-  batchComplete: (habitIds: string[], date: string) => Promise<void>;
-  reorder: (orderedIds: string[]) => Promise<void>;
+  editHabit: (id: HabitId, data: Partial<Habit>) => Promise<void>;
+  removeHabit: (id: HabitId) => Promise<void>;
+  toggle: (habitId: HabitId, date: IsoDate) => Promise<void>;
+  freezeHabit: (habitId: HabitId, date: IsoDate) => Promise<void>;
+  markRestDay: (habitId: HabitId, date: IsoDate, reason?: string) => Promise<void>;
+  clearRestDay: (habitId: HabitId, date: IsoDate) => Promise<void>;
+  updateNote: (habitId: HabitId, date: IsoDate, note: string) => Promise<void>;
+  updateValue: (habitId: HabitId, date: IsoDate, value: number) => Promise<void>;
+  ensureComplete: (habitId: HabitId, date: IsoDate) => Promise<void>;
+  batchComplete: (habitIds: HabitId[], date: IsoDate) => Promise<void>;
+  reorder: (orderedIds: HabitId[]) => Promise<void>;
   setSelectedMonth: (date: Date) => void;
   setCategoryFilter: (categories: Category[]) => void;
   initializeWithDemoData: () => Promise<void>;
 
-  getHabitCompletions: (habitId: string) => HabitCompletion[];
+  getHabitCompletions: (habitId: HabitId) => HabitCompletion[];
 
   // Computed
-  getHabitStats: (habitId: string) => ReturnType<typeof calculateHabitStats> | null;
-  getHabitWeekStatus: (habitId: string, referenceDate?: Date) => HabitWeekProgress | null;
-  getCompletionForDate: (habitId: string, date: string) => HabitCompletion | undefined;
+  getHabitStats: (habitId: HabitId) => ReturnType<typeof calculateHabitStats> | null;
+  getHabitWeekStatus: (habitId: HabitId, referenceDate?: Date) => HabitWeekProgress | null;
+  getCompletionForDate: (habitId: HabitId, date: IsoDate) => HabitCompletion | undefined;
   getTodayProgress: () => {
     completed: number;
     total: number;
@@ -97,68 +108,12 @@ async function updateLocalAndSync(
   }
 }
 
-async function handleWeeklyFreezeVerification(completions: HabitCompletion[], date: string) {
-  const diffDays = differenceInCalendarDays(new Date(), parseISO(date));
-  if (diffDays < 0 || diffDays > 7) {
-    throw new Error("You can only freeze missed days within the past 7 days.");
-  }
-
-  const dateObj = parseISO(date);
-  const startStr = format(startOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-  const endStr = format(endOfWeek(dateObj, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-
-  const hasWeeklyFreeze = completions.some(
-    c => c.status === 'frozen' && c.date >= startStr && c.date <= endStr
-  );
-
-  if (hasWeeklyFreeze) {
-    const gamification = useGamificationStore.getState();
-    const success = await gamification.useShield();
-    if (!success) {
-      throw new Error("NO_SHIELDS_LEFT");
-    }
-  }
+function isCacheValid(habits: Habit[], completions: HabitCompletion[]): boolean {
+  return Boolean(cachedStreaks) && habits === lastHabitsRef && completions === lastCompletionsRef;
 }
 
-async function syncBatchCompletions(results: HabitCompletion[]) {
-  try {
-    const syncEngine = getSyncEngine();
-    for (const result of results) {
-      await syncEngine.pushCompletion(result);
-    }
-  } catch (error) {
-    console.error('Failed to sync batch completions:', error);
-  }
-}
-
-function isRangeAlreadyLoaded(
-  loadedRange: { start: string; end: string } | null,
-  start: string,
-  end: string
-): boolean {
-  if (!loadedRange) return false;
-  return start >= loadedRange.start && end <= loadedRange.end;
-}
-
-function calculateUnionRange(
-  loadedRange: { start: string; end: string } | null,
-  start: string,
-  end: string
-) {
-  if (!loadedRange) {
-    return { start, end };
-  }
-  return {
-    start: start < loadedRange.start ? start : loadedRange.start,
-    end: end > loadedRange.end ? end : loadedRange.end,
-  };
-}
-
-function isCacheValid(
-  habits: Habit[],
-  completions: HabitCompletion[]
-): boolean {
-  return !!cachedStreaks && habits === lastHabitsRef && completions === lastCompletionsRef;
+function shouldSkipHabitLoad(force: boolean, state: HabitState, uid: string): boolean {
+  return !force && state.hasLoadedHabits && state.loadedHabitsUserId === uid;
 }
 
 export const useHabitStore = create<HabitState>((set, get) => ({
@@ -183,15 +138,11 @@ export const useHabitStore = create<HabitState>((set, get) => ({
         set({ habits: [], isLoading: false, hasLoadedHabits: false, loadedHabitsUserId: null });
         return;
       }
-
-      if (!force && state.hasLoadedHabits && state.loadedHabitsUserId === uid) {
-        return;
-      }
+      if (shouldSkipHabitLoad(force, state, uid)) return;
 
       if (!state.hasLoadedHabits) {
         set({ isLoading: true, error: null });
       }
-
       const habits = await getHabits(uid);
       set({ habits, isLoading: false, hasLoadedHabits: true, loadedHabitsUserId: uid });
     } catch (error) {
@@ -277,28 +228,13 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateHabit(id, data);
     const fullHabit = await db.habits.get(id);
 
-    set(state => {
-      let nextHabits = state.habits;
-      if (data.archived === true) {
-        nextHabits = state.habits.filter(h => h.id !== id);
-      } else if (data.archived === false) {
-        const exists = state.habits.some(h => h.id === id);
-        if (!exists && fullHabit) {
-          nextHabits = [...state.habits, fullHabit].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-        } else {
-          nextHabits = state.habits.map(h => h.id === id ? { ...h, ...data } : h);
-        }
-      } else {
-        nextHabits = state.habits.map(h => h.id === id ? { ...h, ...data } : h);
-      }
-      return { habits: nextHabits };
-    });
+    set(state => ({
+      habits: applyHabitEditToList(state.habits, id, data, fullHabit),
+    }));
 
-    // Sync to cloud
     if (fullHabit) {
       try {
-        const syncEngine = getSyncEngine();
-        await syncEngine.pushHabit(fullHabit);
+        await getSyncEngine().pushHabit(fullHabit);
       } catch (error) {
         console.error('Failed to sync habit:', error);
       }
@@ -351,32 +287,18 @@ export const useHabitStore = create<HabitState>((set, get) => ({
     await updateLocalAndSync(set, result);
   },
 
-  markRestDay: async (habitId: string, date: string, reason?: string) => {
-    const supabase = getSupabaseClient();
-    const { data: { session } } = await supabase.auth.getSession();
+  markRestDay: async (habitId, date, reason) => {
+    const { data: { session } } = await getSupabaseClient().auth.getSession();
     const userId = session?.user?.id || 'local-user';
-
     const habit = get().habits.find(h => h.id === habitId);
     if (!habit) throw new Error("Habit not found");
 
     const existing = get().completions.find(c => c.habitId === habitId && c.date === date);
-    const isCurrentlyRest = existing?.status === 'rest' || existing?.skipped === true;
-
-    if (isCurrentlyRest) {
-      const cleared = await clearRestCompletion(habitId, date, userId);
-      await updateLocalAndSync(set, cleared);
-      return;
-    }
-
-    const weekStatus = getHabitWeekProgress(habit, get().completions, parseISO(date));
-    if (weekStatus.restAllowedCount <= 0 && !weekStatus.isAutoRestDay) {
-      throw new Error("This is a 7-days/week daily habit with 0 free rest days. Edit the habit schedule or use a Streak Shield.");
-    }
-    if (weekStatus.restRemainingCount <= 0 && !weekStatus.isAutoRestDay && !weekStatus.quotaMet) {
-      throw new Error(`You've used all ${weekStatus.restAllowedCount} rest day(s) for this week. Use a Streak Shield to protect your streak.`);
-    }
-
-    const result = await markRestCompletion(habitId, date, userId, reason);
+    const isRest = existing?.status === 'rest' || existing?.skipped === true;
+    const result = isRest
+      ? await clearRestCompletion(habitId, date, userId)
+      : (assertRestDayAllowed(habit, get().completions, date),
+        await markRestCompletion(habitId, date, userId, reason));
     await updateLocalAndSync(set, result);
   },
 
@@ -501,48 +423,7 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
   getTodayProgress: () => {
     const { habits, completions } = get();
-    const now = new Date();
-    const today = format(now, 'yyyy-MM-dd');
-    const activeHabits = habits.filter(h => !h.archived);
-
-    let completed = 0;
-    let totalDueToday = 0;
-    let restingCount = 0;
-    let quotaMetCount = 0;
-
-    for (const habit of activeHabits) {
-      const todayComp = completions.find(c => c.habitId === habit.id && c.date === today);
-      const isDoneToday = !!(todayComp && todayComp.completed && todayComp.status !== 'rest' && !todayComp.skipped);
-      const isRestToday = !!(todayComp && (todayComp.status === 'rest' || todayComp.skipped));
-      const weekProg = getHabitWeekProgress(habit, completions, now);
-
-      if (isDoneToday) {
-        completed++;
-        totalDueToday++;
-      } else if (isRestToday || weekProg.isAutoRestDay) {
-        restingCount++;
-      } else if (weekProg.quotaMet && (habit.targetDaysPerWeek ?? 7) < 7) {
-        quotaMetCount++;
-      } else {
-        totalDueToday++;
-      }
-    }
-
-    // If all habits today are resting / quota met and 0 due, show 100% if at least one active habit is resting/quota-met
-    const percentage =
-      totalDueToday > 0
-        ? Math.round((completed / totalDueToday) * 100)
-        : activeHabits.length > 0 && (restingCount > 0 || quotaMetCount > 0)
-        ? 100
-        : 0;
-
-    return {
-      completed,
-      total: totalDueToday,
-      percentage,
-      restingCount,
-      quotaMetCount,
-    };
+    return computeTodayHabitProgress(habits, completions);
   },
 
   getMonthlyProgress: () => {

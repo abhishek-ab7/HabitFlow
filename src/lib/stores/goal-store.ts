@@ -15,10 +15,14 @@ import {
 import { getSupabaseClient } from '../supabase/client';
 import type { Goal, Milestone, GoalFormData, MilestoneFormData, GoalStatus, AreaOfLife, Priority } from '../types';
 import { calculateGoalStats, getDeadlineStatus } from '../calculations';
-import { calculateFitnessGoalProgress } from '../fitness/shared-analytics';
-import { getLocalIsoDate } from '../finance/credit-card-cycles';
-import { useFitnessStore } from './fitness';
 import { getSyncEngine } from '../sync';
+import {
+  computeGoalStatsWithFitness,
+  createGoalMilestones,
+  emptyGoalStats,
+  shouldSkipGoalStoreLoad,
+  syncNewGoalAndMilestones,
+} from './goal-store-helpers';
 
 interface GoalState {
   goals: Goal[];
@@ -79,7 +83,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
         return;
       }
 
-      if (!force && state.hasLoadedGoals && state.loadedUserId === uid) {
+      if (shouldSkipGoalStoreLoad({ force, hasLoaded: state.hasLoadedGoals, loadedUserId: state.loadedUserId, uid })) {
         return;
       }
 
@@ -106,7 +110,7 @@ export const useGoalStore = create<GoalState>((set, get) => ({
         return;
       }
 
-      if (!force && state.hasLoadedMilestones && state.loadedUserId === uid) {
+      if (shouldSkipGoalStoreLoad({ force, hasLoaded: state.hasLoadedMilestones, loadedUserId: state.loadedUserId, uid })) {
         return;
       }
 
@@ -119,7 +123,6 @@ export const useGoalStore = create<GoalState>((set, get) => ({
 
   addGoal: async (data: GoalFormData) => {
     const { milestones: milestoneTitles, isFocus, ...goalData } = data;
-
     const supabase = getSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) throw new Error("User not authenticated");
@@ -129,44 +132,20 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       ...goalData,
       userId,
       status: 'not_started',
-      isFocus: isFocus || false, // Should be initially false if we're going to set it via setFocus to handle unsetting others, but createGoal needs a value. 
-      // Actually, createGoal doesn't handle the "exclusive" logic, setFocus does.
-      // Let's rely on setFocus to ensure exclusivity.
+      isFocus: isFocus || false,
       archived: false,
     });
 
-    // Create milestones
-    const createdMilestones: Milestone[] = [];
-    for (const title of milestoneTitles) {
-      if (title.trim()) {
-        const milestone = await createMilestone({ goalId: goal.id, title: title.trim(), userId: userId });
-        createdMilestones.push(milestone);
-      }
-    }
-
+    const createdMilestones = await createGoalMilestones(goal.id, milestoneTitles, userId);
     set(state => ({
       goals: [...state.goals, goal],
       milestones: [...state.milestones, ...createdMilestones],
     }));
 
-    // If isFocus is true, we need to update the store and DB to reflect this exclusive status
     if (isFocus) {
       await get().setFocus(goal.id);
     }
-
-    // Sync to cloud
-    try {
-      const syncEngine = getSyncEngine();
-      await syncEngine.pushGoal(goal);
-      for (const milestone of createdMilestones) {
-        await syncEngine.pushMilestone(milestone);
-      }
-      // If we called setFocus, we might need to sync the updates to other goals (unsetting their focus)
-      // setFocus action handles syncing of the updated goals, so we are good there.
-    } catch (error) {
-      console.error('Failed to sync goal:', error);
-    }
-
+    await syncNewGoalAndMilestones(goal, createdMilestones);
     return goal;
   },
 
@@ -325,56 +304,8 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   getGoalStats: (goalId: string) => {
     const { goals, milestones } = get();
     const goal = goals.find(g => g.id === goalId);
-    if (!goal) {
-      return {
-        goalId,
-        progress: 0,
-        milestonesCompleted: 0,
-        milestonesTotal: 0,
-        daysRemaining: 0,
-        daysElapsed: 0,
-        totalDays: 0,
-        isOnTrack: false,
-      };
-    }
-    const baseStats = calculateGoalStats(goal, milestones);
-    if (goal.fitnessLink && goal.fitnessLink.targetValue > 0) {
-      const fitState = useFitnessStore.getState();
-      const fitProgress = calculateFitnessGoalProgress(goal.fitnessLink, {
-        profile: fitState.profile,
-        dailyLogs: fitState.dailyLogs,
-        workoutSessions: fitState.workoutSessions,
-        referenceDate: getLocalIsoDate(),
-      });
-      const effectiveProgress =
-        baseStats.milestonesTotal === 0 ? fitProgress.progressPct : baseStats.progress;
-      const expectedProgress =
-        baseStats.totalDays > 0
-          ? Math.min(100, (baseStats.daysElapsed / baseStats.totalDays) * 100)
-          : 0;
-      const isOnTrack =
-        baseStats.milestonesTotal === 0
-          ? effectiveProgress >= expectedProgress - 10
-          : baseStats.isOnTrack;
-      let projectedCompletion = baseStats.projectedCompletion;
-      if (baseStats.milestonesTotal === 0 && baseStats.daysElapsed > 0 && effectiveProgress > 0) {
-        const progressRate = effectiveProgress / baseStats.daysElapsed;
-        projectedCompletion = Math.min(
-          100,
-          Math.round(progressRate * (baseStats.daysElapsed + baseStats.daysRemaining))
-        );
-      }
-      return {
-        ...baseStats,
-        progress: effectiveProgress,
-        isOnTrack,
-        projectedCompletion,
-        currentFitnessValue: fitProgress.currentValue,
-        targetFitnessValue: fitProgress.targetValue,
-        fitnessUnit: fitProgress.unit,
-      };
-    }
-    return baseStats;
+    if (!goal) return emptyGoalStats(goalId);
+    return computeGoalStatsWithFitness(goal, milestones);
   },
 
   getGoalMilestones: (goalId: string) => {

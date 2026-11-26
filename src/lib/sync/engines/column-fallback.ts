@@ -3,19 +3,15 @@ import { logger } from '@/lib/logger';
 
 const missingColumnsByTable = new Map<string, Set<string>>();
 
+const MISSING_RELATION_CODES = new Set(['PGRST205', '42P01']);
+const MISSING_RELATION_PHRASES = ['Could not find the table', 'in the schema cache', 'does not exist'];
+
 export function isMissingRelationError(err: any): boolean {
   if (!err) return false;
-  const code = String(err.code || '');
+  if (MISSING_RELATION_CODES.has(String(err.code || ''))) return true;
+  if (Number(err.status) === 404 || Number(err.statusCode) === 404) return true;
   const msg = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`;
-  return (
-    code === 'PGRST205' ||
-    code === '42P01' ||
-    msg.includes('Could not find the table') ||
-    msg.includes('in the schema cache') ||
-    msg.includes('does not exist') ||
-    Number(err.status) === 404 ||
-    Number(err.statusCode) === 404
-  );
+  return MISSING_RELATION_PHRASES.some((phrase) => msg.includes(phrase));
 }
 
 export function extractMissingColumnName(err: any): string | null {
@@ -64,17 +60,56 @@ export function clearMissingColumnCache(table?: string) {
   }
 }
 
+function isTimestampNewer(local: any, remote: any): boolean {
+  const remoteUpdated = remote.updated_at || remote.updatedAt;
+  const localUpdated = local.updatedAt || local.updated_at;
+  if (!remoteUpdated || !localUpdated) return false;
+  return new Date(remoteUpdated).getTime() > new Date(localUpdated).getTime();
+}
+
 export function shouldApplyRemoteRecord(local: any | undefined, remote: any): boolean {
   if (!local) return true;
   const remoteGen = Number(remote.generation_counter || 0);
   const localGen = Number(local.generationCounter || 0);
   if (remoteGen > localGen) return true;
-  const remoteUpdated = remote.updated_at || remote.updatedAt;
-  const localUpdated = local.updatedAt || local.updated_at;
-  if (remoteGen === localGen && remoteUpdated && localUpdated) {
-    return new Date(remoteUpdated).getTime() > new Date(localUpdated).getTime();
-  }
-  return false;
+  if (remoteGen !== localGen) return false;
+  return isTimestampNewer(local, remote);
+}
+
+function isMissingColumnError(error: any): boolean {
+  if (!error) return false;
+  const code = (error as any).code;
+  if (code === 'PGRST204' || code === '42703') return true;
+  const msg = String(error.message || '');
+  return msg.includes('Could not find') || msg.includes('does not exist');
+}
+
+function stripPayload(
+  table: string,
+  input: Record<string, any> | Array<Record<string, any>>
+) {
+  return Array.isArray(input)
+    ? input.map((row) => stripKnownMissingColumnsFromRow(table, row))
+    : stripKnownMissingColumnsFromRow(table, input);
+}
+
+function hasPayloadProperty(
+  input: Record<string, any> | Array<Record<string, any>>,
+  col: string
+): boolean {
+  return Array.isArray(input)
+    ? input.some((row) => Object.prototype.hasOwnProperty.call(row, col))
+    : Object.prototype.hasOwnProperty.call(input, col);
+}
+
+async function executeUpsert(
+  supabase: any,
+  table: string,
+  payload: any,
+  options?: { onConflict?: string }
+) {
+  const tableRef = supabase.from(table) as any;
+  return options?.onConflict ? tableRef.upsert(payload, options) : tableRef.upsert(payload);
 }
 
 /**
@@ -87,48 +122,22 @@ export async function upsertRowsWithColumnFallback(
   payload: Record<string, any> | Array<Record<string, any>>,
   options?: { onConflict?: string }
 ): Promise<{ error: any }> {
-  const isArray = Array.isArray(payload);
-  const stripPayload = (input: Record<string, any> | Array<Record<string, any>>) =>
-    Array.isArray(input)
-      ? input.map((row) => stripKnownMissingColumnsFromRow(table, row))
-      : stripKnownMissingColumnsFromRow(table, input);
-
-  const hasProperty = (input: Record<string, any> | Array<Record<string, any>>, col: string) =>
-    Array.isArray(input)
-      ? input.some((row) => Object.prototype.hasOwnProperty.call(row, col))
-      : Object.prototype.hasOwnProperty.call(input, col);
-
-  let currentPayload = stripPayload(payload);
-  if (isArray && (currentPayload as Array<any>).length === 0) {
+  let currentPayload = stripPayload(table, payload);
+  if (Array.isArray(currentPayload) && currentPayload.length === 0) {
     return { error: null };
   }
 
-  let result = options?.onConflict
-    ? await (supabase.from(table) as any).upsert(currentPayload, options)
-    : await (supabase.from(table) as any).upsert(currentPayload);
-  let error = result.error;
+  let { error } = await executeUpsert(supabase, table, currentPayload, options);
   let attempts = 0;
 
-  while (
-    error &&
-    attempts < 12 &&
-    ((error as any).code === 'PGRST204' ||
-      (error as any).code === '42703' ||
-      String(error.message || '').includes('Could not find') ||
-      String(error.message || '').includes('does not exist'))
-  ) {
+  while (attempts < 12 && isMissingColumnError(error)) {
     const missingCol = extractMissingColumnName(error);
-    if (missingCol && hasProperty(currentPayload, missingCol)) {
-      recordMissingColumnForTable(table, missingCol);
-      currentPayload = stripPayload(currentPayload);
-      attempts++;
-      result = options?.onConflict
-        ? await (supabase.from(table) as any).upsert(currentPayload, options)
-        : await (supabase.from(table) as any).upsert(currentPayload);
-      error = result.error;
-    } else {
-      break;
-    }
+    if (!missingCol || !hasPayloadProperty(currentPayload, missingCol)) break;
+
+    recordMissingColumnForTable(table, missingCol);
+    currentPayload = stripPayload(table, currentPayload);
+    attempts++;
+    ({ error } = await executeUpsert(supabase, table, currentPayload, options));
   }
 
   return { error };

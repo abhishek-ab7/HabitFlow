@@ -40,6 +40,42 @@ interface RemoteTableBehavior {
   missingColumns?: Set<string>;
 }
 
+function createMockQueryBuilder(cfg: RemoteTableBehavior) {
+  const resultPayload = {
+    data: cfg.selectError ? null : cfg.rows || [],
+    error: cfg.selectError || null,
+  };
+  const makeSelectBuilder = () => {
+    const p: any = Promise.resolve(resultPayload);
+    p.eq = vi.fn(() => makeSelectBuilder());
+    p.gt = vi.fn(() => makeSelectBuilder());
+    p.order = vi.fn(() => makeSelectBuilder());
+    p.single = vi.fn(() =>
+      Promise.resolve({ data: cfg.rows?.[0] ?? null, error: cfg.selectError || null })
+    );
+    return p;
+  };
+  return makeSelectBuilder;
+}
+
+function findMissingColumnError(
+  rows: any[],
+  missingColumns: Set<string> | undefined,
+  tableName: string
+) {
+  if (!missingColumns) return null;
+  for (const row of rows) {
+    for (const col of missingColumns) {
+      if (!Object.prototype.hasOwnProperty.call(row, col)) continue;
+      return {
+        code: 'PGRST204',
+        message: `Could not find the '${col}' column of '${tableName}' in the schema cache`,
+      };
+    }
+  }
+  return null;
+}
+
 function makeFakeSupabase(
   userId: string,
   tables: Record<string, RemoteTableBehavior>
@@ -57,41 +93,16 @@ function makeFakeSupabase(
     },
     from: vi.fn((tableName: string) => {
       const cfg = tables[tableName] || { rows: [] };
-      const resultPayload = {
-        data: cfg.selectError ? null : cfg.rows || [],
-        error: cfg.selectError || null,
-      };
-      const makeSelectBuilder = () => {
-        const p: any = Promise.resolve(resultPayload);
-        p.eq = vi.fn(() => makeSelectBuilder());
-        p.gt = vi.fn(() => makeSelectBuilder());
-        p.order = vi.fn(() => makeSelectBuilder());
-        p.single = vi.fn(() => Promise.resolve({ data: cfg.rows?.[0] ?? null, error: cfg.selectError || null }));
-        return p;
-      };
-      const chain: any = {
+      const makeSelectBuilder = createMockQueryBuilder(cfg);
+      return {
         select: vi.fn(() => makeSelectBuilder()),
         upsert: vi.fn((payload: any, opts?: any) => {
           cfg.upsertSpy?.(payload, opts);
           const rows = Array.isArray(payload) ? payload : [payload];
-          if (cfg.missingColumns) {
-            for (const row of rows) {
-              for (const col of cfg.missingColumns) {
-                if (Object.prototype.hasOwnProperty.call(row, col)) {
-                  return Promise.resolve({
-                    error: {
-                      code: 'PGRST204',
-                      message: `Could not find the '${col}' column of '${tableName}' in the schema cache`,
-                    },
-                  });
-                }
-              }
-            }
-          }
-          return Promise.resolve({ error: null });
+          const error = findMissingColumnError(rows, cfg.missingColumns, tableName);
+          return Promise.resolve({ error });
         }),
       };
-      return chain;
     }),
   };
   activeFakeSb.current = sb;
@@ -212,6 +223,29 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
     expect(report.errors).toEqual([]);
   });
 
+  const seedPhase2SyncEntities = async () => {
+    await db.habits.put({
+      id: 'h1', userId, name: 'No Junk Food', icon: '🚫', category: 'health',
+      targetDaysPerWeek: 7, archived: false, order: 0, polarity: 'quit', anchorBlock: 'night',
+      metadata: { urgeMinutes: 10 }, isDirty: true, createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
+    });
+    await db.goals.put({
+      id: 'g1', userId, title: 'Reach 68kg', areaOfLife: 'health', priority: 'high', status: 'in_progress',
+      startDate: '2026-11-24', deadline: '2027-03-01', isFocus: true, archived: false,
+      fitnessLink: { type: 'target_weight', targetValue: 68, unit: 'kg' }, metadata: { track: 'fat-loss' },
+      isDirty: true, createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
+    });
+    await db.tasks.put({
+      id: 't1', userId, title: 'Dentist Follow-up', status: 'todo', priority: 'high', tags: ['health'],
+      metadata: { doctorName: 'Dr Rao', clinic: 'Apollo' }, isDirty: true,
+      created_at: '2026-11-24T00:00:00.000Z', updated_at: '2026-11-24T00:00:00.000Z',
+    });
+    await db.moodLogs.put({
+      id: 'ml1', userId, date: '2026-11-24', mood: 'happy', isDirty: true,
+      createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
+    });
+  };
+
   it('HabitsSyncEngine, GoalsSyncEngine, TasksSyncEngine, MoodLogsSyncEngine preserve Phase 2 columns with PGRST204 fallback', async () => {
     const habitUpsert = vi.fn();
     const goalUpsert = vi.fn();
@@ -219,164 +253,57 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
     const moodUpsert = vi.fn();
 
     makeFakeSupabase(userId, {
-      habits: {
-        upsertSpy: habitUpsert,
-        missingColumns: new Set(['polarity', 'anchor_block']),
-        rows: [],
-      },
-      goals: {
-        upsertSpy: goalUpsert,
-        missingColumns: new Set(['fitness_link']),
-        rows: [],
-      },
+      habits: { upsertSpy: habitUpsert, missingColumns: new Set(['polarity', 'anchor_block']), rows: [] },
+      goals: { upsertSpy: goalUpsert, missingColumns: new Set(['fitness_link']), rows: [] },
       tasks: { upsertSpy: taskUpsert, rows: [] },
       mood_logs: { upsertSpy: moodUpsert, rows: [] },
     });
 
-    await db.habits.put({
-      id: 'h1',
-      userId,
-      name: 'No Junk Food',
-      icon: '🚫',
-      category: 'health',
-      targetDaysPerWeek: 7,
-      archived: false,
-      order: 0,
-      polarity: 'quit',
-      anchorBlock: 'night',
-      metadata: { urgeMinutes: 10 },
-      isDirty: true,
-      createdAt: '2026-11-24T00:00:00.000Z',
-      updatedAt: '2026-11-24T00:00:00.000Z',
-    });
-
-    await db.goals.put({
-      id: 'g1',
-      userId,
-      title: 'Reach 68kg',
-      areaOfLife: 'health',
-      priority: 'high',
-      status: 'in_progress',
-      startDate: '2026-11-24',
-      deadline: '2027-03-01',
-      isFocus: true,
-      archived: false,
-      fitnessLink: { type: 'target_weight', targetValue: 68, unit: 'kg' },
-      metadata: { track: 'fat-loss' },
-      isDirty: true,
-      createdAt: '2026-11-24T00:00:00.000Z',
-      updatedAt: '2026-11-24T00:00:00.000Z',
-    });
-
-    await db.tasks.put({
-      id: 't1',
-      userId,
-      title: 'Dentist Follow-up',
-      status: 'todo',
-      priority: 'high',
-      tags: ['health'],
-      metadata: { doctorName: 'Dr Rao', clinic: 'Apollo' },
-      isDirty: true,
-      created_at: '2026-11-24T00:00:00.000Z',
-      updated_at: '2026-11-24T00:00:00.000Z',
-    });
-
-    await db.moodLogs.put({
-      id: 'ml1',
-      userId,
-      date: '2026-11-24',
-      mood: 'happy',
-      isDirty: true,
-      createdAt: '2026-11-24T00:00:00.000Z',
-      updatedAt: '2026-11-24T00:00:00.000Z',
-    });
-
+    await seedPhase2SyncEntities();
     await new HabitsSyncEngine().sync(userId);
     await new GoalsSyncEngine().sync(userId);
     await new TasksSyncEngine().sync(userId);
     await new MoodLogsSyncEngine().sync(userId);
 
-    // Habit & Goal succeeded after stripping missing columns
     expect((await db.habits.get('h1'))?.isDirty).toBe(false);
     expect((await db.goals.get('g1'))?.isDirty).toBe(false);
-
-    // Task synced metadata
     expect(taskUpsert).toHaveBeenCalled();
     const pushedTaskPayload = Array.isArray(taskUpsert.mock.calls[0][0])
       ? taskUpsert.mock.calls[0][0][0]
       : taskUpsert.mock.calls[0][0];
-    expect(pushedTaskPayload.metadata).toEqual({
-      doctorName: 'Dr Rao',
-      clinic: 'Apollo',
-    });
-
-    // MoodLog used composite user_id,date conflict resolution
+    expect(pushedTaskPayload.metadata).toEqual({ doctorName: 'Dr Rao', clinic: 'Apollo' });
     expect(moodUpsert).toHaveBeenCalled();
     expect(moodUpsert.mock.calls[0][1]).toEqual({ onConflict: 'user_id,date' });
   });
 
-  it('Decision 4 Bridge: Junk Food expenses automatically create 1 Diet meal and never double-log with Universal Capture', async () => {
+  const seedFinanceCategoriesForBridge = async () => {
     await db.financeAccounts.put({
-      id: 'acc_slice',
-      userId,
-      name: 'Slice CC',
-      type: 'credit_card',
-      balance: 0,
-      currency: 'INR',
-      color: '#6366f1',
-      icon: 'credit-card',
-      isDefault: false,
-      archived: false,
-      createdAt: '2026-11-24T00:00:00.000Z',
-      updatedAt: '2026-11-24T00:00:00.000Z',
+      id: 'acc_slice', userId, name: 'Slice CC', type: 'credit_card', balance: 0,
+      currency: 'INR', color: '#6366f1', icon: 'credit-card', isDefault: false, archived: false,
+      createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
     });
     await db.financeCategories.bulkPut([
       {
-        id: 'cat_junk',
-        userId,
-        name: 'Junk Food',
-        slug: 'junk-food',
-        type: 'expense',
-        icon: 'pizza',
-        color: '#ef4444',
-        monthlyBudgetLimit: 1000,
-        subcategories: [],
-        order: 0,
-        isSystem: true,
-        archived: false,
-        createdAt: '2026-11-24T00:00:00.000Z',
-        updatedAt: '2026-11-24T00:00:00.000Z',
+        id: 'cat_junk', userId, name: 'Junk Food', slug: 'junk-food', type: 'expense',
+        icon: 'pizza', color: '#ef4444', monthlyBudgetLimit: 1000, subcategories: [], order: 0,
+        isSystem: true, archived: false, createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
       },
       {
-        id: 'cat_food',
-        userId,
-        name: 'Food & Dining',
-        slug: 'food-dining',
-        type: 'expense',
-        icon: 'utensils',
-        color: '#f59e0b',
-        monthlyBudgetLimit: 3000,
-        subcategories: [],
-        order: 1,
-        isSystem: true,
-        archived: false,
-        createdAt: '2026-11-24T00:00:00.000Z',
-        updatedAt: '2026-11-24T00:00:00.000Z',
+        id: 'cat_food', userId, name: 'Food & Dining', slug: 'food-dining', type: 'expense',
+        icon: 'utensils', color: '#f59e0b', monthlyBudgetLimit: 3000, subcategories: [], order: 1,
+        isSystem: true, archived: false, createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
       },
     ]);
-
     await useFinanceStore.getState().loadFinanceData(userId);
     await useFitnessStore.getState().loadFitnessData(userId);
+  };
 
-    // 1. Regular Junk Food expense -> auto-creates Diet meal without asking
+  it('Decision 4 Bridge: Junk Food expenses automatically create 1 Diet meal and never double-log with Universal Capture', async () => {
+    await seedFinanceCategoriesForBridge();
+
     const junkTx = await useFinanceStore.getState().addTransaction({
-      title: 'Momos outside college',
-      amount: 60,
-      type: 'expense',
-      categoryId: 'cat_junk',
-      accountId: 'acc_slice',
-      date: '2026-11-24',
-      tags: [],
+      title: 'Momos outside college', amount: 60, type: 'expense',
+      categoryId: 'cat_junk', accountId: 'acc_slice', date: '2026-11-24', tags: [],
     });
 
     const mealsAfterJunk = await db.mealLogs.toArray();
@@ -386,31 +313,18 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
     expect(mealsAfterJunk[0].linkedTransactionId).toBe(junkTx.id);
     expect(mealsAfterJunk[0].source).toBe('finance_bridge');
 
-    // 2. Simulating Universal Capture compound edit on the same linkedTransactionId -> updates in place (STILL 1 meal)
     await useFitnessStore.getState().upsertMealFromCapture({
-      userId,
-      date: '2026-11-24',
-      name: 'Fried Momos',
-      calories: 420,
-      proteinG: 12,
-      isJunk: true,
-      linkedTransactionId: junkTx.id,
+      userId, date: '2026-11-24', name: 'Fried Momos', calories: 420,
+      proteinG: 12, isJunk: true, linkedTransactionId: junkTx.id,
     });
-
     const mealsAfterCompound = await db.mealLogs.toArray();
     expect(mealsAfterCompound).toHaveLength(1);
     expect(mealsAfterCompound[0].calories).toBe(420);
     expect(mealsAfterCompound[0].source).toBe('universal_capture');
 
-    // 3. Regular Food & Dining expense -> does NOT auto-create Diet meal
     await useFinanceStore.getState().addTransaction({
-      title: 'Mess lunch',
-      amount: 120,
-      type: 'expense',
-      categoryId: 'cat_food',
-      accountId: 'acc_slice',
-      date: '2026-11-24',
-      tags: [],
+      title: 'Mess lunch', amount: 120, type: 'expense',
+      categoryId: 'cat_food', accountId: 'acc_slice', date: '2026-11-24', tags: [],
     });
     expect(await db.mealLogs.toArray()).toHaveLength(1);
   });
@@ -464,63 +378,33 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
     expect(getSyncEngine().pushCompletion).toHaveBeenCalled();
   });
 
-  it('toggleLowEnergyMode marks workout habits as rest, returns restedHabitIds cleanly, and restores on toggle off', async () => {
+  const seedLowEnergyHabits = async () => {
     await db.habits.bulkPut([
       {
-        id: 'hab_gym',
-        userId,
-        name: 'Push / Pull Workout',
-        icon: '🏋️',
-        category: 'health',
-        targetDaysPerWeek: 7,
-        archived: false,
-        order: 0,
-        polarity: 'build',
-        anchorBlock: 'gym',
-        autoTrackRule: 'workout_logged',
-        createdAt: '2026-11-24T00:00:00.000Z',
-        updatedAt: '2026-11-24T00:00:00.000Z',
+        id: 'hab_gym', userId, name: 'Push / Pull Workout', icon: '🏋️', category: 'health',
+        targetDaysPerWeek: 7, archived: false, order: 0, polarity: 'build',
+        anchorBlock: 'gym', autoTrackRule: 'workout_logged',
+        createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
       },
       {
-        id: 'hab_meditate',
-        userId,
-        name: 'Morning Meditation',
-        icon: '🧘',
-        category: 'health',
-        targetDaysPerWeek: 7,
-        archived: false,
-        order: 1,
-        polarity: 'build',
-        anchorBlock: 'morning',
-        createdAt: '2026-11-24T00:00:00.000Z',
-        updatedAt: '2026-11-24T00:00:00.000Z',
+        id: 'hab_meditate', userId, name: 'Morning Meditation', icon: '🧘', category: 'health',
+        targetDaysPerWeek: 7, archived: false, order: 1, polarity: 'build', anchorBlock: 'morning',
+        createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
       },
       {
-        id: 'hab_protein',
-        userId,
-        name: 'Post-Gym Protein Goal',
-        icon: '🥤',
-        category: 'health',
-        targetDaysPerWeek: 7,
-        archived: false,
-        order: 2,
-        polarity: 'build',
-        anchorBlock: 'gym',
-        autoTrackRule: 'protein_target_met',
-        createdAt: '2026-11-24T00:00:00.000Z',
-        updatedAt: '2026-11-24T00:00:00.000Z',
+        id: 'hab_protein', userId, name: 'Post-Gym Protein Goal', icon: '🥤', category: 'health',
+        targetDaysPerWeek: 7, archived: false, order: 2, polarity: 'build',
+        anchorBlock: 'gym', autoTrackRule: 'protein_target_met',
+        createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
       },
     ]);
+    useHabitStore.setState({ habits: await db.habits.toArray(), completions: [] });
+  };
 
-    useHabitStore.setState({
-      habits: await db.habits.toArray(),
-      completions: [],
-    });
+  it('toggleLowEnergyMode marks workout habits as rest and returns restedHabitIds cleanly', async () => {
+    await seedLowEnergyHabits();
 
-    const onResult = await useFitnessStore
-      .getState()
-      .toggleLowEnergyMode('2026-11-24', true, userId);
-
+    const onResult = await useFitnessStore.getState().toggleLowEnergyMode('2026-11-24', true, userId);
     expect(onResult.lowEnergyMode).toBe(true);
     expect(onResult.restedHabitIds).toEqual(['hab_gym']);
 
@@ -529,18 +413,18 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
       .completions.find((c) => c.habitId === 'hab_gym' && c.date === '2026-11-24');
     expect(gymCompOn?.status).toBe('rest');
     expect(gymCompOn?.restReason).toBe('Low-Energy Day');
-
-    // Non-workout habits (Morning Meditation & gym-anchored Protein) stay active
     expect(
       useHabitStore
         .getState()
         .completions.some((c) => c.habitId === 'hab_meditate' || c.habitId === 'hab_protein')
     ).toBe(false);
+  });
 
-    // Toggle OFF restores and cleans up auto-generated Low-Energy note
-    const offResult = await useFitnessStore
-      .getState()
-      .toggleLowEnergyMode('2026-11-24', false, userId);
+  it('toggleLowEnergyMode restores workout habits and cleans up note on toggle off', async () => {
+    await seedLowEnergyHabits();
+    await useFitnessStore.getState().toggleLowEnergyMode('2026-11-24', true, userId);
+
+    const offResult = await useFitnessStore.getState().toggleLowEnergyMode('2026-11-24', false, userId);
     expect(offResult.lowEnergyMode).toBe(false);
     expect(offResult.restedHabitIds).toEqual([]);
 
@@ -605,81 +489,42 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
     ).toBe(true);
   });
 
-  it('deleteTransaction and updateTransaction reconcile linked finance_bridge MealLogs cleanly', async () => {
+  const seedReconcileBridgeFixtures = async () => {
     const junkCat = {
-      id: 'cat_junk_sync',
-      userId,
-      name: 'Junk Food',
-      slug: 'junk-food',
-      type: 'expense' as const,
-      icon: 'Flame',
-      color: '#ef4444',
-      monthlyBudgetLimit: 0,
-      subcategories: [],
-      order: 0,
-      isSystem: true,
-      archived: false,
-      createdAt: '2026-11-24T00:00:00.000Z',
-      updatedAt: '2026-11-24T00:00:00.000Z',
+      id: 'cat_junk_sync', userId, name: 'Junk Food', slug: 'junk-food', type: 'expense' as const,
+      icon: 'Flame', color: '#ef4444', monthlyBudgetLimit: 0, subcategories: [], order: 0,
+      isSystem: true, archived: false, createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
     };
-    const shopCat = {
-      ...junkCat,
-      id: 'cat_shop_sync',
-      name: 'Shopping',
-      slug: 'shopping-personal-care',
-    };
+    const shopCat = { ...junkCat, id: 'cat_shop_sync', name: 'Shopping', slug: 'shopping-personal-care' };
     const acc = {
-      id: 'acc_upi_sync',
-      userId,
-      name: 'UPI',
-      type: 'upi' as const,
-      balance: 2000,
-      currency: 'INR',
-      color: '#10b981',
-      icon: 'Smartphone',
-      isDefault: true,
-      archived: false,
-      createdAt: '2026-11-24T00:00:00.000Z',
-      updatedAt: '2026-11-24T00:00:00.000Z',
+      id: 'acc_upi_sync', userId, name: 'UPI', type: 'upi' as const, balance: 2000, currency: 'INR',
+      color: '#10b981', icon: 'Smartphone', isDefault: true, archived: false,
+      createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z',
     };
     await db.financeCategories.bulkPut([junkCat, shopCat]);
     await db.financeAccounts.put(acc);
     await useFinanceStore.getState().loadFinanceData(userId);
     await useFitnessStore.getState().loadFitnessData(userId);
-
-    // Unrelated manual meal remains intact throughout
     await useFitnessStore.getState().addMealLog(
       {
-        date: '2026-11-24',
-        mealType: 'lunch',
-        name: 'Homemade Dal Rice',
-        calories: 520,
-        proteinG: 18,
-        carbsG: 75,
-        fatG: 10,
-        isJunk: false,
-        source: 'manual',
+        date: '2026-11-24', mealType: 'lunch', name: 'Homemade Dal Rice',
+        calories: 520, proteinG: 18, carbsG: 75, fatG: 10, isJunk: false, source: 'manual',
       },
       userId
     );
+    return { junkCat, shopCat, acc };
+  };
 
-    // Start as Shopping expense -> NO linked MealLog
+  it('deleteTransaction and updateTransaction reconcile linked finance_bridge MealLogs cleanly', async () => {
+    const { junkCat, shopCat, acc } = await seedReconcileBridgeFixtures();
     const tx = await useFinanceStore.getState().addTransaction({
-      title: 'Street Momos',
-      amount: 60,
-      type: 'expense',
-      categoryId: shopCat.id,
-      accountId: acc.id,
-      date: '2026-11-24',
-      tags: [],
+      title: 'Street Momos', amount: 60, type: 'expense',
+      categoryId: shopCat.id, accountId: acc.id, date: '2026-11-24', tags: [],
     });
     expect(await db.mealLogs.filter((m) => !m.deletedAt).toArray()).toHaveLength(1);
 
-    // Update category -> Junk Food -> auto-creates linked MealLog
     await useFinanceStore.getState().updateTransaction(tx.id, {
-      categoryId: junkCat.id,
-      title: 'Fried Momos',
-      amount: 120,
+      categoryId: junkCat.id, title: 'Fried Momos', amount: 120,
     });
     let activeMeals = await db.mealLogs.filter((m) => !m.deletedAt).toArray();
     expect(activeMeals).toHaveLength(2);
@@ -688,18 +533,12 @@ describe('Phase 2A Fitness Sync, Column Fallbacks & Junk Food Diet Bridge', () =
     expect(linked?.isJunk).toBe(true);
     expect(linked?.name).toBe('Fried Momos');
 
-    // Update away from Junk Food -> Shopping -> soft-deletes linked finance_bridge MealLog
-    await useFinanceStore.getState().updateTransaction(tx.id, {
-      categoryId: shopCat.id,
-    });
+    await useFinanceStore.getState().updateTransaction(tx.id, { categoryId: shopCat.id });
     activeMeals = await db.mealLogs.filter((m) => !m.deletedAt).toArray();
     expect(activeMeals).toHaveLength(1);
     expect(activeMeals[0].name).toBe('Homemade Dal Rice');
 
-    // Re-switch to Junk Food and then deleteTransaction -> soft-deletes linked MealLog cleanly
-    await useFinanceStore.getState().updateTransaction(tx.id, {
-      categoryId: junkCat.id,
-    });
+    await useFinanceStore.getState().updateTransaction(tx.id, { categoryId: junkCat.id });
     expect(await db.mealLogs.filter((m) => !m.deletedAt).toArray()).toHaveLength(2);
 
     await useFinanceStore.getState().deleteTransaction(tx.id);

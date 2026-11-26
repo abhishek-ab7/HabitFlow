@@ -29,36 +29,64 @@ interface TaskState {
     getTasksByDate: (date: string) => Task[]; // date in YYYY-MM-DD
 }
 
+function nextWeekdayDate(nextDate: Date): void {
+    const day = nextDate.getDay();
+    const offset = day === 5 ? 3 : day === 6 ? 2 : 1;
+    nextDate.setDate(nextDate.getDate() + offset);
+}
+
+const RECURRENCE_HANDLERS: Record<string, (d: Date) => void> = {
+    daily: (d) => d.setDate(d.getDate() + 1),
+    weekly: (d) => d.setDate(d.getDate() + 7),
+    monthly: (d) => d.setMonth(d.getMonth() + 1),
+    weekdays: nextWeekdayDate,
+};
+
 function calculateNextDueDate(currentDueDateStr: string | undefined | null, rule: string): string {
     const baseDate = currentDueDateStr ? new Date(currentDueDateStr) : new Date();
     if (isNaN(baseDate.getTime())) return new Date().toISOString();
 
     const nextDate = new Date(baseDate);
-    switch (rule) {
-        case 'daily':
-            nextDate.setDate(nextDate.getDate() + 1);
-            break;
-        case 'weekly':
-            nextDate.setDate(nextDate.getDate() + 7);
-            break;
-        case 'monthly':
-            nextDate.setMonth(nextDate.getMonth() + 1);
-            break;
-        case 'weekdays': {
-            const day = nextDate.getDay();
-            if (day === 5) {
-                nextDate.setDate(nextDate.getDate() + 3); // Fri -> Mon
-            } else if (day === 6) {
-                nextDate.setDate(nextDate.getDate() + 2); // Sat -> Mon
-            } else {
-                nextDate.setDate(nextDate.getDate() + 1); // Sun-Thu -> next day
-            }
-            break;
-        }
-        default:
-            nextDate.setDate(nextDate.getDate() + 1);
-    }
+    const handler = RECURRENCE_HANDLERS[rule] ?? RECURRENCE_HANDLERS.daily;
+    handler(nextDate);
     return nextDate.toISOString();
+}
+
+async function syncTaskSafely(task: Task, label: string): Promise<void> {
+    try {
+        await getSyncEngine().pushTask(task);
+    } catch (error) {
+        console.error(label, error);
+    }
+}
+
+async function scheduleNextRecurrence(
+    task: Task,
+    addTask: (data: TaskFormData) => Promise<Task>
+): Promise<void> {
+    if (!task.recurrenceRule) return;
+    try {
+        const nextDueDate = calculateNextDueDate(task.due_date, task.recurrenceRule);
+        await addTask({
+            title: task.title,
+            description: task.description || undefined,
+            priority: task.priority,
+            due_date: nextDueDate,
+            goal_id: task.goal_id || undefined,
+            tags: task.tags || [],
+            recurrenceRule: task.recurrenceRule,
+            estimatedTime: task.estimatedTime,
+            actualTime: 0,
+            isUrgent: task.isUrgent,
+            isImportant: task.isImportant,
+        });
+    } catch (error) {
+        console.error('Failed to create recurring task occurrence:', error);
+    }
+}
+
+function shouldSkipTaskLoad(force: boolean, state: TaskState, uid: string): boolean {
+    return !force && state.hasLoaded && state.loadedUserId === uid;
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
@@ -79,10 +107,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
                 set({ tasks: [], isLoading: false, hasLoaded: false, loadedUserId: null });
                 return;
             }
-
-            if (!force && state.hasLoaded && state.loadedUserId === uid) {
-                return;
-            }
+            if (shouldSkipTaskLoad(force, state, uid)) return;
 
             if (!state.hasLoaded) {
                 set({ isLoading: true, error: null });
@@ -168,43 +193,17 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         if (!task) return;
 
         const newStatus: TaskStatus = task.status === 'done' ? 'todo' : 'done';
-
         const updates = { status: newStatus };
 
         await updateTask(id, updates);
-
         set(state => ({
             tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t),
         }));
 
-        // Sync to cloud
-        try {
-            const syncEngine = getSyncEngine();
-            await syncEngine.pushTask({ ...task, ...updates });
-        } catch (error) {
-            console.error('Failed to sync task completion:', error);
-        }
+        await syncTaskSafely({ ...task, ...updates }, 'Failed to sync task completion:');
 
-        // If completed and is a recurring task, schedule the next occurrence
-        if (newStatus === 'done' && task.recurrenceRule) {
-            try {
-                const nextDueDate = calculateNextDueDate(task.due_date, task.recurrenceRule);
-                await get().addTask({
-                    title: task.title,
-                    description: task.description || undefined,
-                    priority: task.priority,
-                    due_date: nextDueDate,
-                    goal_id: task.goal_id || undefined,
-                    tags: task.tags || [],
-                    recurrenceRule: task.recurrenceRule,
-                    estimatedTime: task.estimatedTime,
-                    actualTime: 0,
-                    isUrgent: task.isUrgent,
-                    isImportant: task.isImportant
-                });
-            } catch (error) {
-                console.error('Failed to create recurring task occurrence:', error);
-            }
+        if (newStatus === 'done') {
+            await scheduleNextRecurrence(task, get().addTask);
         }
     },
 

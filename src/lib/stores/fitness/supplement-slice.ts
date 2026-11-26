@@ -1,40 +1,63 @@
 import { db } from '@/lib/db';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { deriveSupplementRemainingServings } from '@/lib/fitness/shared-analytics';
-import { logger } from '@/lib/logger';
 import type { SupplementInventory, SupplementLog } from '@/lib/types';
+import {
+  buildAdjustedSupplement,
+  buildNewSupplement,
+  buildRestockedSupplement,
+  buildUpdatedSupplement,
+  findSupplement,
+  getActiveLogsForSupplement,
+  notifyFitnessSync,
+  resolveUserId,
+  sortSupplements,
+  triggerSupplementMediator,
+} from './supplement-helpers';
 import type { FitnessSliceCreator, FitnessStoreActions } from './types';
 
-function notifyFitnessSync() {
-  if (typeof window === 'undefined') return;
-  import('@/lib/sync/sync-engine')
-    .then(({ getSyncEngine }) => {
-      getSyncEngine().triggerFitnessSync();
-    })
-    .catch((err) => {
-      logger.warn('[FitnessStore] Sync trigger deferred:', err);
-    });
+async function refreshSupplementStockAfterLog(
+  get: () => { supplementInventory: SupplementInventory[]; supplementLogs: SupplementLog[] },
+  set: (fn: (state: { supplementInventory: SupplementInventory[] }) => { supplementInventory: SupplementInventory[] }) => void,
+  item: SupplementInventory,
+  logsSnapshot: SupplementLog[],
+  now: string
+): Promise<void> {
+  const activeLogs = await getActiveLogsForSupplement(item.id, logsSnapshot);
+  const updatedItem: SupplementInventory = {
+    ...item,
+    remainingServings: deriveSupplementRemainingServings(item, activeLogs),
+    generationCounter: (item.generationCounter || 1) + 1,
+    isDirty: true,
+    updatedAt: now,
+  };
+  await db.supplementInventory.put(updatedItem);
+  set((state) => ({
+    supplementInventory: state.supplementInventory.map((s) =>
+      s.id === item.id ? updatedItem : s
+    ),
+  }));
 }
 
-function resolveUserId(override?: string, current?: string | null): string {
-  return override || current || 'local-demo-user';
-}
+async function applySupplementMutation(
+  get: () => { supplementInventory: SupplementInventory[]; supplementLogs: SupplementLog[] },
+  set: (fn: (state: { supplementInventory: SupplementInventory[] }) => { supplementInventory: SupplementInventory[] }) => void,
+  id: string,
+  buildNext: (existing: SupplementInventory, activeLogs: SupplementLog[]) => SupplementInventory,
+  options: { requireActive?: boolean; sort?: boolean } = {}
+): Promise<SupplementInventory | null> {
+  const existing = await findSupplement(get().supplementInventory, id);
+  if (!existing || (options.requireActive && existing.deletedAt)) return null;
 
-async function getActiveLogsForSupplement(
-  supplementId: string,
-  storeLogs: SupplementLog[]
-): Promise<SupplementLog[]> {
-  try {
-    const dbLogs = await db.supplementLogs
-      .where('supplementId')
-      .equals(supplementId)
-      .filter((l) => !l.deletedAt)
-      .toArray();
-    return dbLogs;
-  } catch {
-    // Fallback to in-memory logs if Dexie query unavailable
-  }
-  return storeLogs.filter((l) => !l.deletedAt && l.supplementId === supplementId);
+  const activeLogs = await getActiveLogsForSupplement(id, get().supplementLogs);
+  const updated = buildNext(existing, activeLogs);
+  await db.supplementInventory.put(updated);
+  set((state) => {
+    const next = state.supplementInventory.map((s) => (s.id === id ? updated : s));
+    return { supplementInventory: options.sort ? sortSupplements(next) : next };
+  });
+  notifyFitnessSync();
+  return updated;
 }
 
 export const createSupplementSlice: FitnessSliceCreator<
@@ -52,114 +75,28 @@ export const createSupplementSlice: FitnessSliceCreator<
 > = (set, get) => ({
   addSupplement: async (data, userIdOverride) => {
     const userId = resolveUserId(userIdOverride, get().currentUserId);
-    const now = new Date().toISOString();
-    const totalServings = Math.max(1, Number(data.totalServings) || 30);
-    const category = data.category || 'other';
-
-    const manualAdjustment =
-      data.manualAdjustment !== undefined
-        ? Number(data.manualAdjustment)
-        : data.remainingServings !== undefined
-          ? Number((Math.max(0, Number(data.remainingServings)) - totalServings).toFixed(2))
-          : 0;
-
-    const remainingServings = Math.max(
-      0,
-      Number((totalServings + manualAdjustment).toFixed(2))
-    );
-
-    const inferredProtein =
-      data.proteinPerServingG !== undefined
-        ? data.proteinPerServingG
-        : category === 'protein' || /\b(whey|casein|protein|isolate)\b/i.test(data.name)
-          ? 24
-          : null;
-
-    const item: SupplementInventory = {
-      id: crypto.randomUUID(),
-      userId,
-      name: data.name.trim(),
-      brand: data.brand ?? null,
-      category,
-      unitLabel: data.unitLabel || 'scoop',
-      totalServings,
-      remainingServings,
-      dailyDosage: Math.max(0.25, Number(data.dailyDosage || 1)),
-      costInr: Math.max(0, Number(data.costInr || 0)),
-      proteinPerServingG: inferredProtein,
-      manualAdjustment,
-      anchorBlock: data.anchorBlock ?? null,
-      lowStockThresholdDays: Math.max(1, Math.round(Number(data.lowStockThresholdDays || 7))),
-      linkedTransactionId: data.linkedTransactionId ?? null,
-      lastRestockedAt: data.lastRestockedAt ?? getLocalIsoDate(),
-      isActive: data.isActive !== false,
-      notes: data.notes ?? null,
-      deletedAt: null,
-      generationCounter: 1,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const item = buildNewSupplement(data, userId);
 
     await db.supplementInventory.put(item);
     set((state) => ({
-      supplementInventory: [...state.supplementInventory, item].sort((a, b) =>
-        Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name)
-      ),
+      supplementInventory: sortSupplements([...state.supplementInventory, item]),
       currentUserId: userId,
     }));
     notifyFitnessSync();
     return item;
   },
 
-  updateSupplement: async (id, patch) => {
-    const existing =
-      get().supplementInventory.find((s) => s.id === id) ||
-      (await db.supplementInventory.get(id));
-    if (!existing) return null;
-
-    const now = new Date().toISOString();
-    const activeLogs = await getActiveLogsForSupplement(id, get().supplementLogs);
-    const mergedDraft: SupplementInventory = {
-      ...existing,
-      ...patch,
-      name: patch.name !== undefined ? patch.name.trim() : existing.name,
-    };
-
-    // If caller edited remainingServings without explicitly supplying manualAdjustment,
-    // adjust manualAdjustment so derived remaining matches requested value.
-    if (patch.remainingServings !== undefined && patch.manualAdjustment === undefined) {
-      const takenSum = activeLogs.reduce((sum, l) => sum + Math.max(0, Number(l.servingsTaken || 0)), 0);
-      mergedDraft.manualAdjustment = Number(
-        (Math.max(0, Number(patch.remainingServings)) - mergedDraft.totalServings + takenSum).toFixed(2)
-      );
-    }
-
-    const derivedRemaining = deriveSupplementRemainingServings(mergedDraft, activeLogs);
-    const updated: SupplementInventory = {
-      ...mergedDraft,
-      remainingServings: derivedRemaining,
-      generationCounter: (existing.generationCounter || 1) + 1,
-      isDirty: true,
-      updatedAt: now,
-    };
-
-    await db.supplementInventory.put(updated);
-    set((state) => ({
-      supplementInventory: state.supplementInventory
-        .map((s) => (s.id === id ? updated : s))
-        .sort((a, b) =>
-          Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name)
-        ),
-    }));
-    notifyFitnessSync();
-    return updated;
-  },
+  updateSupplement: async (id, patch) =>
+    applySupplementMutation(
+      get,
+      set,
+      id,
+      (existing, activeLogs) => buildUpdatedSupplement(existing, patch, activeLogs),
+      { sort: true }
+    ),
 
   deleteSupplement: async (id) => {
-    const existing =
-      get().supplementInventory.find((s) => s.id === id) ||
-      (await db.supplementInventory.get(id));
+    const existing = await findSupplement(get().supplementInventory, id);
     if (!existing) return;
 
     const now = new Date().toISOString();
@@ -176,123 +113,38 @@ export const createSupplementSlice: FitnessSliceCreator<
     notifyFitnessSync();
   },
 
-  restockSupplement: async (supplementId, params) => {
-    const existing =
-      get().supplementInventory.find((s) => s.id === supplementId) ||
-      (await db.supplementInventory.get(supplementId));
-    if (!existing || existing.deletedAt) return null;
+  restockSupplement: async (supplementId, params) =>
+    applySupplementMutation(
+      get,
+      set,
+      supplementId,
+      (existing, activeLogs) => buildRestockedSupplement(existing, params, activeLogs),
+      { requireActive: true }
+    ),
 
-    const activeLogs = await getActiveLogsForSupplement(supplementId, get().supplementLogs);
-    const prevDerived = deriveSupplementRemainingServings(existing, activeLogs);
-    const takenSum = activeLogs.reduce(
-      (sum, l) => sum + Math.max(0, Number(l.servingsTaken || 0)),
-      0
-    );
+  adjustSupplementStock: async (supplementId, params) =>
+    applySupplementMutation(
+      get,
+      set,
+      supplementId,
+      (existing, activeLogs) => buildAdjustedSupplement(existing, params, activeLogs),
+      { requireActive: true }
+    ),
 
-    const added = Math.max(0, Number(params.servingsAdded ?? existing.totalServings));
-    const nextTotal =
-      params.servingsAdded !== undefined && params.servingsAdded > 0 && params.costInr !== undefined
-        ? added
-        : Math.max(existing.totalServings, added);
-
-    const targetRemaining = Number((prevDerived + added).toFixed(2));
-    const nextManualAdjustment = Number(
-      (targetRemaining + takenSum - nextTotal).toFixed(2)
-    );
-    const now = new Date().toISOString();
-
-    const updated: SupplementInventory = {
-      ...existing,
-      totalServings: nextTotal,
-      manualAdjustment: nextManualAdjustment,
-      remainingServings: targetRemaining,
-      costInr: params.costInr !== undefined ? Math.max(0, Number(params.costInr)) : existing.costInr,
-      linkedTransactionId:
-        params.linkedTransactionId !== undefined
-          ? params.linkedTransactionId
-          : existing.linkedTransactionId,
-      lastRestockedAt: params.date || getLocalIsoDate(),
-      isActive: true,
-      generationCounter: (existing.generationCounter || 1) + 1,
-      isDirty: true,
-      updatedAt: now,
-    };
-
-    await db.supplementInventory.put(updated);
-    set((state) => ({
-      supplementInventory: state.supplementInventory.map((s) =>
-        s.id === supplementId ? updated : s
-      ),
-    }));
-    notifyFitnessSync();
-    return updated;
-  },
-
-  adjustSupplementStock: async (supplementId, params) => {
-    const existing =
-      get().supplementInventory.find((s) => s.id === supplementId) ||
-      (await db.supplementInventory.get(supplementId));
-    if (!existing || existing.deletedAt) return null;
-
-    const activeLogs = await getActiveLogsForSupplement(supplementId, get().supplementLogs);
-    const prevDerived = deriveSupplementRemainingServings(existing, activeLogs);
-    const takenSum = activeLogs.reduce(
-      (sum, l) => sum + Math.max(0, Number(l.servingsTaken || 0)),
-      0
-    );
-
-    const desiredRemaining =
-      params.targetRemaining !== undefined
-        ? Math.max(0, Number(params.targetRemaining))
-        : Math.max(0, Number((prevDerived + Number(params.delta || 0)).toFixed(2)));
-
-    const nextManualAdjustment = Number(
-      (desiredRemaining - existing.totalServings + takenSum).toFixed(2)
-    );
-
-    const now = new Date().toISOString();
-    const updated: SupplementInventory = {
-      ...existing,
-      manualAdjustment: nextManualAdjustment,
-      remainingServings: desiredRemaining,
-      generationCounter: (existing.generationCounter || 1) + 1,
-      isDirty: true,
-      updatedAt: now,
-    };
-
-    await db.supplementInventory.put(updated);
-    set((state) => ({
-      supplementInventory: state.supplementInventory.map((s) =>
-        s.id === supplementId ? updated : s
-      ),
-    }));
-    notifyFitnessSync();
-    return updated;
-  },
-
-  takeSupplementDose: async (
-    supplementId,
-    servings,
-    date,
-    notes,
-    userIdOverride
-  ) => {
-    const item =
-      get().supplementInventory.find((s) => s.id === supplementId && !s.deletedAt) ||
-      (await db.supplementInventory.get(supplementId));
+  takeSupplementDose: async (...args: Parameters<FitnessStoreActions['takeSupplementDose']>) => {
+    const [supplementId, servings, date, notes, userIdOverride] = args;
+    const item = await findSupplement(get().supplementInventory, supplementId);
     if (!item || item.deletedAt) return null;
 
     const userId = resolveUserId(userIdOverride, item.userId || get().currentUserId);
-    const dose = Math.max(0.25, Number(servings ?? item.dailyDosage ?? 1));
     const targetDate = date || getLocalIsoDate();
     const now = new Date().toISOString();
-
     const logEntry: SupplementLog = {
       id: crypto.randomUUID(),
       userId,
       supplementId,
       date: targetDate,
-      servingsTaken: dose,
+      servingsTaken: Math.max(0.25, Number(servings ?? item.dailyDosage ?? 1)),
       takenAt: now,
       notes: notes ?? null,
       deletedAt: null,
@@ -303,44 +155,16 @@ export const createSupplementSlice: FitnessSliceCreator<
     };
 
     await db.supplementLogs.put(logEntry);
-    const activeLogs = await getActiveLogsForSupplement(supplementId, [
-      logEntry,
-      ...get().supplementLogs,
-    ]);
-    const derivedRemaining = deriveSupplementRemainingServings(item, activeLogs);
-
-    const updatedItem: SupplementInventory = {
-      ...item,
-      remainingServings: derivedRemaining,
-      generationCounter: (item.generationCounter || 1) + 1,
-      isDirty: true,
-      updatedAt: now,
-    };
-
-    await db.supplementInventory.put(updatedItem);
-
+    await refreshSupplementStockAfterLog(get, set, item, [logEntry, ...get().supplementLogs], now);
     set((state) => ({
       supplementLogs: [logEntry, ...state.supplementLogs].sort(
         (a, b) => b.date.localeCompare(a.date) || b.takenAt.localeCompare(a.takenAt)
-      ),
-      supplementInventory: state.supplementInventory.map((s) =>
-        s.id === supplementId ? updatedItem : s
       ),
       currentUserId: userId,
     }));
 
     notifyFitnessSync();
-
-    try {
-      const { CrossDomainActionMediator } = await import('../mediator');
-      await CrossDomainActionMediator.onFitnessEvent({
-        type: 'SUPPLEMENTS_TAKEN',
-        date: targetDate,
-      });
-    } catch (err) {
-      logger.warn('[FitnessStore] Supplement mediator skipped:', err);
-    }
-
+    await triggerSupplementMediator(targetDate, '[FitnessStore] Supplement mediator skipped:');
     return logEntry;
   },
 
@@ -353,8 +177,7 @@ export const createSupplementSlice: FitnessSliceCreator<
 
     const created: SupplementLog[] = [];
     for (const sup of activeSupps) {
-      const alreadyTaken = existingLogsToday.some((l) => l.supplementId === sup.id);
-      if (alreadyTaken) continue;
+      if (existingLogsToday.some((l) => l.supplementId === sup.id)) continue;
       const log = await get().takeSupplementDose(
         sup.id,
         sup.dailyDosage,
@@ -364,14 +187,12 @@ export const createSupplementSlice: FitnessSliceCreator<
       );
       if (log) created.push(log);
     }
-
     return created;
   },
 
   deleteSupplementLog: async (id) => {
     const existing =
-      get().supplementLogs.find((l) => l.id === id) ||
-      (await db.supplementLogs.get(id));
+      get().supplementLogs.find((l) => l.id === id) || (await db.supplementLogs.get(id));
     if (!existing) return;
 
     const now = new Date().toISOString();
@@ -385,20 +206,12 @@ export const createSupplementSlice: FitnessSliceCreator<
     const nextStoreLogs = get().supplementLogs.filter((l) => l.id !== id);
     set({ supplementLogs: nextStoreLogs });
 
-    // Recompute derived stock cleanly from remaining active logs
-    const item =
-      get().supplementInventory.find((s) => s.id === existing.supplementId) ||
-      (await db.supplementInventory.get(existing.supplementId));
-
+    const item = await findSupplement(get().supplementInventory, existing.supplementId);
     if (item && !item.deletedAt) {
-      const activeLogs = await getActiveLogsForSupplement(
-        existing.supplementId,
-        nextStoreLogs
-      );
-      const derivedRemaining = deriveSupplementRemainingServings(item, activeLogs);
+      const activeLogs = await getActiveLogsForSupplement(existing.supplementId, nextStoreLogs);
       const updatedItem: SupplementInventory = {
         ...item,
-        remainingServings: derivedRemaining,
+        remainingServings: deriveSupplementRemainingServings(item, activeLogs),
         generationCounter: (item.generationCounter || 1) + 1,
         isDirty: true,
         updatedAt: now,
@@ -412,15 +225,6 @@ export const createSupplementSlice: FitnessSliceCreator<
     }
 
     notifyFitnessSync();
-
-    try {
-      const { CrossDomainActionMediator } = await import('../mediator');
-      await CrossDomainActionMediator.onFitnessEvent({
-        type: 'SUPPLEMENTS_TAKEN',
-        date: existing.date,
-      });
-    } catch (err) {
-      logger.warn('[FitnessStore] Supplement undo mediator skipped:', err);
-    }
+    await triggerSupplementMediator(existing.date, '[FitnessStore] Supplement undo mediator skipped:');
   },
 });

@@ -43,41 +43,55 @@ describe('CrossDomainActionMediator', () => {
     vi.clearAllMocks();
   });
 
+  const makeHabitCompletion = (
+    habitId: string,
+    date: string,
+    completed: boolean,
+    id = 'comp-1'
+  ) => ({
+    id,
+    userId: 'test-user',
+    habitId,
+    date,
+    completed,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const runHabitCompletionDispatch = async (
+    type: 'HABIT_COMPLETED' | 'HABIT_UNCOMPLETED',
+    difficulty: 'easy' | 'hard',
+    category: 'work' | 'health',
+    initialCompleted: boolean
+  ) => {
+    const habitId = 'habit-1';
+    const date = '2026-06-02';
+    const base = makeHabitCompletion(habitId, date, true);
+    if (!initialCompleted) {
+      expect(useHabitStore.getState().completions).toHaveLength(0);
+    } else {
+      useHabitStore.setState({ completions: [base] });
+    }
+    const mockResult = makeHabitCompletion(habitId, date, !initialCompleted);
+    vi.mocked(toggleCompletion).mockResolvedValue(mockResult);
+
+    await CrossDomainActionMediator.dispatch({
+      type,
+      payload: { habitId, date, difficulty, category },
+    });
+    expect(toggleCompletion).toHaveBeenCalledWith(habitId, date, 'test-user');
+    return mockResult;
+  };
+
   /**
    * Test Suite 1 - Test A: HABIT_COMPLETED action dispatch
    * Verify that the habit completion row is added in habit-store.
    */
   it('should add a completion row in habit-store for HABIT_COMPLETED', async () => {
-    const habitId = 'habit-1';
-    const date = '2026-06-02';
-    const mockCompletion = {
-      id: 'comp-1',
-      userId: 'test-user',
-      habitId,
-      date,
-      completed: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    vi.mocked(toggleCompletion).mockResolvedValue(mockCompletion);
-
-    expect(useHabitStore.getState().completions).toHaveLength(0);
-
-    await CrossDomainActionMediator.dispatch({
-      type: 'HABIT_COMPLETED',
-      payload: {
-        habitId,
-        date,
-        difficulty: 'hard',
-        category: 'work',
-      },
-    });
-
+    const mockCompletion = await runHabitCompletionDispatch('HABIT_COMPLETED', 'hard', 'work', false);
     const completions = useHabitStore.getState().completions;
     expect(completions).toHaveLength(1);
     expect(completions[0]).toEqual(mockCompletion);
-    expect(toggleCompletion).toHaveBeenCalledWith(habitId, date, 'test-user');
   });
 
   /**
@@ -85,41 +99,8 @@ describe('CrossDomainActionMediator', () => {
    * Verify that the completion row is removed from habit-store.
    */
   it('should remove the completion row in habit-store for HABIT_UNCOMPLETED', async () => {
-    const habitId = 'habit-1';
-    const date = '2026-06-02';
-    const mockCompletion = {
-      id: 'comp-1',
-      userId: 'test-user',
-      habitId,
-      date,
-      completed: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    useHabitStore.setState({
-      completions: [mockCompletion],
-    });
-
-    const mockUncompletion = {
-      ...mockCompletion,
-      completed: false,
-    };
-    vi.mocked(toggleCompletion).mockResolvedValue(mockUncompletion);
-
-    await CrossDomainActionMediator.dispatch({
-      type: 'HABIT_UNCOMPLETED',
-      payload: {
-        habitId,
-        date,
-        difficulty: 'easy',
-        category: 'health',
-      },
-    });
-
-    const completions = useHabitStore.getState().completions;
-    expect(completions).toHaveLength(0);
-    expect(toggleCompletion).toHaveBeenCalledWith(habitId, date, 'test-user');
+    await runHabitCompletionDispatch('HABIT_UNCOMPLETED', 'easy', 'health', true);
+    expect(useHabitStore.getState().completions).toHaveLength(0);
   });
 
   describe('evaluateNoSpendDayRules', () => {
@@ -376,156 +357,94 @@ describe('CrossDomainActionMediator', () => {
       expect(completedIds).not.toContain('h_quit');
     });
 
-    it('reverses zero_junk_today habit immediately when any Junk Food meal or Junk Food expense is logged', async () => {
+    const makeZeroJunkHabit = () => ({
+      id: 'h_zero_junk',
+      userId: 'test-user',
+      name: 'No Junk Food',
+      category: 'health' as const,
+      targetDaysPerWeek: 7,
+      autoTrackRule: 'zero_junk_today' as const,
+      polarity: 'quit' as const,
+      archived: false,
+      order: 0,
+      createdAt: '2026-11-01',
+    });
+
+    const seedCompletedZeroJunk = (date: string, id: string) => {
+      useHabitStore.setState({
+        habits: [makeZeroJunkHabit()],
+        completions: [{
+          id,
+          userId: 'test-user',
+          habitId: 'h_zero_junk',
+          date,
+          completed: true,
+          status: 'completed',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }],
+      });
+      vi.mocked(toggleCompletion).mockResolvedValue({
+        id,
+        userId: 'test-user',
+        habitId: 'h_zero_junk',
+        date,
+        completed: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    };
+
+    it('reverses zero_junk_today habit immediately when a Junk Food meal is logged', async () => {
       const { useFitnessStore } = await import('../fitness');
       const { useFinanceStore } = await import('../finance-store');
       const { getLocalIsoDate } = await import('@/lib/finance/credit-card-cycles');
       const todayStr = getLocalIsoDate();
 
-      const zeroJunkHabit = {
-        id: 'h_zero_junk',
-        userId: 'test-user',
-        name: 'No Junk Food',
-        category: 'health' as const,
-        targetDaysPerWeek: 7,
-        autoTrackRule: 'zero_junk_today' as const,
-        polarity: 'quit' as const,
-        archived: false,
-        order: 0,
-        createdAt: '2026-11-01',
-      };
-
-      // Case A: Junk meal logged
-      useHabitStore.setState({
-        habits: [zeroJunkHabit],
-        completions: [
-          {
-            id: 'c_zj_1',
-            userId: 'test-user',
-            habitId: 'h_zero_junk',
-            date: todayStr,
-            completed: true,
-            status: 'completed',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      });
-
+      seedCompletedZeroJunk(todayStr, 'c_zj_1');
       useFitnessStore.setState({
         dailyLogs: [],
-        mealLogs: [
-          {
-            id: 'm_junk_1',
-            userId: 'test-user',
-            date: todayStr,
-            mealType: 'snack',
-            name: 'Pizza',
-            calories: 550,
-            proteinG: 20,
-            carbsG: 60,
-            fatG: 24,
-            quantityMultiplier: 1,
-            isJunk: true,
-            source: 'manual',
-            loggedAt: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
+        mealLogs: [{
+          id: 'm_junk_1', userId: 'test-user', date: todayStr, mealType: 'snack',
+          name: 'Pizza', calories: 550, proteinG: 20, carbsG: 60, fatG: 24,
+          quantityMultiplier: 1, isJunk: true, source: 'manual',
+          loggedAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        }],
       });
       useFinanceStore.setState({ categories: [], transactions: [] });
 
-      vi.mocked(toggleCompletion).mockResolvedValue({
-        id: 'c_zj_1',
-        userId: 'test-user',
-        habitId: 'h_zero_junk',
-        date: todayStr,
-        completed: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      await CrossDomainActionMediator.onFitnessEvent({ type: 'MEAL_LOGGED', date: todayStr, isJunk: true });
+      expect(useHabitStore.getState().completions.some((c) => c.habitId === 'h_zero_junk' && c.completed)).toBe(false);
+    });
 
-      await CrossDomainActionMediator.onFitnessEvent({
-        type: 'MEAL_LOGGED',
-        date: todayStr,
-        isJunk: true,
-      });
+    it('reverses zero_junk_today habit immediately when a Junk Food expense is logged', async () => {
+      const { useFitnessStore } = await import('../fitness');
+      const { useFinanceStore } = await import('../finance-store');
+      const { getLocalIsoDate } = await import('@/lib/finance/credit-card-cycles');
+      const todayStr = getLocalIsoDate();
 
-      expect(
-        useHabitStore
-          .getState()
-          .completions.some((c) => c.habitId === 'h_zero_junk' && c.completed)
-      ).toBe(false);
-
-      // Case B: Junk Food expense logged (even without meal log)
       useFitnessStore.setState({ dailyLogs: [], mealLogs: [] });
-      useHabitStore.setState({
-        habits: [zeroJunkHabit],
-        completions: [
-          {
-            id: 'c_zj_2',
-            userId: 'test-user',
-            habitId: 'h_zero_junk',
-            date: todayStr,
-            completed: true,
-            status: 'completed',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ],
-      });
+      seedCompletedZeroJunk(todayStr, 'c_zj_2');
 
       const junkCategory = {
-        id: 'cat_junk',
-        userId: 'test-user',
-        name: 'Junk Food',
-        slug: 'junk-food',
-        type: 'expense' as const,
-        icon: 'pizza',
-        color: '#ef4444',
-        monthlyBudgetLimit: 1000,
-        subcategories: [],
-        isSystem: true,
-        archived: false,
-        order: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: 'cat_junk', userId: 'test-user', name: 'Junk Food', slug: 'junk-food',
+        type: 'expense' as const, icon: 'pizza', color: '#ef4444', monthlyBudgetLimit: 1000,
+        subcategories: [], isSystem: true, archived: false, order: 0,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
       const junkTx = {
-        id: 'tx_junk_1',
-        userId: 'test-user',
-        title: 'Momos',
-        amount: 60,
-        type: 'expense' as const,
-        categoryId: 'cat_junk',
-        accountId: 'acc_1',
-        date: todayStr,
-        monthKey: todayStr.slice(0, 7),
-        tags: [],
-        isRecurring: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: 'tx_junk_1', userId: 'test-user', title: 'Momos', amount: 60,
+        type: 'expense' as const, categoryId: 'cat_junk', accountId: 'acc_1',
+        date: todayStr, monthKey: todayStr.slice(0, 7), tags: [], isRecurring: false,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       };
-      useFinanceStore.setState({
-        categories: [junkCategory],
-        transactions: [junkTx],
-      });
+      useFinanceStore.setState({ categories: [junkCategory], transactions: [junkTx] });
 
       await CrossDomainActionMediator.onFinanceEvent({
-        type: 'EXPENSE_LOGGED',
-        date: todayStr,
-        amount: 60,
-        transaction: junkTx,
-        category: junkCategory,
-        skipAutoDietBridge: true,
+        type: 'EXPENSE_LOGGED', date: todayStr, amount: 60,
+        transaction: junkTx, category: junkCategory, skipAutoDietBridge: true,
       });
-
-      expect(
-        useHabitStore
-          .getState()
-          .completions.some((c) => c.habitId === 'h_zero_junk' && c.completed)
-      ).toBe(false);
+      expect(useHabitStore.getState().completions.some((c) => c.habitId === 'h_zero_junk' && c.completed)).toBe(false);
     });
 
     it('honors lowEnergyMode steps target when evaluating STEPS_UPDATED', async () => {

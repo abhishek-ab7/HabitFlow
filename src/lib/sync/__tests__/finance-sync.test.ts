@@ -199,116 +199,50 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     expect(syncedTx?.isDirty).toBe(false);
   });
 
+  const seedDirtyCoreFinanceData = async (now: string) => {
+    await db.financeAccounts.add({
+      id: 'acc-1', userId, name: 'HDFC Bank', type: 'bank', balance: 15000,
+      currency: 'INR', color: '#10b981', icon: 'Landmark', isDefault: true,
+      archived: false, isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.monthlyCommitments.add({
+      id: 'comm-1', userId, title: "Mother's Support", recipientName: 'Mom', relationship: 'Family',
+      monthlyTargetAmount: 3000, dueDayOfMonth: 5, category: 'family_support',
+      autoRolloverOverpayment: true, icon: 'HeartHandshake', color: '#ec4899',
+      isActive: true, isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.debtRecords.add({
+      id: 'debt-1', userId, personName: 'Rahul', direction: 'lent', title: 'Dinner bill split',
+      principalAmount: 2000, totalRepaidAmount: 500, remainingAmount: 1500,
+      startDate: '2026-11-01', repaymentSchedule: 'monthly_partial', status: 'active',
+      color: '#f59e0b', isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.debtInstallments.add({
+      id: 'inst-1', userId, debtId: 'debt-1', amount: 500, date: '2026-11-15',
+      monthKey: '2026-11', paymentMethod: 'upi', balanceAfterPayment: 1500,
+      isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.emiTrackers.add({
+      id: 'emi-1', userId, loanName: 'MacBook EMI', lenderName: 'Apple HDFC',
+      principalAmount: 120000, interestRateAnnual: 0, emiAmount: 10000, tenureMonths: 12,
+      paidMonths: 2, startDate: '2026-09-01', billingDayOfMonth: 5, categoryId: 'cat-1',
+      autoCreateTaskReminder: true, status: 'active', isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.financeBudgets.add({
+      id: 'bgt-1', userId, monthKey: '2026-11', totalBudget: 60000,
+      expectedIncome: 90000, currency: 'INR', isDirty: true, createdAt: now, updatedAt: now,
+    });
+  };
+
   test('5. Pushes dirty accounts, commitments, debts, emis, and budgets cleanly', async () => {
     const syncer = new FinanceSyncEngine();
-    const now = new Date().toISOString();
-
-    await db.financeAccounts.add({
-      id: 'acc-1',
-      userId,
-      name: 'HDFC Bank',
-      type: 'bank',
-      balance: 15000,
-      currency: 'INR',
-      color: '#10b981',
-      icon: 'Landmark',
-      isDefault: true,
-      archived: false,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.monthlyCommitments.add({
-      id: 'comm-1',
-      userId,
-      title: "Mother's Support",
-      recipientName: 'Mom',
-      relationship: 'Family',
-      monthlyTargetAmount: 3000,
-      dueDayOfMonth: 5,
-      category: 'family_support',
-      autoRolloverOverpayment: true,
-      icon: 'HeartHandshake',
-      color: '#ec4899',
-      isActive: true,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.debtRecords.add({
-      id: 'debt-1',
-      userId,
-      personName: 'Rahul',
-      direction: 'lent',
-      title: 'Dinner bill split',
-      principalAmount: 2000,
-      totalRepaidAmount: 500,
-      remainingAmount: 1500,
-      startDate: '2026-11-01',
-      repaymentSchedule: 'monthly_partial',
-      status: 'active',
-      color: '#f59e0b',
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.debtInstallments.add({
-      id: 'inst-1',
-      userId,
-      debtId: 'debt-1',
-      amount: 500,
-      date: '2026-11-15',
-      monthKey: '2026-11',
-      paymentMethod: 'upi',
-      balanceAfterPayment: 1500,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.emiTrackers.add({
-      id: 'emi-1',
-      userId,
-      loanName: 'MacBook EMI',
-      lenderName: 'Apple HDFC',
-      principalAmount: 120000,
-      interestRateAnnual: 0,
-      emiAmount: 10000,
-      tenureMonths: 12,
-      paidMonths: 2,
-      startDate: '2026-09-01',
-      billingDayOfMonth: 5,
-      categoryId: 'cat-1',
-      autoCreateTaskReminder: true,
-      status: 'active',
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.financeBudgets.add({
-      id: 'bgt-1',
-      userId,
-      monthKey: '2026-11',
-      totalBudget: 60000,
-      expectedIncome: 90000,
-      currency: 'INR',
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
+    await seedDirtyCoreFinanceData(new Date().toISOString());
 
     const result = await syncer.sync(userId);
     expect(result.status).toBe('success');
     expect(result.pushed).toBe(6);
-
-    const updatedAcc = await db.financeAccounts.get('acc-1');
-    expect(updatedAcc?.isDirty).toBe(false);
-    const updatedComm = await db.monthlyCommitments.get('comm-1');
-    expect(updatedComm?.isDirty).toBe(false);
+    expect((await db.financeAccounts.get('acc-1'))?.isDirty).toBe(false);
+    expect((await db.monthlyCommitments.get('comm-1'))?.isDirty).toBe(false);
   });
 
   test('6. Handles partial remote failure gracefully without crashing', async () => {
@@ -458,106 +392,52 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     expect(newRemote?.totalBudget).toBe(55000);
   });
 
+  const seedDuplicateCategoriesAndAccounts = async (isolatedUserId: string, now: string) => {
+    await db.financeCategories.bulkPut([
+      {
+        id: 'cat-dup-1', userId: isolatedUserId, name: 'Food & Dining', slug: 'food-dining',
+        type: 'expense', color: '#f97316', icon: 'Utensils', monthlyBudgetLimit: 0,
+        subcategories: [], isSystem: true, archived: false, order: 1, createdAt: now, updatedAt: now,
+      },
+      {
+        id: 'cat-dup-2', userId: isolatedUserId, name: 'Food & Dining', slug: 'food-dining',
+        type: 'expense', color: '#f97316', icon: 'Utensils', monthlyBudgetLimit: 5000,
+        subcategories: [], isSystem: true, archived: false, order: 1, createdAt: now, updatedAt: now,
+      },
+    ]);
+    await db.financeAccounts.bulkPut([
+      {
+        id: 'acc-dup-1', userId: isolatedUserId, name: 'Cash', type: 'cash', balance: 0,
+        currency: 'INR', color: '#f59e0b', icon: 'Banknote', isDefault: false, archived: false, createdAt: now, updatedAt: now,
+      },
+      {
+        id: 'acc-dup-2', userId: isolatedUserId, name: 'Cash', type: 'cash', balance: 1500,
+        currency: 'INR', color: '#f59e0b', icon: 'Banknote', isDefault: false, archived: false, createdAt: now, updatedAt: now,
+      },
+    ]);
+    await db.financeTransactions.add({
+      id: 'tx-dup-test', userId: isolatedUserId, title: 'Snacks', amount: 150, type: 'expense',
+      accountId: 'acc-dup-1', categoryId: 'cat-dup-2', date: '2026-11-19', monthKey: '2026-11',
+      tags: [], isRecurring: false, createdAt: now, updatedAt: now,
+    });
+  };
+
   test('10. Deduplicates local categories by slug and accounts by (name, type), remapping transaction references', async () => {
     const { deduplicateFinanceRecordsInDexie } = await import('../engines/finance-sync');
-    const now = new Date().toISOString();
     const isolatedUserId = 'user-test-dedup-isolated-slug';
-
-    // Two categories with same slug
-    await db.financeCategories.add({
-      id: 'cat-dup-1',
-      userId: isolatedUserId,
-      name: 'Food & Dining',
-      slug: 'food-dining',
-      type: 'expense',
-      color: '#f97316',
-      icon: 'Utensils',
-      monthlyBudgetLimit: 0,
-      subcategories: [],
-      isSystem: true,
-      archived: false,
-      order: 1,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.financeCategories.add({
-      id: 'cat-dup-2',
-      userId: isolatedUserId,
-      name: 'Food & Dining',
-      slug: 'food-dining',
-      type: 'expense',
-      color: '#f97316',
-      icon: 'Utensils',
-      monthlyBudgetLimit: 5000,
-      subcategories: [],
-      isSystem: true,
-      archived: false,
-      order: 1,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Two accounts with same name and type
-    await db.financeAccounts.add({
-      id: 'acc-dup-1',
-      userId: isolatedUserId,
-      name: 'Cash',
-      type: 'cash',
-      balance: 0,
-      currency: 'INR',
-      color: '#f59e0b',
-      icon: 'Banknote',
-      isDefault: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.financeAccounts.add({
-      id: 'acc-dup-2',
-      userId: isolatedUserId,
-      name: 'Cash',
-      type: 'cash',
-      balance: 1500,
-      currency: 'INR',
-      color: '#f59e0b',
-      icon: 'Banknote',
-      isDefault: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Transaction pointing to the empty duplicate account and cat-dup-2
-    await db.financeTransactions.add({
-      id: 'tx-dup-test',
-      userId: isolatedUserId,
-      title: 'Snacks',
-      amount: 150,
-      type: 'expense',
-      accountId: 'acc-dup-1',
-      categoryId: 'cat-dup-2',
-      date: '2026-11-19',
-      monthKey: '2026-11',
-      tags: [],
-      isRecurring: false,
-      createdAt: now,
-      updatedAt: now,
-    });
+    await seedDuplicateCategoriesAndAccounts(isolatedUserId, new Date().toISOString());
 
     await deduplicateFinanceRecordsInDexie(isolatedUserId);
 
-    // Categories: only 1 food-dining remains
     const remainingCats = await db.financeCategories.where('userId').equals(isolatedUserId).toArray();
     expect(remainingCats.length).toBe(1);
     expect(remainingCats[0].id).toBe('cat-dup-2');
 
-    // Accounts: only 1 Cash remains, with balance 1500
     const remainingAccs = await db.financeAccounts.where('userId').equals(isolatedUserId).toArray();
     expect(remainingAccs.length).toBe(1);
     expect(remainingAccs[0].id).toBe('acc-dup-2');
     expect(remainingAccs[0].balance).toBe(1500);
 
-    // Transaction was remapped from acc-dup-1 to acc-dup-2
     const tx = await db.financeTransactions.get('tx-dup-test');
     expect(tx?.accountId).toBe('acc-dup-2');
     expect(tx?.categoryId).toBe('cat-dup-2');
@@ -760,78 +640,40 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     expect(payloads[1].paid_statement_id).toBeNull();
   });
 
-  test('15. Deduplicates credit_card_statements by [accountId+cycleKey] on remote pull and remaps paidStatementId', async () => {
-    const now = new Date().toISOString();
+  const seedStatementDedupeFixtures = async (now: string) => {
     await db.creditCardStatements.add({
-      id: 'stmt-local-uuid',
-      userId,
-      accountId: 'acc-card-1',
-      cycleKey: '2026-11',
-      periodStart: '2026-10-22',
-      periodEnd: '2026-11-21',
-      dueDate: '2026-12-05',
-      calculatedAmount: 10000,
-      manualAdjustment: 0,
-      totalDue: 10000,
-      carriedForwardAmount: 0,
-      paidAmount: 0,
-      remainingDue: 10000,
-      status: 'billed',
-      isDirty: false,
-      generationCounter: 1,
-      createdAt: now,
-      updatedAt: now,
+      id: 'stmt-local-uuid', userId, accountId: 'acc-card-1', cycleKey: '2026-11',
+      periodStart: '2026-10-22', periodEnd: '2026-11-21', dueDate: '2026-12-05',
+      calculatedAmount: 10000, manualAdjustment: 0, totalDue: 10000, carriedForwardAmount: 0,
+      paidAmount: 0, remainingDue: 10000, status: 'billed', isDirty: false,
+      generationCounter: 1, createdAt: now, updatedAt: now,
     });
-
     await db.financeTransactions.add({
-      id: 'tx-linked-local-stmt',
-      userId,
-      title: 'Partial Payment',
-      amount: 4000,
-      type: 'transfer',
-      categoryId: 'cat-1',
-      accountId: 'acc-bank-1',
-      toAccountId: 'acc-card-1',
-      paidStatementId: 'stmt-local-uuid',
-      isCreditCardPayment: true,
-      date: '2026-11-25',
-      monthKey: '2026-11',
-      tags: [],
-      isRecurring: false,
-      isDirty: false,
-      createdAt: now,
-      updatedAt: now,
+      id: 'tx-linked-local-stmt', userId, title: 'Partial Payment', amount: 4000,
+      type: 'transfer', categoryId: 'cat-1', accountId: 'acc-bank-1', toAccountId: 'acc-card-1',
+      paidStatementId: 'stmt-local-uuid', isCreditCardPayment: true, date: '2026-11-25',
+      monthKey: '2026-11', tags: [], isRecurring: false, isDirty: false, createdAt: now, updatedAt: now,
     });
-
     customTableHandlers['credit_card_statements'] = {
       upsert: mockUpsert,
       delete: mockDelete,
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockResolvedValue({
-          data: [
-            {
-              id: 'stmt-remote-uuid',
-              user_id: userId,
-              account_id: 'acc-card-1',
-              cycle_key: '2026-11',
-              period_start: '2026-10-22',
-              period_end: '2026-11-21',
-              due_date: '2026-12-05',
-              calculated_amount: 10000,
-              manual_adjustment: 0,
-              total_due: 10000,
-              carried_forward_amount: 0,
-              paid_amount: 4000,
-              remaining_due: 6000,
-              status: 'partial',
-              generation_counter: 2,
-              updated_at: new Date(Date.now() + 10000).toISOString(),
-            },
-          ],
+          data: [{
+            id: 'stmt-remote-uuid', user_id: userId, account_id: 'acc-card-1', cycle_key: '2026-11',
+            period_start: '2026-10-22', period_end: '2026-11-21', due_date: '2026-12-05',
+            calculated_amount: 10000, manual_adjustment: 0, total_due: 10000, carried_forward_amount: 0,
+            paid_amount: 4000, remaining_due: 6000, status: 'partial', generation_counter: 2,
+            updated_at: new Date(Date.now() + 10000).toISOString(),
+          }],
           error: null,
         }),
       }),
     };
+  };
+
+  test('15. Deduplicates credit_card_statements by [accountId+cycleKey] on remote pull and remaps paidStatementId', async () => {
+    await seedStatementDedupeFixtures(new Date().toISOString());
 
     const syncer = new FinanceSyncEngine();
     const result = await syncer.sync(userId);
@@ -846,114 +688,48 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     expect(remappedTx?.paidStatementId).toBe('stmt-remote-uuid');
   });
 
+  const seedDexieDedupeCardAndStatements = async (now: string) => {
+    await db.financeAccounts.bulkPut([
+      {
+        id: 'cc-dup-1', userId, name: 'Slice Card', type: 'credit_card', balance: 0,
+        currency: 'INR', color: '#6366f1', icon: 'CreditCard', isDefault: false, archived: false, createdAt: now, updatedAt: now,
+      },
+      {
+        id: 'cc-dup-2', userId, name: 'Slice Card', type: 'credit_card', balance: -15000,
+        currency: 'INR', color: '#6366f1', icon: 'CreditCard', isDefault: false, archived: false, createdAt: now, updatedAt: now,
+      },
+    ]);
+    await db.creditCardStatements.bulkPut([
+      {
+        id: 'stmt-dup-nov-on-1', userId, accountId: 'cc-dup-1', cycleKey: '2026-11',
+        periodStart: '2026-10-22', periodEnd: '2026-11-21', dueDate: '2026-12-05',
+        calculatedAmount: 15000, manualAdjustment: 0, totalDue: 15000, carriedForwardAmount: 0,
+        paidAmount: 0, remainingDue: 15000, status: 'billed', createdAt: now, updatedAt: now,
+      },
+      {
+        id: 'stmt-dup-oct-on-1', userId, accountId: 'cc-dup-1', cycleKey: '2026-10',
+        periodStart: '2026-09-22', periodEnd: '2026-10-21', dueDate: '2026-11-05',
+        calculatedAmount: 5000, manualAdjustment: 0, totalDue: 5000, carriedForwardAmount: 0,
+        paidAmount: 5000, remainingDue: 0, status: 'paid', createdAt: now, updatedAt: now,
+      },
+      {
+        id: 'stmt-best-nov-on-2', userId, accountId: 'cc-dup-2', cycleKey: '2026-11',
+        periodStart: '2026-10-22', periodEnd: '2026-11-21', dueDate: '2026-12-05',
+        calculatedAmount: 15000, manualAdjustment: 0, totalDue: 15000, carriedForwardAmount: 0,
+        paidAmount: 0, remainingDue: 15000, status: 'billed', createdAt: now, updatedAt: now,
+      },
+    ]);
+    await db.financeTransactions.add({
+      id: 'tx-bill-pay-dup', userId, title: 'Slice Bill Pay', amount: 15000, type: 'transfer',
+      categoryId: 'cat-1', accountId: 'acc-bank-1', toAccountId: 'cc-dup-1',
+      paidStatementId: 'stmt-dup-nov-on-1', isCreditCardPayment: true, date: '2026-11-25',
+      monthKey: '2026-11', tags: [], isRecurring: false, createdAt: now, updatedAt: now,
+    });
+  };
+
   test('16. deduplicateFinanceRecordsInDexie remaps incoming toAccountId transfers and creditCardStatements', async () => {
     const { deduplicateFinanceRecordsInDexie } = await import('../engines/finance-sync');
-    const now = new Date().toISOString();
-
-    await db.financeAccounts.add({
-      id: 'cc-dup-1',
-      userId,
-      name: 'Slice Card',
-      type: 'credit_card',
-      balance: 0,
-      currency: 'INR',
-      color: '#6366f1',
-      icon: 'CreditCard',
-      isDefault: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.financeAccounts.add({
-      id: 'cc-dup-2',
-      userId,
-      name: 'Slice Card',
-      type: 'credit_card',
-      balance: -15000,
-      currency: 'INR',
-      color: '#6366f1',
-      icon: 'CreditCard',
-      isDefault: false,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.creditCardStatements.add({
-      id: 'stmt-dup-nov-on-1',
-      userId,
-      accountId: 'cc-dup-1',
-      cycleKey: '2026-11',
-      periodStart: '2026-10-22',
-      periodEnd: '2026-11-21',
-      dueDate: '2026-12-05',
-      calculatedAmount: 15000,
-      manualAdjustment: 0,
-      totalDue: 15000,
-      carriedForwardAmount: 0,
-      paidAmount: 0,
-      remainingDue: 15000,
-      status: 'billed',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.creditCardStatements.add({
-      id: 'stmt-dup-oct-on-1',
-      userId,
-      accountId: 'cc-dup-1',
-      cycleKey: '2026-10',
-      periodStart: '2026-09-22',
-      periodEnd: '2026-10-21',
-      dueDate: '2026-11-05',
-      calculatedAmount: 5000,
-      manualAdjustment: 0,
-      totalDue: 5000,
-      carriedForwardAmount: 0,
-      paidAmount: 5000,
-      remainingDue: 0,
-      status: 'paid',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.creditCardStatements.add({
-      id: 'stmt-best-nov-on-2',
-      userId,
-      accountId: 'cc-dup-2',
-      cycleKey: '2026-11',
-      periodStart: '2026-10-22',
-      periodEnd: '2026-11-21',
-      dueDate: '2026-12-05',
-      calculatedAmount: 15000,
-      manualAdjustment: 0,
-      totalDue: 15000,
-      carriedForwardAmount: 0,
-      paidAmount: 0,
-      remainingDue: 15000,
-      status: 'billed',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.financeTransactions.add({
-      id: 'tx-bill-pay-dup',
-      userId,
-      title: 'Slice Bill Pay',
-      amount: 15000,
-      type: 'transfer',
-      categoryId: 'cat-1',
-      accountId: 'acc-bank-1',
-      toAccountId: 'cc-dup-1',
-      paidStatementId: 'stmt-dup-nov-on-1',
-      isCreditCardPayment: true,
-      date: '2026-11-25',
-      monthKey: '2026-11',
-      tags: [],
-      isRecurring: false,
-      createdAt: now,
-      updatedAt: now,
-    });
+    await seedDexieDedupeCardAndStatements(new Date().toISOString());
 
     await deduplicateFinanceRecordsInDexie(userId);
 
@@ -970,6 +746,29 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
     expect(await db.creditCardStatements.get('stmt-dup-nov-on-1')).toBeUndefined();
   });
 
+  const seedFailingFinanceSyncRows = async (now: string) => {
+    await db.financeSipPlans.add({
+      id: 'sip-err-1', userId, name: 'Nifty 50', assetClass: 'equity_mf', monthlyAmount: 5000,
+      sipDayOfMonth: 10, startDate: '2026-01-01', totalInvested: 50000, currentValue: 55000,
+      isActive: true, color: '#10b981', isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.financeRecurringBills.add({
+      id: 'bill-err-1', userId, name: 'Wifi', amount: 1000, cadence: 'monthly', dueDayOfMonth: 5,
+      categoryId: 'cat-1', autoLog: false, isActive: true, color: '#6366f1', icon: 'Wifi',
+      isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.financeCategorizationRules.add({
+      id: 'rule-err-1', userId, matchPattern: 'SWIGGY', cleanMerchantName: 'Swiggy',
+      categoryId: 'cat-1', defaultTags: [], isActive: true, isDirty: true, createdAt: now, updatedAt: now,
+    });
+    await db.financeNetWorthSnapshots.add({
+      id: 'snap-err-1', userId, monthKey: '2026-11', snapshotDate: '2026-11-20',
+      liquidAssets: 50000, investmentAssets: 100000, friendReceivables: 0, totalAssets: 150000,
+      creditCardLiabilities: 10000, emiRemainingPrincipal: 0, friendPayables: 0,
+      totalLiabilities: 10000, netWorth: 140000, isDirty: true, createdAt: now, updatedAt: now,
+    });
+  };
+
   test('19. Propagates hasError = true when syncSips, syncRecurringBills, syncCategorizationRules, or syncNetWorthSnapshots fail', async () => {
     const { syncSips, syncRecurringBills } = await import('../engines/finance/finance-sync-trackers');
     const { syncCategorizationRules, syncNetWorthSnapshots } = await import('../engines/finance/finance-sync-transactions');
@@ -983,84 +782,12 @@ describe('FinanceSyncEngine — Push, Pull, Deletions & Auto-Migration', () => {
       }),
     };
 
-    const now = new Date().toISOString();
-    await db.financeSipPlans.add({
-      id: 'sip-err-1',
-      userId,
-      name: 'Nifty 50',
-      assetClass: 'equity_mf',
-      monthlyAmount: 5000,
-      sipDayOfMonth: 10,
-      startDate: '2026-01-01',
-      totalInvested: 50000,
-      currentValue: 55000,
-      isActive: true,
-      color: '#10b981',
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
+    await seedFailingFinanceSyncRows(new Date().toISOString());
 
-    const sipResult = await syncSips(failingSupabase, userId);
-    expect(sipResult.hasError).toBe(true);
-
-    await db.financeRecurringBills.add({
-      id: 'bill-err-1',
-      userId,
-      name: 'Wifi',
-      amount: 1000,
-      cadence: 'monthly',
-      dueDayOfMonth: 5,
-      categoryId: 'cat-1',
-      autoLog: false,
-      isActive: true,
-      color: '#6366f1',
-      icon: 'Wifi',
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const billResult = await syncRecurringBills(failingSupabase, userId);
-    expect(billResult.hasError).toBe(true);
-
-    await db.financeCategorizationRules.add({
-      id: 'rule-err-1',
-      userId,
-      matchPattern: 'SWIGGY',
-      cleanMerchantName: 'Swiggy',
-      categoryId: 'cat-1',
-      defaultTags: [],
-      isActive: true,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const ruleResult = await syncCategorizationRules(failingSupabase, userId);
-    expect(ruleResult.hasError).toBe(true);
-
-    await db.financeNetWorthSnapshots.add({
-      id: 'snap-err-1',
-      userId,
-      monthKey: '2026-11',
-      snapshotDate: '2026-11-20',
-      liquidAssets: 50000,
-      investmentAssets: 100000,
-      friendReceivables: 0,
-      totalAssets: 150000,
-      creditCardLiabilities: 10000,
-      emiRemainingPrincipal: 0,
-      friendPayables: 0,
-      totalLiabilities: 10000,
-      netWorth: 140000,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const snapResult = await syncNetWorthSnapshots(failingSupabase, userId);
-    expect(snapResult.hasError).toBe(true);
+    expect((await syncSips(failingSupabase, userId)).hasError).toBe(true);
+    expect((await syncRecurringBills(failingSupabase, userId)).hasError).toBe(true);
+    expect((await syncCategorizationRules(failingSupabase, userId)).hasError).toBe(true);
+    expect((await syncNetWorthSnapshots(failingSupabase, userId)).hasError).toBe(true);
   });
 
   test('20. FinanceSyncEngine runs syncSips before syncTransactions', async () => {

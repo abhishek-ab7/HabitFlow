@@ -20,6 +20,56 @@ interface UserState {
 
 let loadedUserStoreId: string | null = null;
 
+async function resolveInitialDisplayName(opts: {
+    userId: string;
+    metaName: string | undefined;
+}): Promise<string | undefined> {
+    const localSettings = await getSettings(opts.userId);
+    if (localSettings?.userName) return localSettings.userName;
+    if (!opts.metaName) return undefined;
+    await updateSettings({ userId: opts.userId, userName: opts.metaName });
+    return opts.metaName;
+}
+
+async function revalidateRemoteDisplayName(opts: {
+    userId: string;
+    getDisplayName: () => string;
+    setDisplayName: (name: string) => void;
+}) {
+    try {
+        const supabase = getSupabaseClient();
+        const { data: remoteSettings, error } = await supabase
+            .from('user_settings')
+            .select('user_name')
+            .eq('user_id', opts.userId)
+            .single();
+
+        const remoteName = (remoteSettings as { user_name?: string } | null)?.user_name;
+        const hasRemoteChange = !error && Boolean(remoteName) && remoteName !== opts.getDisplayName();
+        if (!hasRemoteChange || !remoteName) return;
+
+        opts.setDisplayName(remoteName);
+        const { db } = await import('../db');
+        const existing = await db.userSettings.where('userId').equals(opts.userId).first();
+        if (existing) {
+            await db.userSettings.update(existing.id, { userName: remoteName, isDirty: false });
+        }
+    } catch {
+        // Offline or transient network error
+    }
+}
+
+async function getAuthenticatedUser() {
+    const supabase = getSupabaseClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user ?? null;
+}
+
+function shouldSkipUserLoad(opts: { force: boolean; userId: string; currentName: string }): boolean {
+    if (opts.force || !opts.currentName) return false;
+    return loadedUserStoreId === opts.userId;
+}
+
 export const useUserStore = create<UserState>((set, get) => ({
     displayName: '',
     email: null,
@@ -28,61 +78,28 @@ export const useUserStore = create<UserState>((set, get) => ({
 
     loadUser: async (force = false) => {
         try {
-            const supabase = getSupabaseClient();
-            const { data: { session } } = await supabase.auth.getSession();
-
-            if (!session?.user) {
+            const user = await getAuthenticatedUser();
+            if (!user) {
                 loadedUserStoreId = null;
                 set({ displayName: '', email: null, isLoading: false });
                 return;
             }
+            if (shouldSkipUserLoad({ force, userId: user.id, currentName: get().displayName })) return;
 
-            if (!force && loadedUserStoreId === session.user.id && get().displayName) {
-                return;
-            }
+            set({ isLoading: true, email: user.email ?? null });
+            const resolvedName = await resolveInitialDisplayName({
+                userId: user.id,
+                metaName: user.user_metadata?.full_name as string | undefined,
+            });
+            if (resolvedName) set({ displayName: resolvedName });
 
-            set({ isLoading: true, email: session.user.email ?? null });
-
-            // Read local Dexie first for instant zero-network display
-            const localSettings = await getSettings(session.user.id);
-            if (localSettings?.userName) {
-                set({ displayName: localSettings.userName });
-            } else {
-                const metaName = session.user.user_metadata?.full_name as string | undefined;
-                if (metaName) {
-                    set({ displayName: metaName });
-                    await updateSettings({
-                        userId: session.user.id,
-                        userName: metaName
-                    });
-                }
-            }
-
-            loadedUserStoreId = session.user.id;
+            loadedUserStoreId = user.id;
             set({ isLoading: false });
-
-            // Silently revalidate remote user_name in background without blocking cold start
-            void (async () => {
-                try {
-                    const { data: remoteSettings, error } = await supabase
-                        .from('user_settings')
-                        .select('user_name')
-                        .eq('user_id', session.user.id)
-                        .single();
-
-                    const remoteName = (remoteSettings as any)?.user_name as string | undefined;
-                    if (!error && remoteName && remoteName !== get().displayName) {
-                        set({ displayName: remoteName });
-                        const { db } = await import('../db');
-                        const existing = await db.userSettings.where('userId').equals(session.user.id).first();
-                        if (existing) {
-                            await db.userSettings.update(existing.id, { userName: remoteName, isDirty: false });
-                        }
-                    }
-                } catch {
-                    // Offline or transient network error
-                }
-            })();
+            void revalidateRemoteDisplayName({
+                userId: user.id,
+                getDisplayName: () => get().displayName,
+                setDisplayName: (displayName) => set({ displayName }),
+            });
         } catch (error) {
             console.error('[UserStore] Failed to load user data:', error);
             set({ isLoading: false });

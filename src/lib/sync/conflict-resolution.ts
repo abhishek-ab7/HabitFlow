@@ -39,144 +39,137 @@ export interface ConflictResolutionOptions {
  * 5. Most recent timestamp wins (using updated_at or created_at)
  * 6. Local wins (if timestamps equal - tie-breaker)
  */
-export function resolveConflict<T extends {
+type ComparableRecord = {
   updated_at?: string | null;
   updatedAt?: string | null;
   created_at?: string | null;
   createdAt?: string | null;
   completed?: boolean;
   status?: string;
-}>(
+};
+
+function resolveByCompletion<T extends ComparableRecord>(
+  local: T,
+  remote: T
+): ConflictResolutionResult<T> | null {
+  if (!('completed' in local) || !('completed' in remote)) return null;
+  const localDone = local.completed === true;
+  const remoteDone = remote.completed === true;
+  if (localDone === remoteDone) return null;
+  return localDone
+    ? { winner: 'local', data: local, reason: '✅ Local is completed (completed always wins)' }
+    : { winner: 'remote', data: remote, reason: '✅ Remote is completed (completed always wins)' };
+}
+
+function resolveByStatus<T extends ComparableRecord>(
+  local: T,
+  remote: T,
+  completedStatuses: string[]
+): ConflictResolutionResult<T> | null {
+  if (!('status' in local) || !('status' in remote)) return null;
+  const localStatus = local.status as string;
+  const remoteStatus = remote.status as string;
+  const localDone = completedStatuses.includes(localStatus);
+  const remoteDone = completedStatuses.includes(remoteStatus);
+  if (localDone === remoteDone) return null;
+  return localDone
+    ? { winner: 'local', data: local, reason: `✅ Local has completed status: ${localStatus} (completed status wins)` }
+    : { winner: 'remote', data: remote, reason: `✅ Remote has completed status: ${remoteStatus} (completed status wins)` };
+}
+
+function resolveByHigherValue<T>(
+  local: T,
+  remote: T,
+  fields: Array<keyof any>
+): ConflictResolutionResult<T> | null {
+  for (const field of fields) {
+    const localValue = (local as any)[field];
+    const remoteValue = (remote as any)[field];
+    if (typeof localValue !== 'number' || typeof remoteValue !== 'number') continue;
+    if (localValue > remoteValue) {
+      return {
+        winner: 'local',
+        data: local,
+        reason: `🏆 Local has higher ${String(field)}: ${localValue} > ${remoteValue} (highest value wins)`,
+      };
+    }
+    if (remoteValue > localValue) {
+      return {
+        winner: 'remote',
+        data: remote,
+        reason: `🏆 Remote has higher ${String(field)}: ${remoteValue} > ${localValue} (highest value wins)`,
+      };
+    }
+  }
+  return null;
+}
+
+function extractRecordTime(record: any): number {
+  const raw = record.updated_at || record.updatedAt || record.created_at || record.createdAt || 0;
+  return new Date(raw).getTime();
+}
+
+function resolveByTimestamp<T>(local: T, remote: T): ConflictResolutionResult<T> {
+  const localTime = extractRecordTime(local);
+  const remoteTime = extractRecordTime(remote);
+  if (localTime > remoteTime) {
+    return { winner: 'local', data: local, reason: `⏰ Local is newer: ${new Date(localTime).toISOString()} (timestamp wins)` };
+  }
+  if (remoteTime > localTime) {
+    return { winner: 'remote', data: remote, reason: `⏰ Remote is newer: ${new Date(remoteTime).toISOString()} (timestamp wins)` };
+  }
+  return { winner: 'equal', data: local, reason: '⚖️ Timestamps equal, keeping local (tie-breaker)' };
+}
+
+function resolveByCustom<T>(
+  local: T,
+  remote: T,
+  customComparison?: (local: any, remote: any) => 'local' | 'remote' | 'equal' | null
+): ConflictResolutionResult<T> | null {
+  if (!customComparison) return null;
+  const custom = customComparison(local, remote);
+  if (!custom || custom === 'equal') return null;
+  return {
+    winner: custom,
+    data: custom === 'local' ? local : remote,
+    reason: 'Custom comparison logic',
+  };
+}
+
+export function resolveConflict<T extends ComparableRecord>(
   local: T,
   remote: T,
   options: ConflictResolutionOptions = {}
 ): ConflictResolutionResult<T> {
-  
-  // Strategy 0: Custom comparison (highest priority)
-  if (options.customComparison) {
-    const customResult = options.customComparison(local, remote);
-    if (customResult && customResult !== 'equal') {
-      return {
-        winner: customResult,
-        data: customResult === 'local' ? local : remote,
-        reason: 'Custom comparison logic',
-      };
-    }
+  const candidates = [
+    () => resolveByCustom(local, remote, options.customComparison),
+    () => (options.preferCompleted ? resolveByCompletion(local, remote) : null),
+    () => (options.completedStatuses ? resolveByStatus(local, remote, options.completedStatuses) : null),
+    () =>
+      options.preferHigherValues?.length
+        ? resolveByHigherValue(local, remote, options.preferHigherValues)
+        : null,
+  ];
+
+  for (const check of candidates) {
+    const res = check();
+    if (res) return res;
   }
-  
-  // Strategy 1: Completed always wins (for completions, milestones)
-  if (options.preferCompleted && 'completed' in local && 'completed' in remote) {
-    const localCompleted = local.completed === true;
-    const remoteCompleted = remote.completed === true;
-    
-    if (localCompleted && !remoteCompleted) {
-      return {
-        winner: 'local',
-        data: local,
-        reason: '✅ Local is completed (completed always wins)',
-      };
-    }
-    if (!localCompleted && remoteCompleted) {
-      return {
-        winner: 'remote',
-        data: remote,
-        reason: '✅ Remote is completed (completed always wins)',
-      };
-    }
-    // Both completed or both incomplete - continue to next strategy
-  }
-  
-  // Strategy 2: Completed status wins (for goals, tasks)
-  if (options.completedStatuses && 'status' in local && 'status' in remote) {
-    const localStatus = local.status as string;
-    const remoteStatus = remote.status as string;
-    const localIsCompleted = options.completedStatuses.includes(localStatus);
-    const remoteIsCompleted = options.completedStatuses.includes(remoteStatus);
-    
-    if (localIsCompleted && !remoteIsCompleted) {
-      return {
-        winner: 'local',
-        data: local,
-        reason: `✅ Local has completed status: ${localStatus} (completed status wins)`,
-      };
-    }
-    if (!localIsCompleted && remoteIsCompleted) {
-      return {
-        winner: 'remote',
-        data: remote,
-        reason: `✅ Remote has completed status: ${remoteStatus} (completed status wins)`,
-      };
-    }
-    // Both completed or both incomplete - continue to next strategy
-  }
-  
-  // Strategy 3: Highest value wins (for XP, gems, level)
-  if (options.preferHigherValues && options.preferHigherValues.length > 0) {
-    for (const field of options.preferHigherValues) {
-      const localValue = (local as any)[field];
-      const remoteValue = (remote as any)[field];
-      
-      // Only compare if both have numeric values
-      if (typeof localValue === 'number' && typeof remoteValue === 'number') {
-        if (localValue > remoteValue) {
-          return {
-            winner: 'local',
-            data: local,
-            reason: `🏆 Local has higher ${String(field)}: ${localValue} > ${remoteValue} (highest value wins)`,
-          };
-        }
-        if (remoteValue > localValue) {
-          return {
-            winner: 'remote',
-            data: remote,
-            reason: `🏆 Remote has higher ${String(field)}: ${remoteValue} > ${localValue} (highest value wins)`,
-          };
-        }
-      }
-    }
-    // Values equal or not comparable - continue to next strategy
-  }
-  
-  // Strategy 4: Most recent timestamp wins
-  // Try updated_at first (snake_case for remote, camelCase for local), then created_at
-  const localUpdatedAt = (local as any).updated_at || (local as any).updatedAt;
-  const remoteUpdatedAt = (remote as any).updated_at || (remote as any).updatedAt;
-  const localCreatedAt = (local as any).created_at || (local as any).createdAt;
-  const remoteCreatedAt = (remote as any).created_at || (remote as any).createdAt;
-  
-  const localTime = new Date(localUpdatedAt || localCreatedAt || 0).getTime();
-  const remoteTime = new Date(remoteUpdatedAt || remoteCreatedAt || 0).getTime();
-  
-  if (localTime > remoteTime) {
-    const timestamp = new Date(localTime).toISOString();
-    return {
-      winner: 'local',
-      data: local,
-      reason: `⏰ Local is newer: ${timestamp} (timestamp wins)`,
-    };
-  }
-  
-  if (remoteTime > localTime) {
-    const timestamp = new Date(remoteTime).toISOString();
-    return {
-      winner: 'remote',
-      data: remote,
-      reason: `⏰ Remote is newer: ${timestamp} (timestamp wins)`,
-    };
-  }
-  
-  // Strategy 5: Equal timestamps - prefer local (tie-breaker)
-  return {
-    winner: 'equal',
-    data: local,
-    reason: '⚖️ Timestamps equal, keeping local (tie-breaker)',
-  };
+
+  return resolveByTimestamp(local, remote);
 }
 
-/**
- * Helper to merge gamification fields using "highest value wins"
- * This ensures users never lose progress due to sync conflicts
- */
+function mergeStatsMap(localStats: any, remoteStats: any) {
+  const mergedStats = { ...localStats, ...remoteStats };
+  if (!localStats || !remoteStats) return mergedStats;
+  for (const key of Object.keys(mergedStats)) {
+    mergedStats[key] = Math.max(localStats[key] || 0, remoteStats[key] || 0);
+  }
+  return mergedStats;
+}
+
+const maxNum = (a?: number, b?: number) => Math.max(a || 0, b || 0);
+
 export function mergeGamificationFields<T extends {
   xp?: number;
   level?: number;
@@ -185,24 +178,16 @@ export function mergeGamificationFields<T extends {
   stats?: any;
   unlockedThemes?: string[];
 }>(local: T, remote: T): T {
-  // Merge stats by taking max of each
-  const mergedStats = { ...local.stats, ...remote.stats };
-  if (local.stats && remote.stats) {
-    for (const key of Object.keys(mergedStats)) {
-      mergedStats[key] = Math.max(local.stats[key] || 0, remote.stats[key] || 0);
-    }
-  }
-
-  // Merge unlocked themes by union
-  const mergedThemes = Array.from(new Set([...(local.unlockedThemes || []), ...(remote.unlockedThemes || [])]));
-
+  const mergedThemes = Array.from(
+    new Set([...(local.unlockedThemes || []), ...(remote.unlockedThemes || [])])
+  );
   return {
     ...local,
-    xp: Math.max(local.xp || 0, remote.xp || 0),
-    level: Math.max(local.level || 0, remote.level || 0),
-    gems: Math.max(local.gems || 0, remote.gems || 0),
-    streakShield: Math.max(local.streakShield || 0, remote.streakShield || 0),
-    stats: mergedStats,
+    xp: maxNum(local.xp, remote.xp),
+    level: maxNum(local.level, remote.level),
+    gems: maxNum(local.gems, remote.gems),
+    streakShield: maxNum(local.streakShield, remote.streakShield),
+    stats: mergeStatsMap(local.stats, remote.stats),
     unlockedThemes: mergedThemes,
   };
 }

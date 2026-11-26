@@ -18,37 +18,41 @@ interface GamificationState {
   updateUserSettings: (updates: Partial<UserSettings>) => Promise<void>;
 }
 
+const USER_SETTINGS_DEFAULTS = {
+  weekStartsOn: 0,
+  defaultCategory: 'health',
+  xp: 0,
+  level: 1,
+  gems: 0,
+  streakShield: 0,
+  motivation_text: '',
+  showFitness: true,
+  showFinance: true,
+  showTasks: true,
+  showGoals: true,
+  showMilestones: true,
+  habitOnlyMode: false,
+} as const;
+
+function buildUserSettingsPayload(
+  currentSettings: UserSettings | null | undefined,
+  updates: Partial<UserSettings>
+) {
+  return {
+    ...USER_SETTINGS_DEFAULTS,
+    ...(currentSettings ?? {}),
+    ...updates,
+  };
+}
+
 async function persistAndSyncUserSettings(
   userId: string,
   updates: Partial<UserSettings>
 ) {
-  await updateSettings({
-    userId,
-    ...updates,
-  });
-
+  await updateSettings({ userId, ...updates });
   try {
     const currentSettings = await getSettings(userId);
-    const syncEngine = getSyncEngine();
-    syncEngine.pushUserSettings({
-      userName: currentSettings?.userName,
-      weekStartsOn: currentSettings?.weekStartsOn ?? 0,
-      defaultCategory: currentSettings?.defaultCategory ?? 'health',
-      xp: currentSettings?.xp ?? 0,
-      level: currentSettings?.level ?? 1,
-      gems: currentSettings?.gems ?? 0,
-      streakShield: currentSettings?.streakShield ?? 0,
-      stats: currentSettings?.stats,
-      unlockedThemes: currentSettings?.unlockedThemes,
-      motivation_text: (currentSettings as any)?.motivation_text ?? '',
-      showFitness: currentSettings?.showFitness ?? true,
-      showFinance: currentSettings?.showFinance ?? true,
-      showTasks: currentSettings?.showTasks ?? true,
-      showGoals: currentSettings?.showGoals ?? true,
-      showMilestones: currentSettings?.showMilestones ?? true,
-      habitOnlyMode: currentSettings?.habitOnlyMode ?? false,
-      ...updates,
-    });
+    getSyncEngine().pushUserSettings(buildUserSettingsPayload(currentSettings, updates));
   } catch (error) {
     console.error('Failed to sync user settings updates:', error);
   }
