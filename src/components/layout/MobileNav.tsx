@@ -111,6 +111,17 @@ function resolveSwipeNavigation(ctx: {
   return { targetUrl: ctx.swipeRoutes[nextIndex], direction: isLeft ? 'swipe-left' : 'swipe-right' };
 }
 
+function NavActivePill({ isActive }: { isActive: boolean }) {
+  if (!isActive) return null;
+  return (
+    <motion.div
+      layoutId="mobile-nav-pill"
+      className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+    />
+  );
+}
+
 function MobileNavLink({
   href,
   label,
@@ -136,13 +147,7 @@ function MobileNavLink({
         isActive && 'text-primary'
       )}
     >
-      {isActive && (
-        <motion.div
-          layoutId="mobile-nav-pill"
-          className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        />
-      )}
+      <NavActivePill isActive={isActive} />
       <Icon className={cn('w-5 h-5', isActive && 'text-primary')} strokeWidth={isActive ? 2.5 : 2} />
       <span className="text-[10px] font-semibold tracking-tight">{label}</span>
     </Link>
@@ -361,13 +366,7 @@ function MobileBottomBar({
             isMoreActive && 'text-primary'
           )}
         >
-          {isMoreActive && (
-            <motion.div
-              layoutId="mobile-nav-pill"
-              className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            />
-          )}
+          <NavActivePill isActive={isMoreActive} />
           <LayoutGrid className={cn('w-5 h-5', isMoreActive && 'text-primary')} strokeWidth={isMoreActive ? 2.5 : 2} />
           <span className="text-[10px] font-semibold tracking-tight">More</span>
         </button>
@@ -387,13 +386,13 @@ function getNavVisibility(settings: ReturnType<typeof useGamificationStore.getSt
 }
 
 function getVisibleMoreItems(vis: ReturnType<typeof getNavVisibility>) {
-  return MORE_MENU_ITEMS.filter((item) => {
-    if (item.href === '/habits' && !vis.showFitness) return false;
-    if (item.href === '/tasks' && !vis.showTasks) return false;
-    if (item.href === '/goals' && !vis.showGoals) return false;
-    if (!vis.showFinance && item.href === '/analytics') return false;
-    return true;
-  });
+  const visibilityRules: Record<string, boolean> = {
+    '/habits': vis.showFitness,
+    '/tasks': vis.showTasks,
+    '/goals': vis.showGoals,
+    '/analytics': vis.showFinance,
+  };
+  return MORE_MENU_ITEMS.filter((item) => visibilityRules[item.href] ?? true);
 }
 
 export function MobileNav() {
