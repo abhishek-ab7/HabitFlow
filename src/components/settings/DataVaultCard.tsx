@@ -71,6 +71,53 @@ interface DataVaultCardProps {
   isCleaning: boolean;
 }
 
+function countTable(tables: Record<string, any[]>, key: string) {
+  return Array.isArray(tables[key]) ? tables[key].length : 0;
+}
+
+function buildRestoreCounts(tables: Record<string, any[]>) {
+  return {
+    habits: countTable(tables, 'habits'),
+    completions: countTable(tables, 'completions'),
+    tasks: countTable(tables, 'tasks'),
+    goals: countTable(tables, 'goals'),
+    transactions: countTable(tables, 'financeTransactions'),
+    accounts: countTable(tables, 'financeAccounts'),
+    debts: countTable(tables, 'debtRecords') + countTable(tables, 'debtInstallments'),
+    statements: countTable(tables, 'creditCardStatements'),
+  };
+}
+
+function parseV1Backup(parsed: Record<string, any>) {
+  const settings = parsed.userSettings || parsed.settings;
+  const tables: Record<string, any[]> = {
+    habits: parsed.habits || [],
+    completions: parsed.completions || [],
+    goals: parsed.goals || [],
+    milestones: parsed.milestones || [],
+    ...(settings ? { userSettings: settings } : {}),
+  };
+  return {
+    formatVersion: 'V1 (Legacy)',
+    exportedAt: parsed.exportedAt || undefined,
+    counts: buildRestoreCounts(tables),
+    tables,
+  };
+}
+
+function parsePlainBackupPreview(parsed: Record<string, any>) {
+  if (parsed.tables && typeof parsed.tables === 'object') {
+    return {
+      formatVersion: parsed.version ? `V${parsed.version}` : 'V2',
+      exportedAt: parsed.exportedAt || undefined,
+      counts: buildRestoreCounts(parsed.tables),
+      tables: parsed.tables,
+    };
+  }
+  if (parsed.version === 1 && parsed.habits) return parseV1Backup(parsed);
+  return null;
+}
+
 export function DataVaultCard({
   isStoragePersistent,
   hasDuplicates,
@@ -92,70 +139,72 @@ export function DataVaultCard({
   const [isRestoring, setIsRestoring] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const runCsvExport = async (
+    exportKey: string,
+    exporter: () => Promise<{ csv: string; filename: string; successMessage: string }>,
+    errorMessage: string
+  ) => {
+    try {
+      setIsExporting(exportKey);
+      const { csv, filename, successMessage } = await exporter();
+      downloadFile(csv, filename, 'text/csv;charset=utf-8;');
+      toast.success(successMessage);
+    } catch {
+      toast.error(errorMessage);
+    } finally {
+      setIsExporting(null);
+    }
+  };
+
   // 1. Export CSV helpers
-  const handleExportTransactionsCSV = async () => {
-    try {
-      setIsExporting('tx_csv');
-      const [txs, accs, cats] = await Promise.all([
-        db.financeTransactions.toArray(),
-        db.financeAccounts.toArray(),
-        db.financeCategories.toArray(),
-      ]);
-      const activeTxs = txs.filter((t) => !t.deletedAt);
-      const csv = exportTransactionsCSV(txs, accs, cats);
-      downloadFile(
-        csv,
-        `habitflow-transactions-${getLocalIsoDate()}.csv`,
-        'text/csv;charset=utf-8;'
-      );
-      toast.success(`Exported ${activeTxs.length} transactions to CSV`);
-    } catch {
-      toast.error('Failed to export transactions CSV');
-    } finally {
-      setIsExporting(null);
-    }
-  };
+  const handleExportTransactionsCSV = () =>
+    runCsvExport(
+      'tx_csv',
+      async () => {
+        const [txs, accs, cats] = await Promise.all([
+          db.financeTransactions.toArray(),
+          db.financeAccounts.toArray(),
+          db.financeCategories.toArray(),
+        ]);
+        const activeTxs = txs.filter((t) => !t.deletedAt);
+        return {
+          csv: exportTransactionsCSV(txs, accs, cats),
+          filename: `habitflow-transactions-${getLocalIsoDate()}.csv`,
+          successMessage: `Exported ${activeTxs.length} transactions to CSV`,
+        };
+      },
+      'Failed to export transactions CSV'
+    );
 
-  const handleExportFriendsDebtCSV = async () => {
-    try {
-      setIsExporting('debt_csv');
-      const debts = await db.debtRecords.toArray();
-      const activeDebts = debts.filter((d) => !d.deletedAt);
-      const csv = exportFriendsDebtCSV(debts);
-      downloadFile(
-        csv,
-        `habitflow-friends-debt-${getLocalIsoDate()}.csv`,
-        'text/csv;charset=utf-8;'
-      );
-      toast.success(`Exported ${activeDebts.length} debt/split entries to CSV`);
-    } catch {
-      toast.error('Failed to export friends debt CSV');
-    } finally {
-      setIsExporting(null);
-    }
-  };
+  const handleExportFriendsDebtCSV = () =>
+    runCsvExport(
+      'debt_csv',
+      async () => {
+        const debts = await db.debtRecords.toArray();
+        const activeDebts = debts.filter((d) => !d.deletedAt);
+        return {
+          csv: exportFriendsDebtCSV(debts),
+          filename: `habitflow-friends-debt-${getLocalIsoDate()}.csv`,
+          successMessage: `Exported ${activeDebts.length} debt/split entries to CSV`,
+        };
+      },
+      'Failed to export friends debt CSV'
+    );
 
-  const handleExportHabitsCSV = async () => {
-    try {
-      setIsExporting('habits_csv');
-      const [habits, completions] = await Promise.all([
-        db.habits.toArray(),
-        db.completions.toArray(),
-      ]);
-      const activeHabits = habits.filter((h) => !h.archived);
-      const csv = exportHabitsCSV(activeHabits, completions);
-      downloadFile(
-        csv,
-        `habitflow-habits-${getLocalIsoDate()}.csv`,
-        'text/csv;charset=utf-8;'
-      );
-      toast.success(`Exported ${activeHabits.length} habits to CSV`);
-    } catch {
-      toast.error('Failed to export habits CSV');
-    } finally {
-      setIsExporting(null);
-    }
-  };
+  const handleExportHabitsCSV = () =>
+    runCsvExport(
+      'habits_csv',
+      async () => {
+        const [habits, completions] = await Promise.all([db.habits.toArray(), db.completions.toArray()]);
+        const activeHabits = habits.filter((h) => !h.archived);
+        return {
+          csv: exportHabitsCSV(activeHabits, completions),
+          filename: `habitflow-habits-${getLocalIsoDate()}.csv`,
+          successMessage: `Exported ${activeHabits.length} habits to CSV`,
+        };
+      },
+      'Failed to export habits CSV'
+    );
 
   // 2. Full JSON Backup (All 20 Tables)
   const handleFullBackup = async () => {
@@ -210,60 +259,17 @@ export function DataVaultCard({
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(await file.text());
 
       if (parsed.encrypted === true && parsed.ciphertext) {
-        // Encrypted backup detected -> open passphrase modal
         setPendingEncryptedPayload(parsed as EncryptedBackupPayload);
         setDecryptPassword('');
-      } else if (parsed.tables && typeof parsed.tables === 'object') {
-        // V2 plain backup -> preview before write
-        const tables = parsed.tables;
-        setRestorePreview({
-          formatVersion: parsed.version ? `V${parsed.version}` : 'V2',
-          exportedAt: parsed.exportedAt || undefined,
-          counts: {
-            habits: (tables.habits || []).length,
-            completions: (tables.completions || []).length,
-            tasks: (tables.tasks || []).length,
-            goals: (tables.goals || []).length,
-            transactions: (tables.financeTransactions || []).length,
-            accounts: (tables.financeAccounts || []).length,
-            debts: (tables.debtRecords || []).length + (tables.debtInstallments || []).length,
-            statements: (tables.creditCardStatements || []).length,
-          },
-          tables,
-        });
-      } else if (parsed.version === 1 && parsed.habits) {
-        // Legacy V1 backup fallback -> preview before write (preserving userSettings on V1 restores)
-        const tables: Record<string, any[]> = {
-          habits: parsed.habits || [],
-          completions: parsed.completions || [],
-          goals: parsed.goals || [],
-          milestones: parsed.milestones || [],
-        };
-        if (parsed.userSettings || parsed.settings) {
-          tables.userSettings = parsed.userSettings || parsed.settings || [];
-        }
-        setRestorePreview({
-          formatVersion: 'V1 (Legacy)',
-          exportedAt: parsed.exportedAt || undefined,
-          counts: {
-            habits: (tables.habits || []).length,
-            completions: (tables.completions || []).length,
-            tasks: 0,
-            goals: (tables.goals || []).length,
-            transactions: 0,
-            accounts: 0,
-            debts: 0,
-            statements: 0,
-          },
-          tables,
-        });
-      } else {
-        throw new Error('Unrecognized backup file format');
+        return;
       }
+
+      const preview = parsePlainBackupPreview(parsed);
+      if (!preview) throw new Error('Unrecognized backup file format');
+      setRestorePreview(preview);
     } catch (err: any) {
       toast.error(err.message || 'Could not parse backup file');
     } finally {
@@ -278,22 +284,12 @@ export function DataVaultCard({
     try {
       setIsDecrypting(true);
       const decrypted = await decryptBackupData(pendingEncryptedPayload, decryptPassword);
-      const tables = decrypted.tables;
       setPendingEncryptedPayload(null);
       setRestorePreview({
         formatVersion: 'V2 (Encrypted AES-256-GCM)',
         exportedAt: pendingEncryptedPayload.exportedAt || undefined,
-        counts: {
-          habits: (tables.habits || []).length,
-          completions: (tables.completions || []).length,
-          tasks: (tables.tasks || []).length,
-          goals: (tables.goals || []).length,
-          transactions: (tables.financeTransactions || []).length,
-          accounts: (tables.financeAccounts || []).length,
-          debts: (tables.debtRecords || []).length + (tables.debtInstallments || []).length,
-          statements: (tables.creditCardStatements || []).length,
-        },
-        tables,
+        counts: buildRestoreCounts(decrypted.tables),
+        tables: decrypted.tables,
       });
     } catch (err: any) {
       toast.error(err.message || 'Decryption failed');

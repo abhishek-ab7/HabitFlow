@@ -24,6 +24,80 @@ import { Button } from "@/components/ui/button";
 import { useFeedback } from "@/hooks/use-feedback";
 import { GuidedTour, TourTriggerButton, usePageTour, PAGE_TOURS } from "@/components/tour";
 
+function buildSubtasksMap<T extends { parentTaskId?: string | null; status: string }>(tasks: T[]): Map<string, T[]> {
+    const map = new Map<string, T[]>();
+    for (const t of tasks) {
+        if (!t.parentTaskId || t.status === 'archived') continue;
+        const list = map.get(t.parentTaskId);
+        if (list) list.push(t);
+        else map.set(t.parentTaskId, [t]);
+    }
+    return map;
+}
+
+function TasksListBody({
+    activeTasks,
+    completedTasks,
+    completedLimit,
+    subtasksByParentId,
+    onComplete,
+    onShowMoreCompleted,
+}: {
+    activeTasks: ReturnType<typeof useTaskStore.getState>['tasks'];
+    completedTasks: ReturnType<typeof useTaskStore.getState>['tasks'];
+    completedLimit: number;
+    subtasksByParentId: Map<string, ReturnType<typeof useTaskStore.getState>['tasks']>;
+    onComplete: (id: string) => Promise<void>;
+    onShowMoreCompleted: () => void;
+}) {
+    return (
+        <div className="max-w-3xl mx-auto w-full space-y-8 tour-task-list">
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        Active
+                        <span className="font-mono tabular-nums text-foreground">{activeTasks.length}</span>
+                    </h2>
+                </div>
+                {activeTasks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-6 text-center rounded-xl border border-dashed border-border">
+                        All active tasks completed.
+                    </p>
+                ) : (
+                    <div className="flex flex-col gap-3">
+                        {activeTasks.map((task) => (
+                            <div key={task.id} className="cv-auto">
+                                <TaskCard task={task} subtasks={subtasksByParentId.get(task.id)} onComplete={onComplete} />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {completedTasks.length > 0 && (
+                <div className="space-y-3 pt-6 border-t border-border/60">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        Completed
+                        <span className="font-mono tabular-nums">{completedTasks.length}</span>
+                    </h2>
+                    <div className="flex flex-col gap-3 opacity-65">
+                        {completedTasks.slice(0, completedLimit).map((task) => (
+                            <div key={task.id} className="cv-auto">
+                                <TaskCard task={task} subtasks={subtasksByParentId.get(task.id)} onComplete={onComplete} />
+                            </div>
+                        ))}
+                    </div>
+                    {completedTasks.length > completedLimit && (
+                        <Button type="button" variant="outline" size="sm" onClick={onShowMoreCompleted} className="w-full">
+                            Show more completed ({completedTasks.length - completedLimit} remaining)
+                        </Button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function TasksPageContent() {
     const { tasks, loadTasks, isLoading, toggleTaskComplete, addTask } = useTaskStore(
         useShallow((s) => ({
@@ -38,13 +112,7 @@ export default function TasksPageContent() {
     const [viewMode, setViewMode] = useState<'list' | 'eisenhower'>('list');
     const [completedLimit, setCompletedLimit] = useState(20);
     const feedback = useFeedback();
-
-    const {
-        isOpen: isTourOpen,
-        startTour,
-        closeTour,
-        completeTour,
-    } = usePageTour('tasks');
+    const { isOpen: isTourOpen, startTour, closeTour, completeTour } = usePageTour('tasks');
 
     useEffect(() => {
         loadTasks();
@@ -52,11 +120,8 @@ export default function TasksPageContent() {
 
     const handleTaskComplete = useCallback(async (id: string) => {
         const target = tasks.find((t) => t.id === id);
-        if (target?.status === 'done') {
-            feedback.uncheck();
-        } else {
-            feedback.complete();
-        }
+        if (target?.status === 'done') feedback.uncheck();
+        else feedback.complete();
         try {
             await toggleTaskComplete(id);
             toast.success("Task updated");
@@ -66,17 +131,7 @@ export default function TasksPageContent() {
         }
     }, [tasks, toggleTaskComplete, feedback]);
 
-    const subtasksByParentId = useMemo(() => {
-        const map = new Map<string, typeof tasks>();
-        for (const t of tasks) {
-            if (t.parentTaskId && t.status !== 'archived') {
-                const list = map.get(t.parentTaskId);
-                if (list) list.push(t);
-                else map.set(t.parentTaskId, [t]);
-            }
-        }
-        return map;
-    }, [tasks]);
+    const subtasksByParentId = useMemo(() => buildSubtasksMap(tasks), [tasks]);
 
     const handleQuickAddTask = async (task: { title: string; dueDate?: Date; tags?: string[] }) => {
         feedback.success();
@@ -96,19 +151,12 @@ export default function TasksPageContent() {
         }
     };
 
-    const activeTasks = useMemo(() =>
-        tasks.filter(t => t.status !== 'done' && t.status !== 'archived' && !t.parentTaskId),
-        [tasks]
-    );
-
-    const completedTasks = useMemo(() =>
-        tasks.filter(t => t.status === 'done' && !t.parentTaskId),
-        [tasks]
-    );
+    const activeTasks = useMemo(() => tasks.filter((t) => t.status !== 'done' && t.status !== 'archived' && !t.parentTaskId), [tasks]);
+    const completedTasks = useMemo(() => tasks.filter((t) => t.status === 'done' && !t.parentTaskId), [tasks]);
+    const hasAnyVisibleTasks = tasks.some((t) => t.status !== 'archived');
 
     return (
         <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6 pb-24 md:pb-12">
-            {/* Standardized Page Header */}
             <PageHeader
                 title="My Tasks"
                 description="Manage your daily priorities and project to-dos."
@@ -116,44 +164,31 @@ export default function TasksPageContent() {
                     <>
                         <TourTriggerButton onClick={startTour} pageTitle="Tasks" />
                         <div className="inline-flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60 tour-task-views">
-                            <Button
-                                variant={viewMode === 'list' ? 'default' : 'ghost'}
-                                size="sm"
-                                className="h-8 px-2.5 rounded-lg text-xs font-medium"
-                                onClick={() => {
-                                    feedback.tap();
-                                    setViewMode('list');
-                                }}
-                            >
-                                <List className="h-3.5 w-3.5 mr-1.5" />
-                                List
-                            </Button>
-                            <Button
-                                variant={viewMode === 'eisenhower' ? 'default' : 'ghost'}
-                                size="sm"
-                                className="h-8 px-2.5 rounded-lg text-xs font-medium"
-                                onClick={() => {
-                                    feedback.tap();
-                                    setViewMode('eisenhower');
-                                }}
-                            >
-                                <Grid2X2 className="h-3.5 w-3.5 mr-1.5" />
-                                Eisenhower
-                            </Button>
+                            {([['list', 'List', List], ['eisenhower', 'Eisenhower', Grid2X2]] as const).map(([mode, label, Icon]) => (
+                                <Button
+                                    key={mode}
+                                    variant={viewMode === mode ? 'default' : 'ghost'}
+                                    size="sm"
+                                    className="h-8 px-2.5 rounded-lg text-xs font-medium"
+                                    onClick={() => { feedback.tap(); setViewMode(mode); }}
+                                >
+                                    <Icon className="h-3.5 w-3.5 mr-1.5" />
+                                    {label}
+                                </Button>
+                            ))}
                         </div>
                         <CreateTaskModal onTaskCreated={loadTasks} />
                     </>
                 }
             />
 
-            {/* Quick Add Input */}
             <div className="max-w-3xl mx-auto w-full tour-task-input">
                 <SmartTaskInput onAddTask={handleQuickAddTask} />
             </div>
 
             {isLoading && tasks.length === 0 ? (
                 <TaskListSkeleton />
-            ) : tasks.filter(t => t.status !== 'archived').length === 0 ? (
+            ) : !hasAnyVisibleTasks ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
                     <EmptyTasksIllustration />
                     <div>
@@ -162,81 +197,19 @@ export default function TasksPageContent() {
                     </div>
                 </div>
             ) : viewMode === 'list' ? (
-                <div className="max-w-3xl mx-auto w-full space-y-8 tour-task-list">
-                    {/* Active Tasks - Clean single-column stack to prevent uneven card heights */}
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                                Active
-                                <span className="font-mono tabular-nums text-foreground">
-                                    {activeTasks.length}
-                                </span>
-                            </h2>
-                        </div>
-                        {activeTasks.length === 0 ? (
-                            <p className="text-sm text-muted-foreground py-6 text-center rounded-xl border border-dashed border-border">
-                                All active tasks completed.
-                            </p>
-                        ) : (
-                            <div className="flex flex-col gap-3">
-                                {activeTasks.map((task) => (
-                                    <div key={task.id} className="cv-auto">
-                                        <TaskCard
-                                            task={task}
-                                            subtasks={subtasksByParentId.get(task.id)}
-                                            onComplete={handleTaskComplete}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Completed Tasks */}
-                    {completedTasks.length > 0 && (
-                        <div className="space-y-3 pt-6 border-t border-border/60">
-                            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                                Completed
-                                <span className="font-mono tabular-nums">
-                                    {completedTasks.length}
-                                </span>
-                            </h2>
-                            <div className="flex flex-col gap-3 opacity-65">
-                                {completedTasks.slice(0, completedLimit).map((task) => (
-                                    <div key={task.id} className="cv-auto">
-                                        <TaskCard
-                                            task={task}
-                                            subtasks={subtasksByParentId.get(task.id)}
-                                            onComplete={handleTaskComplete}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                            {completedTasks.length > completedLimit && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setCompletedLimit((c) => c + 20)}
-                                    className="w-full"
-                                >
-                                    Show more completed ({completedTasks.length - completedLimit} remaining)
-                                </Button>
-                            )}
-                        </div>
-                    )}
-                </div>
+                <TasksListBody
+                    activeTasks={activeTasks}
+                    completedTasks={completedTasks}
+                    completedLimit={completedLimit}
+                    subtasksByParentId={subtasksByParentId}
+                    onComplete={handleTaskComplete}
+                    onShowMoreCompleted={() => setCompletedLimit((c) => c + 20)}
+                />
             ) : (
                 <EisenhowerMatrix tasks={tasks} onComplete={handleTaskComplete} />
             )}
 
-            {/* Guided Tour */}
-            <GuidedTour
-                {...PAGE_TOURS.tasks}
-                isOpen={isTourOpen}
-                onClose={closeTour}
-                onComplete={completeTour}
-            />
+            <GuidedTour {...PAGE_TOURS.tasks} isOpen={isTourOpen} onClose={closeTour} onComplete={completeTour} />
         </div>
     );
 }

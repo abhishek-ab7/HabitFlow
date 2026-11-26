@@ -30,6 +30,48 @@ export interface GuidedTourProps {
   startImmediately?: boolean;
 }
 
+function findVisibleTargetElement(targetSelector: string): HTMLElement | null {
+  const selectors = targetSelector.split(',').map((s) => s.trim());
+  for (const selector of selectors) {
+    const found = document.querySelector(selector) as HTMLElement | null;
+    if (found && found.offsetParent !== null) return found;
+  }
+  return null;
+}
+
+function buildScrolledRect(rect: DOMRect): DOMRect {
+  const elementTop = rect.top + window.scrollY;
+  const elementLeft = rect.left + window.scrollX;
+  const padding = 100;
+  const isFullyVisible =
+    rect.top >= padding &&
+    rect.bottom <= window.innerHeight - padding &&
+    rect.left >= 0 &&
+    rect.right <= window.innerWidth;
+
+  let safeScrollY = window.scrollY;
+  if (!isFullyVisible) {
+    const targetScrollY = elementTop - window.innerHeight / 2 + rect.height / 2;
+    const maxScrollY = document.documentElement.scrollHeight - window.innerHeight;
+    safeScrollY = Math.max(0, Math.min(targetScrollY, maxScrollY));
+    window.scrollTo({ top: safeScrollY, behavior: 'smooth' });
+  }
+
+  const finalTop = elementTop - safeScrollY;
+  const finalLeft = elementLeft - window.scrollX;
+  return {
+    x: finalLeft,
+    y: finalTop,
+    width: rect.width,
+    height: rect.height,
+    top: finalTop,
+    bottom: finalTop + rect.height,
+    left: finalLeft,
+    right: finalLeft + rect.width,
+    toJSON: () => {},
+  } as DOMRect;
+}
+
 export function GuidedTour({
   tourKey,
   pageTitle,
@@ -150,77 +192,26 @@ export function GuidedTour({
         return;
       }
 
-      // Support multi-selectors separated by comma
-      const targetSelectors = currentStepData.target.split(',').map(s => s.trim());
-      let element: HTMLElement | null = null;
-      for (const selector of targetSelectors) {
-        const found = document.querySelector(selector) as HTMLElement;
-        if (found && found.offsetParent !== null) {
-          element = found;
-          break;
-        }
-      }
-
-      if (element) {
-        const rect = element.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          if (forceScroll) {
-            isTransitioningRef.current = true;
-            const elementTop = rect.top + window.scrollY;
-            const elementLeft = rect.left + window.scrollX;
-            const elementHeight = rect.height;
-
-            const padding = 100;
-            const isFullyVisible =
-              rect.top >= padding &&
-              rect.bottom <= window.innerHeight - padding &&
-              rect.left >= 0 &&
-              rect.right <= window.innerWidth;
-
-            let safeScrollY = window.scrollY;
-            if (!isFullyVisible) {
-              const targetScrollY = elementTop - window.innerHeight / 2 + elementHeight / 2;
-              const maxScrollY = document.documentElement.scrollHeight - window.innerHeight;
-              safeScrollY = Math.max(0, Math.min(targetScrollY, maxScrollY));
-              window.scrollTo({ top: safeScrollY, behavior: 'smooth' });
-            }
-
-            const finalViewportTop = elementTop - safeScrollY;
-            const finalViewportLeft = elementLeft - window.scrollX;
-
-            const finalRect = {
-              x: finalViewportLeft,
-              y: finalViewportTop,
-              width: rect.width,
-              height: rect.height,
-              top: finalViewportTop,
-              bottom: finalViewportTop + rect.height,
-              left: finalViewportLeft,
-              right: finalViewportLeft + rect.width,
-              toJSON: () => {},
-            } as DOMRect;
-
-            setActiveRect(finalRect);
-
-            if (transitionTimeoutRef.current) {
-              clearTimeout(transitionTimeoutRef.current);
-            }
-            transitionTimeoutRef.current = setTimeout(() => {
-              transitionTimeoutRef.current = null;
-              isTransitioningRef.current = false;
-              if (element) {
-                setActiveRect(element.getBoundingClientRect());
-              }
-            }, 600);
-          } else if (!isTransitioningRef.current) {
-            setActiveRect(rect);
-          }
-        } else {
-          setActiveRect(null);
-        }
-      } else {
+      const element = findVisibleTargetElement(currentStepData.target);
+      const rect = element?.getBoundingClientRect();
+      if (!element || !rect || rect.width <= 0 || rect.height <= 0) {
         setActiveRect(null);
+        return;
       }
+
+      if (!forceScroll) {
+        if (!isTransitioningRef.current) setActiveRect(rect);
+        return;
+      }
+
+      isTransitioningRef.current = true;
+      setActiveRect(buildScrolledRect(rect));
+      if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
+      transitionTimeoutRef.current = setTimeout(() => {
+        transitionTimeoutRef.current = null;
+        isTransitioningRef.current = false;
+        setActiveRect(element.getBoundingClientRect());
+      }, 600);
     };
 
     updateCoordinates(true);
@@ -247,13 +238,10 @@ export function GuidedTour({
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleSkipOrClose();
-      } else if (e.key === 'ArrowRight' && !showPrompt) {
-        handleNext();
-      } else if (e.key === 'ArrowLeft' && !showPrompt && currentStep > 0) {
-        handleBack();
-      }
+      if (e.key === 'Escape') return handleSkipOrClose();
+      if (showPrompt) return;
+      if (e.key === 'ArrowRight') handleNext();
+      else if (e.key === 'ArrowLeft' && currentStep > 0) handleBack();
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -314,54 +302,45 @@ export function GuidedTour({
     } catch (e) {}
   };
 
-  // Tooltip position calculation
-  const getTooltipStyle = () => {
-    const windowHeight = window.innerHeight;
-    const windowWidth = window.innerWidth;
-    const tooltipWidth = Math.min(360, windowWidth - 32);
-    const tooltipHeight = 280;
+function clampCoordinate(value: number, size: number, viewportSize: number) {
+  return Math.max(16, Math.min(value, viewportSize - size - 16));
+}
 
-    let top = 0;
-    let left = 0;
+function computeTooltipPosition(activeRect: DOMRect | null, placement?: string) {
+  const windowHeight = window.innerHeight;
+  const windowWidth = window.innerWidth;
+  const tooltipWidth = Math.min(360, windowWidth - 32);
+  const tooltipHeight = 280;
 
-    if (!activeRect) {
-      top = windowHeight / 2 - tooltipHeight / 2;
-      left = windowWidth / 2 - tooltipWidth / 2;
-      return {
-        top: `${Math.max(16, top)}px`,
-        left: `${Math.max(16, left)}px`,
-        width: `${tooltipWidth}px`,
-      };
-    }
-
-    const spaceBelow = windowHeight - activeRect.bottom;
-    const spaceAbove = activeRect.top;
-
-    if (currentStepData.placement === 'bottom' && spaceBelow > tooltipHeight + 20) {
-      top = activeRect.bottom + 12;
-    } else if (currentStepData.placement === 'top' && spaceAbove > tooltipHeight + 20) {
-      top = activeRect.top - tooltipHeight - 12;
-    } else {
-      top = spaceBelow > spaceAbove ? activeRect.bottom + 12 : activeRect.top - tooltipHeight - 12;
-    }
-
-    if (top < 16) top = 16;
-    if (top + tooltipHeight > windowHeight - 16) {
-      top = windowHeight - tooltipHeight - 16;
-    }
-
-    left = activeRect.left + activeRect.width / 2 - tooltipWidth / 2;
-    if (left < 16) left = 16;
-    if (left + tooltipWidth > windowWidth - 16) {
-      left = windowWidth - tooltipWidth - 16;
-    }
-
+  if (!activeRect) {
     return {
-      top: `${top}px`,
-      left: `${left}px`,
+      top: `${Math.max(16, windowHeight / 2 - tooltipHeight / 2)}px`,
+      left: `${Math.max(16, windowWidth / 2 - tooltipWidth / 2)}px`,
       width: `${tooltipWidth}px`,
     };
+  }
+
+  const spaceBelow = windowHeight - activeRect.bottom;
+  const spaceAbove = activeRect.top;
+  const placeBelow =
+    placement === 'bottom'
+      ? spaceBelow > tooltipHeight + 20
+      : placement === 'top'
+        ? !(spaceAbove > tooltipHeight + 20)
+        : spaceBelow > spaceAbove;
+
+  const rawTop = placeBelow ? activeRect.bottom + 12 : activeRect.top - tooltipHeight - 12;
+  const rawLeft = activeRect.left + activeRect.width / 2 - tooltipWidth / 2;
+
+  return {
+    top: `${clampCoordinate(rawTop, tooltipHeight, windowHeight)}px`,
+    left: `${clampCoordinate(rawLeft, tooltipWidth, windowWidth)}px`,
+    width: `${tooltipWidth}px`,
   };
+}
+
+  // Tooltip position calculation
+  const getTooltipStyle = () => computeTooltipPosition(activeRect, currentStepData.placement);
 
   const getArrowDetails = () => {
     if (!activeRect) return null;

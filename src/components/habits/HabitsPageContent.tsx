@@ -54,10 +54,360 @@ const CATEGORIES: { value: Category; label: string }[] = [
   { value: 'relationships', label: 'Relationships' },
 ];
 
-export default function HabitsPageContent() {
+function HabitsHeaderActions({
+  onOpenSmartGenerator,
+  onOpenAIAssist,
+  onBrowseTemplates,
+  onOpenArchived,
+  onStartTour,
+  onNewHabit,
+}: {
+  onOpenSmartGenerator: () => void;
+  onOpenAIAssist: () => void;
+  onBrowseTemplates: () => void;
+  onOpenArchived: () => void;
+  onStartTour: () => void;
+  onNewHabit: () => void;
+}) {
+  const aiEnabled = isAIEnabled();
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-xl border-border/80 text-xs sm:text-sm">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span>{aiEnabled ? 'AI & Templates' : 'Templates'}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52 rounded-xl">
+          {aiEnabled && (
+            <DropdownMenuItem onClick={onOpenSmartGenerator} className="gap-2 cursor-pointer">
+              <Sparkles className="h-4 w-4 text-invest" />
+              <span>AI Generator</span>
+            </DropdownMenuItem>
+          )}
+          {aiEnabled && (
+            <DropdownMenuItem onClick={onOpenAIAssist} className="gap-2 cursor-pointer">
+              <Brain className="h-4 w-4 text-primary" />
+              <span>AI Assist &amp; Stacks</span>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={onBrowseTemplates} className="gap-2 cursor-pointer">
+            <LayoutTemplate className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <span>Browse Templates</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Button onClick={onOpenArchived} variant="outline" size="sm" className="h-9 gap-1.5 rounded-xl border-border/80 hover:bg-muted/40 text-xs sm:text-sm">
+        <Archive className="h-4 w-4 text-muted-foreground" />
+        <span className="hidden sm:inline">Archived</span>
+      </Button>
+
+      <TourTriggerButton onClick={onStartTour} pageTitle="Habits" />
+
+      <Button size="sm" onClick={onNewHabit} className="h-9 gap-1.5 rounded-xl text-xs sm:text-sm tour-add-habit-btn">
+        <Plus className="h-4 w-4" />
+        <span>New Habit</span>
+      </Button>
+    </>
+  );
+}
+
+function HabitsCategoryFilterBar({
+  selectedMonth,
+  categoryFilter,
+  onMonthChange,
+  onToggleCategory,
+  onClear,
+}: {
+  selectedMonth: Date;
+  categoryFilter: Category[];
+  onMonthChange: (d: Date) => void;
+  onToggleCategory: (cat: Category) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 tour-habits-header">
+      <MonthSelector selectedMonth={selectedMonth} onMonthChange={onMonthChange} />
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 lg:flex-wrap">
+        <Filter className="h-4 w-4 text-muted-foreground shrink-0 mr-0.5" />
+        {CATEGORIES.map((cat) => (
+          <Badge
+            key={cat.value}
+            variant={categoryFilter.includes(cat.value) ? 'default' : 'outline'}
+            className={cn('cursor-pointer transition-all shrink-0 h-7 px-2.5 text-xs', categoryFilter.includes(cat.value) && 'bg-primary')}
+            onClick={() => onToggleCategory(cat.value)}
+          >
+            {cat.label}
+          </Badge>
+        ))}
+        {categoryFilter.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={onClear} className="h-7 px-2 text-xs shrink-0">
+            Clear
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HabitsAiAssistDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!isAIEnabled()) return null;
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
+          />
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed right-0 top-0 bottom-0 w-full max-w-md sm:max-w-lg bg-background border-l border-border/80 shadow-2xl z-50 flex flex-col h-full"
+          >
+            <div className="flex items-center justify-between p-4 border-b border-border/80">
+              <div className="flex items-center gap-2">
+                <Brain className="h-5 w-5 text-invest" />
+                <h2 className="text-lg font-semibold tracking-tight">AI Assistant</h2>
+              </div>
+              <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 rounded-full hover:bg-muted">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <HabitSuggestions />
+              <HabitStackSuggestions />
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function HabitsLegend() {
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-6 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2">
+        <div className="w-4 h-4 rounded bg-success/20 flex items-center justify-center">
+          <div className="w-2 h-2 bg-success rounded-sm" />
+        </div>
+        <span>Completed</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="w-4 h-4 rounded bg-muted/75 border border-border/70 dark:bg-muted/50" />
+        <span>Missed</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="w-4 h-4 rounded bg-primary/10 border-2 border-dashed border-primary/30" />
+        <span>Today</span>
+      </div>
+    </div>
+  );
+}
+
+function useHabitsPageLoader({
+  selectedMonth,
+  loadHabits,
+  loadCompletions,
+  setShowModal,
+}: {
+  selectedMonth: Date;
+  loadHabits: () => Promise<void>;
+  loadCompletions: (start: string, end: string) => Promise<void>;
+  setShowModal: (v: boolean) => void;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
+  useEffect(() => {
+    if (searchParams.get('new') === 'true') {
+      Promise.resolve().then(() => setShowModal(true));
+      router.replace('/habits');
+    }
+  }, [searchParams, router, setShowModal]);
+
+  useEffect(() => {
+    const start = format(startOfMonth(subMonths(selectedMonth, 1)), 'yyyy-MM-dd');
+    const end = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
+    Promise.all([loadHabits(), loadCompletions(start, end)]);
+  }, [loadHabits, loadCompletions, selectedMonth]);
+}
+
+function HabitsModals({
+  showModal,
+  setShowModal,
+  editingHabit,
+  setEditingHabit,
+  modalTab,
+  onEditHabit,
+  onCreateHabit,
+  showSmartGenerator,
+  setShowSmartGenerator,
+  showArchivedModal,
+  setShowArchivedModal,
+  deleteConfirmOpen,
+  setDeleteConfirmOpen,
+  onConfirmDelete,
+}: {
+  showModal: boolean;
+  setShowModal: (v: boolean) => void;
+  editingHabit?: Habit;
+  setEditingHabit: (h: Habit | undefined) => void;
+  modalTab: 'details' | 'templates';
+  onEditHabit: (data: HabitFormData) => Promise<void>;
+  onCreateHabit: (data: HabitFormData) => Promise<void>;
+  showSmartGenerator: boolean;
+  setShowSmartGenerator: (v: boolean) => void;
+  showArchivedModal: boolean;
+  setShowArchivedModal: (v: boolean) => void;
+  deleteConfirmOpen: boolean;
+  setDeleteConfirmOpen: (v: boolean) => void;
+  onConfirmDelete: () => Promise<void>;
+}) {
+  return (
+    <>
+      {showModal && (
+        <HabitFormModal
+          open={showModal}
+          onOpenChange={(open) => {
+            setShowModal(open);
+            if (!open) setEditingHabit(undefined);
+          }}
+          onSubmit={editingHabit ? onEditHabit : onCreateHabit}
+          habit={editingHabit}
+          defaultTab={modalTab}
+        />
+      )}
+
+      {isAIEnabled() && showSmartGenerator && (
+        <SmartHabitGenerator open={showSmartGenerator} onOpenChange={setShowSmartGenerator} />
+      )}
+
+      {showArchivedModal && (
+        <ArchivedHabitsModal open={showArchivedModal} onOpenChange={setShowArchivedModal} />
+      )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Habit"
+        description="Are you sure you want to delete this habit? All data will be lost."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={onConfirmDelete}
+      />
+    </>
+  );
+}
+
+function useHabitsPageHandlers({
+  addHabit,
+  editHabit,
+  removeHabit,
+  toggle,
+  setSelectedMonth,
+  categoryFilter,
+  setCategoryFilter,
+  editingHabit,
+  setEditingHabit,
+  setShowModal,
+  habitIdToDelete,
+  setHabitIdToDelete,
+  setDeleteConfirmOpen,
+}: {
+  addHabit: (data: HabitFormData) => Promise<unknown>;
+  editHabit: (id: string, data: Partial<HabitFormData> & { archived?: boolean }) => Promise<unknown>;
+  removeHabit: (id: string) => Promise<unknown>;
+  toggle: (id: string, date: string) => Promise<unknown>;
+  setSelectedMonth: (d: Date) => void;
+  categoryFilter: Category[];
+  setCategoryFilter: (cats: Category[]) => void;
+  editingHabit?: Habit;
+  setEditingHabit: (h: Habit | undefined) => void;
+  setShowModal: (v: boolean) => void;
+  habitIdToDelete: string | null;
+  setHabitIdToDelete: (id: string | null) => void;
+  setDeleteConfirmOpen: (v: boolean) => void;
+}) {
+  const feedback = useFeedback();
+
+  const handleMonthChange = useCallback((date: Date) => {
+    feedback.tap();
+    setSelectedMonth(date);
+  }, [feedback, setSelectedMonth]);
+
+  const handleToggle = useCallback(async (habitId: string, date: string) => {
+    await toggle(habitId, date);
+  }, [toggle]);
+
+  const handleCreateHabit = useCallback(async (data: HabitFormData) => {
+    feedback.success();
+    await addHabit(data);
+    setEditingHabit(undefined);
+  }, [feedback, addHabit, setEditingHabit]);
+
+  const handleEditHabit = useCallback(async (data: HabitFormData) => {
+    if (!editingHabit) return;
+    feedback.success();
+    await editHabit(editingHabit.id, data);
+    setEditingHabit(undefined);
+  }, [feedback, editingHabit, editHabit, setEditingHabit]);
+
+  const handleOpenEdit = useCallback((habit: Habit) => {
+    setEditingHabit(habit);
+    setShowModal(true);
+  }, [setEditingHabit, setShowModal]);
+
+  const handleArchive = useCallback(async (habitId: string) => {
+    feedback.warning();
+    await editHabit(habitId, { archived: true });
+  }, [feedback, editHabit]);
+
+  const handleDelete = useCallback((habitId: string) => {
+    setHabitIdToDelete(habitId);
+    setDeleteConfirmOpen(true);
+  }, [setHabitIdToDelete, setDeleteConfirmOpen]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!habitIdToDelete) return;
+    feedback.warning();
+    await removeHabit(habitIdToDelete);
+    setHabitIdToDelete(null);
+  }, [feedback, habitIdToDelete, removeHabit, setHabitIdToDelete]);
+
+  const handleCategoryFilter = useCallback((category: Category) => {
+    feedback.tap();
+    setCategoryFilter(
+      categoryFilter.includes(category)
+        ? categoryFilter.filter((c) => c !== category)
+        : [...categoryFilter, category]
+    );
+  }, [feedback, categoryFilter, setCategoryFilter]);
+
+  return {
+    handleMonthChange,
+    handleToggle,
+    handleCreateHabit,
+    handleEditHabit,
+    handleOpenEdit,
+    handleArchive,
+    handleDelete,
+    handleConfirmDelete,
+    handleCategoryFilter,
+  };
+}
+
+export default function HabitsPageContent() {
   const {
     habits,
     completions,
@@ -100,8 +450,6 @@ export default function HabitsPageContent() {
   const [showAIAssist, setShowAIAssist] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [habitIdToDelete, setHabitIdToDelete] = useState<string | null>(null);
-  const feedback = useFeedback();
-
   const {
     isOpen: isTourOpen,
     startTour,
@@ -109,89 +457,33 @@ export default function HabitsPageContent() {
     completeTour,
   } = usePageTour('habits');
 
-  // Check for ?new=true query param
-  useEffect(() => {
-    if (searchParams.get('new') === 'true') {
-      Promise.resolve().then(() => {
-        setShowModal(true);
-      });
-      // Clean up the URL
-      router.replace('/habits');
-    }
-  }, [searchParams, router]);
+  useHabitsPageLoader({ selectedMonth, loadHabits, loadCompletions, setShowModal });
 
-  // Load data - OPTIMIZED: Single useEffect with parallel loading
-  useEffect(() => {
-    const init = async () => {
-      // Calculate date range for completions
-      const start = format(startOfMonth(subMonths(selectedMonth, 1)), 'yyyy-MM-dd');
-      const end = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
-      
-      // ⚡ OPTIMIZATION: Load habits and completions in parallel
-      await Promise.all([
-        loadHabits(),
-        loadCompletions(start, end)
-      ]);
-    };
-    
-    init();
-  }, [loadHabits, loadCompletions, selectedMonth]);
-
-  // Event handlers - OPTIMIZED: Wrapped in useCallback to prevent re-renders
-  const handleMonthChange = useCallback((date: Date) => {
-    feedback.tap();
-    setSelectedMonth(date);
-  }, [feedback, setSelectedMonth]);
-
-  const handleToggle = useCallback(async (habitId: string, date: string) => {
-    await toggle(habitId, date);
-  }, [toggle]);
-
-  const handleCreateHabit = useCallback(async (data: HabitFormData) => {
-    feedback.success();
-    await addHabit(data);
-    setEditingHabit(undefined);
-  }, [feedback, addHabit]);
-
-  const handleEditHabit = useCallback(async (data: HabitFormData) => {
-    if (editingHabit) {
-      feedback.success();
-      await editHabit(editingHabit.id, data);
-      setEditingHabit(undefined);
-    }
-  }, [feedback, editingHabit, editHabit]);
-
-  const handleOpenEdit = useCallback((habit: Habit) => {
-    setEditingHabit(habit);
-    setShowModal(true);
-  }, []);
-
-  const handleArchive = useCallback(async (habitId: string) => {
-    feedback.warning();
-    await editHabit(habitId, { archived: true });
-  }, [feedback, editHabit]);
-
-  const handleDelete = useCallback((habitId: string) => {
-    setHabitIdToDelete(habitId);
-    setDeleteConfirmOpen(true);
-  }, []);
-
-  const handleConfirmDelete = useCallback(async () => {
-    if (habitIdToDelete) {
-      feedback.warning();
-      await removeHabit(habitIdToDelete);
-      setHabitIdToDelete(null);
-    }
-  }, [feedback, habitIdToDelete, removeHabit]);
-
-  const handleCategoryFilter = useCallback((category: Category) => {
-    feedback.tap();
-    if (categoryFilter.includes(category)) {
-      setCategoryFilter(categoryFilter.filter(c => c !== category));
-    } else {
-      setCategoryFilter([...categoryFilter, category]);
-    }
-  }, [feedback, categoryFilter, setCategoryFilter]);
+  const {
+    handleMonthChange,
+    handleToggle,
+    handleCreateHabit,
+    handleEditHabit,
+    handleOpenEdit,
+    handleArchive,
+    handleDelete,
+    handleConfirmDelete,
+    handleCategoryFilter,
+  } = useHabitsPageHandlers({
+    addHabit,
+    editHabit,
+    removeHabit,
+    toggle,
+    setSelectedMonth,
+    categoryFilter,
+    setCategoryFilter,
+    editingHabit,
+    setEditingHabit,
+    setShowModal,
+    habitIdToDelete,
+    setHabitIdToDelete,
+    setDeleteConfirmOpen,
+  });
 
   // Get filtered habits - OPTIMIZED: Memoized
   const filteredHabits = useMemo(() => 
@@ -204,20 +496,22 @@ export default function HabitsPageContent() {
   // Get streaks - OPTIMIZED: Memoized
   const streaks = useMemo(() => getCurrentStreaks(), [habits, completions, getCurrentStreaks]);
 
-  if (isLoading && habits.length === 0) {
-    return (
-      <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <Skeleton className="h-9 w-48 mb-2" />
-            <Skeleton className="h-5 w-72" />
-          </div>
-          <Skeleton className="h-10 w-32" />
+function HabitsLoadingView() {
+  return (
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <Skeleton className="h-9 w-48 mb-2" />
+          <Skeleton className="h-5 w-72" />
         </div>
-        <HabitListSkeleton />
+        <Skeleton className="h-10 w-32" />
       </div>
-    );
-  }
+      <HabitListSkeleton />
+    </div>
+  );
+}
+
+  if (isLoading && habits.length === 0) return <HabitsLoadingView />;
 
   return (
     <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto pb-24 md:pb-12">
@@ -228,113 +522,30 @@ export default function HabitsPageContent() {
           description="Track your daily habits and build consistency"
           className="mb-6"
           actions={
-            <>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 gap-1.5 rounded-xl border-border/80 text-xs sm:text-sm"
-                  >
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    <span>{isAIEnabled() ? 'AI & Templates' : 'Templates'}</span>
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52 rounded-xl">
-                  {isAIEnabled() && (
-                    <DropdownMenuItem
-                      onClick={() => setShowSmartGenerator(true)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <Sparkles className="h-4 w-4 text-invest" />
-                      <span>AI Generator</span>
-                    </DropdownMenuItem>
-                  )}
-                  {isAIEnabled() && (
-                    <DropdownMenuItem
-                      onClick={() => setShowAIAssist(true)}
-                      className="gap-2 cursor-pointer"
-                    >
-                      <Brain className="h-4 w-4 text-primary" />
-                      <span>AI Assist &amp; Stacks</span>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setModalTab('templates');
-                      setShowModal(true);
-                    }}
-                    className="gap-2 cursor-pointer"
-                  >
-                    <LayoutTemplate className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    <span>Browse Templates</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <Button
-                onClick={() => setShowArchivedModal(true)}
-                variant="outline"
-                size="sm"
-                className="h-9 gap-1.5 rounded-xl border-border/80 hover:bg-muted/40 text-xs sm:text-sm"
-              >
-                <Archive className="h-4 w-4 text-muted-foreground" />
-                <span className="hidden sm:inline">Archived</span>
-              </Button>
-
-              <TourTriggerButton onClick={startTour} pageTitle="Habits" />
-
-              <Button
-                size="sm"
-                onClick={() => {
-                  setModalTab('details');
-                  setShowModal(true);
-                }}
-                className="h-9 gap-1.5 rounded-xl text-xs sm:text-sm tour-add-habit-btn"
-              >
-                <Plus className="h-4 w-4" />
-                <span>New Habit</span>
-              </Button>
-            </>
+            <HabitsHeaderActions
+              onOpenSmartGenerator={() => setShowSmartGenerator(true)}
+              onOpenAIAssist={() => setShowAIAssist(true)}
+              onBrowseTemplates={() => {
+                setModalTab('templates');
+                setShowModal(true);
+              }}
+              onOpenArchived={() => setShowArchivedModal(true)}
+              onStartTour={startTour}
+              onNewHabit={() => {
+                setModalTab('details');
+                setShowModal(true);
+              }}
+            />
           }
         />
 
-        {/* Controls */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-6 tour-habits-header">
-          <MonthSelector 
-            selectedMonth={selectedMonth} 
-            onMonthChange={handleMonthChange} 
-          />
-          
-          {/* Category filters: horizontal scroll on mobile so nothing clips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 lg:flex-wrap">
-            <Filter className="h-4 w-4 text-muted-foreground shrink-0 mr-0.5" />
-            {CATEGORIES.map((cat) => (
-              <Badge
-                key={cat.value}
-                variant={categoryFilter.includes(cat.value) ? 'default' : 'outline'}
-                className={cn(
-                  "cursor-pointer transition-all shrink-0 h-7 px-2.5 text-xs",
-                  categoryFilter.includes(cat.value) && "bg-primary"
-                )}
-                onClick={() => handleCategoryFilter(cat.value)}
-              >
-                {cat.label}
-              </Badge>
-            ))}
-            {categoryFilter.length > 0 && (
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setCategoryFilter([])}
-                className="h-7 px-2 text-xs shrink-0"
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
+        <HabitsCategoryFilterBar
+          selectedMonth={selectedMonth}
+          categoryFilter={categoryFilter}
+          onMonthChange={handleMonthChange}
+          onToggleCategory={handleCategoryFilter}
+          onClear={() => setCategoryFilter([])}
+        />
 
         <div className="w-full">
           {/* Habit Grid - Full width */}
@@ -354,111 +565,27 @@ export default function HabitsPageContent() {
           </Card>
         </div>
 
-        {/* Legend */}
-        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 mt-6 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-success/20 flex items-center justify-center">
-              <div className="w-2 h-2 bg-success rounded-sm" />
-            </div>
-            <span>Completed</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-muted/75 border border-border/70 dark:bg-muted/50" />
-            <span>Missed</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-primary/10 border-2 border-dashed border-primary/30" />
-            <span>Today</span>
-          </div>
-        </div>
+        <HabitsLegend />
       </FadeIn>
 
-      {/* Form Modal */}
-      {showModal && (
-        <HabitFormModal
-          open={showModal}
-          onOpenChange={(open) => {
-            setShowModal(open);
-            if (!open) setEditingHabit(undefined);
-          }}
-          onSubmit={editingHabit ? handleEditHabit : handleCreateHabit}
-          habit={editingHabit}
-          defaultTab={modalTab}
-        />
-      )}
-
-      {isAIEnabled() && showSmartGenerator && (
-        <SmartHabitGenerator
-          open={showSmartGenerator}
-          onOpenChange={setShowSmartGenerator}
-        />
-      )}
-
-      {showArchivedModal && (
-        <ArchivedHabitsModal
-          open={showArchivedModal}
-          onOpenChange={setShowArchivedModal}
-        />
-      )}
-
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        title="Delete Habit"
-        description="Are you sure you want to delete this habit? All data will be lost."
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        variant="destructive"
-        onConfirm={handleConfirmDelete}
+      <HabitsModals
+        showModal={showModal}
+        setShowModal={setShowModal}
+        editingHabit={editingHabit}
+        setEditingHabit={setEditingHabit}
+        modalTab={modalTab}
+        onEditHabit={handleEditHabit}
+        onCreateHabit={handleCreateHabit}
+        showSmartGenerator={showSmartGenerator}
+        setShowSmartGenerator={setShowSmartGenerator}
+        showArchivedModal={showArchivedModal}
+        setShowArchivedModal={setShowArchivedModal}
+        deleteConfirmOpen={deleteConfirmOpen}
+        setDeleteConfirmOpen={setDeleteConfirmOpen}
+        onConfirmDelete={handleConfirmDelete}
       />
 
-      {/* AI Assist Drawer */}
-      {isAIEnabled() && (
-        <AnimatePresence>
-          {showAIAssist && (
-            <>
-              {/* Backdrop */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowAIAssist(false)}
-                className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
-              />
-              {/* Drawer panel */}
-              <motion.div
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="fixed right-0 top-0 bottom-0 w-full max-w-md sm:max-w-lg bg-background border-l border-border/80 shadow-2xl z-50 flex flex-col h-full"
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-border/80">
-                  <div className="flex items-center gap-2">
-                    <Brain className="h-5 w-5 text-invest" />
-                    <h2 className="text-lg font-semibold tracking-tight">AI Assistant</h2>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowAIAssist(false)}
-                    className="h-8 w-8 rounded-full hover:bg-muted"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                  <HabitSuggestions />
-                  <HabitStackSuggestions />
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-      )}
+      <HabitsAiAssistDrawer open={showAIAssist} onClose={() => setShowAIAssist(false)} />
 
       {/* Guided Tour */}
       <GuidedTour

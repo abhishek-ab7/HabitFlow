@@ -75,39 +75,195 @@ const MORE_MENU_ITEMS: MoreMenuItem[] = [
   },
 ];
 
-export function MobileNav() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-  const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
-  const feedback = useFeedback();
+function isSwipeIgnoredTarget(target: HTMLElement): boolean {
+  return Boolean(
+    target.closest('input, textarea, select, button, a') ||
+    target.closest('[role="dialog"]') ||
+    target.closest('[role="slider"]') ||
+    target.closest('.no-swipe') ||
+    target.closest('[data-no-swipe="true"]') ||
+    target.closest('.overflow-x-auto') ||
+    target.closest('.overflow-y-auto') ||
+    target.closest('[class*="overflow-x-"]') ||
+    target.closest('[class*="overflow-y-"]')
+  );
+}
 
-  const settings = useGamificationStore((s) => s.settings);
+function isHorizontalSwipe(deltaX: number, deltaY: number, duration: number) {
+  return duration < 500 && Math.abs(deltaX) > 80 && Math.abs(deltaX) > Math.abs(deltaY) * 2;
+}
 
-  const showFitness = !settings?.habitOnlyMode && settings?.showFitness !== false;
-  const showFinance = !settings?.habitOnlyMode && settings?.showFinance !== false;
-  const showTasks = !settings?.habitOnlyMode && settings?.showTasks !== false;
-  const showGoals = !settings?.habitOnlyMode && settings?.showGoals !== false;
+function resolveSwipeNavigation(ctx: {
+  deltaX: number;
+  deltaY: number;
+  duration: number;
+  pathname: string;
+  swipeRoutes: string[];
+}): { targetUrl: string; direction: 'swipe-left' | 'swipe-right' } | null {
+  if (!isHorizontalSwipe(ctx.deltaX, ctx.deltaY, ctx.duration)) return null;
+  const currentIndex = ctx.swipeRoutes.indexOf(ctx.pathname);
+  if (currentIndex === -1) return null;
 
-  const swipeRoutes = [
-    '/dashboard',
-    showFitness ? '/fitness' : '/habits',
-    showFinance ? '/finance' : '/analytics',
-  ];
+  const isLeft = ctx.deltaX < 0;
+  const nextIndex = isLeft ? currentIndex + 1 : currentIndex - 1;
+  if (nextIndex < 0 || nextIndex >= ctx.swipeRoutes.length) return null;
 
-  const visibleMoreItems = MORE_MENU_ITEMS.filter((item) => {
-    if (item.href === '/habits' && !showFitness) return false; // Slot 2 shows Habits when Fitness is disabled
-    if (item.href === '/tasks' && !showTasks) return false;
-    if (item.href === '/goals' && !showGoals) return false;
-    if (!showFinance && item.href === '/analytics') return false; // Promoted to slot 4 when finance is hidden
-    return true;
-  });
+  return { targetUrl: ctx.swipeRoutes[nextIndex], direction: isLeft ? 'swipe-left' : 'swipe-right' };
+}
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+function MobileNavLink({
+  href,
+  label,
+  icon: Icon,
+  isActive,
+  className,
+  onTap,
+}: {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  isActive: boolean;
+  className?: string;
+  onTap: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onTap}
+      className={cn(
+        'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors',
+        className,
+        isActive && 'text-primary'
+      )}
+    >
+      {isActive && (
+        <motion.div
+          layoutId="mobile-nav-pill"
+          className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
+          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+        />
+      )}
+      <Icon className={cn('w-5 h-5', isActive && 'text-primary')} strokeWidth={isActive ? 2.5 : 2} />
+      <span className="text-[10px] font-semibold tracking-tight">{label}</span>
+    </Link>
+  );
+}
 
-  // Global horizontal touch swipe detection for mobile views
+function navigateWithTransition(
+  router: ReturnType<typeof useRouter>,
+  targetUrl: string,
+  direction: 'swipe-left' | 'swipe-right'
+) {
+  if (typeof document === 'undefined') {
+    router.push(targetUrl);
+    return;
+  }
+  document.documentElement.classList.add(direction);
+  if ('startViewTransition' in document) {
+    const transition = (document as unknown as { startViewTransition: (cb: () => void) => { finished: Promise<void> } }).startViewTransition(() => {
+      router.push(targetUrl);
+    });
+    transition.finished.finally(() => document.documentElement.classList.remove(direction));
+    return;
+  }
+  router.push(targetUrl);
+}
+
+function MobileMoreDrawer({
+  open,
+  onOpenChange,
+  items,
+  pathname,
+  onTap,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  items: typeof MORE_MENU_ITEMS;
+  pathname: string;
+  onTap: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-md w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col border-border bg-background"
+      >
+        <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
+          <div className="w-10 h-1.5 rounded-full bg-muted-foreground/30" />
+        </div>
+        <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between">
+          <DialogHeader className="text-left space-y-0.5">
+            <DialogTitle className="text-base font-bold text-foreground">More Workspaces</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Access your productivity and personal growth toolkit
+            </DialogDescription>
+          </DialogHeader>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-4 space-y-2 overflow-y-auto">
+          {items.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => {
+                  onTap();
+                  onOpenChange(false);
+                }}
+                className={cn(
+                  'w-full p-3 rounded-xl border transition-colors flex items-center gap-3.5 text-left group',
+                  isActive
+                    ? 'border-primary/40 bg-accent/60'
+                    : 'border-border/50 bg-muted/45 hover:bg-muted/75 active:scale-[0.98]'
+                )}
+              >
+                <div className={cn('w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-105', item.color)}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-foreground">{item.label}</span>
+                    {isActive && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/20 text-primary">Active</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </Link>
+            );
+          })}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function isHiddenMobileNavRoute(pathname: string) {
+  return pathname === '/' || pathname === '/login' || pathname.startsWith('/auth');
+}
+
+function useMobileSwipeNavigation({
+  mounted,
+  pathname,
+  router,
+  swipeRoutes,
+  showFinance,
+  showFitness,
+}: {
+  mounted: boolean;
+  pathname: string;
+  router: ReturnType<typeof useRouter>;
+  swipeRoutes: string[];
+  showFinance: boolean;
+  showFitness: boolean;
+}) {
   useEffect(() => {
     if (!mounted || typeof window === 'undefined') return;
 
@@ -116,22 +272,7 @@ export function MobileNav() {
     let touchStartTime = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length > 1) return;
-      const target = e.target as HTMLElement;
-
-      const isInteractive =
-        target.closest('input, textarea, select, button, a') ||
-        target.closest('[role="dialog"]') ||
-        target.closest('[role="slider"]') ||
-        target.closest('.no-swipe') ||
-        target.closest('[data-no-swipe="true"]') ||
-        target.closest('.overflow-x-auto') ||
-        target.closest('.overflow-y-auto') ||
-        target.closest('[class*="overflow-x-"]') ||
-        target.closest('[class*="overflow-y-"]');
-
-      if (isInteractive) return;
-
+      if (e.touches.length > 1 || isSwipeIgnoredTarget(e.target as HTMLElement)) return;
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
       touchStartTime = Date.now();
@@ -139,317 +280,170 @@ export function MobileNav() {
 
     const handleTouchEnd = (e: TouchEvent) => {
       if (e.changedTouches.length === 0) return;
-
-      const deltaX = e.changedTouches[0].clientX - touchStartX;
-      const deltaY = e.changedTouches[0].clientY - touchStartY;
-      const duration = Date.now() - touchStartTime;
-
-      if (
-        duration < 500 &&
-        Math.abs(deltaX) > 80 &&
-        Math.abs(deltaX) > Math.abs(deltaY) * 2
-      ) {
-        const currentIndex = swipeRoutes.indexOf(pathname);
-        if (currentIndex === -1) return;
-
-        let targetUrl = '';
-        const swipeDirection: 'swipe-left' | 'swipe-right' =
-          deltaX < 0 ? 'swipe-left' : 'swipe-right';
-
-        if (deltaX < 0 && currentIndex < swipeRoutes.length - 1) {
-          targetUrl = swipeRoutes[currentIndex + 1];
-        } else if (deltaX > 0 && currentIndex > 0) {
-          targetUrl = swipeRoutes[currentIndex - 1];
-        }
-
-        if (targetUrl) {
-          if (typeof document !== 'undefined') {
-            document.documentElement.classList.add(swipeDirection);
-          }
-
-          if (
-            typeof document !== 'undefined' &&
-            'startViewTransition' in document
-          ) {
-            const transition = (document as any).startViewTransition(() => {
-              router.push(targetUrl);
-            });
-            transition.finished.finally(() => {
-              if (typeof document !== 'undefined') {
-                document.documentElement.classList.remove(swipeDirection);
-              }
-            });
-          } else {
-            router.push(targetUrl);
-          }
-        }
-      }
+      const result = resolveSwipeNavigation({
+        deltaX: e.changedTouches[0].clientX - touchStartX,
+        deltaY: e.changedTouches[0].clientY - touchStartY,
+        duration: Date.now() - touchStartTime,
+        pathname,
+        swipeRoutes,
+      });
+      if (result) navigateWithTransition(router, result.targetUrl, result.direction);
     };
 
     window.addEventListener('touchstart', handleTouchStart, { passive: true });
     window.addEventListener('touchend', handleTouchEnd, { passive: true });
-
     return () => {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
   }, [mounted, pathname, router, showFinance, showFitness]);
+}
 
-  if (pathname === '/' || pathname === '/login' || pathname.startsWith('/auth')) {
-    return null;
-  }
+function MobileBottomBar({
+  pathname,
+  showFitness,
+  showFinance,
+  isMoreActive,
+  onTap,
+  onOpenCapture,
+  onOpenMore,
+}: {
+  pathname: string;
+  showFitness: boolean;
+  showFinance: boolean;
+  isMoreActive: boolean;
+  onTap: () => void;
+  onOpenCapture: () => void;
+  onOpenMore: () => void;
+}) {
+  return (
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/98 dark:bg-card/98 border-t border-border/80 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.35)]">
+      <nav className="flex items-center justify-around h-16 px-1 relative">
+        <MobileNavLink
+          href="/dashboard"
+          label="Home"
+          icon={LayoutDashboard}
+          isActive={pathname === '/dashboard'}
+          className="tour-mobile-nav-dashboard"
+          onTap={onTap}
+        />
 
-  if (!mounted) return null;
+        {showFitness ? (
+          <MobileNavLink href="/fitness" label="Fitness" icon={Dumbbell} isActive={pathname.startsWith('/fitness')} onTap={onTap} />
+        ) : (
+          <MobileNavLink href="/habits" label="Habits" icon={CheckSquare} isActive={pathname === '/habits'} className="tour-mobile-nav-habits" onTap={onTap} />
+        )}
+
+        <div className="relative flex items-center justify-center w-full h-full">
+          <button
+            type="button"
+            onClick={onOpenCapture}
+            aria-label="10-Second Universal Capture"
+            className="absolute -top-3.5 w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 flex items-center justify-center border-4 border-background active:scale-90 hover:scale-105 transition-all"
+          >
+            <Plus className="w-6 h-6 stroke-[2.5]" />
+          </button>
+          <span className="text-[9px] font-semibold tracking-tight text-muted-foreground pt-7">Capture</span>
+        </div>
+
+        {showFinance ? (
+          <MobileNavLink href="/finance" label="Finance" icon={Wallet} isActive={pathname === '/finance'} className="tour-mobile-nav-finance" onTap={onTap} />
+        ) : (
+          <MobileNavLink href="/analytics" label="Analytics" icon={BarChart3} isActive={pathname === '/analytics'} onTap={onTap} />
+        )}
+
+        <button
+          type="button"
+          onClick={onOpenMore}
+          aria-label="Open More options"
+          className={cn(
+            'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-more',
+            isMoreActive && 'text-primary'
+          )}
+        >
+          {isMoreActive && (
+            <motion.div
+              layoutId="mobile-nav-pill"
+              className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            />
+          )}
+          <LayoutGrid className={cn('w-5 h-5', isMoreActive && 'text-primary')} strokeWidth={isMoreActive ? 2.5 : 2} />
+          <span className="text-[10px] font-semibold tracking-tight">More</span>
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+function getNavVisibility(settings: ReturnType<typeof useGamificationStore.getState>['settings']) {
+  const habitOnly = Boolean(settings?.habitOnlyMode);
+  return {
+    showFitness: !habitOnly && settings?.showFitness !== false,
+    showFinance: !habitOnly && settings?.showFinance !== false,
+    showTasks: !habitOnly && settings?.showTasks !== false,
+    showGoals: !habitOnly && settings?.showGoals !== false,
+  };
+}
+
+function getVisibleMoreItems(vis: ReturnType<typeof getNavVisibility>) {
+  return MORE_MENU_ITEMS.filter((item) => {
+    if (item.href === '/habits' && !vis.showFitness) return false;
+    if (item.href === '/tasks' && !vis.showTasks) return false;
+    if (item.href === '/goals' && !vis.showGoals) return false;
+    if (!vis.showFinance && item.href === '/analytics') return false;
+    return true;
+  });
+}
+
+export function MobileNav() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
+  const feedback = useFeedback();
+
+  const settings = useGamificationStore((s) => s.settings);
+  const vis = getNavVisibility(settings);
+  const { showFitness, showFinance } = vis;
+  const swipeRoutes = ['/dashboard', showFitness ? '/fitness' : '/habits', showFinance ? '/finance' : '/analytics'];
+  const visibleMoreItems = getVisibleMoreItems(vis);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useMobileSwipeNavigation({ mounted, pathname, router, swipeRoutes, showFinance, showFitness });
+
+  if (isHiddenMobileNavRoute(pathname) || !mounted) return null;
 
   const isMoreActive = visibleMoreItems.some((item) => pathname.startsWith(item.href));
 
   return (
     <>
-      {/* 5-Slot Bottom Navigation Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/98 dark:bg-card/98 border-t border-border/80 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_24px_rgba(0,0,0,0.35)]">
-        <nav className="flex items-center justify-around h-16 px-1 relative">
-          {/* Slot 1: Home */}
-          <Link
-            href="/dashboard"
-            onClick={() => feedback.tap()}
-            className={cn(
-              'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-dashboard',
-              pathname === '/dashboard' && 'text-primary'
-            )}
-          >
-            {pathname === '/dashboard' && (
-              <motion.div
-                layoutId="mobile-nav-pill"
-                className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              />
-            )}
-            <LayoutDashboard
-              className={cn('w-5 h-5', pathname === '/dashboard' && 'text-primary')}
-              strokeWidth={pathname === '/dashboard' ? 2.5 : 2}
-            />
-            <span className="text-[10px] font-semibold tracking-tight">Home</span>
-          </Link>
+      <MobileBottomBar
+        pathname={pathname}
+        showFitness={showFitness}
+        showFinance={showFinance}
+        isMoreActive={isMoreActive}
+        onTap={() => feedback.tap()}
+        onOpenCapture={() => {
+          feedback.toggle(true);
+          window.dispatchEvent(new Event('open-quick-capture'));
+        }}
+        onOpenMore={() => {
+          feedback.toggle(true);
+          setIsMoreDrawerOpen(true);
+        }}
+      />
 
-          {/* Slot 2: Fitness (or Habits fallback when Fitness is disabled) */}
-          {showFitness ? (
-            <Link
-              href="/fitness"
-              onClick={() => feedback.tap()}
-              className={cn(
-                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors',
-                pathname.startsWith('/fitness') && 'text-primary'
-              )}
-            >
-              {pathname.startsWith('/fitness') && (
-                <motion.div
-                  layoutId="mobile-nav-pill"
-                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-              <Dumbbell
-                className={cn('w-5 h-5', pathname.startsWith('/fitness') && 'text-primary')}
-                strokeWidth={pathname.startsWith('/fitness') ? 2.5 : 2}
-              />
-              <span className="text-[10px] font-semibold tracking-tight">Fitness</span>
-            </Link>
-          ) : (
-            <Link
-              href="/habits"
-              onClick={() => feedback.tap()}
-              className={cn(
-                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-habits',
-                pathname === '/habits' && 'text-primary'
-              )}
-            >
-              {pathname === '/habits' && (
-                <motion.div
-                  layoutId="mobile-nav-pill"
-                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-              <CheckSquare
-                className={cn('w-5 h-5', pathname === '/habits' && 'text-primary')}
-                strokeWidth={pathname === '/habits' ? 2.5 : 2}
-              />
-              <span className="text-[10px] font-semibold tracking-tight">Habits</span>
-            </Link>
-          )}
-
-          {/* Slot 3: Center Elevated [ + ] 10-Second Universal Capture Button */}
-          <div className="relative flex items-center justify-center w-full h-full">
-            <button
-              type="button"
-              onClick={() => {
-                feedback.toggle(true);
-                window.dispatchEvent(new Event('open-quick-capture'));
-              }}
-              aria-label="10-Second Universal Capture"
-              className="absolute -top-3.5 w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 flex items-center justify-center border-4 border-background active:scale-90 hover:scale-105 transition-all"
-            >
-              <Plus className="w-6 h-6 stroke-[2.5]" />
-            </button>
-            <span className="text-[9px] font-semibold tracking-tight text-muted-foreground pt-7">
-              Capture
-            </span>
-          </div>
-
-          {/* Slot 4: Finance (or Analytics if Finance is disabled in settings) */}
-          {showFinance ? (
-            <Link
-              href="/finance"
-              onClick={() => feedback.tap()}
-              className={cn(
-                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-finance',
-                pathname === '/finance' && 'text-primary'
-              )}
-            >
-              {pathname === '/finance' && (
-                <motion.div
-                  layoutId="mobile-nav-pill"
-                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-              <Wallet
-                className={cn('w-5 h-5', pathname === '/finance' && 'text-primary')}
-                strokeWidth={pathname === '/finance' ? 2.5 : 2}
-              />
-              <span className="text-[10px] font-semibold tracking-tight">Finance</span>
-            </Link>
-          ) : (
-            <Link
-              href="/analytics"
-              onClick={() => feedback.tap()}
-              className={cn(
-                'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors',
-                pathname === '/analytics' && 'text-primary'
-              )}
-            >
-              {pathname === '/analytics' && (
-                <motion.div
-                  layoutId="mobile-nav-pill"
-                  className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                />
-              )}
-              <BarChart3
-                className={cn('w-5 h-5', pathname === '/analytics' && 'text-primary')}
-                strokeWidth={pathname === '/analytics' ? 2.5 : 2}
-              />
-              <span className="text-[10px] font-semibold tracking-tight">Analytics</span>
-            </Link>
-          )}
-
-          {/* Slot 5: More (Drawer) */}
-          <button
-            type="button"
-            onClick={() => {
-              feedback.toggle(true);
-              setIsMoreDrawerOpen(true);
-            }}
-            aria-label="Open More options"
-            className={cn(
-              'relative flex flex-col items-center justify-center w-full h-full space-y-1 text-muted-foreground hover:text-foreground transition-colors tour-mobile-nav-more',
-              isMoreActive && 'text-primary'
-            )}
-          >
-            {isMoreActive && (
-              <motion.div
-                layoutId="mobile-nav-pill"
-                className="absolute inset-1 bg-primary/10 rounded-xl -z-10"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              />
-            )}
-            <LayoutGrid
-              className={cn('w-5 h-5', isMoreActive && 'text-primary')}
-              strokeWidth={isMoreActive ? 2.5 : 2}
-            />
-            <span className="text-[10px] font-semibold tracking-tight">More</span>
-          </button>
-        </nav>
-      </div>
-
-      {/* More Drawer (Tasks, Goals, Analytics, Settings) */}
-      <Dialog open={isMoreDrawerOpen} onOpenChange={setIsMoreDrawerOpen}>
-        <DialogContent
-          showCloseButton={false}
-          className="p-0 gap-0 overflow-hidden max-w-full sm:max-w-md w-full fixed bottom-0 top-auto left-1/2 -translate-x-1/2 translate-y-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col border-border bg-background"
-        >
-          {/* Mobile Drag Handle */}
-          <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
-            <div className="w-10 h-1.5 rounded-full bg-muted-foreground/30" />
-          </div>
-
-          <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between">
-            <DialogHeader className="text-left space-y-0.5">
-              <DialogTitle className="text-base font-bold text-foreground">
-                More Workspaces
-              </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                Access your productivity and personal growth toolkit
-              </DialogDescription>
-            </DialogHeader>
-            <button
-              type="button"
-              onClick={() => setIsMoreDrawerOpen(false)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="p-4 space-y-2 overflow-y-auto">
-            {visibleMoreItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => {
-                    feedback.tap();
-                    setIsMoreDrawerOpen(false);
-                  }}
-                  className={cn(
-                    'w-full p-3 rounded-xl border transition-colors flex items-center gap-3.5 text-left group',
-                    isActive
-                      ? 'border-primary/40 bg-accent/60'
-                      : 'border-border/50 bg-muted/45 hover:bg-muted/75 active:scale-[0.98]'
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-105',
-                      item.color
-                    )}
-                  >
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-bold text-foreground">
-                        {item.label}
-                      </span>
-                      {isActive && (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/20 text-primary">
-                          Active
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {item.description}
-                    </p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground/60 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                </Link>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MobileMoreDrawer
+        open={isMoreDrawerOpen}
+        onOpenChange={setIsMoreDrawerOpen}
+        items={visibleMoreItems}
+        pathname={pathname}
+        onTap={() => feedback.tap()}
+      />
     </>
   );
 }
