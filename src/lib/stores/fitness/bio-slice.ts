@@ -1,12 +1,14 @@
-import {
-  clearRestCompletion,
-  db,
-  markRestCompletion,
-} from '@/lib/db';
+import { db } from '@/lib/db';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { logger } from '@/lib/logger';
-import type { FitnessDailyLog, FitnessProfile } from '@/lib/types';
+import type { FitnessDailyLog } from '@/lib/types';
 import type { FitnessSliceCreator, FitnessStoreActions } from './types';
+import {
+  buildNextDailyLog,
+  buildNextFitnessProfile,
+  syncProfileWeightIfLatest,
+  syncWorkoutRestHabits,
+} from './bio/bio-helpers';
 
 function notifyFitnessSync() {
   if (typeof window === 'undefined') return;
@@ -23,8 +25,79 @@ function resolveUserId(override?: string, current?: string | null): string {
   return override || current || 'local-demo-user';
 }
 
-const EXERCISE_HABIT_PATTERN =
-  /\b(workout|exercise|gym|training|lift|cardio|run|running|jog|cycling|swim|morning walk)\b/i;
+async function findExistingDailyLog(
+  memoryLogs: FitnessDailyLog[],
+  userId: string,
+  targetDate: string
+): Promise<FitnessDailyLog | undefined> {
+  const fromMemory = memoryLogs.find((d) => d.date === targetDate && !d.deletedAt);
+  if (fromMemory) return fromMemory;
+  return db.fitnessDailyLogs
+    .where('[userId+date]')
+    .equals([userId, targetDate])
+    .filter((r) => !r.deletedAt)
+    .first();
+}
+
+async function emitStepsMediatorIfChanged(
+  patch: Partial<FitnessDailyLog>,
+  nextLog: FitnessDailyLog,
+  normalizedDate: string
+): Promise<void> {
+  const hasStepsUpdate = patch.steps !== undefined || patch.lowEnergyMode !== undefined;
+  if (!hasStepsUpdate || nextLog.steps <= 0) return;
+
+  try {
+    const { CrossDomainActionMediator } = await import('../mediator');
+    await CrossDomainActionMediator.onFitnessEvent({
+      type: 'STEPS_UPDATED',
+      date: normalizedDate,
+      steps: nextLog.steps,
+    });
+  } catch (e) {
+    logger.warn('[FitnessStore] Steps mediator skipped:', e);
+  }
+}
+
+async function emitSleepOrJunkMediator(
+  patch: Partial<FitnessDailyLog>,
+  nextLog: FitnessDailyLog,
+  normalizedDate: string
+): Promise<void> {
+  try {
+    const { CrossDomainActionMediator } = await import('../mediator');
+    if (patch.sleepHours !== undefined && nextLog.sleepHours !== null) {
+      await CrossDomainActionMediator.onFitnessEvent({
+        type: 'BIO_LOGGED',
+        date: normalizedDate,
+        sleepHours: nextLog.sleepHours,
+      });
+      return;
+    }
+    if (patch.junkFreeOverride !== undefined) {
+      await CrossDomainActionMediator.evaluateZeroJunkRules(normalizedDate);
+    }
+  } catch (e) {
+    logger.warn('[FitnessStore] Bio mediator skipped:', e);
+  }
+}
+
+async function incrementDailyMetric(params: {
+  dailyLogs: FitnessDailyLog[];
+  currentUserId: string | null;
+  upsertDailyLog: FitnessStoreActions['upsertDailyLog'];
+  field: 'waterMl' | 'steps';
+  delta: number;
+  date?: string;
+  userIdOverride?: string;
+}): Promise<FitnessDailyLog> {
+  const targetDate = params.date || getLocalIsoDate();
+  const userId = resolveUserId(params.userIdOverride, params.currentUserId);
+  const existing = await findExistingDailyLog(params.dailyLogs, userId, targetDate);
+  const currentVal = existing?.[params.field] || 0;
+  const nextVal = Math.max(0, currentVal + Math.round(params.delta));
+  return params.upsertDailyLog(targetDate, { [params.field]: nextVal }, userId);
+}
 
 export const createBioSlice: FitnessSliceCreator<
   Pick<
@@ -41,78 +114,9 @@ export const createBioSlice: FitnessSliceCreator<
     const now = new Date().toISOString();
     const existing =
       get().profile ||
-      (await db.fitnessProfiles
-        .where('userId')
-        .equals(userId)
-        .filter((p) => !p.deletedAt)
-        .first());
+      (await db.fitnessProfiles.where('userId').equals(userId).filter((p) => !p.deletedAt).first());
 
-    const nextProfile: FitnessProfile = {
-      id: existing?.id || crypto.randomUUID(),
-      userId,
-      heightCm: data.heightCm !== undefined ? data.heightCm : existing?.heightCm ?? null,
-      currentWeightKg:
-        data.currentWeightKg !== undefined
-          ? data.currentWeightKg
-          : existing?.currentWeightKg ?? null,
-      targetWeightKg:
-        data.targetWeightKg !== undefined
-          ? data.targetWeightKg
-          : existing?.targetWeightKg ?? null,
-      startingWeightKg:
-        data.startingWeightKg !== undefined
-          ? data.startingWeightKg
-          : existing?.startingWeightKg ?? data.currentWeightKg ?? null,
-      targetWaistInches:
-        data.targetWaistInches !== undefined
-          ? data.targetWaistInches
-          : existing?.targetWaistInches ?? null,
-      calorieTarget: Math.max(
-        800,
-        Math.round(data.calorieTarget ?? existing?.calorieTarget ?? 2000)
-      ),
-      proteinTargetG: Math.max(
-        20,
-        Math.round(data.proteinTargetG ?? existing?.proteinTargetG ?? 130)
-      ),
-      carbsTargetG:
-        data.carbsTargetG !== undefined
-          ? data.carbsTargetG
-          : existing?.carbsTargetG ?? 210,
-      fatTargetG:
-        data.fatTargetG !== undefined ? data.fatTargetG : existing?.fatTargetG ?? 60,
-      waterTargetMl: Math.max(
-        500,
-        Math.round(data.waterTargetMl ?? existing?.waterTargetMl ?? 3000)
-      ),
-      stepsTarget: Math.max(
-        1000,
-        Math.round(data.stepsTarget ?? existing?.stepsTarget ?? 8000)
-      ),
-      sleepTargetHours: Math.max(
-        4,
-        Math.min(14, Number(data.sleepTargetHours ?? existing?.sleepTargetHours ?? 7.5))
-      ),
-      activityLevel: data.activityLevel ?? existing?.activityLevel ?? 'moderate',
-      goalType: data.goalType ?? existing?.goalType ?? 'fat_loss',
-      dietPreference: data.dietPreference ?? existing?.dietPreference ?? 'non_veg',
-      gymScheduleDays:
-        data.gymScheduleDays ?? existing?.gymScheduleDays ?? [1, 2, 3, 4, 5, 6],
-      lowEnergyCalorieCeiling:
-        data.lowEnergyCalorieCeiling !== undefined
-          ? data.lowEnergyCalorieCeiling
-          : existing?.lowEnergyCalorieCeiling ?? null,
-      lowEnergyStepsTarget:
-        data.lowEnergyStepsTarget !== undefined
-          ? data.lowEnergyStepsTarget
-          : existing?.lowEnergyStepsTarget ?? 3500,
-      deletedAt: null,
-      generationCounter: (existing?.generationCounter || 0) + 1,
-      isDirty: true,
-      createdAt: existing?.createdAt || now,
-      updatedAt: now,
-    };
-
+    const nextProfile = buildNextFitnessProfile({ data, existing, userId, now });
     await db.fitnessProfiles.put(nextProfile);
     set({ profile: nextProfile, currentUserId: userId });
     notifyFitnessSync();
@@ -124,344 +128,75 @@ export const createBioSlice: FitnessSliceCreator<
     const normalizedDate = date || getLocalIsoDate();
     const now = new Date().toISOString();
 
-    const existingInDb = await db.fitnessDailyLogs
-      .where('[userId+date]')
-      .equals([userId, normalizedDate])
-      .filter((row) => !row.deletedAt)
-      .first();
-
-    const existing =
-      existingInDb ||
-      get().dailyLogs.find((d) => d.date === normalizedDate && !d.deletedAt);
-
-    const nextLog: FitnessDailyLog = {
-      id: existing?.id || crypto.randomUUID(),
-      userId,
-      date: normalizedDate,
-      weightKg:
-        patch.weightKg !== undefined
-          ? patch.weightKg
-          : existing?.weightKg ?? null,
-      waistInches:
-        patch.waistInches !== undefined
-          ? patch.waistInches
-          : existing?.waistInches ?? null,
-      waterMl: Math.max(
-        0,
-        Math.round(patch.waterMl !== undefined ? patch.waterMl : existing?.waterMl ?? 0)
-      ),
-      steps: Math.max(
-        0,
-        Math.round(patch.steps !== undefined ? patch.steps : existing?.steps ?? 0)
-      ),
-      sleepHours:
-        patch.sleepHours !== undefined
-          ? patch.sleepHours
-          : existing?.sleepHours ?? null,
-      sleepQuality:
-        patch.sleepQuality !== undefined
-          ? patch.sleepQuality
-          : existing?.sleepQuality ?? null,
-      energyLevel:
-        patch.energyLevel !== undefined
-          ? patch.energyLevel
-          : existing?.energyLevel ?? null,
-      sorenessLevel:
-        patch.sorenessLevel !== undefined
-          ? patch.sorenessLevel
-          : existing?.sorenessLevel ?? null,
-      lowEnergyMode:
-        patch.lowEnergyMode !== undefined
-          ? Boolean(patch.lowEnergyMode)
-          : Boolean(existing?.lowEnergyMode),
-      junkFreeOverride:
-        patch.junkFreeOverride !== undefined
-          ? Boolean(patch.junkFreeOverride)
-          : Boolean(existing?.junkFreeOverride),
-      restedHabitIds:
-        patch.restedHabitIds !== undefined
-          ? patch.restedHabitIds
-          : existing?.restedHabitIds,
-      notes: patch.notes !== undefined ? patch.notes : existing?.notes ?? null,
-      deletedAt: null,
-      generationCounter: (existing?.generationCounter || 0) + 1,
-      isDirty: true,
-      createdAt: existing?.createdAt || now,
-      updatedAt: now,
-    };
-
+    const existing = await findExistingDailyLog(get().dailyLogs, userId, normalizedDate);
+    const nextLog = buildNextDailyLog({ patch, existing, userId, normalizedDate, now });
     await db.fitnessDailyLogs.put(nextLog);
 
-    // Sync profile.currentWeightKg only when this weigh-in is the latest recorded date (never clobber on historical backfill)
-    if (
-      typeof patch.weightKg === 'number' &&
-      Number.isFinite(patch.weightKg) &&
-      patch.weightKg > 0
-    ) {
-      let existingDbLogs: FitnessDailyLog[] = [];
-      try {
-        existingDbLogs = await db.fitnessDailyLogs
-          .where('userId')
-          .equals(userId)
-          .filter((row) => !row.deletedAt)
-          .toArray();
-      } catch {
-        // Fallback cleanly to in-memory logs
-      }
-      const allWeightDates = [
-        ...get().dailyLogs,
-        ...existingDbLogs,
-        nextLog,
-      ]
-        .filter(
-          (row) =>
-            !row.deletedAt &&
-            typeof row.weightKg === 'number' &&
-            Number.isFinite(row.weightKg) &&
-            row.weightKg > 0
-        )
-        .map((row) => row.date.slice(0, 10));
-
-      const latestWeighInDate = allWeightDates.reduce<string | null>(
-        (max, d) => (!max || d > max ? d : max),
-        null
-      );
-      const targetDay = normalizedDate.slice(0, 10);
-
-      if (!latestWeighInDate || targetDay >= latestWeighInDate) {
-        const profile =
-          get().profile ||
-          (await db.fitnessProfiles
-            .where('userId')
-            .equals(userId)
-            .filter((p) => !p.deletedAt)
-            .first());
-        if (profile) {
-          const updatedProfile: FitnessProfile = {
-            ...profile,
-            currentWeightKg: patch.weightKg,
-            startingWeightKg: profile.startingWeightKg ?? patch.weightKg,
-            generationCounter: (profile.generationCounter || 0) + 1,
-            isDirty: true,
-            updatedAt: now,
-          };
-          await db.fitnessProfiles.put(updatedProfile);
-          set({ profile: updatedProfile });
-        }
-      }
-    }
-
-    set((state) => {
-      const filtered = state.dailyLogs.filter((d) => d.date !== normalizedDate);
-      const next = [...filtered, nextLog].sort((a, b) => a.date.localeCompare(b.date));
-      return { dailyLogs: next, currentUserId: userId };
+    await syncProfileWeightIfLatest({
+      userId,
+      weightKg: patch.weightKg,
+      normalizedDate,
+      memoryLogs: get().dailyLogs,
+      nextLog,
+      currentProfile: get().profile,
+      setProfile: (profile) => set({ profile }),
+      now,
     });
 
+    set((state) => ({
+      dailyLogs: [...state.dailyLogs.filter((d) => d.date !== normalizedDate), nextLog].sort(
+        (a, b) => a.date.localeCompare(b.date)
+      ),
+      currentUserId: userId,
+    }));
+
     notifyFitnessSync();
-
-    if ((patch.steps !== undefined || patch.lowEnergyMode !== undefined) && nextLog.steps > 0) {
-      try {
-        const { CrossDomainActionMediator } = await import('../mediator');
-        await CrossDomainActionMediator.onFitnessEvent({
-          type: 'STEPS_UPDATED',
-          date: normalizedDate,
-          steps: nextLog.steps,
-        });
-      } catch (e) {
-        logger.warn('[FitnessStore] Steps mediator skipped:', e);
-      }
-    }
-
-    if (patch.sleepHours !== undefined && nextLog.sleepHours !== null) {
-      try {
-        const { CrossDomainActionMediator } = await import('../mediator');
-        await CrossDomainActionMediator.onFitnessEvent({
-          type: 'BIO_LOGGED',
-          date: normalizedDate,
-          sleepHours: nextLog.sleepHours,
-        });
-      } catch (e) {
-        logger.warn('[FitnessStore] Bio sleep mediator skipped:', e);
-      }
-    } else if (patch.junkFreeOverride !== undefined) {
-      try {
-        const { CrossDomainActionMediator } = await import('../mediator');
-        await CrossDomainActionMediator.evaluateZeroJunkRules(normalizedDate);
-      } catch (e) {
-        logger.warn('[FitnessStore] Junk-free override mediator skipped:', e);
-      }
-    }
-
+    await emitStepsMediatorIfChanged(patch, nextLog, normalizedDate);
+    await emitSleepOrJunkMediator(patch, nextLog, normalizedDate);
     return nextLog;
   },
 
   toggleLowEnergyMode: async (date, enabled, userIdOverride) => {
     const targetDate = (date || getLocalIsoDate()).slice(0, 10);
     const userId = resolveUserId(userIdOverride, get().currentUserId);
-    const existing =
-      get().dailyLogs.find((d) => d.date === targetDate && !d.deletedAt) ||
-      (await db.fitnessDailyLogs
-        .where('[userId+date]')
-        .equals([userId, targetDate])
-        .filter((r) => !r.deletedAt)
-        .first());
-
+    const existing = await findExistingDailyLog(get().dailyLogs, userId, targetDate);
     const nextEnabled =
       enabled !== undefined ? Boolean(enabled) : !Boolean(existing?.lowEnergyMode);
 
-    const restedHabitIds: string[] = [];
-
-    // Mark scheduled exercise/workout habits as guilt-free `rest` via markRestCompletion
-    // (and restore if toggling Low-Energy Mode off when previously marked by Low-Energy Mode).
-    try {
-      const { useHabitStore } = await import('../habit-store');
-      if (useHabitStore.getState().habits.length === 0) {
-        const [dexieHabits, dexieCompletions] = await Promise.all([
-          db.habits.toArray(),
-          db.completions.toArray(),
-        ]);
-        if (dexieHabits.length > 0) {
-          useHabitStore.setState({
-            habits: dexieHabits,
-            completions: dexieCompletions,
-          });
-        }
-      }
-
-      const habitState = useHabitStore.getState();
-      const workoutHabits = habitState.habits.filter((h) => {
-        if (h.archived || h.polarity === 'quit') return false;
-        if (h.autoTrackRule && h.autoTrackRule !== 'none') {
-          return h.autoTrackRule === 'workout_logged';
-        }
-        return (
-          h.anchorBlock === 'gym' ||
-          EXERCISE_HABIT_PATTERN.test(h.name)
-        );
-      });
-
-      for (const habit of workoutHabits) {
-        const currentComps = useHabitStore.getState().completions;
-        const existingComp = currentComps.find(
-          (c) => c.habitId === habit.id && c.date === targetDate
-        );
-
-        if (nextEnabled) {
-          if (existingComp?.completed) {
-            continue;
-          }
-          if (existingComp?.status === 'rest') {
-            if (
-              existingComp.restReason === 'Low-Energy Day' ||
-              existingComp.restReason === 'Low-Energy Mode'
-            ) {
-              restedHabitIds.push(habit.id);
-            }
-            continue;
-          }
-          const restComp = await markRestCompletion(
-            habit.id,
-            targetDate,
-            habit.userId || userId,
-            'Low-Energy Day'
-          );
-          restedHabitIds.push(habit.id);
-          useHabitStore.setState((state) => ({
-            completions: [
-              ...state.completions.filter(
-                (c) => !(c.habitId === habit.id && c.date === targetDate)
-              ),
-              restComp,
-            ],
-          }));
-          try {
-            const { getSyncEngine } = await import('@/lib/sync');
-            await getSyncEngine().pushCompletion(restComp);
-          } catch {
-            // Non-blocking in offline / isolated test env
-          }
-        } else if (
-          !existingComp?.completed &&
-          (existingComp?.status === 'rest' || existingComp?.skipped) &&
-          (existingComp.restReason === 'Low-Energy Day' ||
-            existingComp.restReason === 'Low-Energy Mode' ||
-            existing?.restedHabitIds?.includes(habit.id))
-        ) {
-          const cleared = await clearRestCompletion(
-            habit.id,
-            targetDate,
-            habit.userId || userId
-          );
-          useHabitStore.setState((state) => ({
-            completions: [
-              ...state.completions.filter(
-                (c) => !(c.habitId === habit.id && c.date === targetDate)
-              ),
-              cleared,
-            ],
-          }));
-          try {
-            const { getSyncEngine } = await import('@/lib/sync');
-            await getSyncEngine().pushCompletion(cleared);
-          } catch {
-            // Non-blocking in offline / isolated test env
-          }
-        }
-      }
-    } catch (err) {
-      logger.warn('[FitnessStore] Low-energy habit rest sync skipped:', err);
-    }
+    const restedHabitIds = await syncWorkoutRestHabits({
+      targetDate,
+      userId,
+      nextEnabled,
+      existingRestedHabitIds: existing?.restedHabitIds,
+    });
 
     const updatedLog = await get().upsertDailyLog(
       targetDate,
-      {
-        lowEnergyMode: nextEnabled,
-        restedHabitIds: nextEnabled ? restedHabitIds : [],
-      },
+      { lowEnergyMode: nextEnabled, restedHabitIds: nextEnabled ? restedHabitIds : [] },
       userId
     );
-
-    return {
-      ...updatedLog,
-      restedHabitIds: nextEnabled ? restedHabitIds : [],
-    };
+    return { ...updatedLog, restedHabitIds: nextEnabled ? restedHabitIds : [] };
   },
 
-  incrementWater: async (deltaMl, date, userIdOverride) => {
-    const targetDate = date || getLocalIsoDate();
-    const userId = resolveUserId(userIdOverride, get().currentUserId);
-    const existing =
-      get().dailyLogs.find((d) => d.date === targetDate && !d.deletedAt) ||
-      (await db.fitnessDailyLogs
-        .where('[userId+date]')
-        .equals([userId, targetDate])
-        .filter((r) => !r.deletedAt)
-        .first());
+  incrementWater: (deltaMl, date, userIdOverride) =>
+    incrementDailyMetric({
+      dailyLogs: get().dailyLogs,
+      currentUserId: get().currentUserId,
+      upsertDailyLog: get().upsertDailyLog,
+      field: 'waterMl',
+      delta: deltaMl,
+      date,
+      userIdOverride,
+    }),
 
-    const currentWater = existing?.waterMl || 0;
-    return get().upsertDailyLog(
-      targetDate,
-      { waterMl: Math.max(0, currentWater + Math.round(deltaMl)) },
-      userId
-    );
-  },
-
-  incrementSteps: async (deltaSteps, date, userIdOverride) => {
-    const targetDate = date || getLocalIsoDate();
-    const userId = resolveUserId(userIdOverride, get().currentUserId);
-    const existing =
-      get().dailyLogs.find((d) => d.date === targetDate && !d.deletedAt) ||
-      (await db.fitnessDailyLogs
-        .where('[userId+date]')
-        .equals([userId, targetDate])
-        .filter((r) => !r.deletedAt)
-        .first());
-
-    const currentSteps = existing?.steps || 0;
-    return get().upsertDailyLog(
-      targetDate,
-      { steps: Math.max(0, currentSteps + Math.round(deltaSteps)) },
-      userId
-    );
-  },
+  incrementSteps: (deltaSteps, date, userIdOverride) =>
+    incrementDailyMetric({
+      dailyLogs: get().dailyLogs,
+      currentUserId: get().currentUserId,
+      upsertDailyLog: get().upsertDailyLog,
+      field: 'steps',
+      delta: deltaSteps,
+      date,
+      userIdOverride,
+    }),
 });
