@@ -72,10 +72,8 @@ function formatCrossDomainBlock(cd?: NonNullable<CoachBriefingInput['context']>[
   return lines.length > 0 ? `\nCross-Domain Life OS Insights:\n${lines.join('\n')}` : '';
 }
 
-export function buildCoachPrompt(input: CoachBriefingInput): string {
-  const { userData, context } = input;
-  if (context?.mode === 'suggestion') {
-    return `You are an expert Habit Coach. The user wants to improve in the area of "${context.category || 'general productivity'}".
+function buildCoachSuggestionPrompt(category?: string): string {
+  return `You are an expert Habit Coach. The user wants to improve in the area of "${category || 'general productivity'}".
 Suggest 3 small, atomic habits they could start today. 
 
 Return a JSON object with:
@@ -84,11 +82,20 @@ Return a JSON object with:
 - quote: A relevant motivational quote
 
 Be specific, actionable, and encouraging.`;
-  }
+}
+
+function getIstTimeOfDay(): 'morning' | 'afternoon' | 'evening' {
+  const istHour = getIstHour();
+  if (istHour < 12) return 'morning';
+  return istHour < 18 ? 'afternoon' : 'evening';
+}
+
+export function buildCoachPrompt(input: CoachBriefingInput): string {
+  const { userData, context } = input;
+  if (context?.mode === 'suggestion') return buildCoachSuggestionPrompt(context.category);
 
   const todayIst = context?.todayIso || getIstIsoDate();
-  const istHour = getIstHour();
-  const timeOfDay = istHour < 12 ? 'morning' : istHour < 18 ? 'afternoon' : 'evening';
+  const timeOfDay = getIstTimeOfDay();
   const { habitsText, tasksText } = formatCoachLists(context);
   const deadlines = context?.upcomingDeadlines?.length
     ? `- Upcoming Deadlines: ${context.upcomingDeadlines.map((d) => `${d.title} (${d.daysLeft} days)`).join(', ')}`
@@ -588,28 +595,33 @@ const CATEGORY_MATCH_RULES: Array<{
   },
 ];
 
+function matchesCommitmentName(lower: string, recipientName: string): boolean {
+  const recLower = recipientName.toLowerCase();
+  if (lower.includes(recLower)) return true;
+  return recLower === 'mother' && /\b(mother|mom|mummy|maa|ammi)\b/.test(lower);
+}
+
+function isDirectCommitmentPayment(lower: string, categorySlug: string): boolean {
+  if (categorySlug !== 'family-commitments') return false;
+  if (lower.includes('deduct') || lower.includes('offset')) return false;
+  return /\b(allowance|transfer|settle|direct|monthly support)\b/.test(lower);
+}
+
 function detectDeterministicCommitment(
   lower: string,
   categorySlug: string,
   commitments: NonNullable<ExpenseParseInput['commitments']>
 ) {
-  for (const comm of commitments) {
-    const recLower = comm.recipientName.toLowerCase();
-    const isMotherMatch = recLower === 'mother' && /\b(mother|mom|mummy|maa|ammi)\b/.test(lower);
-    if (!lower.includes(recLower) && !isMotherMatch) continue;
-
-    const isDirect =
-      /\b(allowance|transfer|settle|direct|monthly support)\b/.test(lower) &&
-      !lower.includes('deduct') &&
-      !lower.includes('offset') &&
-      categorySlug === 'family-commitments';
-    return {
-      matchedCommitmentId: comm.id,
-      matchedCommitmentRecipient: comm.recipientName,
-      commitmentContributionType: (isDirect ? 'direct_payment' : 'offset_expense') as ExpenseParseOutput['commitmentContributionType'],
-    };
+  const match = commitments.find((c) => matchesCommitmentName(lower, c.recipientName));
+  if (!match) {
+    return { matchedCommitmentId: null, matchedCommitmentRecipient: null, commitmentContributionType: null };
   }
-  return { matchedCommitmentId: null, matchedCommitmentRecipient: null, commitmentContributionType: null };
+  const isDirect = isDirectCommitmentPayment(lower, categorySlug);
+  return {
+    matchedCommitmentId: match.id,
+    matchedCommitmentRecipient: match.recipientName,
+    commitmentContributionType: (isDirect ? 'direct_payment' : 'offset_expense') as ExpenseParseOutput['commitmentContributionType'],
+  };
 }
 
 function detectDeterministicDebt(
@@ -626,6 +638,26 @@ function detectDeterministicDebt(
   return { matchedDebtId: null, matchedDebtPerson: null, overrideToDebtCategory: false };
 }
 
+function formatDeterministicExpenseTitle(text: string, fallbackCategoryName: string): string {
+  const cleanTitle = text
+    .replace(/^(paid|spent|bought|ordered|logged|sent|gave)\s+/i, '')
+    .replace(/\b(via|by|using)\s+(upi|gpay|phonepe|cash|card|credit card|bank)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleanTitle.length > 0 ? cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1) : `${fallbackCategoryName} Expense`;
+}
+
+function buildDeterministicExpenseTags(
+  categorySlug: string,
+  comm: ReturnType<typeof detectDeterministicCommitment>,
+  debt: ReturnType<typeof detectDeterministicDebt>
+): string[] {
+  const tags: string[] = [categorySlug.split('-')[0]];
+  if (comm.matchedCommitmentRecipient) tags.push(comm.matchedCommitmentRecipient.toLowerCase(), 'offset');
+  if (debt.matchedDebtPerson) tags.push(debt.matchedDebtPerson.split(' ')[0].toLowerCase(), 'debt');
+  return tags;
+}
+
 export function parseExpenseDeterministically(input: ExpenseParseInput): ExpenseParseOutput {
   const text = (input.rawText || '').trim();
   const lower = text.toLowerCase();
@@ -634,9 +666,7 @@ export function parseExpenseDeterministically(input: ExpenseParseInput): Expense
   const amount = amountMatches?.[0] ? parseInt(amountMatches[0].replace(/[₹,a-zA-Z.\s]/g, ''), 10) || 0 : 0;
 
   const paymentMethodType = PAYMENT_METHOD_RULES.find(([re]) => re.test(lower))?.[1] ?? 'upi';
-  const type: ExpenseParseOutput['type'] = /\b(salary|received|credited|income|freelance|refund)\b/.test(lower)
-    ? 'income'
-    : 'expense';
+  const type: ExpenseParseOutput['type'] = /\b(salary|received|credited|income|freelance|refund)\b/.test(lower) ? 'income' : 'expense';
 
   const catRule = CATEGORY_MATCH_RULES.find((r) => r.pattern.test(lower));
   let categorySlug = catRule?.slug ?? 'shopping-personal-care';
@@ -651,19 +681,8 @@ export function parseExpenseDeterministically(input: ExpenseParseInput): Expense
     subcategory = 'Friend Debt Repayment';
   }
 
-  let cleanTitle = text
-    .replace(/^(paid|spent|bought|ordered|logged|sent|gave)\s+/i, '')
-    .replace(/\b(via|by|using)\s+(upi|gpay|phonepe|cash|card|credit card|bank)\b/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  cleanTitle = cleanTitle.length > 0 ? cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1) : `${categoryName} Expense`;
-
-  const tags: string[] = [categorySlug.split('-')[0]];
-  if (comm.matchedCommitmentRecipient) tags.push(comm.matchedCommitmentRecipient.toLowerCase(), 'offset');
-  if (debt.matchedDebtPerson) tags.push(debt.matchedDebtPerson.split(' ')[0].toLowerCase(), 'debt');
-
   return {
-    title: cleanTitle,
+    title: formatDeterministicExpenseTitle(text, categoryName),
     amount,
     type,
     categorySlug,
@@ -674,7 +693,7 @@ export function parseExpenseDeterministically(input: ExpenseParseInput): Expense
     matchedDebtPerson: debt.matchedDebtPerson,
     matchedDebtId: debt.matchedDebtId,
     notes: text,
-    tags,
+    tags: buildDeterministicExpenseTags(categorySlug, comm, debt),
     confidence: amount > 0 ? 94 : 60,
   };
 }

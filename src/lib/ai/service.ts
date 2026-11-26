@@ -245,13 +245,34 @@ export class HabitFlowAI {
     return data;
   }
 
+  private async resolveTextCacheFallback(feature: AIFeature, cacheKey?: string): Promise<string> {
+    if (cacheKey) {
+      const staleCache = await getCachedResponse<string>(cacheKey);
+      if (staleCache) {
+        console.warn(`[AI Fallback] Returning stale cache for ${feature} (all keys unhealthy)`);
+        return staleCache;
+      }
+    }
+    throw new Error(`All API keys for module "${this.module}" are rate-limited.`);
+  }
+
+  private async executeTextPromptWithKey(apiKey: string, feature: AIFeature, prompt: string): Promise<string> {
+    return retryWithBackoff(
+      async () => {
+        const client = new GoogleGenAI({ apiKey });
+        const response = await client.models.generateContent({ model: this.model, contents: prompt });
+        return response.text || '';
+      },
+      { maxRetries: 3, feature }
+    );
+  }
+
   async generateWithoutSchema(
     feature: AIFeature,
     prompt: string,
     cacheKey?: string,
     cacheTTL?: number
   ): Promise<string> {
-    // 1. Check Cache
     if (cacheKey) {
       const cached = await getCachedResponse<string>(cacheKey);
       if (cached) {
@@ -260,56 +281,27 @@ export class HabitFlowAI {
       }
     }
 
-    // 2. Select Healthy Key
     const apiKey = this.selectHealthyKey();
-    if (!apiKey) {
-      if (cacheKey) {
-        const staleCache = await getCachedResponse<string>(cacheKey);
-        if (staleCache) {
-          console.warn(`[AI Fallback] Returning stale cache for ${feature} (all keys unhealthy)`);
-          return staleCache;
-        }
-      }
-      throw new Error(`All API keys for module "${this.module}" are rate-limited.`);
-    }
+    if (!apiKey) return this.resolveTextCacheFallback(feature, cacheKey);
 
-    // 3. Execute with Rotation
     const result = await this.processInQueue(async () => {
       const currentKeyIndex = this.currentKeyIndex;
-
       try {
-        return await retryWithBackoff(
-          async () => {
-            const client = new GoogleGenAI({ apiKey });
-            const response = await client.models.generateContent({
-              model: this.model,
-              contents: prompt
-            });
-            return response.text || '';
-          },
-          { maxRetries: 3, feature }
-        );
+        return await this.executeTextPromptWithKey(apiKey, feature, prompt);
       } catch (error: any) {
-        if (error?.message?.includes('429') || error?.status === 429) {
-          this.markKeyUnhealthy(currentKeyIndex);
-          console.log(`[AI Retry] 429 error detected, retrying with next key...`);
-          const keys = HabitFlowAI.KEY_POOLS[this.module];
-          this.currentKeyIndex = (this.currentKeyIndex + 1) % keys.length;
-          return await this.generateWithoutSchema(feature, prompt, cacheKey, cacheTTL);
-        }
-        throw error;
+        const isRateLimit = error?.message?.includes('429') || error?.status === 429;
+        if (!isRateLimit) throw error;
+        this.markKeyUnhealthy(currentKeyIndex);
+        console.log(`[AI Retry] 429 error detected, retrying with next key...`);
+        const keys = HabitFlowAI.KEY_POOLS[this.module];
+        this.currentKeyIndex = (this.currentKeyIndex + 1) % keys.length;
+        return this.generateWithoutSchema(feature, prompt, cacheKey, cacheTTL);
       }
     });
 
-    // 4. Advance round-robin
     const keys = HabitFlowAI.KEY_POOLS[this.module];
     this.currentKeyIndex = (this.currentKeyIndex + 1) % keys.length;
-
-    // 5. Cache
-    if (cacheKey && cacheTTL) {
-      await setCachedResponse(cacheKey, result, cacheTTL);
-    }
-
+    if (cacheKey && cacheTTL) await setCachedResponse(cacheKey, result, cacheTTL);
     return result;
   }
 }

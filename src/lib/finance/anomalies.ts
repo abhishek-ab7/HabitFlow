@@ -332,6 +332,18 @@ function buildFitnessTelemetrySnapshot(
   };
 }
 
+function buildFitnessDomainInputs(fitness?: LifeOsQAContextInput) {
+  return {
+    mealLogs: filterActiveLogs(fitness?.mealLogs),
+    workoutSessions: filterActiveLogs(fitness?.workoutSessions),
+    supplementInventory: filterActiveLogs(fitness?.supplementInventory),
+    supplementLogs: filterActiveLogs(fitness?.supplementLogs),
+    habits: fitness?.habits ?? [],
+    habitCompletions: fitness?.habitCompletions ?? [],
+    moodLogs: fitness?.moodLogs ?? [],
+  };
+}
+
 function computeCrossDomainForQA(params: {
   todayIso: string;
   transactions: FinanceTransaction[];
@@ -346,14 +358,8 @@ function computeCrossDomainForQA(params: {
     transactions,
     categories,
     debtRecords,
-    mealLogs: filterActiveLogs(fitness?.mealLogs),
-    workoutSessions: filterActiveLogs(fitness?.workoutSessions),
     fitnessDailyLogs: fLogs,
-    supplementInventory: filterActiveLogs(fitness?.supplementInventory),
-    supplementLogs: filterActiveLogs(fitness?.supplementLogs),
-    habits: fitness?.habits || [],
-    habitCompletions: fitness?.habitCompletions || [],
-    moodLogs: fitness?.moodLogs || [],
+    ...buildFitnessDomainInputs(fitness),
   });
 }
 

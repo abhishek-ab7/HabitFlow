@@ -198,18 +198,22 @@ export async function generateFullDatabaseSnapshot(): Promise<Record<string, any
 /**
  * Safely restores full JSON database snapshot into Dexie.
  */
+async function putBackupTableRows(tableName: string, records: unknown): Promise<number> {
+  if (!Array.isArray(records) || records.length === 0) return 0;
+  await db.table(tableName).bulkPut(records);
+  return records.length;
+}
+
 export async function restoreDatabaseSnapshot(
   tables: Record<string, any[]>
 ): Promise<{ restoredTables: number; totalRecords: number }> {
   let totalRecords = 0;
   let restoredTables = 0;
 
-  // Validate that tables object is valid
   if (!tables || typeof tables !== 'object') {
     throw new Error('Invalid backup data format');
   }
 
-  // Filter to known valid tables
   const validTableNames = ALL_WORKSPACE_TABLES.filter((t) => Array.isArray(tables[t]));
   if (validTableNames.length === 0) {
     throw new Error('No recognized database tables found in backup');
@@ -217,10 +221,9 @@ export async function restoreDatabaseSnapshot(
 
   await db.transaction('rw', ALL_WORKSPACE_TABLES as any, async () => {
     for (const tableName of validTableNames) {
-      const records = tables[tableName];
-      if (Array.isArray(records) && records.length > 0) {
-        await db.table(tableName).bulkPut(records);
-        totalRecords += records.length;
+      const count = await putBackupTableRows(tableName, tables[tableName]);
+      if (count > 0) {
+        totalRecords += count;
         restoredTables++;
       }
     }

@@ -227,28 +227,10 @@ function scaleEggEstimate(
   };
 }
 
-export function estimateHinglishFoodMacros(
-  rawText: string,
+function buildFallbackJunkEstimate(
+  clean: string,
   options?: { amountInr?: number; forceJunk?: boolean }
 ): EstimatedFoodMacros {
-  const clean = (rawText || '').trim();
-  const lower = clean.toLowerCase();
-
-  const rule = HINGLISH_FOOD_CATALOG.find((r) => r.pattern.test(lower));
-  if (rule) {
-    if (rule.name === 'Eggs') return scaleEggEstimate(rule, clean, lower, options?.forceJunk);
-    return {
-      name: clean || rule.name,
-      calories: rule.calories,
-      proteinG: rule.proteinG,
-      carbsG: rule.carbsG,
-      fatG: rule.fatG,
-      isJunk: options?.forceJunk ?? rule.isJunk,
-      mealType: rule.mealType,
-      confidence: 85,
-    };
-  }
-
   const amt = Number(options?.amountInr || 0);
   const calories = amt >= 350 ? 550 : amt >= 180 ? 420 : 350;
   return {
@@ -260,5 +242,28 @@ export function estimateHinglishFoodMacros(
     isJunk: options?.forceJunk ?? true,
     mealType: 'snack',
     confidence: 55,
+  };
+}
+
+export function estimateHinglishFoodMacros(
+  rawText: string,
+  options?: { amountInr?: number; forceJunk?: boolean }
+): EstimatedFoodMacros {
+  const clean = (rawText || '').trim();
+  const lower = clean.toLowerCase();
+
+  const rule = HINGLISH_FOOD_CATALOG.find((r) => r.pattern.test(lower));
+  if (!rule) return buildFallbackJunkEstimate(clean, options);
+  if (rule.name === 'Eggs') return scaleEggEstimate(rule, clean, lower, options?.forceJunk);
+
+  return {
+    name: clean || rule.name,
+    calories: rule.calories,
+    proteinG: rule.proteinG,
+    carbsG: rule.carbsG,
+    fatG: rule.fatG,
+    isJunk: options?.forceJunk ?? rule.isJunk,
+    mealType: rule.mealType,
+    confidence: 85,
   };
 }

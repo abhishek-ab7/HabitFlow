@@ -19,6 +19,37 @@ import { useTaskStore } from '@/lib/stores/task-store';
 import { isFinanceModuleEnabled, isFitnessModuleEnabled } from '@/lib/workspace-modules';
 import { useAuth } from '@/providers/auth-provider';
 
+function useLifeOsHydration(params: {
+  hydrate: boolean;
+  userId?: string;
+  showFinance: boolean;
+  showFitness: boolean;
+  loadHabits: (force?: boolean) => Promise<void>;
+  loadCompletions: (start: string, end: string) => Promise<void>;
+  loadGoals: (force?: boolean) => Promise<void>;
+  loadAllMilestones: (force?: boolean) => Promise<void>;
+  loadTasks: (force?: boolean) => Promise<void>;
+  loadMoodLogs: (start: string, end: string, force?: boolean) => Promise<void>;
+  loadFinanceData: (userId?: string, force?: boolean) => Promise<void>;
+  loadFitnessData: (userId?: string, force?: boolean) => Promise<void>;
+}) {
+  const { hydrate, userId, showFinance, showFitness } = params;
+  useEffect(() => {
+    if (!hydrate) return;
+    const todayStr = getIstIsoDate();
+    const startStr = shiftIsoDate(todayStr, -365);
+    void params.loadHabits(false);
+    void params.loadCompletions(startStr, todayStr);
+    void params.loadGoals(false);
+    void params.loadAllMilestones(false);
+    void params.loadTasks(false);
+    void params.loadMoodLogs(startStr, todayStr, false);
+    if (showFinance) void params.loadFinanceData(userId, false);
+    if (showFitness) void params.loadFitnessData(userId, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrate, userId, showFinance, showFitness]);
+}
+
 export function useLifeOsAnalytics(
   range: AnalyticsRangeKey,
   options: { hydrate?: boolean } = {}
@@ -83,21 +114,20 @@ export function useLifeOsAnalytics(
     }))
   );
 
-  // Offline-first Dexie hydration on mount (only in top-level orchestrator)
-  useEffect(() => {
-    if (!hydrate) return;
-    const todayStr = getIstIsoDate();
-    const startStr = shiftIsoDate(todayStr, -365);
-    void loadHabits(false);
-    void loadCompletions(startStr, todayStr);
-    void loadGoals(false);
-    void loadAllMilestones(false);
-    void loadTasks(false);
-    void loadMoodLogs(startStr, todayStr, false);
-    if (showFinance) void financeSlice.loadFinanceData(user?.id, false);
-    if (showFitness) void fitnessSlice.loadFitnessData(user?.id, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrate, user?.id, showFinance, showFitness]);
+  useLifeOsHydration({
+    hydrate,
+    userId: user?.id,
+    showFinance,
+    showFitness,
+    loadHabits,
+    loadCompletions,
+    loadGoals,
+    loadAllMilestones,
+    loadTasks,
+    loadMoodLogs,
+    loadFinanceData: financeSlice.loadFinanceData,
+    loadFitnessData: fitnessSlice.loadFitnessData,
+  });
 
   const snapshot = useMemo(
     () =>
@@ -110,17 +140,7 @@ export function useLifeOsAnalytics(
         milestones,
         tasks,
         moodLogs,
-        accounts: financeSlice.accounts,
-        transactions: financeSlice.transactions,
-        categories: financeSlice.categories,
-        budgets: financeSlice.budgets,
-        commitments: financeSlice.commitments,
-        debtRecords: financeSlice.debtRecords,
-        debtInstallments: financeSlice.debtInstallments,
-        emiTrackers: financeSlice.emiTrackers,
-        sipPlans: financeSlice.sipPlans,
-        recurringBills: financeSlice.recurringBills,
-        creditCardStatements: financeSlice.creditCardStatements,
+        ...financeSlice,
         fitnessProfile: fitnessSlice.profile,
         dailyLogs: fitnessSlice.dailyLogs,
         mealLogs: fitnessSlice.mealLogs,

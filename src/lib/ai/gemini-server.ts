@@ -14,16 +14,19 @@ const ENV_KEY_CANDIDATES = [
   'GEMINI_API_KEY',
 ] as const;
 
+function isUsableGeminiKey(val: string | undefined, seen: Set<string>): val is string {
+  return Boolean(val && !val.startsWith('your_') && !seen.has(val));
+}
+
 export function resolveGeminiApiKeys(): string[] {
   const seen = new Set<string>();
   const keys: string[] = [];
 
   for (const name of ENV_KEY_CANDIDATES) {
     const val = process.env[name]?.trim();
-    if (val && !val.startsWith('your_') && !seen.has(val)) {
-      seen.add(val);
-      keys.push(val);
-    }
+    if (!isUsableGeminiKey(val, seen)) continue;
+    seen.add(val);
+    keys.push(val);
   }
 
   return keys;

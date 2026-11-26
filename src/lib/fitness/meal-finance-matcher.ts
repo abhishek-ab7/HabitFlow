@@ -190,16 +190,26 @@ function buildCombinedTexts(meal: Pick<MealLog, 'name' | 'notes'>, tx: FinanceTr
   };
 }
 
+function isSameDayFoodOrJunk(
+  mealDate: string | undefined,
+  tx: FinanceTransaction,
+  catMap: Map<string, FinanceCategory>
+): { ok: true } | { ok: false; reason: string } {
+  const mealDay = (mealDate || '').slice(0, 10);
+  const txDay = (tx.date || '').slice(0, 10);
+  if (!mealDay || mealDay !== txDay) return { ok: false, reason: 'different_date' };
+  if (!isFoodOrJunkTransaction(tx, catMap)) return { ok: false, reason: 'not_food_or_junk' };
+  return { ok: true };
+}
+
 export function scoreMealTransactionMatch(
   meal: Pick<MealLog, 'name' | 'date' | 'isJunk' | 'notes'>,
   tx: FinanceTransaction,
   catMap: Map<string, FinanceCategory>,
   opts?: { isUniqueJunkPairOnDay?: boolean }
 ): { score: number; confidence: 'high' | 'candidate' | 'none'; reason: string } {
-  const mealDay = (meal.date || '').slice(0, 10);
-  const txDay = (tx.date || '').slice(0, 10);
-  if (!mealDay || mealDay !== txDay) return { score: 0, confidence: 'none', reason: 'different_date' };
-  if (!isFoodOrJunkTransaction(tx, catMap)) return { score: 0, confidence: 'none', reason: 'not_food_or_junk' };
+  const gate = isSameDayFoodOrJunk(meal.date, tx, catMap);
+  if (!gate.ok) return { score: 0, confidence: 'none', reason: gate.reason };
 
   const { mealText, txText } = buildCombinedTexts(meal, tx);
   const overlap = findTokenOverlap(mealText, txText);

@@ -8,6 +8,13 @@ interface RetryOptions {
   feature?: string;
 }
 
+const RETRYABLE_ERROR_SNIPPETS = ['429', 'quota', 'RESOURCE_EXHAUSTED', 'fetch', 'network', 'ECONNREFUSED', '500', '503', 'INTERNAL'];
+
+function isRetryableError(error: any): boolean {
+  const msg = String(error?.message || '');
+  return RETRYABLE_ERROR_SNIPPETS.some((snippet) => msg.includes(snippet));
+}
+
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   options: RetryOptions = {}
@@ -17,7 +24,7 @@ export async function retryWithBackoff<T>(
     initialDelay = 1000,
     maxDelay = 10000,
     backoffMultiplier = 2,
-    feature = 'unknown'
+    feature = 'unknown',
   } = options;
 
   let lastError: Error;
@@ -30,28 +37,12 @@ export async function retryWithBackoff<T>(
     } catch (error: any) {
       lastError = error;
 
-      // Check if error is retryable
-      const isRateLimit = error.message?.includes('429') || 
-                          error.message?.includes('quota') ||
-                          error.message?.includes('RESOURCE_EXHAUSTED');
-      const isNetworkError = error.message?.includes('fetch') ||
-                              error.message?.includes('network') ||
-                              error.message?.includes('ECONNREFUSED');
-      const isServerError = error.message?.includes('500') ||
-                             error.message?.includes('503') ||
-                             error.message?.includes('INTERNAL');
-
-      const shouldRetry = isRateLimit || isNetworkError || isServerError;
-
-      if (!shouldRetry || attempt === maxRetries) {
+      if (!isRetryableError(error) || attempt === maxRetries) {
         console.error(`[AI] ${feature} failed after ${attempt + 1} attempts:`, error.message);
         throw createAIError(error, feature);
       }
 
-      // Exponential backoff
-      const jitter = Math.random() * 1000; // Add jitter to prevent thundering herd
-      const actualDelay = Math.min(delay + jitter, maxDelay);
-      
+      const actualDelay = Math.min(delay + Math.random() * 1000, maxDelay);
       console.warn(`[AI] ${feature} failed (attempt ${attempt + 1}), retrying in ${Math.round(actualDelay)}ms...`);
       await sleep(actualDelay);
       delay = delay * backoffMultiplier;

@@ -3,44 +3,42 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 
+const NAV_SHORTCUT_ROUTES: Record<string, string> = {
+  d: '/dashboard',
+  h: '/habits',
+  g: '/goals',
+  f: '/finance',
+  a: '/analytics',
+};
+
+const ACTION_SHORTCUT_ROUTES: Record<string, string> = {
+  n: '/habits?new=true',
+  c: '/goals?new=true',
+};
+
+function isEditableElementFocused(): boolean {
+  const active = document.activeElement;
+  if (!active) return false;
+  if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') return true;
+  return active.getAttribute('contenteditable') === 'true';
+}
+
 export function useKeyboardShortcuts() {
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Ignore shortcuts if the user is typing in an input/textarea
-      const active = document.activeElement;
-      if (
-        active &&
-        (active.tagName === 'INPUT' ||
-          active.tagName === 'TEXTAREA' ||
-          active.getAttribute('contenteditable') === 'true')
-      ) {
-        return;
-      }
+      if (isEditableElementFocused()) return;
 
       const key = event.key.toLowerCase();
+      const navRoute = NAV_SHORTCUT_ROUTES[key];
+      if (navRoute) return router.push(navRoute);
 
-      // Navigation Shortcuts
-      if (key === 'd') {
-        router.push('/dashboard');
-      } else if (key === 'h') {
-        router.push('/habits');
-      } else if (key === 'g') {
-        router.push('/goals');
-      } else if (key === 'f') {
-        router.push('/finance');
-      } else if (key === 'a') {
-        router.push('/analytics');
-      } 
-      // Action Shortcuts
-      else if (key === 'n') {
+      const actionRoute = ACTION_SHORTCUT_ROUTES[key];
+      if (actionRoute) {
         event.preventDefault();
-        router.push('/habits?new=true');
-      } else if (key === 'c') {
-        event.preventDefault();
-        router.push('/goals?new=true');
+        router.push(actionRoute);
       }
     };
 

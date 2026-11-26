@@ -85,6 +85,11 @@ function classifySpendOrMerchantIntent(ctx: QuickTextCtx, hasNumber: boolean): Q
   return TASK_KEYWORDS_RE.test(ctx.lower) && !hasNumber ? 'task' : 'expense';
 }
 
+function isLikelyTaskCue(lower: string, hasNumber: boolean): boolean {
+  if (!hasNumber) return true;
+  return TASK_KEYWORDS_RE.test(lower) || FUTURE_CUE_RE.test(lower);
+}
+
 function resolveIntentFromCues(ctx: QuickTextCtx, hasNumber: boolean): QuickCaptureIntent {
   if (PAST_SPEND_RE.test(ctx.lower) || MERCHANT_EXPENSE_RE.test(ctx.lower)) {
     return classifySpendOrMerchantIntent(ctx, hasNumber);
@@ -92,8 +97,7 @@ function resolveIntentFromCues(ctx: QuickTextCtx, hasNumber: boolean): QuickCapt
   if (/\b(pay|bill|recharge|expense|split)\b/i.test(ctx.lower)) {
     return classifyPayOrBillIntent(ctx, hasNumber);
   }
-  if (!hasNumber || TASK_KEYWORDS_RE.test(ctx.lower) || FUTURE_CUE_RE.test(ctx.lower)) return 'task';
-  return 'expense';
+  return isLikelyTaskCue(ctx.lower, hasNumber) ? 'task' : 'expense';
 }
 
 export function detectIntent(input: string): QuickCaptureIntent {

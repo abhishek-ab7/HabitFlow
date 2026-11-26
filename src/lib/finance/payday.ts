@@ -7,12 +7,11 @@ const PAYDAY_NOTE_TAG_REGEX = /\s*\[payday:(\d{1,2})\]/i;
  * Returns `undefined` when absent or invalid.
  */
 export function normalizePaydayOfMonth(val: unknown): number | undefined {
-  if (val === null || val === undefined || val === '') return undefined;
+  if (val == null || val === '') return undefined;
   const num = Number(val);
   if (!Number.isFinite(num)) return undefined;
   const rounded = Math.trunc(num);
-  if (rounded < 1 || rounded > 31) return undefined;
-  return rounded;
+  return rounded >= 1 && rounded <= 31 ? rounded : undefined;
 }
 
 /**
@@ -53,6 +52,11 @@ export function upsertPaydayNoteTag(
  * 2. Current month's active budget (`paydayOfMonth` or `[payday:N]` note tag)
  * 3. Most recent non-deleted budget with a configured payday
  */
+function extractBudgetPayday(budget?: FinanceBudget): number | undefined {
+  if (!budget) return undefined;
+  return normalizePaydayOfMonth(budget.paydayOfMonth) ?? parsePaydayFromNotes(budget.notes);
+}
+
 export function resolveEffectivePaydayOfMonth(
   budgets: FinanceBudget[],
   monthKey?: string,
@@ -62,20 +66,12 @@ export function resolveEffectivePaydayOfMonth(
   if (direct !== undefined) return direct;
 
   const activeBudgets = budgets.filter((b) => !b.deletedAt);
-  if (monthKey) {
-    const current = activeBudgets.find((b) => b.monthKey === monthKey);
-    const currentVal =
-      normalizePaydayOfMonth(current?.paydayOfMonth) ??
-      parsePaydayFromNotes(current?.notes);
-    if (currentVal !== undefined) return currentVal;
-  }
+  const currentVal = monthKey ? extractBudgetPayday(activeBudgets.find((b) => b.monthKey === monthKey)) : undefined;
+  if (currentVal !== undefined) return currentVal;
 
-  const sortedRecent = [...activeBudgets].sort((a, b) =>
-    (b.monthKey || '').localeCompare(a.monthKey || '')
-  );
+  const sortedRecent = [...activeBudgets].sort((a, b) => (b.monthKey || '').localeCompare(a.monthKey || ''));
   for (const b of sortedRecent) {
-    const val =
-      normalizePaydayOfMonth(b.paydayOfMonth) ?? parsePaydayFromNotes(b.notes);
+    const val = extractBudgetPayday(b);
     if (val !== undefined) return val;
   }
 

@@ -58,40 +58,37 @@ export const STARTER_INDIAN_GYM_LIBRARY: ExerciseLibraryEntry[] = [
   { name: 'Stationary Cycling', split: 'cardio', muscleGroup: 'Cardio', defaultSets: 1, defaultReps: 20, defaultWeightKg: 0, aliases: ['cycling', 'spin bike'] },
 ];
 
+const SPLIT_GROUPS: Partial<Record<WorkoutType, WorkoutType[]>> = {
+  upper: ['push', 'pull', 'upper'],
+  lower: ['legs', 'lower'],
+};
+
+function entryMatchesSplit(entry: ExerciseLibraryEntry, preferredSplit?: WorkoutType): boolean {
+  if (!preferredSplit) return true;
+  if (preferredSplit === 'strength' || preferredSplit === 'full_body') return true;
+  const allowed = SPLIT_GROUPS[preferredSplit];
+  return allowed ? allowed.includes(entry.split) : entry.split === preferredSplit;
+}
+
+function matchesExerciseQuery(entry: ExerciseLibraryEntry, q: string): boolean {
+  if (entry.name.toLowerCase().includes(q)) return true;
+  if (entry.muscleGroup.toLowerCase().includes(q)) return true;
+  return (entry.aliases || []).some((a) => a.toLowerCase().includes(q));
+}
+
 export function searchExerciseLibrary(
   query: string,
   preferredSplit?: WorkoutType
 ): ExerciseLibraryEntry[] {
   const q = query.trim().toLowerCase();
-
-  const matchesSplit = (entry: ExerciseLibraryEntry): boolean => {
-    if (!preferredSplit || preferredSplit === 'strength') return true;
-    if (preferredSplit === 'upper') {
-      return entry.split === 'push' || entry.split === 'pull' || entry.split === 'upper';
-    }
-    if (preferredSplit === 'lower') {
-      return entry.split === 'legs' || entry.split === 'lower';
-    }
-    if (preferredSplit === 'full_body') {
-      return true;
-    }
-    return entry.split === preferredSplit;
-  };
-
   if (!q) {
-    const splitMatched = STARTER_INDIAN_GYM_LIBRARY.filter(matchesSplit);
+    const splitMatched = STARTER_INDIAN_GYM_LIBRARY.filter((e) => entryMatchesSplit(e, preferredSplit));
     return splitMatched.length > 0 ? splitMatched : STARTER_INDIAN_GYM_LIBRARY;
   }
 
-  return STARTER_INDIAN_GYM_LIBRARY.filter((entry) => {
-    const inName = entry.name.toLowerCase().includes(q);
-    const inMuscle = entry.muscleGroup.toLowerCase().includes(q);
-    const inAliases = (entry.aliases || []).some((a) => a.toLowerCase().includes(q));
-    return inName || inMuscle || inAliases;
-  }).sort((a, b) => {
-    const aSplit = matchesSplit(a) ? 0 : 1;
-    const bSplit = matchesSplit(b) ? 0 : 1;
-    if (aSplit !== bSplit) return aSplit - bSplit;
-    return a.name.localeCompare(b.name);
+  return STARTER_INDIAN_GYM_LIBRARY.filter((entry) => matchesExerciseQuery(entry, q)).sort((a, b) => {
+    const aSplit = entryMatchesSplit(a, preferredSplit) ? 0 : 1;
+    const bSplit = entryMatchesSplit(b, preferredSplit) ? 0 : 1;
+    return aSplit !== bSplit ? aSplit - bSplit : a.name.localeCompare(b.name);
   });
 }
