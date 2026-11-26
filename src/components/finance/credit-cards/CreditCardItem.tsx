@@ -50,6 +50,36 @@ function computeUtilizationSegments(limit: number, billedDue: number, unbilledSp
   return { rawBilledPct, rawUnbilledPct, billedPct, unbilledPct };
 }
 
+function UtilizationBarTrack(props: {
+  billedDue: number;
+  unbilledSpend: number;
+  billedPct: number;
+  unbilledPct: number;
+  rawBilledPct: number;
+  rawUnbilledPct: number;
+  isUrgentOrOverdue: boolean;
+}) {
+  const { billedDue, unbilledSpend, billedPct, unbilledPct, rawBilledPct, rawUnbilledPct, isUrgentOrOverdue } = props;
+  return (
+    <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden flex">
+      {billedDue > 0 && (
+        <div
+          style={{ width: `${billedPct}%` }}
+          className={`h-full min-w-[4px] shrink-0 transition-all ${isUrgentOrOverdue ? 'bg-destructive' : 'bg-warning'}`}
+          title={`Billed statement due: ${formatINR(billedDue)} (${rawBilledPct}%)`}
+        />
+      )}
+      {unbilledSpend > 0 && (
+        <div
+          style={{ width: `${unbilledPct}%` }}
+          className="h-full min-w-[4px] shrink-0 bg-primary transition-all"
+          title={`Unbilled cycle: ${formatINR(unbilledSpend)} (${rawUnbilledPct}%)`}
+        />
+      )}
+    </div>
+  );
+}
+
 function UtilizationProgressBar(props: {
   limit: number;
   billedDue: number;
@@ -67,22 +97,15 @@ function UtilizationProgressBar(props: {
 
   return (
     <div className="space-y-1.5 bg-muted/40 p-2.5 rounded-xl border border-border/60">
-      <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden flex">
-        {billedDue > 0 && (
-          <div
-            style={{ width: `${billedPct}%` }}
-            className={`h-full min-w-[4px] shrink-0 transition-all ${isUrgentOrOverdue ? 'bg-destructive' : 'bg-warning'}`}
-            title={`Billed statement due: ${formatINR(billedDue)} (${rawBilledPct}%)`}
-          />
-        )}
-        {unbilledSpend > 0 && (
-          <div
-            style={{ width: `${unbilledPct}%` }}
-            className="h-full min-w-[4px] shrink-0 bg-primary transition-all"
-            title={`Unbilled cycle: ${formatINR(unbilledSpend)} (${rawUnbilledPct}%)`}
-          />
-        )}
-      </div>
+      <UtilizationBarTrack
+        billedDue={billedDue}
+        unbilledSpend={unbilledSpend}
+        billedPct={billedPct}
+        unbilledPct={unbilledPct}
+        rawBilledPct={rawBilledPct}
+        rawUnbilledPct={rawUnbilledPct}
+        isUrgentOrOverdue={isUrgentOrOverdue}
+      />
       <div className="flex items-center justify-between text-[11px] text-muted-foreground flex-wrap gap-1.5">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="flex items-center gap-1.5">
@@ -105,39 +128,50 @@ function UtilizationProgressBar(props: {
   );
 }
 
-function StatementDueBadge({ hasStatement, billedDue, daysToDue }: { hasStatement: boolean; billedDue: number; daysToDue: number | null }) {
+function getStatementBadgeConfig(hasStatement: boolean, billedDue: number, daysToDue: number | null) {
   if (!hasStatement) {
-    return (
-      <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
-        <CheckCircle2 className="w-3 h-3" /> Settled
-      </Badge>
-    );
+    return { cls: 'bg-success/10 text-success border-success/20', label: 'Settled', isOk: true, isAlert: false };
   }
   if (billedDue <= 0) {
-    return (
-      <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
-        <CheckCircle2 className="w-3 h-3" /> Paid
-      </Badge>
-    );
+    return { cls: 'bg-success/10 text-success border-success/20', label: 'Paid', isOk: true, isAlert: false };
   }
   if (daysToDue !== null && daysToDue < 0) {
-    return (
-      <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
-        <AlertCircle className="w-3 h-3" /> Overdue {Math.abs(daysToDue)}d
-      </Badge>
-    );
+    return { cls: 'bg-destructive/10 text-destructive border-destructive/20', label: `Overdue ${Math.abs(daysToDue)}d`, isOk: false, isAlert: true };
   }
   if (daysToDue !== null && daysToDue <= 3) {
-    return (
-      <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
-        <Clock className="w-3 h-3" /> {daysToDue === 0 ? 'Due Today' : `Due in ${daysToDue}d`}
-      </Badge>
-    );
+    return { cls: 'bg-destructive/10 text-destructive border-destructive/20', label: daysToDue === 0 ? 'Due Today' : `Due in ${daysToDue}d`, isOk: false, isAlert: false };
+  }
+  return { cls: 'bg-warning/10 text-warning border-warning/20', label: daysToDue === null ? 'Billed' : `Due in ${daysToDue}d`, isOk: false, isAlert: false };
+}
+
+function StatementDueBadge({ hasStatement, billedDue, daysToDue }: { hasStatement: boolean; billedDue: number; daysToDue: number | null }) {
+  const cfg = getStatementBadgeConfig(hasStatement, billedDue, daysToDue);
+  return (
+    <Badge variant="outline" className={`${cfg.cls} text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0`}>
+      {cfg.isOk ? <CheckCircle2 className="w-3 h-3" /> : cfg.isAlert ? <AlertCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+      {cfg.label}
+    </Badge>
+  );
+}
+
+function getStatementBoxTheme(billedDue: number, isUrgentOrOverdue: boolean) {
+  if (billedDue <= 0) return { surface: 'border-success/25 bg-success/[0.05]', icon: 'text-success' };
+  if (isUrgentOrOverdue) return { surface: 'border-destructive/30 bg-destructive/[0.05]', icon: 'text-destructive' };
+  return { surface: 'border-warning/30 bg-warning/[0.05]', icon: 'text-warning' };
+}
+
+function StatementPeriodSummary({ billedStatement, isUrgentOrOverdue }: { billedStatement: CreditCardStatement | null; isUrgentOrOverdue: boolean }) {
+  if (!billedStatement) {
+    return <>No unpaid billed statement. Spends accumulate in unbilled.</>;
   }
   return (
-    <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20 text-[10px] gap-1 px-1.5 whitespace-nowrap shrink-0">
-      <Clock className="w-3 h-3" /> {daysToDue === null ? 'Billed' : `Due in ${daysToDue}d`}
-    </Badge>
+    <>
+      <span className="whitespace-nowrap">{formatShortDate(billedStatement.periodStart)} – {formatShortDate(billedStatement.periodEnd)}</span>
+      <span className="mx-1.5" aria-hidden="true">·</span>
+      <strong className={isUrgentOrOverdue ? 'text-destructive whitespace-nowrap' : 'text-warning whitespace-nowrap'}>
+        Due {formatShortDate(billedStatement.dueDate)}
+      </strong>
+    </>
   );
 }
 
@@ -152,20 +186,14 @@ function StatementDueBox(props: {
   onReconcile: () => void;
 }) {
   const { billedStatement, billedDue, daysToDue, isUrgentOrOverdue, overdueCount, hasMultipleOverdue, onPay, onReconcile } = props;
-  const surfaceClass =
-    billedDue <= 0
-      ? 'border-success/25 bg-success/[0.05]'
-      : isUrgentOrOverdue
-      ? 'border-destructive/30 bg-destructive/[0.05]'
-      : 'border-warning/30 bg-warning/[0.05]';
-  const iconTone = billedDue <= 0 ? 'text-success' : isUrgentOrOverdue ? 'text-destructive' : 'text-warning';
+  const theme = getStatementBoxTheme(billedDue, isUrgentOrOverdue);
 
   return (
-    <div className={`p-3 rounded-xl border shadow-xs flex flex-col justify-between space-y-2.5 ${surfaceClass}`}>
+    <div className={`p-3 rounded-xl border shadow-xs flex flex-col justify-between space-y-2.5 ${theme.surface}`}>
       <div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 whitespace-nowrap">
-            <Calendar className={`w-3.5 h-3.5 shrink-0 ${iconTone}`} />
+            <Calendar className={`w-3.5 h-3.5 shrink-0 ${theme.icon}`} />
             Statement Due
           </span>
           <StatementDueBadge hasStatement={Boolean(billedStatement)} billedDue={billedDue} daysToDue={daysToDue} />
@@ -178,31 +206,22 @@ function StatementDueBox(props: {
             )}
           </div>
           <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-            {billedStatement ? (
-              <>
-                <span className="whitespace-nowrap">{formatShortDate(billedStatement.periodStart)} – {formatShortDate(billedStatement.periodEnd)}</span>
-                <span className="mx-1.5" aria-hidden="true">·</span>
-                <strong className={isUrgentOrOverdue ? 'text-destructive whitespace-nowrap' : 'text-warning whitespace-nowrap'}>
-                  Due {formatShortDate(billedStatement.dueDate)}
-                </strong>
-              </>
-            ) : (
-              'No unpaid billed statement. Spends accumulate in unbilled.'
-            )}
+            <StatementPeriodSummary billedStatement={billedStatement} isUrgentOrOverdue={isUrgentOrOverdue} />
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-2 pt-2 border-t border-border/60">
-        {billedDue > 0 ? (
-          <Button size="sm" onClick={onPay} className="flex-1 h-8 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg gap-1 shadow-xs whitespace-nowrap">
-            Pay Bill
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" onClick={onPay} className="flex-1 h-8 text-xs border-border text-foreground hover:bg-muted rounded-lg gap-1 whitespace-nowrap">
-            Pay Advance
-          </Button>
-        )}
+        <Button
+          size="sm"
+          variant={billedDue > 0 ? 'default' : 'outline'}
+          onClick={onPay}
+          className={`flex-1 h-8 text-xs rounded-lg gap-1 whitespace-nowrap ${
+            billedDue > 0 ? 'font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs' : 'border-border text-foreground hover:bg-muted'
+          }`}
+        >
+          {billedDue > 0 ? 'Pay Bill' : 'Pay Advance'}
+        </Button>
         <Button size="sm" variant="outline" onClick={onReconcile} className="h-8 px-2.5 text-xs border-border text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg shrink-0" title="Set or reconcile official statement amount">
           <Sliders className="w-3.5 h-3.5" />
         </Button>
@@ -297,6 +316,22 @@ function CreditCardModals(props: {
     </>
   );
 }
+function CardBillingSummaryLine({ limit, billingDay, dueDay }: { limit: number; billingDay: number; dueDay: number }) {
+  return (
+    <p className="text-xs text-muted-foreground mt-0.5">
+      {limit > 0 && (
+        <>
+          Limit: <span className="tabular-nums font-medium text-foreground/80">{formatINR(limit)}</span>
+          <span className="mx-1.5" aria-hidden="true">·</span>
+        </>
+      )}
+      Bill Day: {formatOrdinal(billingDay)}
+      <span className="mx-1.5" aria-hidden="true">·</span>
+      Due Day: {formatOrdinal(dueDay)}
+    </p>
+  );
+}
+
 function CreditCardHeader(props: {
   card: FinanceAccount;
   limit: number;
@@ -322,17 +357,7 @@ function CreditCardHeader(props: {
               </Badge>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {limit > 0 && (
-              <>
-                Limit: <span className="tabular-nums font-medium text-foreground/80">{formatINR(limit)}</span>
-                <span className="mx-1.5" aria-hidden="true">·</span>
-              </>
-            )}
-            Bill Day: {formatOrdinal(billingDay)}
-            <span className="mx-1.5" aria-hidden="true">·</span>
-            Due Day: {formatOrdinal(dueDay)}
-          </p>
+          <CardBillingSummaryLine limit={limit} billingDay={billingDay} dueDay={dueDay} />
           {limit > 0 && (
             <p className="text-[11px] text-muted-foreground sm:hidden mt-0.5 tabular-nums">
               Avail: <strong className="text-foreground">{formatINR(available)}</strong>
@@ -358,6 +383,15 @@ function CreditCardHeader(props: {
   );
 }
 
+function computeHasMultipleOverdue(
+  summary: NonNullable<ReturnType<ReturnType<typeof useFinanceStore.getState>['getCreditCardSummary']>>,
+  billedDue: number,
+  currentStmt: CreditCardStatement | null
+): boolean {
+  if (summary.overdueStatements.length > 1) return true;
+  return summary.overdueStatements.length > 0 && currentStmt !== null && billedDue > currentStmt.remainingDue;
+}
+
 function deriveCardMetrics(card: FinanceAccount, summary: ReturnType<ReturnType<typeof useFinanceStore.getState>['getCreditCardSummary']>) {
   if (!summary) return null;
   const billedDue = summary.billedDueTotal;
@@ -377,10 +411,32 @@ function deriveCardMetrics(card: FinanceAccount, summary: ReturnType<ReturnType<
     daysToDue,
     isUrgentOrOverdue: billedDue > 0 && (isOverdue || (daysToDue !== null && daysToDue <= 3)),
     currentStmt,
-    hasMultipleOverdue:
-      summary.overdueStatements.length > 1 ||
-      (summary.overdueStatements.length > 0 && currentStmt !== null && billedDue > currentStmt.remainingDue),
+    hasMultipleOverdue: computeHasMultipleOverdue(summary, billedDue, currentStmt),
   };
+}
+
+function CreditCardFooterActions(props: {
+  isDefault: boolean;
+  cardId: string;
+  onOpenHistory: () => void;
+  onSetDefault?: (cardId: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs">
+      <Button size="sm" variant="outline" onClick={props.onOpenHistory} className="h-8 text-xs border-border bg-background text-foreground hover:bg-muted rounded-lg gap-1.5 whitespace-nowrap">
+        <History className="w-3.5 h-3.5 text-primary" />
+        <span>View Statements &amp; Swipes</span>
+      </Button>
+      <div className="flex items-center gap-2">
+        {!props.isDefault && props.onSetDefault && (
+          <Button size="sm" variant="ghost" onClick={() => props.onSetDefault?.(props.cardId)} className="h-8 px-2 text-xs text-muted-foreground hover:text-primary hover:bg-muted rounded-lg gap-1 whitespace-nowrap">
+            <Star className="w-3 h-3" />
+            <span className="hidden sm:inline">Set Default</span>
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export const CreditCardItem = React.memo(function CreditCardItem({ card, onEdit, onSetDefault }: CreditCardItemProps) {
@@ -448,20 +504,12 @@ export const CreditCardItem = React.memo(function CreditCardItem({ card, onEdit,
         />
       </div>
 
-      <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs">
-        <Button size="sm" variant="outline" onClick={() => handleOpenHistory('current')} className="h-8 text-xs border-border bg-background text-foreground hover:bg-muted rounded-lg gap-1.5 whitespace-nowrap">
-          <History className="w-3.5 h-3.5 text-primary" />
-          <span>View Statements &amp; Swipes</span>
-        </Button>
-        <div className="flex items-center gap-2">
-          {!card.isDefault && onSetDefault && (
-            <Button size="sm" variant="ghost" onClick={() => onSetDefault(card.id)} className="h-8 px-2 text-xs text-muted-foreground hover:text-primary hover:bg-muted rounded-lg gap-1 whitespace-nowrap">
-              <Star className="w-3 h-3" />
-              <span className="hidden sm:inline">Set Default</span>
-            </Button>
-          )}
-        </div>
-      </div>
+      <CreditCardFooterActions
+        isDefault={Boolean(card.isDefault)}
+        cardId={card.id}
+        onOpenHistory={() => handleOpenHistory('current')}
+        onSetDefault={onSetDefault}
+      />
 
       <CreditCardModals
         card={card}

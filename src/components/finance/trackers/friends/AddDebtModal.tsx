@@ -190,27 +190,67 @@ function buildSaveDebtPayload(fields: {
   };
 }
 
+function getCoreDebtDefaults(
+  editingDebt: DebtRecord | null,
+  defaultBucket: DebtBucketType,
+  prefilledFriend: string
+) {
+  const defaultDir: DebtDirection = defaultBucket === 'everyday_split' ? 'lent' : 'borrowed';
+  if (!editingDebt) {
+    return {
+      entryBucketType: defaultBucket,
+      personName: prefilledFriend,
+      direction: defaultDir,
+      title: '',
+      principal: '',
+      startDate: getLocalIsoDate(),
+      notes: '',
+    };
+  }
+  return {
+    entryBucketType: editingDebt.bucketType ?? defaultBucket,
+    personName: editingDebt.personName,
+    direction: editingDebt.direction,
+    title: editingDebt.title,
+    principal: numStr(editingDebt.principalAmount),
+    startDate: editingDebt.startDate,
+    notes: editingDebt.notes || '',
+  };
+}
+
+function getScheduleDebtDefaults(editingDebt: DebtRecord | null) {
+  if (!editingDebt) {
+    return {
+      plannedMonthly: '',
+      dueDay: '15',
+      repaymentSchedule: 'flexible' as DebtRepaymentSchedule,
+      isEmi: false,
+      emiAmount: '',
+      emiDueDay: '5',
+      totalInstallments: '',
+      paidInstallments: '0',
+    };
+  }
+  return {
+    plannedMonthly: numStr(editingDebt.plannedMonthlyInstallment),
+    dueDay: String(editingDebt.dueDayOfMonth || 15),
+    repaymentSchedule: editingDebt.repaymentSchedule || 'flexible',
+    isEmi: Boolean(editingDebt.isEmi),
+    emiAmount: numStr(editingDebt.emiAmount),
+    emiDueDay: String(editingDebt.emiDueDay || 5),
+    totalInstallments: numStr(editingDebt.totalInstallments),
+    paidInstallments: String(editingDebt.paidInstallments || 0),
+  };
+}
+
 function getInitialDebtDefaults(
   editingDebt: DebtRecord | null,
   defaultBucket: DebtBucketType,
   prefilledFriend: string
 ) {
   return {
-    entryBucketType: editingDebt?.bucketType || defaultBucket,
-    personName: editingDebt?.personName ?? (prefilledFriend || ''),
-    direction: editingDebt?.direction ?? (defaultBucket === 'everyday_split' ? ('lent' as const) : ('borrowed' as const)),
-    title: editingDebt?.title || '',
-    principal: numStr(editingDebt?.principalAmount),
-    startDate: editingDebt?.startDate || getLocalIsoDate(),
-    plannedMonthly: numStr(editingDebt?.plannedMonthlyInstallment),
-    dueDay: String(editingDebt?.dueDayOfMonth || 15),
-    repaymentSchedule: editingDebt?.repaymentSchedule || ('flexible' as const),
-    isEmi: Boolean(editingDebt?.isEmi),
-    emiAmount: numStr(editingDebt?.emiAmount),
-    emiDueDay: String(editingDebt?.emiDueDay || 5),
-    totalInstallments: numStr(editingDebt?.totalInstallments),
-    paidInstallments: String(editingDebt?.paidInstallments || 0),
-    notes: editingDebt?.notes || '',
+    ...getCoreDebtDefaults(editingDebt, defaultBucket, prefilledFriend),
+    ...getScheduleDebtDefaults(editingDebt),
   };
 }
 
@@ -314,6 +354,104 @@ function DirectionSelector({
   );
 }
 
+function AddDebtFormBody(props: {
+  f: ReturnType<typeof useAddDebtFormState>;
+  editingDebt: DebtRecord | null;
+  existingFriendNames: string[];
+}) {
+  const { f, editingDebt, existingFriendNames } = props;
+  const isSplit = f.entryBucketType === 'everyday_split';
+
+  return (
+    <>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Entry Bucket</Label>
+        <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-xl">
+          {([['everyday_split', 'Everyday Split'], ['long_term_loan', 'Long-Term Loan / EMI']] as const).map(([bucket, label]) => (
+            <button
+              key={bucket}
+              type="button"
+              onClick={() => f.setEntryBucketType(bucket)}
+              className={`min-h-[36px] text-xs font-semibold rounded-lg transition-colors ${
+                f.entryBucketType === bucket ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <DirectionSelector entryBucketType={f.entryBucketType} direction={f.direction} onSelect={f.setDirection} />
+
+      <div className="space-y-1.5">
+        <Label htmlFor="friend-name-modal" className="text-xs">Friend Name</Label>
+        <Input id="friend-name-modal" value={f.personName} onChange={(e) => f.setPersonName(e.target.value)} placeholder="e.g., Rahul Sharma" required className="rounded-xl" />
+        {existingFriendNames.length > 0 && !editingDebt && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {existingFriendNames.slice(0, 5).map((name) => (
+              <button key={name} type="button" onClick={() => f.setPersonName(name)} className="text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground hover:text-foreground">
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="friend-title-modal" className="text-xs">{isSplit ? 'Split Description' : 'Loan Title'}</Label>
+        <Input
+          id="friend-title-modal"
+          value={f.title}
+          onChange={(e) => f.setTitle(e.target.value)}
+          placeholder={isSplit ? 'e.g., Dinner at Social, Cab to airport' : 'e.g., Laptop purchase loan, Emergency loan'}
+          className="rounded-xl"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="friend-principal-modal" className="text-xs">Amount (₹)</Label>
+          <Input id="friend-principal-modal" type="number" step="any" min="1" value={f.principal} onChange={(e) => f.setPrincipal(e.target.value)} placeholder="₹ 1,000" required className="rounded-xl font-mono" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="friend-start-date-modal" className="text-xs">Date</Label>
+          <Input id="friend-start-date-modal" type="date" value={f.startDate} onChange={(e) => f.setStartDate(e.target.value)} required className="rounded-xl" />
+        </div>
+      </div>
+
+      {!isSplit && (
+        <LoanScheduleSection
+          repaymentSchedule={f.repaymentSchedule}
+          onRepaymentScheduleChange={f.setRepaymentSchedule}
+          dueDay={f.dueDay}
+          onDueDayChange={f.setDueDay}
+          isEmi={f.isEmi}
+          onIsEmiChange={f.setIsEmi}
+          emiAmount={f.emiAmount}
+          onEmiAmountChange={f.setEmiAmount}
+          emiDueDay={f.emiDueDay}
+          onEmiDueDayChange={f.setEmiDueDay}
+          totalInstallments={f.totalInstallments}
+          onTotalInstallmentsChange={f.setTotalInstallments}
+          paidInstallments={f.paidInstallments}
+          onPaidInstallmentsChange={f.setPaidInstallments}
+        />
+      )}
+
+      <div className="space-y-1.5">
+        <Label htmlFor="friend-notes-modal" className="text-xs">Notes</Label>
+        <Input id="friend-notes-modal" value={f.notes} onChange={(e) => f.setNotes(e.target.value)} placeholder="Optional notes or details" className="rounded-xl text-xs" />
+      </div>
+    </>
+  );
+}
+
+function isInvalidDebtEntry(trimmedName: string, amt: number): boolean {
+  if (!trimmedName) return true;
+  return isNaN(amt) || amt <= 0;
+}
+
 export function AddDebtModal({
   isOpen,
   onClose,
@@ -329,8 +467,7 @@ export function AddDebtModal({
     e.preventDefault();
     const amt = parseFloat(f.principal);
     const trimmedName = f.personName.trim();
-    const invalidAmt = isNaN(amt) || amt <= 0;
-    if (!trimmedName || invalidAmt) {
+    if (isInvalidDebtEntry(trimmedName, amt)) {
       toast.error('Enter a person name and valid amount');
       return;
     }
@@ -364,8 +501,6 @@ export function AddDebtModal({
     }
   };
 
-  const isSplit = f.entryBucketType === 'everyday_split';
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
@@ -375,86 +510,7 @@ export function AddDebtModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <Label className="text-xs">Entry Bucket</Label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-xl">
-              {([['everyday_split', 'Everyday Split'], ['long_term_loan', 'Long-Term Loan / EMI']] as const).map(([bucket, label]) => (
-                <button
-                  key={bucket}
-                  type="button"
-                  onClick={() => f.setEntryBucketType(bucket)}
-                  className={`min-h-[36px] text-xs font-semibold rounded-lg transition-colors ${
-                    f.entryBucketType === bucket ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <DirectionSelector entryBucketType={f.entryBucketType} direction={f.direction} onSelect={f.setDirection} />
-
-          <div className="space-y-1.5">
-            <Label htmlFor="friend-name-modal" className="text-xs">Friend Name</Label>
-            <Input id="friend-name-modal" value={f.personName} onChange={(e) => f.setPersonName(e.target.value)} placeholder="e.g., Rahul Sharma" required className="rounded-xl" />
-            {existingFriendNames.length > 0 && !editingDebt && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {existingFriendNames.slice(0, 5).map((name) => (
-                  <button key={name} type="button" onClick={() => f.setPersonName(name)} className="text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground hover:text-foreground">
-                    {name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="friend-title-modal" className="text-xs">{isSplit ? 'Split Description' : 'Loan Title'}</Label>
-            <Input
-              id="friend-title-modal"
-              value={f.title}
-              onChange={(e) => f.setTitle(e.target.value)}
-              placeholder={isSplit ? 'e.g., Dinner at Social, Cab to airport' : 'e.g., Laptop purchase loan, Emergency loan'}
-              className="rounded-xl"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="friend-principal-modal" className="text-xs">Amount (₹)</Label>
-              <Input id="friend-principal-modal" type="number" step="any" min="1" value={f.principal} onChange={(e) => f.setPrincipal(e.target.value)} placeholder="₹ 1,000" required className="rounded-xl font-mono" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="friend-start-date-modal" className="text-xs">Date</Label>
-              <Input id="friend-start-date-modal" type="date" value={f.startDate} onChange={(e) => f.setStartDate(e.target.value)} required className="rounded-xl" />
-            </div>
-          </div>
-
-          {!isSplit && (
-            <LoanScheduleSection
-              repaymentSchedule={f.repaymentSchedule}
-              onRepaymentScheduleChange={f.setRepaymentSchedule}
-              dueDay={f.dueDay}
-              onDueDayChange={f.setDueDay}
-              isEmi={f.isEmi}
-              onIsEmiChange={f.setIsEmi}
-              emiAmount={f.emiAmount}
-              onEmiAmountChange={f.setEmiAmount}
-              emiDueDay={f.emiDueDay}
-              onEmiDueDayChange={f.setEmiDueDay}
-              totalInstallments={f.totalInstallments}
-              onTotalInstallmentsChange={f.setTotalInstallments}
-              paidInstallments={f.paidInstallments}
-              onPaidInstallmentsChange={f.setPaidInstallments}
-            />
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="friend-notes-modal" className="text-xs">Notes</Label>
-            <Input id="friend-notes-modal" value={f.notes} onChange={(e) => f.setNotes(e.target.value)} placeholder="Optional notes or details" className="rounded-xl text-xs" />
-          </div>
-
+          <AddDebtFormBody f={f} editingDebt={editingDebt} existingFriendNames={existingFriendNames} />
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={f.isSubmitting} className="rounded-xl text-xs">Cancel</Button>
             <Button type="submit" disabled={f.isSubmitting} className="rounded-xl text-xs">

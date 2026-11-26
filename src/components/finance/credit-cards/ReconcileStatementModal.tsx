@@ -112,6 +112,148 @@ function StatementAdjustmentBanner({ adjustment }: { adjustment: number }) {
   );
 }
 
+function resolveInitialStatementAmount(params: {
+  statement?: CreditCardStatement | null;
+  calculatedSpend: number;
+  cardBalance?: number;
+}): string {
+  if (params.statement) return String(params.statement.totalDue);
+  if (params.calculatedSpend > 0) return String(params.calculatedSpend);
+  const absBal = Math.abs(params.cardBalance || 0);
+  return absBal > 0 ? String(absBal) : '';
+}
+
+async function submitReconcileStatementAction(params: {
+  cardId: string;
+  cycleKey: string;
+  numActual: number;
+  note: string;
+  reconcileCreditCardStatement: ReturnType<typeof useFinanceStore.getState>['reconcileCreditCardStatement'];
+  onOpenChange: (open: boolean) => void;
+}) {
+  await params.reconcileCreditCardStatement({
+    cardAccountId: params.cardId,
+    cycleKey: params.cycleKey,
+    actualStatementAmount: params.numActual,
+    note: params.note.trim() || undefined,
+  });
+  toast.success(`Statement for ${params.cycleKey} saved successfully!`);
+  params.onOpenChange(false);
+}
+
+function computeCycleAndSpend(params: {
+  card: FinanceAccount;
+  cycleKey: string;
+  currentMonthKey: string;
+  transactions: ReturnType<typeof useFinanceStore.getState>['transactions'];
+}) {
+  const { card, cycleKey, currentMonthKey, transactions } = params;
+  const billingDay = card.billingDay ?? card.statementDay ?? 1;
+  const dueDay = card.dueDay ?? 20;
+  const [cYear, cMonth] = (cycleKey || currentMonthKey).split('-').map(Number);
+  const cycleWindow = getCycleWindowForMonth(billingDay, dueDay, cYear, cMonth - 1, card.gracePeriodDays);
+  const calculatedSpend = computeCycleTrackedSpend({ transactions, cardId: card.id, cycleKey, billingDay, dueDay });
+  return { cycleWindow, calculatedSpend };
+}
+
+async function executeReconcileWithFeedback(params: {
+  cardId: string;
+  cycleKey: string;
+  numActual: number;
+  note: string;
+  reconcileCreditCardStatement: ReturnType<typeof useFinanceStore.getState>['reconcileCreditCardStatement'];
+  onOpenChange: (open: boolean) => void;
+  setIsSubmitting: (v: boolean) => void;
+}) {
+  params.setIsSubmitting(true);
+  try {
+    await submitReconcileStatementAction(params);
+  } catch (err) {
+    console.error(err);
+    toast.error(err instanceof Error ? err.message : 'Failed to reconcile statement');
+  } finally {
+    params.setIsSubmitting(false);
+  }
+}
+
+function useReconcileResetEffect(params: {
+  open: boolean;
+  statement?: CreditCardStatement | null;
+  defaultCycleKey?: string;
+  currentMonthKey: string;
+  calculatedSpend: number;
+  cardBalance?: number;
+  setCycleKey: (v: string) => void;
+  setActualAmount: (v: string) => void;
+  setNote: (v: string) => void;
+}) {
+  const { open, statement, defaultCycleKey, currentMonthKey, calculatedSpend, cardBalance, setCycleKey, setActualAmount, setNote } = params;
+  useEffect(() => {
+    if (!open) return;
+    setCycleKey(statement?.cycleKey || defaultCycleKey || currentMonthKey);
+    setActualAmount(resolveInitialStatementAmount({ statement, calculatedSpend, cardBalance }));
+    setNote(statement?.notes || '');
+  }, [open, statement, defaultCycleKey, currentMonthKey, calculatedSpend, cardBalance, setCycleKey, setActualAmount, setNote]);
+}
+
+function createReconcileSubmitHandler(params: {
+  cardId: string;
+  cycleKey: string;
+  numActual: number;
+  note: string;
+  reconcileCreditCardStatement: ReturnType<typeof useFinanceStore.getState>['reconcileCreditCardStatement'];
+  onOpenChange: (open: boolean) => void;
+  setIsSubmitting: (v: boolean) => void;
+}) {
+  return async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (params.numActual < 0) {
+      toast.error('Statement amount cannot be negative');
+      return;
+    }
+    await executeReconcileWithFeedback(params);
+  };
+}
+
+function useReconcileStatementForm(params: {
+  open: boolean;
+  card: FinanceAccount;
+  statement?: CreditCardStatement | null;
+  defaultCycleKey?: string;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { open, card, statement, defaultCycleKey, onOpenChange } = params;
+  const transactions = useFinanceStore((s) => s.transactions);
+  const reconcileCreditCardStatement = useFinanceStore((s) => s.reconcileCreditCardStatement);
+
+  const currentMonthKey = getLocalIsoDate().slice(0, 7);
+  const [cycleKey, setCycleKey] = useState(statement?.cycleKey || defaultCycleKey || currentMonthKey);
+  const [actualAmount, setActualAmount] = useState('');
+  const [note, setNote] = useState(statement?.notes || '');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { cycleWindow, calculatedSpend } = computeCycleAndSpend({ card, cycleKey, currentMonthKey, transactions });
+
+  useReconcileResetEffect({
+    open, statement, defaultCycleKey, currentMonthKey, calculatedSpend, cardBalance: card.balance, setCycleKey, setActualAmount, setNote,
+  });
+
+  const numActual = parseFloat(actualAmount) || 0;
+  const handleSave = createReconcileSubmitHandler({
+    cardId: card.id, cycleKey, numActual, note, reconcileCreditCardStatement, onOpenChange, setIsSubmitting,
+  });
+
+  return {
+    actualAmount, setActualAmount,
+    note, setNote,
+    isSubmitting,
+    cycleWindow,
+    calculatedSpend,
+    adjustment: roundCurrency(numActual - calculatedSpend),
+    handleSave,
+  };
+}
+
 export function ReconcileStatementModal({
   open,
   onOpenChange,
@@ -119,59 +261,7 @@ export function ReconcileStatementModal({
   statement,
   defaultCycleKey,
 }: ReconcileStatementModalProps) {
-  const transactions = useFinanceStore((s) => s.transactions);
-  const reconcileCreditCardStatement = useFinanceStore((s) => s.reconcileCreditCardStatement);
-
-  const billingDay = card.billingDay ?? card.statementDay ?? 1;
-  const dueDay = card.dueDay ?? 20;
-  const currentMonthKey = getLocalIsoDate().slice(0, 7);
-  const initialCycleKey = statement?.cycleKey || defaultCycleKey || currentMonthKey;
-
-  const [cycleKey, setCycleKey] = useState(initialCycleKey);
-  const [actualAmount, setActualAmount] = useState('');
-  const [note, setNote] = useState(statement?.notes || '');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [cYear, cMonth] = (cycleKey || currentMonthKey).split('-').map(Number);
-  const cycleWindow = getCycleWindowForMonth(billingDay, dueDay, cYear, cMonth - 1, card.gracePeriodDays);
-  const calculatedSpend = computeCycleTrackedSpend({ transactions, cardId: card.id, cycleKey, billingDay, dueDay });
-
-  useEffect(() => {
-    if (!open) return;
-    setCycleKey(statement?.cycleKey || defaultCycleKey || currentMonthKey);
-    const cardBal = Math.abs(card.balance || 0);
-    const fallbackTotal = calculatedSpend > 0 ? calculatedSpend : cardBal > 0 ? cardBal : '';
-    const initialTotal = statement ? statement.totalDue : fallbackTotal;
-    setActualAmount(initialTotal ? String(initialTotal) : '');
-    setNote(statement?.notes || '');
-  }, [open, statement, defaultCycleKey, currentMonthKey, calculatedSpend, card.balance]);
-
-  const numActual = parseFloat(actualAmount) || 0;
-  const adjustment = roundCurrency(numActual - calculatedSpend);
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (numActual < 0) {
-      toast.error('Statement amount cannot be negative');
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      await reconcileCreditCardStatement({
-        cardAccountId: card.id,
-        cycleKey,
-        actualStatementAmount: numActual,
-        note: note.trim() || undefined,
-      });
-      toast.success(`Statement for ${cycleKey} saved successfully!`);
-      onOpenChange(false);
-    } catch (err) {
-      console.error(err);
-      toast.error(err instanceof Error ? err.message : 'Failed to reconcile statement');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  const form = useReconcileStatementForm({ open, card, statement, defaultCycleKey, onOpenChange });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -190,12 +280,12 @@ export function ReconcileStatementModal({
           </div>
         </DialogHeader>
 
-        <form onSubmit={handleSave} className="space-y-4 pt-2">
+        <form onSubmit={form.handleSave} className="space-y-4 pt-2">
           <ReconcileCycleBanner
-            periodStart={cycleWindow.periodStart}
-            periodEnd={cycleWindow.periodEnd}
-            dueDate={cycleWindow.dueDate}
-            calculatedSpend={calculatedSpend}
+            periodStart={form.cycleWindow.periodStart}
+            periodEnd={form.cycleWindow.periodEnd}
+            dueDate={form.cycleWindow.dueDate}
+            calculatedSpend={form.calculatedSpend}
           />
 
           <div className="space-y-1.5">
@@ -208,8 +298,8 @@ export function ReconcileStatementModal({
                 step="any"
                 min="0"
                 placeholder="22000"
-                value={actualAmount}
-                onChange={(e) => setActualAmount(e.target.value)}
+                value={form.actualAmount}
+                onChange={(e) => form.setActualAmount(e.target.value)}
                 className="pl-7 bg-background border-border text-foreground text-base font-semibold tabular-nums focus-visible:ring-primary h-11"
                 required
                 autoFocus
@@ -218,7 +308,7 @@ export function ReconcileStatementModal({
             <p className="text-[11px] text-muted-foreground">Enter the exact amount generated by the bank (e.g. ₹22,000 for your Slice bill).</p>
           </div>
 
-          {actualAmount !== '' && <StatementAdjustmentBanner adjustment={adjustment} />}
+          {form.actualAmount !== '' && <StatementAdjustmentBanner adjustment={form.adjustment} />}
 
           <div className="space-y-1.5">
             <Label htmlFor="note" className="text-xs font-semibold text-foreground">Note (Optional)</Label>
@@ -226,16 +316,16 @@ export function ReconcileStatementModal({
               id="note"
               type="text"
               placeholder="e.g., Nov 21 Slice opening statement"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
+              value={form.note}
+              onChange={(e) => form.setNote(e.target.value)}
               className="bg-background border-border text-foreground text-xs focus-visible:ring-primary h-9"
             />
           </div>
 
           <DialogFooter className="pt-2 sm:justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="border-border text-foreground hover:bg-muted text-xs font-medium">Cancel</Button>
-            <Button type="submit" disabled={isSubmitting} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold">
-              {isSubmitting ? 'Saving...' : 'Save Statement'}
+            <Button type="submit" disabled={form.isSubmitting} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold">
+              {form.isSubmitting ? 'Saving...' : 'Save Statement'}
             </Button>
           </DialogFooter>
         </form>

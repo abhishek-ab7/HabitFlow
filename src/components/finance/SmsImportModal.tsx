@@ -54,6 +54,47 @@ interface BridgeSelection {
   restockServings?: number;
 }
 
+function resolveAiCategoryAndAccount(
+  aiData: any,
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'],
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts']
+) {
+  const cat = categories.find((c) => c.slug === aiData.categorySlug) || categories[0];
+  const acc =
+    accounts.find((a) => a.type === aiData.paymentMethodType) ||
+    accounts.find((a) => a.isDefault) ||
+    accounts[0];
+  return {
+    categoryId: cat?.id || '',
+    categorySlug: cat?.slug || 'shopping-personal-care',
+    accountId: acc?.id || '',
+  };
+}
+
+function mapAiExpenseToParsedSms(
+  trimmed: string,
+  aiData: any,
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'],
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts']
+): ParsedSmsExpense {
+  const resolved = resolveAiCategoryAndAccount(aiData, categories, accounts);
+  return {
+    id: crypto.randomUUID(),
+    rawText: trimmed,
+    rawMerchant: aiData.merchantName || aiData.title,
+    title: aiData.merchantName || aiData.title || 'Parsed Expense',
+    amount: aiData.amount,
+    type: aiData.type === 'income' ? 'income' : 'expense',
+    ...resolved,
+    paymentMethodType: aiData.paymentMethodType || 'upi',
+    date: aiData.date || getLocalIsoDate(),
+    isDuplicate: false,
+    confidence: aiData.confidence || 80,
+    selected: true,
+    tags: Array.isArray(aiData.tags) ? aiData.tags : undefined,
+  };
+}
+
 async function fetchAiParsedExpense(
   trimmed: string,
   categories: ReturnType<typeof useFinanceStore.getState>['categories'],
@@ -72,28 +113,7 @@ async function fetchAiParsedExpense(
     const json = await res.json();
     const aiData = json?.data;
     if (!aiData || aiData.amount <= 0) return [];
-
-    const cat = categories.find((c) => c.slug === aiData.categorySlug) || categories[0];
-    const acc = accounts.find((a) => a.type === aiData.paymentMethodType) || accounts.find((a) => a.isDefault) || accounts[0];
-    return [
-      {
-        id: crypto.randomUUID(),
-        rawText: trimmed,
-        rawMerchant: aiData.merchantName || aiData.title,
-        title: aiData.merchantName || aiData.title || 'Parsed Expense',
-        amount: aiData.amount,
-        type: aiData.type === 'income' ? 'income' : 'expense',
-        categoryId: cat?.id || '',
-        categorySlug: cat?.slug || 'shopping-personal-care',
-        accountId: acc?.id || '',
-        paymentMethodType: aiData.paymentMethodType || 'upi',
-        date: aiData.date || getLocalIsoDate(),
-        isDuplicate: false,
-        confidence: aiData.confidence || 80,
-        selected: true,
-        tags: Array.isArray(aiData.tags) ? aiData.tags : undefined,
-      },
-    ];
+    return [mapAiExpenseToParsedSms(trimmed, aiData, categories, accounts)];
   } catch {
     return [];
   }
@@ -163,6 +183,31 @@ function HealthSupplementBridge(props: {
   );
 }
 
+function FoodDietOptInButton({
+  calories,
+  alsoLogToDiet,
+  onToggle,
+}: {
+  calories: number;
+  alsoLogToDiet?: boolean;
+  onToggle: () => void;
+}) {
+  const activeCls = alsoLogToDiet
+    ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300'
+    : 'bg-background border-border text-muted-foreground hover:text-foreground';
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={Boolean(alsoLogToDiet)}
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${activeCls}`}
+    >
+      <Utensils className="w-3 h-3" />
+      Also log ~{calories} kcal to Diet
+    </button>
+  );
+}
+
 function SmsBridgeControls(props: {
   item: ParsedSmsExpense;
   bridgeKind: ReturnType<typeof classifyCategoryBridgeKind>;
@@ -184,17 +229,11 @@ function SmsBridgeControls(props: {
         </span>
       )}
       {bridgeKind === 'food_dining' && (
-        <button
-          type="button"
-          onClick={() => onPatchBridge({ alsoLogToDiet: !itemBridge.alsoLogToDiet })}
-          aria-pressed={Boolean(itemBridge.alsoLogToDiet)}
-          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-colors ${
-            itemBridge.alsoLogToDiet ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300' : 'bg-background border-border text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <Utensils className="w-3 h-3" />
-          Also log ~{dietPreview.calories} kcal to Diet
-        </button>
+        <FoodDietOptInButton
+          calories={dietPreview.calories}
+          alsoLogToDiet={itemBridge.alsoLogToDiet}
+          onToggle={() => onPatchBridge({ alsoLogToDiet: !itemBridge.alsoLogToDiet })}
+        />
       )}
       {bridgeKind === 'health_supplements' && (
         <HealthSupplementBridge
@@ -309,6 +348,35 @@ function buildSmsImportTags(item: ParsedSmsExpense): string[] {
   return Array.from(new Set(['sms-import', ...(item.tags || []), ...refTags]));
 }
 
+function resolveSmsBridgeCategory(
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'],
+  item: ParsedSmsExpense,
+  fallbackCat: string
+) {
+  const direct = categories.find((c) => c.id === (item.categoryId || fallbackCat));
+  if (direct) return direct;
+  return item.categorySlug ? { slug: item.categorySlug, name: item.categorySlug } : null;
+}
+
+function buildSmsBridgeArgs(params: {
+  bridgeKind: Exclude<ReturnType<typeof classifyCategoryBridgeKind>, 'none'>;
+  item: ParsedSmsExpense;
+  createdTx: Awaited<ReturnType<ReturnType<typeof useFinanceStore.getState>['addTransaction']>>;
+  itemBridge?: BridgeSelection;
+  supplementInventory: ReturnType<typeof useFitnessStore.getState>['supplementInventory'];
+}) {
+  const { bridgeKind, item, createdTx, itemBridge, supplementInventory } = params;
+  return {
+    bridgeKind,
+    transaction: createdTx,
+    alsoLogToDiet: itemBridge?.alsoLogToDiet,
+    restockSupplement: itemBridge?.restockSupplement,
+    supplementId: itemBridge?.supplementId || findMatchingSupplementId(item.title, supplementInventory),
+    restockServings: itemBridge?.restockServings || 30,
+    newSupplementName: item.title.trim() || undefined,
+  };
+}
+
 async function runSmsFitnessBridge(params: {
   item: ParsedSmsExpense;
   fallbackCat: string;
@@ -318,22 +386,13 @@ async function runSmsFitnessBridge(params: {
   supplementInventory: ReturnType<typeof useFitnessStore.getState>['supplementInventory'];
 }): Promise<{ dietLogged: boolean; suppRestocked: boolean }> {
   const { item, fallbackCat, categories, createdTx, itemBridge, supplementInventory } = params;
-  const itemCat =
-    categories.find((c) => c.id === (item.categoryId || fallbackCat)) ||
-    (item.categorySlug ? { slug: item.categorySlug, name: item.categorySlug } : null);
-  const bridgeKind = classifyCategoryBridgeKind(itemCat);
+  const bridgeKind = classifyCategoryBridgeKind(resolveSmsBridgeCategory(categories, item, fallbackCat));
   if (bridgeKind === 'none' || createdTx.type !== 'expense') {
     return { dietLogged: false, suppRestocked: false };
   }
-  const res = await executeFinanceFitnessBridge({
-    bridgeKind,
-    transaction: createdTx,
-    alsoLogToDiet: itemBridge?.alsoLogToDiet,
-    restockSupplement: itemBridge?.restockSupplement,
-    supplementId: itemBridge?.supplementId || findMatchingSupplementId(item.title, supplementInventory),
-    restockServings: itemBridge?.restockServings || 30,
-    newSupplementName: item.title.trim() || undefined,
-  });
+  const res = await executeFinanceFitnessBridge(
+    buildSmsBridgeArgs({ bridgeKind, item, createdTx, itemBridge, supplementInventory })
+  );
   return {
     dietLogged: bridgeKind === 'junk' || Boolean(res.dietLogged),
     suppRestocked: Boolean(res.supplementRestocked),
@@ -378,7 +437,194 @@ async function importSingleSmsItem(params: {
   return { reviewed, ...bridged };
 }
 
-export function SmsImportModal({ open, onOpenChange, initialText }: SmsImportModalProps) {
+function SmsAutomationGuide({
+  show,
+  onToggle,
+  onCopyDeepLink,
+}: {
+  show: boolean;
+  onToggle: () => void;
+  onCopyDeepLink: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-muted/20 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <span>How to auto-capture mobile SMS &amp; notifications</span>
+        {show ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+      </button>
+      {show && (
+        <div className="px-3.5 pb-3.5 space-y-2.5 text-xs text-muted-foreground border-t border-border/50 pt-2.5">
+          <p>
+            <strong className="text-foreground">1. Android Share Menu:</strong> Install Habit Flow to your home screen, then share any bank SMS or notification directly to <em>Habit Flow</em> to pre-fill this importer.
+          </p>
+          <p>
+            <strong className="text-foreground">2. Android MacroDroid / Tasker or iOS Shortcuts:</strong> Open this deep-link when a bank notification arrives:
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border border-border text-[11px] font-mono truncate">
+              /finance?sms=&#123;notification_text&#125;
+            </code>
+            <Button type="button" size="sm" variant="outline" onClick={onCopyDeepLink} className="h-8 px-2.5 rounded-lg gap-1 text-xs shrink-0">
+              <Copy className="w-3.5 h-3.5" />
+              Copy
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function readSmsClipboard(onParsed: (text: string) => Promise<void>) {
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) {
+    toast.error('Clipboard access is unavailable in this browser. Paste manually below.');
+    return;
+  }
+  try {
+    const clipText = await navigator.clipboard.readText();
+    if (!clipText?.trim()) {
+      toast.info('Clipboard is empty. Copy a bank SMS or notification first.');
+      return;
+    }
+    await onParsed(clipText);
+  } catch {
+    toast.error('Clipboard permission denied. Paste the SMS text manually below.');
+  }
+}
+
+function readSmsUploadedFile(
+  file: File,
+  onParsed: (text: string) => Promise<void>
+) {
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const content = String(ev.target?.result || '');
+    if (!content.trim()) {
+      toast.error('Selected file is empty');
+      return;
+    }
+    await onParsed(content);
+  };
+  reader.readAsText(file);
+}
+
+async function executeSmsImportBatch(params: {
+  selectedItems: ParsedSmsExpense[];
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'];
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts'];
+  sendToReviewInbox: boolean;
+  addTransaction: ReturnType<typeof useFinanceStore.getState>['addTransaction'];
+  bridgeByItemId: Record<string, BridgeSelection>;
+  supplementInventory: ReturnType<typeof useFitnessStore.getState>['supplementInventory'];
+}) {
+  const { selectedItems, categories, accounts, sendToReviewInbox, addTransaction, bridgeByItemId, supplementInventory } = params;
+  const fallbackCat = categories[0]?.id || 'uncategorized';
+  const fallbackAcc = accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || 'default';
+  const outcomes = await Promise.all(
+    selectedItems.map((item) =>
+      importSingleSmsItem({
+        item, fallbackCat, fallbackAcc, sendToReviewInbox, categories, addTransaction,
+        itemBridge: bridgeByItemId[item.id], supplementInventory,
+      })
+    )
+  );
+  return formatImportToastMessage(
+    selectedItems.length,
+    outcomes.filter((o) => o.reviewed).length,
+    outcomes.filter((o) => o.dietLogged).length,
+    outcomes.filter((o) => o.suppRestocked).length
+  );
+}
+
+async function copySmsDeepLink() {
+  if (typeof window === 'undefined' || !navigator.clipboard?.writeText) return;
+  const urlTemplate = `${window.location.origin}/finance?sms={notification_text}`;
+  try {
+    await navigator.clipboard.writeText(urlTemplate);
+    toast.success('Copied deep-link URL template');
+  } catch {
+    toast.info(urlTemplate);
+  }
+}
+
+async function runSmsParseBatch(params: {
+  input: string;
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'];
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts'];
+  transactions: ReturnType<typeof useFinanceStore.getState>['transactions'];
+  categorizationRules: ReturnType<typeof useFinanceStore.getState>['categorizationRules'];
+}): Promise<ParsedSmsExpense[]> {
+  const trimmed = params.input.trim();
+  const detected = parseSmsOrNotificationBatch(
+    trimmed, params.categories, params.accounts, params.transactions, params.categorizationRules
+  );
+  if (detected.length === 0 && !trimmed.includes('\n')) {
+    return fetchAiParsedExpense(trimmed, params.categories, params.accounts);
+  }
+  return detected;
+}
+
+function buildCategorySelectionPatch(
+  categoryId: string,
+  editingCategoryItemId: string,
+  parsedItems: ParsedSmsExpense[],
+  categories: ReturnType<typeof useFinanceStore.getState>['categories']
+) {
+  const targetItem = parsedItems.find((i) => i.id === editingCategoryItemId);
+  const cat = categories.find((c) => c.id === categoryId);
+  return { categoryId, categorySlug: cat?.slug || targetItem?.categorySlug || '' };
+}
+
+function useSmsModalSyncEffects(params: {
+  open: boolean;
+  initialText?: string | null;
+  categoriesLength: number;
+  fitnessHasLoaded: boolean;
+  loadFinanceData: () => Promise<void>;
+  loadFitnessData: () => Promise<void>;
+  setEditingCategoryItemId: (id: string | null) => void;
+  setRawText: (v: string) => void;
+  setParsedItems: (v: ParsedSmsExpense[]) => void;
+  setHasParsed: (v: boolean) => void;
+  runParse: (input: string) => Promise<void>;
+}) {
+  const {
+    open, initialText, categoriesLength, fitnessHasLoaded, loadFinanceData, loadFitnessData,
+    setEditingCategoryItemId, setRawText, setParsedItems, setHasParsed, runParse,
+  } = params;
+
+  useEffect(() => {
+    if (open && categoriesLength === 0) void loadFinanceData();
+    if (open && !fitnessHasLoaded) loadFitnessData().catch(() => undefined);
+  }, [open, categoriesLength, loadFinanceData, fitnessHasLoaded, loadFitnessData]);
+
+  useEffect(() => {
+    if (!open) {
+      setEditingCategoryItemId(null);
+      return;
+    }
+    if (initialText?.trim()) {
+      setRawText(initialText);
+      void runParse(initialText);
+      return;
+    }
+    setRawText('');
+    setParsedItems([]);
+    setHasParsed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialText]);
+}
+
+function useSmsImportController(params: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialText?: string | null;
+}) {
+  const { open, onOpenChange, initialText } = params;
   const categories = useFinanceStore((s) => s.categories);
   const accounts = useFinanceStore((s) => s.accounts);
   const transactions = useFinanceStore((s) => s.transactions);
@@ -401,24 +647,15 @@ export function SmsImportModal({ open, onOpenChange, initialText }: SmsImportMod
   const [sendToReviewInbox, setSendToReviewInbox] = useState(true);
   const [bridgeByItemId, setBridgeByItemId] = useState<Record<string, BridgeSelection>>({});
 
-  useEffect(() => {
-    if (open && categories.length === 0) loadFinanceData();
-    if (open && !fitnessHasLoaded) loadFitnessData().catch(() => undefined);
-  }, [open, categories.length, loadFinanceData, fitnessHasLoaded, loadFitnessData]);
-
   const runParse = async (input: string) => {
-    const trimmed = input.trim();
-    if (!trimmed) {
+    if (!input.trim()) {
       setParsedItems([]);
       setHasParsed(false);
       return;
     }
     setIsParsing(true);
     try {
-      let detected = parseSmsOrNotificationBatch(trimmed, categories, accounts, transactions, categorizationRules);
-      if (detected.length === 0 && !trimmed.includes('\n')) {
-        detected = await fetchAiParsedExpense(trimmed, categories, accounts);
-      }
+      const detected = await runSmsParseBatch({ input, categories, accounts, transactions, categorizationRules });
       setParsedItems(detected);
       setBridgeByItemId({});
       setHasParsed(true);
@@ -428,54 +665,24 @@ export function SmsImportModal({ open, onOpenChange, initialText }: SmsImportMod
     }
   };
 
-  useEffect(() => {
-    if (!open) {
-      setEditingCategoryItemId(null);
-      return;
-    }
-    if (initialText && initialText.trim()) {
-      setRawText(initialText);
-      void runParse(initialText);
-    } else {
-      setRawText('');
-      setParsedItems([]);
-      setHasParsed(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialText]);
+  useSmsModalSyncEffects({
+    open, initialText, categoriesLength: categories.length, fitnessHasLoaded, loadFinanceData, loadFitnessData,
+    setEditingCategoryItemId, setRawText, setParsedItems, setHasParsed, runParse,
+  });
 
-  const handleReadClipboard = async () => {
-    if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) {
-      toast.error('Clipboard access is unavailable in this browser. Paste manually below.');
-      return;
-    }
-    try {
-      const clipText = await navigator.clipboard.readText();
-      if (!clipText || !clipText.trim()) {
-        toast.info('Clipboard is empty. Copy a bank SMS or notification first.');
-        return;
-      }
-      setRawText(clipText);
-      await runParse(clipText);
-    } catch {
-      toast.error('Clipboard permission denied. Paste the SMS text manually below.');
-    }
-  };
+  const handleReadClipboard = () =>
+    readSmsClipboard(async (text) => {
+      setRawText(text);
+      await runParse(text);
+    });
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const content = String(ev.target?.result || '');
-      if (!content.trim()) {
-        toast.error('Selected file is empty');
-        return;
-      }
-      setRawText(content);
-      await runParse(content);
-    };
-    reader.readAsText(file);
+    readSmsUploadedFile(file, async (text) => {
+      setRawText(text);
+      await runParse(text);
+    });
     e.target.value = '';
   };
 
@@ -485,9 +692,10 @@ export function SmsImportModal({ open, onOpenChange, initialText }: SmsImportMod
 
   const handleCategorySelectedForItem = (categoryId: string) => {
     if (!editingCategoryItemId) return;
-    const targetItem = parsedItems.find((i) => i.id === editingCategoryItemId);
-    const cat = categories.find((c) => c.id === categoryId);
-    updateItem(editingCategoryItemId, { categoryId, categorySlug: cat?.slug || targetItem?.categorySlug || '' });
+    updateItem(
+      editingCategoryItemId,
+      buildCategorySelectionPatch(categoryId, editingCategoryItemId, parsedItems, categories)
+    );
   };
 
   const selectedItems = parsedItems.filter((item) => item.selected && item.amount > 0);
@@ -497,47 +705,174 @@ export function SmsImportModal({ open, onOpenChange, initialText }: SmsImportMod
       toast.error('Select at least one parsed expense to import');
       return;
     }
-    const fallbackCat = categories[0]?.id || 'uncategorized';
-    const fallbackAcc = accounts.find((a) => a.isDefault)?.id || accounts[0]?.id || 'default';
-
     setIsImporting(true);
     try {
-      const outcomes = await Promise.all(
-        selectedItems.map((item) =>
-          importSingleSmsItem({
-            item,
-            fallbackCat,
-            fallbackAcc,
-            sendToReviewInbox,
-            categories,
-            addTransaction,
-            itemBridge: bridgeByItemId[item.id],
-            supplementInventory,
-          })
-        )
-      );
-      const reviewQueued = outcomes.filter((o) => o.reviewed).length;
-      const dietBridged = outcomes.filter((o) => o.dietLogged).length;
-      const suppRestocked = outcomes.filter((o) => o.suppRestocked).length;
-      toast.success(formatImportToastMessage(selectedItems.length, reviewQueued, dietBridged, suppRestocked));
+      const msg = await executeSmsImportBatch({
+        selectedItems, categories, accounts, sendToReviewInbox, addTransaction, bridgeByItemId, supplementInventory,
+      });
+      toast.success(msg);
       onOpenChange(false);
     } finally {
       setIsImporting(false);
     }
   };
 
-  const handleCopyDeepLink = async () => {
-    if (typeof window === 'undefined' || !navigator.clipboard?.writeText) return;
-    const urlTemplate = `${window.location.origin}/finance?sms={notification_text}`;
-    try {
-      await navigator.clipboard.writeText(urlTemplate);
-      toast.success('Copied deep-link URL template');
-    } catch {
-      toast.info(urlTemplate);
-    }
+  return {
+    categories, accounts, supplementInventory, isFitnessEnabled,
+    fileInputRef, rawText, setRawText, parsedItems, setParsedItems,
+    hasParsed, isParsing, isImporting, showAutomationGuide, setShowAutomationGuide,
+    editingCategoryItemId, setEditingCategoryItemId, sendToReviewInbox, setSendToReviewInbox,
+    bridgeByItemId, setBridgeByItemId, selectedItems,
+    editingCategoryItem: parsedItems.find((i) => i.id === editingCategoryItemId),
+    runParse, handleReadClipboard, handleFileUpload, updateItem,
+    handleCategorySelectedForItem, handleImportSelected, handleCopyDeepLink: copySmsDeepLink,
   };
+}
 
-  const editingCategoryItem = parsedItems.find((i) => i.id === editingCategoryItemId);
+function SmsImportHeader({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="px-5 py-3.5 border-b border-border bg-card flex items-center justify-between gap-3 shrink-0">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+          <MessageSquareText className="w-4 h-4" />
+        </span>
+        <div className="min-w-0">
+          <DialogTitle className="text-base font-bold text-foreground truncate">Fetch from SMS &amp; Notifications</DialogTitle>
+          <p className="text-xs text-muted-foreground truncate">UPI, bank &amp; card notification parser</p>
+        </div>
+      </div>
+      <button type="button" onClick={onClose} aria-label="Close" className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+        <X className="w-5 h-5" />
+      </button>
+    </div>
+  );
+}
+
+function SmsDetectedHeader({
+  count,
+  sendToReviewInbox,
+  allSelected,
+  onToggleReview,
+  onToggleSelectAll,
+}: {
+  count: number;
+  sendToReviewInbox: boolean;
+  allSelected: boolean;
+  onToggleReview: (checked: boolean) => void;
+  onToggleSelectAll: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Detected ({count})</h3>
+      {count > 0 && (
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+            <input type="checkbox" checked={sendToReviewInbox} onChange={(e) => onToggleReview(e.target.checked)} className="rounded border-input" />
+            <span>Flag unmatched for Review Inbox</span>
+          </label>
+          <button type="button" onClick={onToggleSelectAll} className="text-xs font-medium text-primary hover:underline">
+            {allSelected ? 'Deselect all' : 'Select all'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmsDetectedResultsSection({ c }: { c: ReturnType<typeof useSmsImportController> }) {
+  const allSelected = c.parsedItems.every((i) => i.selected);
+  return (
+    <div className="space-y-2.5 pt-1">
+      <SmsDetectedHeader
+        count={c.parsedItems.length}
+        sendToReviewInbox={c.sendToReviewInbox}
+        allSelected={allSelected}
+        onToggleReview={c.setSendToReviewInbox}
+        onToggleSelectAll={() => c.setParsedItems((prev) => prev.map((i) => ({ ...i, selected: !allSelected })))}
+      />
+
+      {c.parsedItems.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+          No valid debit or credit transactions found. Make sure the text includes an amount (e.g. ₹450 or Rs. 450).
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {c.parsedItems.map((item) => (
+            <ParsedSmsItemCard
+              key={item.id}
+              item={item}
+              categories={c.categories}
+              accounts={c.accounts}
+              isFitnessEnabled={c.isFitnessEnabled}
+              itemBridge={c.bridgeByItemId[item.id] || {}}
+              supplementInventory={c.supplementInventory}
+              onUpdateItem={(patch) => c.updateItem(item.id, patch)}
+              onEditCategory={() => c.setEditingCategoryItemId(item.id)}
+              onPatchBridge={(patch) => c.setBridgeByItemId((prev) => ({ ...prev, [item.id]: { ...prev[item.id], ...patch } }))}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmsInputControls({ c }: { c: ReturnType<typeof useSmsImportController> }) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2.5">
+        <Button type="button" variant="outline" onClick={c.handleReadClipboard} className="h-11 rounded-xl gap-2 text-xs font-semibold">
+          <ClipboardPaste className="w-4 h-4 text-primary" />
+          Read Clipboard
+        </Button>
+        <Button type="button" variant="outline" onClick={() => c.fileInputRef.current?.click()} className="h-11 rounded-xl gap-2 text-xs font-semibold">
+          <Upload className="w-4 h-4 text-primary" />
+          Upload SMS Log
+        </Button>
+        <input ref={c.fileInputRef} type="file" accept=".txt,.csv,.json,text/plain,application/json" onChange={c.handleFileUpload} className="hidden" />
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="sms-raw-input" className="text-xs font-medium text-muted-foreground block">Paste one or multiple SMS / notifications</label>
+        <textarea
+          id="sms-raw-input"
+          rows={4}
+          value={c.rawText}
+          onChange={(e) => c.setRawText(e.target.value)}
+          placeholder="Paste bank debit/credit SMS or UPI notification text here..."
+          className="w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-muted-foreground">OTPs, failed alerts, and available balances are ignored automatically.</span>
+          <Button type="button" size="sm" disabled={!c.rawText.trim() || c.isParsing} onClick={() => c.runParse(c.rawText)} className="h-9 px-3.5 rounded-xl gap-1.5 text-xs font-semibold shrink-0">
+            <Sparkles className="w-3.5 h-3.5" />
+            {c.isParsing ? 'Scanning...' : 'Detect Expenses'}
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SmsImportFooter({ c }: { c: ReturnType<typeof useSmsImportController> }) {
+  const count = c.selectedItems.length;
+  const totalAmount = c.selectedItems.reduce((sum, i) => sum + i.amount, 0);
+  const buttonLabel = c.isImporting ? 'Importing...' : `Import ${count || ''} ${count === 1 ? 'Entry' : 'Entries'}`.trim();
+
+  return (
+    <div className="px-5 py-3.5 border-t border-border bg-background flex items-center justify-between gap-3 shrink-0">
+      <div className="text-xs text-muted-foreground font-mono tabular-nums">
+        {count > 0 ? `Total: ${formatINR(totalAmount)}` : 'Ready to scan'}
+      </div>
+      <Button type="button" disabled={count === 0 || c.isImporting} onClick={c.handleImportSelected} className="h-11 px-5 rounded-xl text-sm font-semibold">
+        {buttonLabel}
+      </Button>
+    </div>
+  );
+}
+
+export function SmsImportModal({ open, onOpenChange, initialText }: SmsImportModalProps) {
+  const c = useSmsImportController({ open, onOpenChange, initialText });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -548,152 +883,28 @@ export function SmsImportModal({ open, onOpenChange, initialText }: SmsImportMod
         <div className="sm:hidden pt-2.5 pb-1 flex justify-center shrink-0">
           <div className="w-10 h-1.5 rounded-full bg-muted-foreground/30" />
         </div>
-        <div className="px-5 py-3.5 border-b border-border bg-card flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-              <MessageSquareText className="w-4 h-4" />
-            </span>
-            <div className="min-w-0">
-              <DialogTitle className="text-base font-bold text-foreground truncate">Fetch from SMS &amp; Notifications</DialogTitle>
-              <p className="text-xs text-muted-foreground truncate">UPI, bank &amp; card notification parser</p>
-            </div>
-          </div>
-          <button type="button" onClick={() => onOpenChange(false)} aria-label="Close" className="min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        <SmsImportHeader onClose={() => onOpenChange(false)} />
 
         <div className="px-5 py-4 overflow-y-auto space-y-4 flex-1">
-          <div className="grid grid-cols-2 gap-2.5">
-            <Button type="button" variant="outline" onClick={handleReadClipboard} className="h-11 rounded-xl gap-2 text-xs font-semibold">
-              <ClipboardPaste className="w-4 h-4 text-primary" />
-              Read Clipboard
-            </Button>
-            <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="h-11 rounded-xl gap-2 text-xs font-semibold">
-              <Upload className="w-4 h-4 text-primary" />
-              Upload SMS Log
-            </Button>
-            <input ref={fileInputRef} type="file" accept=".txt,.csv,.json,text/plain,application/json" onChange={handleFileUpload} className="hidden" />
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="sms-raw-input" className="text-xs font-medium text-muted-foreground block">Paste one or multiple SMS / notifications</label>
-            <textarea
-              id="sms-raw-input"
-              rows={4}
-              value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
-              placeholder="Paste bank debit/credit SMS or UPI notification text here..."
-              className="w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
-            />
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-muted-foreground">OTPs, failed alerts, and available balances are ignored automatically.</span>
-              <Button type="button" size="sm" disabled={!rawText.trim() || isParsing} onClick={() => runParse(rawText)} className="h-9 px-3.5 rounded-xl gap-1.5 text-xs font-semibold shrink-0">
-                <Sparkles className="w-3.5 h-3.5" />
-                {isParsing ? 'Scanning...' : 'Detect Expenses'}
-              </Button>
-            </div>
-          </div>
-
-          {hasParsed && (
-            <div className="space-y-2.5 pt-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Detected ({parsedItems.length})</h3>
-                {parsedItems.length > 0 && (
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-                      <input type="checkbox" checked={sendToReviewInbox} onChange={(e) => setSendToReviewInbox(e.target.checked)} className="rounded border-input" />
-                      <span>Flag unmatched for Review Inbox</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const allSelected = parsedItems.every((i) => i.selected);
-                        setParsedItems((prev) => prev.map((i) => ({ ...i, selected: !allSelected })));
-                      }}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      {parsedItems.every((i) => i.selected) ? 'Deselect all' : 'Select all'}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {parsedItems.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                  No valid debit or credit transactions found. Make sure the text includes an amount (e.g. ₹450 or Rs. 450).
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {parsedItems.map((item) => (
-                    <ParsedSmsItemCard
-                      key={item.id}
-                      item={item}
-                      categories={categories}
-                      accounts={accounts}
-                      isFitnessEnabled={isFitnessEnabled}
-                      itemBridge={bridgeByItemId[item.id] || {}}
-                      supplementInventory={supplementInventory}
-                      onUpdateItem={(patch) => updateItem(item.id, patch)}
-                      onEditCategory={() => setEditingCategoryItemId(item.id)}
-                      onPatchBridge={(patch) =>
-                        setBridgeByItemId((prev) => ({ ...prev, [item.id]: { ...prev[item.id], ...patch } }))
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="rounded-xl border border-border/70 bg-muted/20 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowAutomationGuide((v) => !v)}
-              className="w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <span>How to auto-capture mobile SMS &amp; notifications</span>
-              {showAutomationGuide ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-            {showAutomationGuide && (
-              <div className="px-3.5 pb-3.5 space-y-2.5 text-xs text-muted-foreground border-t border-border/50 pt-2.5">
-                <p>
-                  <strong className="text-foreground">1. Android Share Menu:</strong> Install Habit Flow to your home screen, then share any bank SMS or notification directly to <em>Habit Flow</em> to pre-fill this importer.
-                </p>
-                <p>
-                  <strong className="text-foreground">2. Android MacroDroid / Tasker or iOS Shortcuts:</strong> Open this deep-link when a bank notification arrives:
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 px-2.5 py-1.5 rounded-lg bg-background border border-border text-[11px] font-mono truncate">
-                    /finance?sms=&#123;notification_text&#125;
-                  </code>
-                  <Button type="button" size="sm" variant="outline" onClick={handleCopyDeepLink} className="h-8 px-2.5 rounded-lg gap-1 text-xs shrink-0">
-                    <Copy className="w-3.5 h-3.5" />
-                    Copy
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+          <SmsInputControls c={c} />
+          {c.hasParsed && <SmsDetectedResultsSection c={c} />}
+          <SmsAutomationGuide
+            show={c.showAutomationGuide}
+            onToggle={() => c.setShowAutomationGuide((v) => !v)}
+            onCopyDeepLink={c.handleCopyDeepLink}
+          />
         </div>
 
-        <div className="px-5 py-3.5 border-t border-border bg-background flex items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-muted-foreground font-mono tabular-nums">
-            {selectedItems.length > 0 ? `Total: ${formatINR(selectedItems.reduce((sum, i) => sum + i.amount, 0))}` : 'Ready to scan'}
-          </div>
-          <Button type="button" disabled={selectedItems.length === 0 || isImporting} onClick={handleImportSelected} className="h-11 px-5 rounded-xl text-sm font-semibold">
-            {isImporting ? 'Importing...' : `Import ${selectedItems.length || ''} ${selectedItems.length === 1 ? 'Entry' : 'Entries'}`.trim()}
-          </Button>
-        </div>
+        <SmsImportFooter c={c} />
       </DialogContent>
 
       <CategoryPickerSheet
-        open={Boolean(editingCategoryItemId)}
+        open={Boolean(c.editingCategoryItemId)}
         onOpenChange={(next) => {
-          if (!next) setEditingCategoryItemId(null);
+          if (!next) c.setEditingCategoryItemId(null);
         }}
-        selectedCategoryId={editingCategoryItem?.categoryId || ''}
-        onSelectCategory={handleCategorySelectedForItem}
+        selectedCategoryId={c.editingCategoryItem?.categoryId || ''}
+        onSelectCategory={c.handleCategorySelectedForItem}
       />
     </Dialog>
   );

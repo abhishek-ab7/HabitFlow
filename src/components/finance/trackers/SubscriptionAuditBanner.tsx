@@ -10,39 +10,40 @@ interface SubscriptionAuditBannerProps {
   onPauseBill: (bill: FinanceRecurringBill) => void;
 }
 
+const ANNUAL_MULTIPLIER: Record<string, { annual: number; monthlyDiv: number }> = {
+  yearly: { annual: 1, monthlyDiv: 12 },
+  quarterly: { annual: 4, monthlyDiv: 3 },
+  monthly: { annual: 12, monthlyDiv: 1 },
+};
+
+function computeSubscriptionAudit(bills: FinanceRecurringBill[]) {
+  const activeBills = bills.filter((b) => b.isActive && !b.deletedAt);
+  let monthlyEquivalent = 0;
+  let annualizedTotal = 0;
+  const hiked: FinanceRecurringBill[] = [];
+
+  for (const bill of activeBills) {
+    const mult = ANNUAL_MULTIPLIER[bill.cadence] ?? ANNUAL_MULTIPLIER.monthly;
+    annualizedTotal += bill.amount * mult.annual;
+    monthlyEquivalent += bill.amount / mult.monthlyDiv;
+    if (bill.previousAmount && bill.amount > bill.previousAmount) {
+      hiked.push(bill);
+    }
+  }
+
+  return {
+    count: activeBills.length,
+    monthlyEquivalent: Math.round(monthlyEquivalent),
+    annualizedTotal: Math.round(annualizedTotal),
+    hiked,
+  };
+}
+
 export function SubscriptionAuditBanner({
   bills,
   onPauseBill,
 }: SubscriptionAuditBannerProps) {
-  const audit = useMemo(() => {
-    let monthlyEquivalent = 0;
-    let annualizedTotal = 0;
-    const hiked: FinanceRecurringBill[] = [];
-
-    for (const bill of bills) {
-      if (!bill.isActive || bill.deletedAt) continue;
-      if (bill.cadence === 'yearly') {
-        annualizedTotal += bill.amount;
-        monthlyEquivalent += bill.amount / 12;
-      } else if (bill.cadence === 'quarterly') {
-        annualizedTotal += bill.amount * 4;
-        monthlyEquivalent += bill.amount / 3;
-      } else {
-        annualizedTotal += bill.amount * 12;
-        monthlyEquivalent += bill.amount;
-      }
-      if (bill.previousAmount && bill.amount > bill.previousAmount) {
-        hiked.push(bill);
-      }
-    }
-
-    return {
-      count: bills.filter((b) => b.isActive && !b.deletedAt).length,
-      monthlyEquivalent: Math.round(monthlyEquivalent),
-      annualizedTotal: Math.round(annualizedTotal),
-      hiked,
-    };
-  }, [bills]);
+  const audit = useMemo(() => computeSubscriptionAudit(bills), [bills]);
 
   if (audit.count === 0) return null;
 

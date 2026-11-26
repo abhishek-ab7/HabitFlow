@@ -131,6 +131,72 @@ function NewRecurringBillDialog(props: {
   );
 }
 
+function BillsGridOrEmpty(props: {
+  activeBills: FinanceRecurringBill[];
+  selectedMonth: string;
+  onAddClick: () => void;
+  onMarkPaid: (bill: FinanceRecurringBill) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const { activeBills, selectedMonth, onAddClick, onMarkPaid, onDelete } = props;
+  if (activeBills.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2.5">
+        <p className="text-xs text-muted-foreground">No recurring bills or subscriptions added yet.</p>
+        <Button type="button" size="sm" variant="secondary" onClick={onAddClick} className="min-h-[40px] px-4 text-xs rounded-xl">
+          Add Recurring Bill
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {activeBills.map((bill) => (
+        <RecurringBillCard
+          key={bill.id}
+          bill={bill}
+          isPaid={bill.lastPaidMonthKey === selectedMonth}
+          onMarkPaid={onMarkPaid}
+          onDelete={onDelete}
+        />
+      ))}
+    </div>
+  );
+}
+
+function buildNewBillPayload(params: {
+  billName: string;
+  amt: number;
+  billPrevAmount: string;
+  billCadence: 'monthly' | 'quarterly' | 'yearly';
+  billDueDay: string;
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'];
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts'];
+}) {
+  const { billName, amt, billPrevAmount, billCadence, billDueDay, categories, accounts } = params;
+  const utilCat = categories.find((c) => c.slug === 'bills-utilities') || categories[0];
+  const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
+  const parsedDay = parseInt(billDueDay, 10) || 10;
+  return {
+    name: billName.trim(),
+    amount: amt,
+    previousAmount: parseFloat(billPrevAmount) || undefined,
+    cadence: billCadence,
+    dueDayOfMonth: Math.min(31, Math.max(1, parsedDay)),
+    categoryId: utilCat?.id || '',
+    accountId: defaultAcc?.id,
+    autoLog: false,
+    isActive: true,
+    color: '#06b6d4',
+    icon: 'Zap',
+  };
+}
+
+function isInvalidBillInput(billName: string, amt: number): boolean {
+  if (!billName.trim()) return true;
+  return isNaN(amt) || amt <= 0;
+}
+
 export function BillsSubsSection() {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const categories = useFinanceStore((s) => s.categories);
@@ -154,28 +220,15 @@ export function BillsSubsSection() {
   const handleCreateBill = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseFloat(billAmount);
-    const hasInvalidAmt = isNaN(amt) || amt <= 0;
-    if (!billName.trim() || hasInvalidAmt) {
+    if (isInvalidBillInput(billName, amt)) {
       feedback.error();
       toast.error('Enter bill name and amount');
       return;
     }
     feedback.success();
-    const utilCat = categories.find((c) => c.slug === 'bills-utilities') || categories[0];
-    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
-    await addRecurringBill({
-      name: billName.trim(),
-      amount: amt,
-      previousAmount: parseFloat(billPrevAmount) || undefined,
-      cadence: billCadence,
-      dueDayOfMonth: Math.min(31, Math.max(1, parseInt(billDueDay, 10) || 10)),
-      categoryId: utilCat?.id || '',
-      accountId: defaultAcc?.id,
-      autoLog: false,
-      isActive: true,
-      color: '#06b6d4',
-      icon: 'Zap',
-    });
+    await addRecurringBill(
+      buildNewBillPayload({ billName, amt, billPrevAmount, billCadence, billDueDay, categories, accounts })
+    );
     toast.success(`Added ${billName.trim()} bill`);
     setIsNewBillOpen(false);
     setBillName('');
@@ -203,34 +256,21 @@ export function BillsSubsSection() {
         </Button>
       </div>
 
-      {activeBills.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2.5">
-          <p className="text-xs text-muted-foreground">No recurring bills or subscriptions added yet.</p>
-          <Button type="button" size="sm" variant="secondary" onClick={() => setIsNewBillOpen(true)} className="min-h-[40px] px-4 text-xs rounded-xl">
-            Add Recurring Bill
-          </Button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {activeBills.map((bill) => (
-            <RecurringBillCard
-              key={bill.id}
-              bill={bill}
-              isPaid={bill.lastPaidMonthKey === selectedMonth}
-              onMarkPaid={async (target) => {
-                feedback.coin();
-                const tx = await payRecurringBill(target.id);
-                if (tx) toast.success(`Paid ${target.name}`);
-              }}
-              onDelete={async (id) => {
-                feedback.warning();
-                await deleteRecurringBill(id);
-                toast.success('Removed recurring bill');
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <BillsGridOrEmpty
+        activeBills={activeBills}
+        selectedMonth={selectedMonth}
+        onAddClick={() => setIsNewBillOpen(true)}
+        onMarkPaid={async (target) => {
+          feedback.coin();
+          const tx = await payRecurringBill(target.id);
+          if (tx) toast.success(`Paid ${target.name}`);
+        }}
+        onDelete={async (id) => {
+          feedback.warning();
+          await deleteRecurringBill(id);
+          toast.success('Removed recurring bill');
+        }}
+      />
 
       <NewRecurringBillDialog
         open={isNewBillOpen}

@@ -89,6 +89,22 @@ function consumeParamFlag(params: URLSearchParams, key: string, onTrigger: () =>
   return true;
 }
 
+function consumeSmsDeepLink(params: URLSearchParams, onSmsText: (text: string) => void): boolean {
+  const incoming = params.get('sms') || params.get('text');
+  if (!incoming?.trim()) return false;
+  onSmsText(incoming);
+  ['sms', 'text', 'title', 'url'].forEach((k) => params.delete(k));
+  return true;
+}
+
+function consumeTabDeepLink(params: URLSearchParams, onTab: (tab: ActiveTab) => void): boolean {
+  const tabParam = params.get('tab') as ActiveTab | null;
+  if (!tabParam || !VALID_FINANCE_TABS.has(tabParam)) return false;
+  onTab(tabParam);
+  params.delete('tab');
+  return true;
+}
+
 function applyFinanceDeepLinks(callbacks: {
   onSmsText: (text: string) => void;
   onTab: (tab: ActiveTab) => void;
@@ -96,24 +112,12 @@ function applyFinanceDeepLinks(callbacks: {
   onAddTx: () => void;
 }): void {
   const params = new URLSearchParams(window.location.search);
-  let mutated = false;
-
-  const incoming = params.get('sms') || params.get('text');
-  if (incoming?.trim()) {
-    callbacks.onSmsText(incoming);
-    ['sms', 'text', 'title', 'url'].forEach((k) => params.delete(k));
-    mutated = true;
-  }
-
-  const tabParam = params.get('tab') as ActiveTab | null;
-  if (tabParam && VALID_FINANCE_TABS.has(tabParam)) {
-    callbacks.onTab(tabParam);
-    params.delete('tab');
-    mutated = true;
-  }
-
-  mutated = consumeParamFlag(params, 'ask', callbacks.onAskAi) || mutated;
-  mutated = consumeParamFlag(params, 'add', callbacks.onAddTx) || mutated;
+  const mutated = [
+    consumeSmsDeepLink(params, callbacks.onSmsText),
+    consumeTabDeepLink(params, callbacks.onTab),
+    consumeParamFlag(params, 'ask', callbacks.onAskAi),
+    consumeParamFlag(params, 'add', callbacks.onAddTx),
+  ].some(Boolean);
 
   if (mutated) {
     const nextSearch = params.toString();
@@ -303,7 +307,7 @@ function FinancePageModals(props: {
     </>
   );
 }
-export function FinancePageContent() {
+function useFinancePageController() {
   const isFitnessEnabled = isFitnessModuleEnabled(useGamificationStore((s) => s.settings));
   const isLoading = useFinanceStore((s) => s.isLoading);
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
@@ -323,8 +327,6 @@ export function FinancePageContent() {
   const [sharedSmsText, setSharedSmsText] = useState<string | null>(null);
   const [isAskAiOpen, setIsAskAiOpen] = useState(false);
 
-  const { isOpen: isTourOpen, startTour, closeTour, completeTour } = usePageTour('finance');
-
   useEffect(() => {
     loadFinanceData(user?.id, false);
   }, [loadFinanceData, user?.id]);
@@ -341,8 +343,6 @@ export function FinancePageContent() {
       onAddTx: () => setIsAddTxModalOpen(true),
     });
   }, [isLoading]);
-
-  const summary = getMonthlySummary(selectedMonth);
 
   const handleOpenNewTx = () => {
     setEditingTx(null);
@@ -377,66 +377,100 @@ export function FinancePageContent() {
     setIsSmsModalOpen(true);
   };
 
+  return {
+    isFitnessEnabled,
+    isLoading,
+    selectedMonth,
+    setSelectedMonth,
+    summary: getMonthlySummary(selectedMonth),
+    activeTab,
+    setActiveTab,
+    feedback,
+    isAddTxModalOpen,
+    setIsAddTxModalOpen,
+    editingTx,
+    defaultCommitmentId,
+    isBudgetModalOpen,
+    setIsBudgetModalOpen,
+    focusCategoryId,
+    userId: user?.id,
+    isSmsModalOpen,
+    setIsSmsModalOpen,
+    sharedSmsText,
+    isAskAiOpen,
+    setIsAskAiOpen,
+    handleOpenNewTx,
+    handleOpenOffsetForCommitment,
+    handleOpenEditTx,
+    handleOpenBudgetModal,
+    openSmsModal,
+  };
+}
+
+export function FinancePageContent() {
+  const c = useFinancePageController();
+  const { isOpen: isTourOpen, startTour, closeTour, completeTour } = usePageTour('finance');
+
   return (
     <div className="container max-w-6xl mx-auto overflow-x-hidden px-4 sm:px-6 pt-5 pb-24 md:py-6 md:pb-12 space-y-5">
       <PageHeader
         title="Finance"
         actions={
           <FinanceHeaderActions
-            selectedMonth={selectedMonth}
-            isFitnessEnabled={isFitnessEnabled}
+            selectedMonth={c.selectedMonth}
+            isFitnessEnabled={c.isFitnessEnabled}
             onShiftMonth={(delta) => {
-              feedback.tap();
-              setSelectedMonth(shiftMonthKey(selectedMonth, delta));
+              c.feedback.tap();
+              c.setSelectedMonth(shiftMonthKey(c.selectedMonth, delta));
             }}
-            onOpenAskAi={() => setIsAskAiOpen(true)}
+            onOpenAskAi={() => c.setIsAskAiOpen(true)}
             onStartTour={startTour}
-            onOpenSms={openSmsModal}
-            onOpenBudget={() => handleOpenBudgetModal()}
-            onOpenNewTx={handleOpenNewTx}
+            onOpenSms={c.openSmsModal}
+            onOpenBudget={() => c.handleOpenBudgetModal()}
+            onOpenNewTx={c.handleOpenNewTx}
           />
         }
       />
 
       <FinanceTabBar
-        activeTab={activeTab}
-        needsReviewCount={summary.needsReviewCount || 0}
+        activeTab={c.activeTab}
+        needsReviewCount={c.summary.needsReviewCount || 0}
         onSelectTab={(tab) => {
-          feedback.tap();
-          setActiveTab(tab);
+          c.feedback.tap();
+          c.setActiveTab(tab);
         }}
       />
 
       <FinanceTabPanel
-        activeTab={activeTab}
-        isLoading={isLoading}
-        onEditTransaction={handleOpenEditTx}
-        onOpenBudgetModal={handleOpenBudgetModal}
-        onSelectTab={setActiveTab}
-        onOpenAddTransaction={handleOpenNewTx}
-        onOpenAskAi={() => setIsAskAiOpen(true)}
-        onOpenSmsImport={openSmsModal}
-        onLogOffsetExpense={handleOpenOffsetForCommitment}
+        activeTab={c.activeTab}
+        isLoading={c.isLoading}
+        onEditTransaction={c.handleOpenEditTx}
+        onOpenBudgetModal={c.handleOpenBudgetModal}
+        onSelectTab={c.setActiveTab}
+        onOpenAddTransaction={c.handleOpenNewTx}
+        onOpenAskAi={() => c.setIsAskAiOpen(true)}
+        onOpenSmsImport={c.openSmsModal}
+        onLogOffsetExpense={c.handleOpenOffsetForCommitment}
       />
 
       <FinancePageModals
-        isAddTxModalOpen={isAddTxModalOpen}
-        setIsAddTxModalOpen={setIsAddTxModalOpen}
-        editingTx={editingTx}
-        defaultCommitmentId={defaultCommitmentId}
+        isAddTxModalOpen={c.isAddTxModalOpen}
+        setIsAddTxModalOpen={c.setIsAddTxModalOpen}
+        editingTx={c.editingTx}
+        defaultCommitmentId={c.defaultCommitmentId}
         onOpenSmsFromTxModal={() => {
-          setIsAddTxModalOpen(false);
-          openSmsModal();
+          c.setIsAddTxModalOpen(false);
+          c.openSmsModal();
         }}
-        isBudgetModalOpen={isBudgetModalOpen}
-        setIsBudgetModalOpen={setIsBudgetModalOpen}
-        focusCategoryId={focusCategoryId}
-        isSmsModalOpen={isSmsModalOpen}
-        setIsSmsModalOpen={setIsSmsModalOpen}
-        sharedSmsText={sharedSmsText}
-        isAskAiOpen={isAskAiOpen}
-        setIsAskAiOpen={setIsAskAiOpen}
-        userId={user?.id}
+        isBudgetModalOpen={c.isBudgetModalOpen}
+        setIsBudgetModalOpen={c.setIsBudgetModalOpen}
+        focusCategoryId={c.focusCategoryId}
+        isSmsModalOpen={c.isSmsModalOpen}
+        setIsSmsModalOpen={c.setIsSmsModalOpen}
+        sharedSmsText={c.sharedSmsText}
+        isAskAiOpen={c.isAskAiOpen}
+        setIsAskAiOpen={c.setIsAskAiOpen}
+        userId={c.userId}
       />
 
       <GuidedTour {...PAGE_TOURS.finance} isOpen={isTourOpen} onClose={closeTour} onComplete={completeTour} />

@@ -38,6 +38,11 @@ function dueSeverity(daysUntil: number): 'critical' | 'warning' {
   return daysUntil <= 0 ? 'critical' : 'warning';
 }
 
+const CADENCE_MONTHS: Record<string, number> = {
+  quarterly: 3,
+  yearly: 12,
+};
+
 function isRecurringBillPaidForCycle(bill: FinanceRecurringBill, cycleMonthKey: string): boolean {
   if (!bill.lastPaidMonthKey) return false;
   if (bill.lastPaidMonthKey === cycleMonthKey) return true;
@@ -47,10 +52,13 @@ function isRecurringBillPaidForCycle(bill: FinanceRecurringBill, cycleMonthKey: 
   if (![lastYear, lastMonth, cycleYear, cycleMonth].every(Number.isFinite)) return false;
 
   const monthsElapsed = (cycleYear - lastYear) * 12 + (cycleMonth - lastMonth);
-  if (monthsElapsed < 0) return false;
-  if (bill.cadence === 'quarterly') return monthsElapsed < 3;
-  if (bill.cadence === 'yearly') return monthsElapsed < 12;
-  return monthsElapsed === 0;
+  const threshold = CADENCE_MONTHS[bill.cadence] ?? 1;
+  return monthsElapsed >= 0 && monthsElapsed < threshold;
+}
+
+function isNextMonthCandidateDue(thisMonthDate: string, nextMonthDate: string, diffNext: number): boolean {
+  if (nextMonthDate === thisMonthDate) return false;
+  return diffNext >= 0 && diffNext <= 3;
 }
 
 function getDayOfMonthCandidates(ctx: AlertDateContext, dueDay: number): DayCandidate[] {
@@ -64,10 +72,15 @@ function getDayOfMonthCandidates(ctx: AlertDateContext, dueDay: number): DayCand
   }
 
   const diffNext = daysBetween(ctx.todayIso, nextMonthDate);
-  if (nextMonthDate !== thisMonthDate && diffNext >= 0 && diffNext <= 3) {
+  if (isNextMonthCandidateDue(thisMonthDate, nextMonthDate, diffNext)) {
     candidates.push({ dueDate: nextMonthDate, monthKey: nextMonthDate.slice(0, 7), daysUntil: diffNext });
   }
   return candidates;
+}
+
+function isStatementActionable(stmt: CreditCardStatement): boolean {
+  if (stmt.deletedAt || stmt.status === 'paid') return false;
+  return stmt.remainingDue > 0 && Boolean(stmt.dueDate);
 }
 
 function buildStatementAlert(params: {
@@ -76,8 +89,7 @@ function buildStatementAlert(params: {
   accountById: Map<string, FinanceAccount>;
 }): UnifiedAdvanceAlert | null {
   const { ctx, stmt, accountById } = params;
-  const isUnpaid = !stmt.deletedAt && stmt.status !== 'paid' && stmt.remainingDue > 0 && Boolean(stmt.dueDate);
-  if (!isUnpaid) return null;
+  if (!isStatementActionable(stmt)) return null;
   const dueIso = normalizeIsoDate(stmt.dueDate || '');
   const daysUntil = daysBetween(ctx.todayIso, dueIso);
   if (daysUntil > 3) return null;

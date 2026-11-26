@@ -25,6 +25,56 @@ vi.mock('sonner', () => ({
   },
 }));
 
+async function seedFinanceBridgeFixtures(userId: string) {
+  const now = '2026-11-24T10:00:00.000Z';
+  await db.financeAccounts.put({
+    id: 'acc_upi',
+    userId,
+    name: 'GPay UPI',
+    type: 'upi',
+    balance: 5000,
+    currency: 'INR',
+    color: '#10b981',
+    icon: 'Smartphone',
+    isDefault: true,
+    archived: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await db.financeCategories.bulkPut([
+    {
+      id: 'cat_food', userId, name: 'Food & Dining', slug: 'food-dining', type: 'expense',
+      icon: 'Utensils', color: '#f97316', monthlyBudgetLimit: 0, subcategories: [], order: 0, isSystem: true, archived: false, createdAt: now, updatedAt: now,
+    },
+    {
+      id: 'cat_junk', userId, name: 'Junk Food', slug: 'junk-food', type: 'expense',
+      icon: 'Flame', color: '#f43f5e', monthlyBudgetLimit: 0, subcategories: [], order: 1, isSystem: true, archived: false, createdAt: now, updatedAt: now,
+    },
+    {
+      id: 'cat_supp', userId, name: 'Health & Supplements', slug: 'medical-supplements', type: 'expense',
+      icon: 'HeartPulse', color: '#06b6d4', monthlyBudgetLimit: 0, subcategories: [], order: 2, isSystem: true, archived: false, createdAt: now, updatedAt: now,
+    },
+  ]);
+
+  await db.supplementInventory.bulkPut([
+    {
+      id: 'sup_whey', userId, name: 'ON Gold Whey', brand: 'Optimum Nutrition', category: 'protein', unitLabel: 'scoop',
+      totalServings: 30, remainingServings: 4, dailyDosage: 1, costInr: 2500, proteinPerServingG: 24, manualAdjustment: -26, lowStockThresholdDays: 7, isActive: true, createdAt: now, updatedAt: now,
+    },
+    {
+      id: 'sup_vitd', userId, name: 'Vitamin D3 2000 IU', category: 'vitamin', unitLabel: 'cap',
+      totalServings: 60, remainingServings: 15, dailyDosage: 1, costInr: 600, manualAdjustment: -45, lowStockThresholdDays: 7, isActive: true, createdAt: now, updatedAt: now,
+    },
+  ]);
+}
+
+function submitTransactionModalEntry(amount: string, description: string) {
+  fireEvent.change(screen.getByLabelText('Transaction Amount in Rupees'), { target: { value: amount } });
+  fireEvent.change(screen.getByLabelText('Merchant or Description'), { target: { value: description } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Entry' }));
+}
+
 describe('Finance <-> Diet & Supplement Bridge Modals (Decision 4 RTL)', () => {
   const userId = 'test-user';
   const today = getLocalIsoDate();
@@ -49,136 +99,21 @@ describe('Finance <-> Diet & Supplement Bridge Modals (Decision 4 RTL)', () => {
       db.supplementLogs.clear(),
     ]);
 
-    const now = '2026-11-24T10:00:00.000Z';
-    await db.financeAccounts.put({
-      id: 'acc_upi',
-      userId,
-      name: 'GPay UPI',
-      type: 'upi',
-      balance: 5000,
-      currency: 'INR',
-      color: '#10b981',
-      icon: 'Smartphone',
-      isDefault: true,
-      archived: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await db.financeCategories.bulkPut([
-      {
-        id: 'cat_food',
-        userId,
-        name: 'Food & Dining',
-        slug: 'food-dining',
-        type: 'expense',
-        icon: 'Utensils',
-        color: '#f97316',
-        monthlyBudgetLimit: 0,
-        subcategories: [],
-        order: 0,
-        isSystem: true,
-        archived: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 'cat_junk',
-        userId,
-        name: 'Junk Food',
-        slug: 'junk-food',
-        type: 'expense',
-        icon: 'Flame',
-        color: '#f43f5e',
-        monthlyBudgetLimit: 0,
-        subcategories: [],
-        order: 1,
-        isSystem: true,
-        archived: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 'cat_supp',
-        userId,
-        name: 'Health & Supplements',
-        slug: 'medical-supplements',
-        type: 'expense',
-        icon: 'HeartPulse',
-        color: '#06b6d4',
-        monthlyBudgetLimit: 0,
-        subcategories: [],
-        order: 2,
-        isSystem: true,
-        archived: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]);
-
-    await db.supplementInventory.bulkPut([
-      {
-        id: 'sup_whey',
-        userId,
-        name: 'ON Gold Whey',
-        brand: 'Optimum Nutrition',
-        category: 'protein',
-        unitLabel: 'scoop',
-        totalServings: 30,
-        remainingServings: 4,
-        dailyDosage: 1,
-        costInr: 2500,
-        proteinPerServingG: 24,
-        manualAdjustment: -26,
-        lowStockThresholdDays: 7,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 'sup_vitd',
-        userId,
-        name: 'Vitamin D3 2000 IU',
-        category: 'vitamin',
-        unitLabel: 'cap',
-        totalServings: 60,
-        remainingServings: 15,
-        dailyDosage: 1,
-        costInr: 600,
-        manualAdjustment: -45,
-        lowStockThresholdDays: 7,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]);
-
+    await seedFinanceBridgeFixtures(userId);
     await useFinanceStore.getState().loadFinanceData(userId);
     await useFitnessStore.getState().loadFitnessData(userId);
   });
 
   it('AddTransactionModal auto-logs Junk Food to Diet without asking & never double-logs, offers Food & Dining opt-in, and preserves manual supplement selection on Restock', async () => {
     const onOpenChange = vi.fn();
-    const { rerender } = render(
-      <AddTransactionModal open={true} onOpenChange={onOpenChange} />
-    );
+    const { rerender } = render(<AddTransactionModal open={true} onOpenChange={onOpenChange} />);
 
-    // 1. Default Food & Dining shows optional toggle chip and does NOT log MealLog when unchecked
     expect(screen.getByTestId('food-diet-bridge-chip')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Transaction Amount in Rupees'), {
-      target: { value: '140' },
-    });
-    fireEvent.change(screen.getByLabelText('Merchant or Description'), {
-      target: { value: 'Home Tiffin Lunch' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Entry' }));
+    submitTransactionModalEntry('140', 'Home Tiffin Lunch');
 
-    await waitFor(() => {
-      expect(onOpenChange).toHaveBeenCalledWith(false);
-    });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(await db.mealLogs.filter((m) => !m.deletedAt).toArray()).toHaveLength(0);
 
-    // 2. Re-open and switch category to Junk Food -> automatic Diet badge without toggle
     rerender(<AddTransactionModal open={false} onOpenChange={onOpenChange} />);
     rerender(<AddTransactionModal open={true} onOpenChange={onOpenChange} />);
 
@@ -186,13 +121,7 @@ describe('Finance <-> Diet & Supplement Bridge Modals (Decision 4 RTL)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Junk Food' }));
 
     expect(screen.getByTestId('junk-auto-diet-badge')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Transaction Amount in Rupees'), {
-      target: { value: '60' },
-    });
-    fireEvent.change(screen.getByLabelText('Merchant or Description'), {
-      target: { value: 'Street Momos' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Entry' }));
+    submitTransactionModalEntry('60', 'Street Momos');
 
     await waitFor(async () => {
       const meals = await db.mealLogs.filter((m) => !m.deletedAt).toArray();
@@ -203,7 +132,6 @@ describe('Finance <-> Diet & Supplement Bridge Modals (Decision 4 RTL)', () => {
     expect(autoMeals[0].source).toBe('finance_bridge');
     expect(autoMeals[0].date).toBe(today);
 
-    // 3. Health & Supplements 1-tap Restock chip preserves manual supplement pick across title edits
     rerender(<AddTransactionModal open={false} onOpenChange={onOpenChange} />);
     rerender(<AddTransactionModal open={true} onOpenChange={onOpenChange} />);
 
@@ -215,20 +143,12 @@ describe('Finance <-> Diet & Supplement Bridge Modals (Decision 4 RTL)', () => {
     fireEvent.change(suppSelect, { target: { value: 'sup_vitd' } });
     expect(suppSelect.value).toBe('sup_vitd');
 
-    // Editing title to contain "whey" must NOT clobber the user's manual Vitamin D3 pick
-    fireEvent.change(screen.getByLabelText('Merchant or Description'), {
-      target: { value: 'Apollo Health Whey & Vit D Order' },
-    });
+    submitTransactionModalEntry('899', 'Apollo Health Whey & Vit D Order');
     expect(suppSelect.value).toBe('sup_vitd');
-
-    fireEvent.change(screen.getByLabelText('Transaction Amount in Rupees'), {
-      target: { value: '899' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Entry' }));
 
     await waitFor(async () => {
       const vitd = await db.supplementInventory.get('sup_vitd');
-      expect(vitd?.remainingServings).toBe(45); // 15 + 30 servings restocked
+      expect(vitd?.remainingServings).toBe(45);
     });
   }, 15000);
 

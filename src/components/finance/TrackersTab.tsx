@@ -154,6 +154,50 @@ function UpcomingObligationsStrip({
   );
 }
 
+function TrackerSubTabBar({
+  subTab,
+  onSelect,
+}: {
+  subTab: TrackerSubTab;
+  onSelect: (tab: TrackerSubTab) => void;
+}) {
+  return (
+    <div role="tablist" aria-label="Bills and debt sections" className="flex items-center gap-1 p-1 rounded-2xl bg-muted overflow-x-auto">
+      {TRACKER_SUB_TABS.map((tab) => {
+        const Icon = tab.icon;
+        const active = subTab === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(tab.id)}
+            className={`min-h-[40px] px-3.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap inline-flex items-center gap-1.5 shrink-0 ${
+              active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            <span>{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TrackerSubTabContent({ subTab, onLogOffsetExpense }: { subTab: TrackerSubTab; onLogOffsetExpense: (id: string) => void }) {
+  const views: Record<TrackerSubTab, React.ReactNode> = {
+    calendar: <BillCalendarView />,
+    commitments: <CommitmentsSection onLogOffsetExpense={onLogOffsetExpense} />,
+    bills: <BillsSubsSection />,
+    sips: <SipsSection />,
+    friends: <FriendsDebtSection />,
+    emis: <EmisPayoffSection />,
+  };
+  return <div>{views[subTab]}</div>;
+}
+
 export function TrackersTab({ onLogOffsetExpense }: TrackersTabProps) {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const getUpcomingFinancialObligations = useFinanceStore((s) => s.getUpcomingFinancialObligations);
@@ -191,40 +235,14 @@ export function TrackersTab({ onLogOffsetExpense }: TrackersTabProps) {
   return (
     <div className="space-y-5">
       <UpcomingObligationsStrip upcoming30d={upcoming30d} totalUpcoming={totalUpcoming} onPay={handleQuickPayObligation} />
-
-      <div role="tablist" aria-label="Bills and debt sections" className="flex items-center gap-1 p-1 rounded-2xl bg-muted overflow-x-auto">
-        {TRACKER_SUB_TABS.map((tab) => {
-          const Icon = tab.icon;
-          const active = subTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => {
-                feedback.tap();
-                setSubTab(tab.id);
-              }}
-              className={`min-h-[40px] px-3.5 text-xs font-semibold rounded-xl transition-all whitespace-nowrap inline-flex items-center gap-1.5 shrink-0 ${
-                active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div>
-        {subTab === 'calendar' && <BillCalendarView />}
-        {subTab === 'commitments' && <CommitmentsSection onLogOffsetExpense={onLogOffsetExpense} />}
-        {subTab === 'bills' && <BillsSubsSection />}
-        {subTab === 'sips' && <SipsSection />}
-        {subTab === 'friends' && <FriendsDebtSection />}
-        {subTab === 'emis' && <EmisPayoffSection />}
-      </div>
+      <TrackerSubTabBar
+        subTab={subTab}
+        onSelect={(tab) => {
+          feedback.tap();
+          setSubTab(tab);
+        }}
+      />
+      <TrackerSubTabContent subTab={subTab} onLogOffsetExpense={onLogOffsetExpense} />
     </div>
   );
 }

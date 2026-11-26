@@ -250,6 +250,106 @@ function UpdateSipValueDialog(props: {
   );
 }
 
+function computePortfolioTotals(activeSips: FinanceSipPlan[]) {
+  const monthlyTarget = activeSips.reduce((s, p) => s + p.monthlyAmount, 0);
+  const totalInvested = activeSips.reduce((s, p) => s + (p.totalInvested || 0), 0);
+  const totalCurrent = activeSips.reduce((s, p) => s + Math.max(p.currentValue || 0, p.totalInvested || 0), 0);
+  const gain = totalCurrent - totalInvested;
+  const gainPct = totalInvested > 0 ? Math.round((gain / totalInvested) * 1000) / 10 : 0;
+  return { monthlyTarget, totalInvested, totalCurrent, gain, gainPct };
+}
+
+function SipsGridOrEmpty(props: {
+  activeSips: FinanceSipPlan[];
+  selectedMonth: string;
+  transactions: ReturnType<typeof useFinanceStore.getState>['transactions'];
+  onAddClick: () => void;
+  onLogPayment: (target: FinanceSipPlan) => Promise<void>;
+  onOpenValueModal: (target: FinanceSipPlan, currentVal: number) => void;
+  onDelete: (target: FinanceSipPlan) => Promise<void>;
+}) {
+  const { activeSips, selectedMonth, transactions, onAddClick, onLogPayment, onOpenValueModal, onDelete } = props;
+  if (activeSips.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2.5">
+        <p className="text-xs text-muted-foreground">
+          No active SIPs yet. Add your Nifty 50, Flexi-Cap, Gold, or RD plans to track compounding and log monthly installs in 1 tap.
+        </p>
+        <Button type="button" size="sm" variant="secondary" onClick={onAddClick} className="min-h-[40px] px-4 text-xs rounded-xl">
+          Add First SIP Plan
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+      {activeSips.map((sip) => {
+        const isInvestedThisMonth =
+          sip.lastInvestedMonthKey === selectedMonth ||
+          transactions.some((t) => !t.deletedAt && t.linkedSipId === sip.id && t.monthKey === selectedMonth);
+        return (
+          <SipPlanCard
+            key={sip.id}
+            sip={sip}
+            selectedMonth={selectedMonth}
+            isInvestedThisMonth={isInvestedThisMonth}
+            onLogPayment={onLogPayment}
+            onOpenValueModal={onOpenValueModal}
+            onDelete={onDelete}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function isInvalidSipInput(sipName: string, monthly: number): boolean {
+  if (!sipName.trim()) return true;
+  return isNaN(monthly) || monthly <= 0;
+}
+
+function resolveSipDefaultIds(
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts'],
+  categories: ReturnType<typeof useFinanceStore.getState>['categories']
+) {
+  const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
+  const investCat = categories.find((c) => c.slug === 'investments-savings') || categories[0];
+  return { accountId: defaultAcc?.id, categoryId: investCat?.id };
+}
+
+function buildNewSipPayload(params: {
+  sipName: string;
+  sipPlatform: string;
+  sipAssetClass: SipAssetClass;
+  monthly: number;
+  sipDay: string;
+  sipInvested: string;
+  sipCurrentVal: string;
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts'];
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'];
+}) {
+  const { sipName, sipPlatform, sipAssetClass, monthly, sipDay, sipInvested, sipCurrentVal, accounts, categories } = params;
+  const invested = Math.max(0, parseFloat(sipInvested) || 0);
+  const current = Math.max(invested, parseFloat(sipCurrentVal) || invested);
+  const { accountId, categoryId } = resolveSipDefaultIds(accounts, categories);
+
+  return {
+    name: sipName.trim(),
+    platform: sipPlatform.trim() || undefined,
+    assetClass: sipAssetClass,
+    monthlyAmount: monthly,
+    sipDayOfMonth: Math.min(31, Math.max(1, parseInt(sipDay, 10) || 5)),
+    startDate: getLocalIsoDate(),
+    totalInvested: invested,
+    currentValue: current,
+    expectedReturnAnnual: sipAssetClass === 'equity_mf' ? 12 : 8,
+    accountId,
+    categoryId,
+    isActive: true,
+    color: '#8b5cf6',
+  };
+}
+
 export function SipsSection() {
   const selectedMonth = useFinanceStore((s) => s.selectedMonth);
   const sipPlans = useFinanceStore((s) => s.sipPlans);
@@ -262,6 +362,7 @@ export function SipsSection() {
   const deleteSipPlan = useFinanceStore((s) => s.deleteSipPlan);
 
   const activeSips = useMemo(() => sipPlans.filter((s) => s.isActive && !s.deletedAt), [sipPlans]);
+  const totals = useMemo(() => computePortfolioTotals(activeSips), [activeSips]);
 
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [sipName, setSipName] = useState('');
@@ -275,43 +376,27 @@ export function SipsSection() {
   const [updatedValue, setUpdatedValue] = useState('');
   const feedback = useFeedback();
 
-  const totals = useMemo(() => {
-    const monthlyTarget = activeSips.reduce((s, p) => s + p.monthlyAmount, 0);
-    const totalInvested = activeSips.reduce((s, p) => s + (p.totalInvested || 0), 0);
-    const totalCurrent = activeSips.reduce((s, p) => s + Math.max(p.currentValue || 0, p.totalInvested || 0), 0);
-    const gain = totalCurrent - totalInvested;
-    const gainPct = totalInvested > 0 ? Math.round((gain / totalInvested) * 1000) / 10 : 0;
-    return { monthlyTarget, totalInvested, totalCurrent, gain, gainPct };
-  }, [activeSips]);
-
   const handleCreateSip = async (e: React.FormEvent) => {
     e.preventDefault();
     const monthly = parseFloat(sipMonthly);
-    const hasInvalidMonthly = isNaN(monthly) || monthly <= 0;
-    if (!sipName.trim() || hasInvalidMonthly) {
+    if (isInvalidSipInput(sipName, monthly)) {
       toast.error('Enter SIP name and valid monthly amount');
       return;
     }
-    const invested = Math.max(0, parseFloat(sipInvested) || 0);
-    const current = Math.max(invested, parseFloat(sipCurrentVal) || invested);
-    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
-    const investCat = categories.find((c) => c.slug === 'investments-savings') || categories[0];
 
-    await addSipPlan({
-      name: sipName.trim(),
-      platform: sipPlatform.trim() || undefined,
-      assetClass: sipAssetClass,
-      monthlyAmount: monthly,
-      sipDayOfMonth: Math.min(31, Math.max(1, parseInt(sipDay, 10) || 5)),
-      startDate: getLocalIsoDate(),
-      totalInvested: invested,
-      currentValue: current,
-      expectedReturnAnnual: sipAssetClass === 'equity_mf' ? 12 : 8,
-      accountId: defaultAcc?.id,
-      categoryId: investCat?.id,
-      isActive: true,
-      color: '#8b5cf6',
-    });
+    await addSipPlan(
+      buildNewSipPayload({
+        sipName,
+        sipPlatform,
+        sipAssetClass,
+        monthly,
+        sipDay,
+        sipInvested,
+        sipCurrentVal,
+        accounts,
+        categories,
+      })
+    );
 
     toast.success(`Added SIP plan: ${sipName.trim()}`);
     setIsNewOpen(false);
@@ -350,46 +435,26 @@ export function SipsSection() {
         </Button>
       </div>
 
-      {activeSips.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2.5">
-          <p className="text-xs text-muted-foreground">
-            No active SIPs yet. Add your Nifty 50, Flexi-Cap, Gold, or RD plans to track compounding and log monthly installs in 1 tap.
-          </p>
-          <Button type="button" size="sm" variant="secondary" onClick={() => setIsNewOpen(true)} className="min-h-[40px] px-4 text-xs rounded-xl">
-            Add First SIP Plan
-          </Button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {activeSips.map((sip) => {
-            const isInvestedThisMonth =
-              sip.lastInvestedMonthKey === selectedMonth ||
-              transactions.some((t) => !t.deletedAt && t.linkedSipId === sip.id && t.monthKey === selectedMonth);
-            return (
-              <SipPlanCard
-                key={sip.id}
-                sip={sip}
-                selectedMonth={selectedMonth}
-                isInvestedThisMonth={isInvestedThisMonth}
-                onLogPayment={async (target) => {
-                  feedback.coin();
-                  const tx = await payMonthlySip(target.id);
-                  if (tx) toast.success(`Logged ${formatINR(target.monthlyAmount)} SIP for ${target.name}`);
-                }}
-                onOpenValueModal={(target, currentVal) => {
-                  setValueModalSip(target);
-                  setUpdatedValue(String(currentVal));
-                }}
-                onDelete={async (target) => {
-                  feedback.warning();
-                  await deleteSipPlan(target.id);
-                  toast.success(`Removed ${target.name}`);
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
+      <SipsGridOrEmpty
+        activeSips={activeSips}
+        selectedMonth={selectedMonth}
+        transactions={transactions}
+        onAddClick={() => setIsNewOpen(true)}
+        onLogPayment={async (target) => {
+          feedback.coin();
+          const tx = await payMonthlySip(target.id);
+          if (tx) toast.success(`Logged ${formatINR(target.monthlyAmount)} SIP for ${target.name}`);
+        }}
+        onOpenValueModal={(target, currentVal) => {
+          setValueModalSip(target);
+          setUpdatedValue(String(currentVal));
+        }}
+        onDelete={async (target) => {
+          feedback.warning();
+          await deleteSipPlan(target.id);
+          toast.success(`Removed ${target.name}`);
+        }}
+      />
 
       <NewSipPlanDialog
         open={isNewOpen}

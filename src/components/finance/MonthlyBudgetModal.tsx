@@ -228,6 +228,15 @@ function buildCategoryMaps(categories: ReturnType<typeof useFinanceStore.getStat
   return { categoryInputs, categoryRollovers };
 }
 
+function computeLeaveMetrics(baseSalaryInput: string, leaveDaysInput: string, salaryDivisor: 30 | 26) {
+  const baseSalaryNum = parseFloat(baseSalaryInput) || 0;
+  const leaveDaysNum = Math.max(0, parseFloat(leaveDaysInput) || 0);
+  const leaveCutAmount =
+    baseSalaryNum > 0 && leaveDaysNum > 0 ? Math.round((baseSalaryNum / salaryDivisor) * leaveDaysNum) : 0;
+  const netSalaryAfterLeave = Math.max(0, Math.round(baseSalaryNum - leaveCutAmount));
+  return { leaveDaysNum, leaveCutAmount, netSalaryAfterLeave };
+}
+
 function computeBudgetFormDerived(params: {
   categoryInputs: Record<string, string>;
   overallInput: string;
@@ -245,11 +254,7 @@ function computeBudgetFormDerived(params: {
   const overallNum = parseFloat(params.overallInput) || 0;
   const expectedIncomeNum = parseFloat(params.expectedIncomeInput) || 0;
   const plannedSipNum = parseFloat(params.plannedSipInput) || 0;
-  const baseSalaryNum = parseFloat(params.baseSalaryInput) || 0;
-  const leaveDaysNum = Math.max(0, parseFloat(params.leaveDaysInput) || 0);
-  const leaveCutAmount =
-    baseSalaryNum > 0 && leaveDaysNum > 0 ? Math.round((baseSalaryNum / params.salaryDivisor) * leaveDaysNum) : 0;
-  const netSalaryAfterLeave = Math.max(0, Math.round(baseSalaryNum - leaveCutAmount));
+  const leave = computeLeaveMetrics(params.baseSalaryInput, params.leaveDaysInput, params.salaryDivisor);
   const fixedObligations =
     params.summary.remainingUnpaidEmis +
     params.summary.remainingUnpaidCommitments +
@@ -257,19 +262,17 @@ function computeBudgetFormDerived(params: {
     params.summary.plannedDebtInstallmentsDue;
   const assignableIncomeBase = expectedIncomeNum > 0 ? expectedIncomeNum : params.summary.totalIncome;
   const totalAssigned = categorySum + plannedSipNum + fixedObligations;
-  const readyToAssign = Math.round(assignableIncomeBase - totalAssigned);
+
   return {
     categorySum,
     overallNum,
     expectedIncomeNum,
     plannedSipNum,
-    leaveDaysNum,
-    leaveCutAmount,
-    netSalaryAfterLeave,
+    ...leave,
     fixedObligations,
     assignableIncomeBase,
     totalAssigned,
-    readyToAssign,
+    readyToAssign: Math.round(assignableIncomeBase - totalAssigned),
   };
 }
 
@@ -292,6 +295,31 @@ function buildInitialBudgetState(params: {
     categoryInputs,
     categoryRollovers,
   };
+}
+
+function buildNumericCategoryLimits(
+  categories: ReturnType<typeof useFinanceStore.getState>['categories'],
+  categoryInputs: Record<string, string>
+): Record<string, number> {
+  const numericLimits: Record<string, number> = {};
+  for (const cat of categories) {
+    const parsed = parseFloat(categoryInputs[cat.id] || '0');
+    numericLimits[cat.id] = !isNaN(parsed) && parsed > 0 ? parsed : 0;
+  }
+  return numericLimits;
+}
+
+function useBudgetFocusEffect(open: boolean, focusCategoryId?: string | null) {
+  useEffect(() => {
+    if (!open || !focusCategoryId) return;
+    const el = document.getElementById(`cat-budget-input-${focusCategoryId}`);
+    if (!el) return;
+    const timer = setTimeout(() => {
+      el.focus();
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [open, focusCategoryId]);
 }
 
 function useMonthlyBudgetForm(params: {
@@ -346,74 +374,42 @@ function useMonthlyBudgetForm(params: {
     setCategoryRollovers(init.categoryRollovers);
   }, [open, selectedMonth, categories, budgets, summary.totalIncome]);
 
-  useEffect(() => {
-    if (!open || !focusCategoryId) return;
-    const el = document.getElementById(`cat-budget-input-${focusCategoryId}`);
-    if (!el) return;
-    const timer = setTimeout(() => {
-      el.focus();
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }, 120);
-    return () => clearTimeout(timer);
-  }, [open, focusCategoryId]);
+  useBudgetFocusEffect(open, focusCategoryId);
 
-  const {
-    categorySum,
-    overallNum,
-    expectedIncomeNum,
-    plannedSipNum,
-    leaveDaysNum,
-    leaveCutAmount,
-    netSalaryAfterLeave,
-    fixedObligations,
-    assignableIncomeBase,
-    totalAssigned,
-    readyToAssign,
-  } = computeBudgetFormDerived({
-    categoryInputs,
-    overallInput,
-    expectedIncomeInput,
-    plannedSipInput,
-    baseSalaryInput,
-    leaveDaysInput,
-    salaryDivisor,
-    summary,
+  const derived = computeBudgetFormDerived({
+    categoryInputs, overallInput, expectedIncomeInput, plannedSipInput, baseSalaryInput, leaveDaysInput, salaryDivisor, summary,
   });
 
   const handleAutoAssignRemaining = () => {
-    if (readyToAssign <= 0) {
+    if (derived.readyToAssign <= 0) {
       toast.info('All income is already assigned (or over-assigned)');
       return;
     }
     const savingsCat = activeExpenseCategories.find((c) => /saving|buffer|misc|personal|shopping/i.test(c.name));
     if (savingsCat) {
       const currentVal = parseFloat(categoryInputs[savingsCat.id] || '0') || 0;
-      setCategoryInputs((prev) => ({ ...prev, [savingsCat.id]: String(Math.round(currentVal + readyToAssign)) }));
-      toast.success(`Assigned ${formatINR(readyToAssign)} to ${savingsCat.name}`);
+      setCategoryInputs((prev) => ({ ...prev, [savingsCat.id]: String(Math.round(currentVal + derived.readyToAssign)) }));
+      toast.success(`Assigned ${formatINR(derived.readyToAssign)} to ${savingsCat.name}`);
       return;
     }
-    setPlannedSipInput(String(Math.round(plannedSipNum + readyToAssign)));
-    toast.success(`Assigned ${formatINR(readyToAssign)} to Target SIP / Savings`);
+    setPlannedSipInput(String(Math.round(derived.plannedSipNum + derived.readyToAssign)));
+    toast.success(`Assigned ${formatINR(derived.readyToAssign)} to Target SIP / Savings`);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const numericLimits: Record<string, number> = {};
-    for (const cat of categories) {
-      const parsed = parseFloat(categoryInputs[cat.id] || '0');
-      numericLimits[cat.id] = !isNaN(parsed) && parsed > 0 ? parsed : 0;
-    }
-    const effectiveOverall = budgetMode === 'zero_based' && categorySum > 0 ? categorySum : overallNum;
+    const numericLimits = buildNumericCategoryLimits(categories, categoryInputs);
+    const effectiveOverall = budgetMode === 'zero_based' && derived.categorySum > 0 ? derived.categorySum : derived.overallNum;
 
     setIsSaving(true);
     try {
       await saveMonthlyBudgetSettings(selectedMonth, effectiveOverall, numericLimits, {
-        expectedIncome: expectedIncomeNum,
-        plannedSipAmount: plannedSipNum,
+        expectedIncome: derived.expectedIncomeNum,
+        plannedSipAmount: derived.plannedSipNum,
         paydayOfMonth: normalizePaydayOfMonth(parseInt(paydayInput, 10)) ?? 1,
         categoryRollovers,
         budgetMode,
-        assignedIncome: budgetMode === 'zero_based' ? totalAssigned : undefined,
+        assignedIncome: budgetMode === 'zero_based' ? derived.totalAssigned : undefined,
       });
       toast.success(budgetMode === 'zero_based' ? 'Zero-Based budget plan saved' : 'Monthly budgets & rollover envelopes saved');
       onOpenChange(false);
@@ -430,41 +426,21 @@ function useMonthlyBudgetForm(params: {
 
   return {
     selectedMonth,
-    budgetMode,
-    setBudgetMode,
-    overallInput,
-    setOverallInput,
-    expectedIncomeInput,
-    setExpectedIncomeInput,
-    paydayInput,
-    setPaydayInput,
-    plannedSipInput,
-    setPlannedSipInput,
-    categoryInputs,
-    setCategoryInputs,
-    categoryRollovers,
-    setCategoryRollovers,
+    budgetMode, setBudgetMode,
+    overallInput, setOverallInput,
+    expectedIncomeInput, setExpectedIncomeInput,
+    paydayInput, setPaydayInput,
+    plannedSipInput, setPlannedSipInput,
+    categoryInputs, setCategoryInputs,
+    categoryRollovers, setCategoryRollovers,
     isSaving,
-    showLeaveHelper,
-    setShowLeaveHelper,
-    baseSalaryInput,
-    setBaseSalaryInput,
-    leaveDaysInput,
-    setLeaveDaysInput,
-    salaryDivisor,
-    setSalaryDivisor,
+    showLeaveHelper, setShowLeaveHelper,
+    baseSalaryInput, setBaseSalaryInput,
+    leaveDaysInput, setLeaveDaysInput,
+    salaryDivisor, setSalaryDivisor,
     spentByCat,
     activeExpenseCategories,
-    categorySum,
-    overallNum,
-    expectedIncomeNum,
-    plannedSipNum,
-    leaveDaysNum,
-    leaveCutAmount,
-    netSalaryAfterLeave,
-    fixedObligations,
-    assignableIncomeBase,
-    readyToAssign,
+    ...derived,
     handleAutoAssignRemaining,
     handleSave,
     clearCategoryLimits,
