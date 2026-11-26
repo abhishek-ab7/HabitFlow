@@ -32,6 +32,92 @@ interface SmartHabitRecommendation {
   expectedImpact: 'low' | 'medium' | 'high';
 }
 
+const DIFFICULTY_BADGE_CLASSES: Record<SmartHabitRecommendation['difficulty'], string> = {
+  easy: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  medium: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+  hard: 'bg-rose-500/15 text-rose-600 dark:text-rose-400',
+};
+
+const IMPACT_BADGE_CLASSES: Record<SmartHabitRecommendation['expectedImpact'], string> = {
+  high: 'bg-invest/15 text-invest',
+  medium: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+  low: 'bg-muted text-muted-foreground',
+};
+
+async function fetchHabitRecommendations(goal: string): Promise<SmartHabitRecommendation[]> {
+  const response = await fetch('/api/ai/recommend-habits', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      goals: [{ id: 'custom-goal', title: goal, areaOfLife: 'personal', description: 'Custom aspiration entered by user' }],
+      currentHabits: [],
+    }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to generate recommendations');
+  }
+  const data = await response.json();
+  return data.recommendations || [];
+}
+
+function RecommendationRow({
+  rec,
+  index,
+  isAdded,
+  onAdd,
+}: {
+  rec: SmartHabitRecommendation;
+  index: number;
+  isAdded: boolean;
+  onAdd: (rec: SmartHabitRecommendation) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.05 }}
+      className="group surface-subtle rounded-2xl p-4 flex flex-col md:flex-row md:items-start justify-between gap-4 hover:border-invest/40 transition-all"
+    >
+      <div className="flex-1 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h5 className="font-semibold text-lg text-foreground transition-colors">{rec.habitName}</h5>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge className="bg-primary/15 text-primary border-0 text-[10px]">{rec.category}</Badge>
+            <Badge className="bg-muted text-muted-foreground border-0 text-[10px] font-mono tabular-nums">
+              {rec.targetDaysPerWeek}x/week
+            </Badge>
+            <Badge className={cn('border-0 text-[10px]', DIFFICULTY_BADGE_CLASSES[rec.difficulty])}>
+              {rec.difficulty}
+            </Badge>
+            <Badge className={cn('border-0 text-[10px]', IMPACT_BADGE_CLASSES[rec.expectedImpact])}>
+              {rec.expectedImpact} impact
+            </Badge>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground leading-relaxed">{rec.reasoning}</p>
+      </div>
+
+      <div className="flex-shrink-0 self-end md:self-start">
+        {isAdded ? (
+          <div className="flex items-center justify-center h-10 w-28 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm font-semibold gap-1.5 animate-scale-in">
+            <Check className="h-4 w-4" />
+            Added
+          </div>
+        ) : (
+          <Button
+            onClick={() => onAdd(rec)}
+            className="h-10 w-28 rounded-xl font-semibold bg-primary hover:bg-primary/90 text-primary-foreground border-0 hover:scale-[0.98] transition-all gap-1"
+          >
+            <Plus className="h-4 w-4" />
+            Add Habit
+          </Button>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 export function SmartHabitGenerator({ open, onOpenChange }: SmartHabitGeneratorProps) {
   const [goal, setGoal] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,30 +136,9 @@ export function SmartHabitGenerator({ open, onOpenChange }: SmartHabitGeneratorP
     setAddedHabits({});
 
     try {
-      const response = await fetch('/api/ai/recommend-habits', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          goals: [
-            {
-              id: 'custom-goal',
-              title: goal,
-              areaOfLife: 'personal',
-              description: 'Custom aspiration entered by user',
-            },
-          ],
-          currentHabits: [],
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to generate recommendations');
-      }
-
-      const data = await response.json();
-      setRecommendations(data.recommendations || []);
-      if (data.recommendations?.length === 0) {
+      const recs = await fetchHabitRecommendations(goal);
+      setRecommendations(recs);
+      if (recs.length === 0) {
         toast.info('AI was unable to formulate specific habits. Try rephrasing your goal.');
       }
     } catch (err: any) {
@@ -158,69 +223,13 @@ export function SmartHabitGenerator({ open, onOpenChange }: SmartHabitGeneratorP
 
                 <div className="space-y-3">
                   {recommendations.map((rec, index) => (
-                    <motion.div
+                    <RecommendationRow
                       key={index}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="group surface-subtle rounded-2xl p-4 flex flex-col md:flex-row md:items-start justify-between gap-4 hover:border-invest/40 transition-all"
-                    >
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h5 className="font-semibold text-lg text-foreground transition-colors">
-                            {rec.habitName}
-                          </h5>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <Badge className="bg-primary/15 text-primary border-0 text-[10px]">
-                              {rec.category}
-                            </Badge>
-                            <Badge className="bg-muted text-muted-foreground border-0 text-[10px] font-mono tabular-nums">
-                              {rec.targetDaysPerWeek}x/week
-                            </Badge>
-                            <Badge
-                              className={cn(
-                                'border-0 text-[10px]',
-                                rec.difficulty === 'easy' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-                                rec.difficulty === 'medium' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-                                rec.difficulty === 'hard' && 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
-                              )}
-                            >
-                              {rec.difficulty}
-                            </Badge>
-                            <Badge
-                              className={cn(
-                                'border-0 text-[10px]',
-                                rec.expectedImpact === 'high' && 'bg-invest/15 text-invest',
-                                rec.expectedImpact === 'medium' && 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
-                                rec.expectedImpact === 'low' && 'bg-muted text-muted-foreground'
-                              )}
-                            >
-                              {rec.expectedImpact} impact
-                            </Badge>
-                          </div>
-                        </div>
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          {rec.reasoning}
-                        </p>
-                      </div>
-
-                      <div className="flex-shrink-0 self-end md:self-start">
-                        {addedHabits[rec.habitName] ? (
-                          <div className="flex items-center justify-center h-10 w-28 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm font-semibold gap-1.5 animate-scale-in">
-                            <Check className="h-4 w-4" />
-                            Added
-                          </div>
-                        ) : (
-                          <Button
-                            onClick={() => handleAdd(rec)}
-                            className="h-10 w-28 rounded-xl font-semibold bg-primary hover:bg-primary/90 text-primary-foreground border-0 hover:scale-[0.98] transition-all gap-1"
-                          >
-                            <Plus className="h-4 w-4" />
-                            Add Habit
-                          </Button>
-                        )}
-                      </div>
-                    </motion.div>
+                      rec={rec}
+                      index={index}
+                      isAdded={Boolean(addedHabits[rec.habitName])}
+                      onAdd={handleAdd}
+                    />
                   ))}
                 </div>
               </motion.div>

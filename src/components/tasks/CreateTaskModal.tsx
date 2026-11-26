@@ -23,6 +23,229 @@ interface CreateTaskModalProps {
     hideTrigger?: boolean
 }
 
+function CreateTaskScheduleFields({
+    dueDate,
+    setDueDate,
+    priority,
+    setPriority,
+    selectedGoalId,
+    setSelectedGoalId,
+    goals,
+    estimatedTime,
+    setEstimatedTime,
+    recurrenceRule,
+    setRecurrenceRule,
+}: {
+    dueDate: string;
+    setDueDate: (v: string) => void;
+    priority: "low" | "medium" | "high";
+    setPriority: (v: "low" | "medium" | "high") => void;
+    selectedGoalId: string | null;
+    setSelectedGoalId: (v: string | null) => void;
+    goals: Goal[];
+    estimatedTime: number;
+    setEstimatedTime: (v: number) => void;
+    recurrenceRule: string;
+    setRecurrenceRule: (v: string) => void;
+}) {
+    return (
+        <>
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground ml-1">Due Date</label>
+                    <div className="relative">
+                        <Input
+                            type="date"
+                            value={dueDate}
+                            onChange={(e) => setDueDate(e.target.value)}
+                            className="bg-background/50 border-border/50 focus:bg-background pl-9"
+                        />
+                        <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground ml-1">Priority</label>
+                    <div className="relative">
+                        <select
+                            value={priority}
+                            onChange={(e) => setPriority(e.target.value as "low" | "medium" | "high")}
+                            className="w-full h-10 rounded-md border border-border/50 bg-background/50 px-3 pl-9 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none"
+                        >
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                        <Flag className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground ml-1">Link to Goal (Optional)</label>
+                <div className="relative">
+                    <select
+                        value={selectedGoalId || "none"}
+                        onChange={(e) => setSelectedGoalId(e.target.value === "none" ? null : e.target.value)}
+                        className="w-full h-10 rounded-md border border-border/50 bg-background/50 px-3 pl-9 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none"
+                    >
+                        <option value="none">No Goal</option>
+                        {goals.map((goal) => (
+                            <option key={goal.id} value={goal.id}>
+                                {goal.title}
+                            </option>
+                        ))}
+                    </select>
+                    <Target className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground ml-1">Estimated Time (mins)</label>
+                    <Input
+                        type="number"
+                        min="0"
+                        value={estimatedTime || ''}
+                        onChange={(e) => setEstimatedTime(Number(e.target.value))}
+                        placeholder="e.g. 30"
+                        className="bg-background/50 border-border/50 focus:bg-background"
+                    />
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground ml-1">Recurrence</label>
+                    <select
+                        value={recurrenceRule}
+                        onChange={(e) => setRecurrenceRule(e.target.value)}
+                        className="w-full h-10 rounded-md border border-border/50 bg-background/50 px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none"
+                    >
+                        <option value="">None</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+            </div>
+        </>
+    );
+}
+
+function CreateTaskSubtasksSection({
+    title,
+    subtasks,
+    newSubtask,
+    setNewSubtask,
+    isGenerating,
+    onGenerateSubtasks,
+    onAddSubtask,
+    onRemoveSubtask,
+}: {
+    title: string;
+    subtasks: { id: string; title: string; completed: boolean }[];
+    newSubtask: string;
+    setNewSubtask: (v: string) => void;
+    isGenerating: boolean;
+    onGenerateSubtasks: () => void;
+    onAddSubtask: () => void;
+    onRemoveSubtask: (id: string) => void;
+}) {
+    return (
+        <div className="space-y-3 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Subtasks</label>
+                {isAIEnabled() && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onGenerateSubtasks}
+                        disabled={isGenerating || !title}
+                        className="h-7 text-xs gap-1.5 bg-invest/10 border-invest/25 hover:border-invest/50 text-invest"
+                    >
+                        {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-invest" />}
+                        Auto-Generate
+                    </Button>
+                )}
+            </div>
+
+            <div className="space-y-2">
+                {subtasks.map((subtask) => (
+                    <div key={subtask.id} className="flex items-center gap-2 group">
+                        <div className="flex-1 bg-muted/30 rounded px-2 py-1.5 text-sm">
+                            {subtask.title}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => onRemoveSubtask(subtask.id)}
+                            className="text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                ))}
+
+                <div className="flex gap-2">
+                    <Input
+                        value={newSubtask}
+                        onChange={(e) => setNewSubtask(e.target.value)}
+                        placeholder="Add a step..."
+                        className="h-8 text-sm"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault()
+                                onAddSubtask()
+                            }
+                        }}
+                    />
+                    <Button type="button" size="sm" variant="ghost" onClick={onAddSubtask} className="h-8 w-8 p-0">
+                        <Plus className="h-4 w-4" />
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+async function createTaskWithSubtasks(params: {
+    addTask: ReturnType<typeof useTaskStore.getState>['addTask'];
+    title: string;
+    description: string;
+    priority: "low" | "medium" | "high";
+    dueDate: string;
+    selectedGoalId: string | null;
+    isUrgent: boolean;
+    isImportant: boolean;
+    estimatedTime: number;
+    recurrenceRule: string;
+    subtasks: { id: string; title: string; completed: boolean }[];
+}) {
+    const parentTask = await params.addTask({
+        title: params.title,
+        description: params.description,
+        priority: params.priority,
+        due_date: params.dueDate ? new Date(params.dueDate).toISOString() : undefined,
+        goal_id: params.selectedGoalId === "none" ? undefined : params.selectedGoalId || undefined,
+        isUrgent: params.isUrgent,
+        isImportant: params.isImportant,
+        estimatedTime: params.estimatedTime > 0 ? params.estimatedTime : undefined,
+        recurrenceRule: params.recurrenceRule || undefined,
+        depth: 0,
+        parentTaskId: null
+    });
+
+    for (const subtask of params.subtasks) {
+        await params.addTask({
+            title: subtask.title,
+            priority: params.priority,
+            parentTaskId: parentTask.id,
+            depth: 1,
+            isUrgent: false,
+            isImportant: false
+        });
+    }
+}
+
 export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOpen, onOpenChange: controlledOnOpenChange, hideTrigger }: CreateTaskModalProps) {
     const [internalOpen, setInternalOpen] = useState(false)
     const isControlled = controlledOpen !== undefined
@@ -125,31 +348,19 @@ export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOp
 
         setLoading(true)
         try {
-            const parentTask = await addTask({
+            await createTaskWithSubtasks({
+                addTask,
                 title,
                 description,
                 priority,
-                due_date: dueDate ? new Date(dueDate).toISOString() : undefined,
-                goal_id: selectedGoalId === "none" ? undefined : selectedGoalId || undefined,
+                dueDate,
+                selectedGoalId,
                 isUrgent,
                 isImportant,
-                estimatedTime: estimatedTime > 0 ? estimatedTime : undefined,
-                recurrenceRule: recurrenceRule || undefined,
-                depth: 0,
-                parentTaskId: null
+                estimatedTime,
+                recurrenceRule,
+                subtasks,
             })
-
-            // Save subtasks using hierarchical relationships
-            for (const subtask of subtasks) {
-                await addTask({
-                    title: subtask.title,
-                    priority,
-                    parentTaskId: parentTask.id,
-                    depth: 1,
-                    isUrgent: false,
-                    isImportant: false
-                })
-            }
 
             toast.success("Task created successfully")
             setOpen(false)
@@ -217,83 +428,19 @@ export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOp
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground ml-1">Due Date</label>
-                            <div className="relative">
-                                <Input
-                                    type="date"
-                                    value={dueDate}
-                                    onChange={(e) => setDueDate(e.target.value)}
-                                    className="bg-background/50 border-border/50 focus:bg-background pl-9"
-                                />
-                                <CalendarIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground ml-1">Priority</label>
-                            <div className="relative">
-                                <select
-                                    value={priority}
-                                    onChange={(e) => setPriority(e.target.value as any)}
-                                    className="w-full h-10 rounded-md border border-border/50 bg-background/50 px-3 pl-9 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none"
-                                >
-                                    <option value="low">Low</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="high">High</option>
-                                </select>
-                                <Flag className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-muted-foreground ml-1">Link to Goal (Optional)</label>
-                        <div className="relative">
-                            <select
-                                value={selectedGoalId || "none"}
-                                onChange={(e) => setSelectedGoalId(e.target.value === "none" ? null : e.target.value)}
-                                className="w-full h-10 rounded-md border border-border/50 bg-background/50 px-3 pl-9 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none"
-                            >
-                                <option value="none">No Goal</option>
-                                {goals.map((goal) => (
-                                    <option key={goal.id} value={goal.id}>
-                                        {goal.title}
-                                    </option>
-                                ))}
-                            </select>
-                            <Target className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground ml-1">Estimated Time (mins)</label>
-                            <Input
-                                type="number"
-                                min="0"
-                                value={estimatedTime || ''}
-                                onChange={(e) => setEstimatedTime(Number(e.target.value))}
-                                placeholder="e.g. 30"
-                                className="bg-background/50 border-border/50 focus:bg-background"
-                            />
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground ml-1">Recurrence</label>
-                            <select
-                                value={recurrenceRule}
-                                onChange={(e) => setRecurrenceRule(e.target.value)}
-                                className="w-full h-10 rounded-md border border-border/50 bg-background/50 px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 appearance-none"
-                            >
-                                <option value="">None</option>
-                                <option value="daily">Daily</option>
-                                <option value="weekly">Weekly</option>
-                                <option value="monthly">Monthly</option>
-                            </select>
-                        </div>
-                    </div>
+                    <CreateTaskScheduleFields
+                        dueDate={dueDate}
+                        setDueDate={setDueDate}
+                        priority={priority}
+                        setPriority={setPriority}
+                        selectedGoalId={selectedGoalId}
+                        setSelectedGoalId={setSelectedGoalId}
+                        goals={goals}
+                        estimatedTime={estimatedTime}
+                        setEstimatedTime={setEstimatedTime}
+                        recurrenceRule={recurrenceRule}
+                        setRecurrenceRule={setRecurrenceRule}
+                    />
 
                     <div className="flex items-center gap-6 py-2 bg-muted/20 px-3 rounded-lg border border-border/30">
                         <div className="flex items-center gap-2">
@@ -323,66 +470,16 @@ export function CreateTaskModal({ onTaskCreated, defaultDate, open: controlledOp
                         </div>
                     </div>
 
-                    {/* Subtasks Section */}
-                    <div className="space-y-3 pt-2 border-t border-border/50">
-                        <div className="flex items-center justify-between">
-                            <label className="text-sm font-medium">Subtasks</label>
-                            {isAIEnabled() && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={handleGenerateSubtasks}
-                                    disabled={isGenerating || !title}
-                                    className="h-7 text-xs gap-1.5 bg-invest/10 border-invest/25 hover:border-invest/50 text-invest"
-                                >
-                                    {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-invest" />}
-                                    Auto-Generate
-                                </Button>
-                            )}
-                        </div>
-
-                        <div className="space-y-2">
-                            {subtasks.map((subtask) => (
-                                <div key={subtask.id} className="flex items-center gap-2 group">
-                                    <div className="flex-1 bg-muted/30 rounded px-2 py-1.5 text-sm">
-                                        {subtask.title}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeSubtask(subtask.id)}
-                                        className="text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    >
-                                        <X className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            ))}
-
-                            <div className="flex gap-2">
-                                <Input
-                                    value={newSubtask}
-                                    onChange={(e) => setNewSubtask(e.target.value)}
-                                    placeholder="Add a step..."
-                                    className="h-8 text-sm"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            addSubtask()
-                                        }
-                                    }}
-                                />
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={addSubtask}
-                                    className="h-8 w-8 p-0"
-                                >
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
+                    <CreateTaskSubtasksSection
+                        title={title}
+                        subtasks={subtasks}
+                        newSubtask={newSubtask}
+                        setNewSubtask={setNewSubtask}
+                        isGenerating={isGenerating}
+                        onGenerateSubtasks={handleGenerateSubtasks}
+                        onAddSubtask={addSubtask}
+                        onRemoveSubtask={removeSubtask}
+                    />
                     </div>
 
                     <div className="pt-3 flex justify-end gap-2 border-t border-border/50 shrink-0">

@@ -98,7 +98,82 @@ function TasksListBody({
     );
 }
 
-export default function TasksPageContent() {
+function TasksMainContent({
+    isLoading,
+    tasks,
+    hasAnyVisibleTasks,
+    viewMode,
+    activeTasks,
+    completedTasks,
+    completedLimit,
+    subtasksByParentId,
+    onComplete,
+    onShowMoreCompleted,
+}: {
+    isLoading: boolean;
+    tasks: ReturnType<typeof useTaskStore.getState>['tasks'];
+    hasAnyVisibleTasks: boolean;
+    viewMode: 'list' | 'eisenhower';
+    activeTasks: ReturnType<typeof useTaskStore.getState>['tasks'];
+    completedTasks: ReturnType<typeof useTaskStore.getState>['tasks'];
+    completedLimit: number;
+    subtasksByParentId: Map<string, ReturnType<typeof useTaskStore.getState>['tasks']>;
+    onComplete: (id: string) => Promise<void>;
+    onShowMoreCompleted: () => void;
+}) {
+    if (isLoading && tasks.length === 0) return <TaskListSkeleton />;
+    if (!hasAnyVisibleTasks) {
+        return (
+            <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                <EmptyTasksIllustration />
+                <div>
+                    <h3 className="text-lg font-medium">No tasks yet</h3>
+                    <p className="text-sm text-muted-foreground">Get started by creating your first task.</p>
+                </div>
+            </div>
+        );
+    }
+    if (viewMode === 'list') {
+        return (
+            <TasksListBody
+                activeTasks={activeTasks}
+                completedTasks={completedTasks}
+                completedLimit={completedLimit}
+                subtasksByParentId={subtasksByParentId}
+                onComplete={onComplete}
+                onShowMoreCompleted={onShowMoreCompleted}
+            />
+        );
+    }
+    return <EisenhowerMatrix tasks={tasks} onComplete={onComplete} />;
+}
+
+function TasksViewToggle({
+    viewMode,
+    onSelect,
+}: {
+    viewMode: 'list' | 'eisenhower';
+    onSelect: (mode: 'list' | 'eisenhower') => void;
+}) {
+    return (
+        <div className="inline-flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60 tour-task-views">
+            {([['list', 'List', List], ['eisenhower', 'Eisenhower', Grid2X2]] as const).map(([mode, label, Icon]) => (
+                <Button
+                    key={mode}
+                    variant={viewMode === mode ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-8 px-2.5 rounded-lg text-xs font-medium"
+                    onClick={() => onSelect(mode)}
+                >
+                    <Icon className="h-3.5 w-3.5 mr-1.5" />
+                    {label}
+                </Button>
+            ))}
+        </div>
+    );
+}
+
+function useTasksPageController() {
     const { tasks, loadTasks, isLoading, toggleTaskComplete, addTask } = useTaskStore(
         useShallow((s) => ({
             tasks: s.tasks,
@@ -112,7 +187,6 @@ export default function TasksPageContent() {
     const [viewMode, setViewMode] = useState<'list' | 'eisenhower'>('list');
     const [completedLimit, setCompletedLimit] = useState(20);
     const feedback = useFeedback();
-    const { isOpen: isTourOpen, startTour, closeTour, completeTour } = usePageTour('tasks');
 
     useEffect(() => {
         loadTasks();
@@ -130,8 +204,6 @@ export default function TasksPageContent() {
             toast.error("Failed to update task");
         }
     }, [tasks, toggleTaskComplete, feedback]);
-
-    const subtasksByParentId = useMemo(() => buildSubtasksMap(tasks), [tasks]);
 
     const handleQuickAddTask = async (task: { title: string; dueDate?: Date; tags?: string[] }) => {
         feedback.success();
@@ -151,9 +223,47 @@ export default function TasksPageContent() {
         }
     };
 
+    const subtasksByParentId = useMemo(() => buildSubtasksMap(tasks), [tasks]);
     const activeTasks = useMemo(() => tasks.filter((t) => t.status !== 'done' && t.status !== 'archived' && !t.parentTaskId), [tasks]);
     const completedTasks = useMemo(() => tasks.filter((t) => t.status === 'done' && !t.parentTaskId), [tasks]);
     const hasAnyVisibleTasks = tasks.some((t) => t.status !== 'archived');
+
+    return {
+        tasks,
+        isLoading,
+        loadTasks,
+        viewMode,
+        setViewMode,
+        completedLimit,
+        setCompletedLimit,
+        feedback,
+        subtasksByParentId,
+        activeTasks,
+        completedTasks,
+        hasAnyVisibleTasks,
+        handleTaskComplete,
+        handleQuickAddTask,
+    };
+}
+
+export default function TasksPageContent() {
+    const tour = usePageTour('tasks');
+    const {
+        tasks,
+        isLoading,
+        loadTasks,
+        viewMode,
+        setViewMode,
+        completedLimit,
+        setCompletedLimit,
+        feedback,
+        subtasksByParentId,
+        activeTasks,
+        completedTasks,
+        hasAnyVisibleTasks,
+        handleTaskComplete,
+        handleQuickAddTask,
+    } = useTasksPageController();
 
     return (
         <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-6 pb-24 md:pb-12">
@@ -162,21 +272,14 @@ export default function TasksPageContent() {
                 description="Manage your daily priorities and project to-dos."
                 actions={
                     <>
-                        <TourTriggerButton onClick={startTour} pageTitle="Tasks" />
-                        <div className="inline-flex items-center gap-1 bg-muted p-1 rounded-xl border border-border/60 tour-task-views">
-                            {([['list', 'List', List], ['eisenhower', 'Eisenhower', Grid2X2]] as const).map(([mode, label, Icon]) => (
-                                <Button
-                                    key={mode}
-                                    variant={viewMode === mode ? 'default' : 'ghost'}
-                                    size="sm"
-                                    className="h-8 px-2.5 rounded-lg text-xs font-medium"
-                                    onClick={() => { feedback.tap(); setViewMode(mode); }}
-                                >
-                                    <Icon className="h-3.5 w-3.5 mr-1.5" />
-                                    {label}
-                                </Button>
-                            ))}
-                        </div>
+                        <TourTriggerButton onClick={tour.startTour} pageTitle="Tasks" />
+                        <TasksViewToggle
+                            viewMode={viewMode}
+                            onSelect={(mode) => {
+                                feedback.tap();
+                                setViewMode(mode);
+                            }}
+                        />
                         <CreateTaskModal onTaskCreated={loadTasks} />
                     </>
                 }
@@ -186,30 +289,20 @@ export default function TasksPageContent() {
                 <SmartTaskInput onAddTask={handleQuickAddTask} />
             </div>
 
-            {isLoading && tasks.length === 0 ? (
-                <TaskListSkeleton />
-            ) : !hasAnyVisibleTasks ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
-                    <EmptyTasksIllustration />
-                    <div>
-                        <h3 className="text-lg font-medium">No tasks yet</h3>
-                        <p className="text-sm text-muted-foreground">Get started by creating your first task.</p>
-                    </div>
-                </div>
-            ) : viewMode === 'list' ? (
-                <TasksListBody
-                    activeTasks={activeTasks}
-                    completedTasks={completedTasks}
-                    completedLimit={completedLimit}
-                    subtasksByParentId={subtasksByParentId}
-                    onComplete={handleTaskComplete}
-                    onShowMoreCompleted={() => setCompletedLimit((c) => c + 20)}
-                />
-            ) : (
-                <EisenhowerMatrix tasks={tasks} onComplete={handleTaskComplete} />
-            )}
+            <TasksMainContent
+                isLoading={isLoading}
+                tasks={tasks}
+                hasAnyVisibleTasks={hasAnyVisibleTasks}
+                viewMode={viewMode}
+                activeTasks={activeTasks}
+                completedTasks={completedTasks}
+                completedLimit={completedLimit}
+                subtasksByParentId={subtasksByParentId}
+                onComplete={handleTaskComplete}
+                onShowMoreCompleted={() => setCompletedLimit((c) => c + 20)}
+            />
 
-            <GuidedTour {...PAGE_TOURS.tasks} isOpen={isTourOpen} onClose={closeTour} onComplete={completeTour} />
+            <GuidedTour {...PAGE_TOURS.tasks} isOpen={tour.isOpen} onClose={tour.closeTour} onComplete={tour.completeTour} />
         </div>
     );
 }

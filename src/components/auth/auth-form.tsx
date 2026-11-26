@@ -113,6 +113,51 @@ function AuthModeSwitch({ mode, onSwitch }: { mode: AuthMode; onSwitch: (m: Auth
   );
 }
 
+async function submitPasswordReset(params: {
+  resetPassword: (email: string) => Promise<{ error: { message: string } | null }>;
+  email: string;
+  onSuccess: () => void;
+}) {
+  const { error } = await params.resetPassword(params.email);
+  if (error) {
+    toast.error(error.message);
+    return;
+  }
+  toast.success('Password reset email sent! Check your inbox.');
+  params.onSuccess();
+}
+
+async function submitUserSignUp(params: {
+  signUp: (email: string, password: string, fullName?: string) => Promise<{ error: { message: string } | null }>;
+  email: string;
+  password: string;
+  fullName: string;
+}) {
+  const trimmedName = params.fullName.trim();
+  const { error } = await params.signUp(params.email, params.password, trimmedName || undefined);
+  if (error) {
+    toast.error(error.message);
+    return;
+  }
+  localStorage.setItem('habitflow_just_signed_up', 'true');
+  toast.success(trimmedName ? `Welcome, ${trimmedName}! Please check your email to confirm.` : 'Account created! Please check your email to confirm.');
+}
+
+async function submitUserSignIn(params: {
+  signIn: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
+  email: string;
+  password: string;
+  onSuccess: () => void;
+}) {
+  const { error } = await params.signIn(params.email, params.password);
+  if (error) {
+    toast.error(error.message);
+    return;
+  }
+  toast.success('Welcome back!');
+  params.onSuccess();
+}
+
 export function AuthForm() {
   const { signIn, signUp, signInWithGoogle, resetPassword, isAuthenticated } = useAuth();
   const router = useRouter();
@@ -132,25 +177,22 @@ export function AuthForm() {
 
   const submitByMode = async () => {
     if (mode === 'reset') {
-      const { error } = await resetPassword(email);
-      if (error) return toast.error(error.message);
-      toast.success('Password reset email sent! Check your inbox.');
-      setMode('signin');
+      await submitPasswordReset({ resetPassword, email, onSuccess: () => setMode('signin') });
       return;
     }
     if (mode === 'signup') {
-      const trimmedName = fullName.trim();
-      const { error } = await signUp(email, password, trimmedName || undefined);
-      if (error) return toast.error(error.message);
-      localStorage.setItem('habitflow_just_signed_up', 'true');
-      toast.success(trimmedName ? `Welcome, ${trimmedName}! Please check your email to confirm.` : 'Account created! Please check your email to confirm.');
+      await submitUserSignUp({ signUp, email, password, fullName });
       return;
     }
-    const { error } = await signIn(email, password);
-    if (error) return toast.error(error.message);
-    toast.success('Welcome back!');
-    router.refresh();
-    router.push(redirectedFrom);
+    await submitUserSignIn({
+      signIn,
+      email,
+      password,
+      onSuccess: () => {
+        router.refresh();
+        router.push(redirectedFrom);
+      },
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

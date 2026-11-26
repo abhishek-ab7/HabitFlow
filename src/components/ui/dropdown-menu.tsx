@@ -12,10 +12,10 @@ const POPUP_ANIMATION_CLASS =
 const INDICATOR_ITEM_CLASS =
   "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
 
-function wrapSlotted<T extends React.ElementType>(Component: T, slot: string) {
-  return function SlottedComponent(props: React.ComponentProps<T>) {
+function wrapSlotted<T extends React.ElementType>(Component: T, slot: string, baseClass?: string) {
+  return function SlottedComponent({ className, ...props }: React.ComponentProps<T> & { className?: string }) {
     const Comp = Component as React.ElementType
-    return <Comp data-slot={slot} {...props} />
+    return <Comp data-slot={slot} className={baseClass ? cn(baseClass, className) : className} {...props} />
   }
 }
 
@@ -70,49 +70,35 @@ function DropdownMenuItem({
   )
 }
 
-function DropdownMenuCheckboxItem({
-  className,
-  children,
-  checked,
-  ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
-  return (
-    <DropdownMenuPrimitive.CheckboxItem
-      data-slot="dropdown-menu-checkbox-item"
-      className={cn(INDICATOR_ITEM_CLASS, className)}
-      checked={checked}
-      {...props}
-    >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <DropdownMenuPrimitive.ItemIndicator>
-          <CheckIcon className="size-4" />
-        </DropdownMenuPrimitive.ItemIndicator>
-      </span>
-      {children}
-    </DropdownMenuPrimitive.CheckboxItem>
-  )
+function wrapIndicatorItem<T extends React.ElementType>(
+  Component: T,
+  slot: string,
+  indicatorIcon: React.ReactNode
+) {
+  return function IndicatorItem({ className, children, ...props }: React.ComponentProps<T> & { className?: string; children?: React.ReactNode }) {
+    const Comp = Component as React.ElementType
+    return (
+      <Comp data-slot={slot} className={cn(INDICATOR_ITEM_CLASS, className)} {...props}>
+        <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+          <DropdownMenuPrimitive.ItemIndicator>{indicatorIcon}</DropdownMenuPrimitive.ItemIndicator>
+        </span>
+        {children}
+      </Comp>
+    )
+  }
 }
 
-function DropdownMenuRadioItem({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
-  return (
-    <DropdownMenuPrimitive.RadioItem
-      data-slot="dropdown-menu-radio-item"
-      className={cn(INDICATOR_ITEM_CLASS, className)}
-      {...props}
-    >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
-        <DropdownMenuPrimitive.ItemIndicator>
-          <CircleIcon className="size-2 fill-current" />
-        </DropdownMenuPrimitive.ItemIndicator>
-      </span>
-      {children}
-    </DropdownMenuPrimitive.RadioItem>
-  )
-}
+const DropdownMenuCheckboxItem = wrapIndicatorItem(
+  DropdownMenuPrimitive.CheckboxItem,
+  "dropdown-menu-checkbox-item",
+  <CheckIcon className="size-4" />
+)
+
+const DropdownMenuRadioItem = wrapIndicatorItem(
+  DropdownMenuPrimitive.RadioItem,
+  "dropdown-menu-radio-item",
+  <CircleIcon className="size-2 fill-current" />
+)
 
 function DropdownMenuLabel({
   className,
@@ -134,34 +120,17 @@ function DropdownMenuLabel({
   )
 }
 
-function DropdownMenuSeparator({
-  className,
-  ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
-  return (
-    <DropdownMenuPrimitive.Separator
-      data-slot="dropdown-menu-separator"
-      className={cn("bg-border -mx-1 my-1 h-px", className)}
-      {...props}
-    />
-  )
-}
+const DropdownMenuSeparator = wrapSlotted(
+  DropdownMenuPrimitive.Separator,
+  "dropdown-menu-separator",
+  "bg-border -mx-1 my-1 h-px"
+)
 
-function DropdownMenuShortcut({
-  className,
-  ...props
-}: React.ComponentProps<"span">) {
-  return (
-    <span
-      data-slot="dropdown-menu-shortcut"
-      className={cn(
-        "text-muted-foreground ml-auto text-xs tracking-widest",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+const DropdownMenuShortcut = wrapSlotted(
+  "span",
+  "dropdown-menu-shortcut",
+  "text-muted-foreground ml-auto text-xs tracking-widest"
+)
 
 function DropdownMenuSubTrigger({
   className,
@@ -187,18 +156,11 @@ function DropdownMenuSubTrigger({
   )
 }
 
-function DropdownMenuSubContent({
-  className,
-  ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
-  return (
-    <DropdownMenuPrimitive.SubContent
-      data-slot="dropdown-menu-sub-content"
-      className={cn(POPUP_ANIMATION_CLASS, "overflow-hidden shadow-lg", className)}
-      {...props}
-    />
-  )
-}
+const DropdownMenuSubContent = wrapSlotted(
+  DropdownMenuPrimitive.SubContent,
+  "dropdown-menu-sub-content",
+  `${POPUP_ANIMATION_CLASS} overflow-hidden shadow-lg`
+)
 
 export {
   DropdownMenu,

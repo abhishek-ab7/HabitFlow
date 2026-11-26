@@ -13,6 +13,118 @@ import { cn } from '@/lib/utils';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import type { HabitStack } from '@/lib/ai/types';
 
+function compute30DayStreak(habitCompletions: Array<{ date: string }>, now: Date): number {
+  let currentStreak = 0;
+  for (let i = 0; i < 30; i++) {
+    const checkDate = new Date(now);
+    checkDate.setDate(checkDate.getDate() - i);
+    const dateStr = getLocalIsoDate(checkDate);
+    if (habitCompletions.some((c) => c.date === dateStr)) currentStreak++;
+    else break;
+  }
+  return currentStreak;
+}
+
+function buildHabitStackInputs(
+  activeHabits: ReturnType<typeof useHabitStore.getState>['habits'],
+  completions: ReturnType<typeof useHabitStore.getState>['completions']
+) {
+  const now = new Date();
+  return activeHabits.map((h) => {
+    const habitCompletions = completions.filter((c) => {
+      const daysDiff = (now.getTime() - new Date(c.date).getTime()) / (1000 * 60 * 60 * 24);
+      return c.habitId === h.id && daysDiff <= 30;
+    });
+    return {
+      id: h.id,
+      name: h.name,
+      category: h.category,
+      completionRate: (habitCompletions.length / 30) * 100,
+      currentStreak: compute30DayStreak(habitCompletions, now),
+    };
+  });
+}
+
+function HabitStackCard({
+  stack,
+  index,
+  isActivating,
+  onActivate,
+}: {
+  stack: HabitStack;
+  index: number;
+  isActivating: boolean;
+  onActivate: (stack: HabitStack, index: number) => void;
+}) {
+  return (
+    <div className="border rounded-lg p-4 bg-white/50 dark:bg-gray-900/50 space-y-3 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1">
+          <h4 className="font-semibold text-sm mb-1">{stack.name}</h4>
+          <p className="text-xs text-muted-foreground">{stack.description}</p>
+        </div>
+        <Badge variant="secondary" className="shrink-0">{stack.difficulty}</Badge>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+          <Zap className="h-3.5 w-3.5 animate-bounce" />
+          Visual Stack Sequence:
+        </div>
+        <div className="flex flex-col items-center gap-1.5 py-1">
+          {stack.suggestedOrder?.map((step, i) => (
+            <div key={i} className="flex flex-col items-center w-full">
+              {i > 0 && (
+                <div className="flex flex-col items-center my-1 text-amber-500/80">
+                  <svg className="w-4 h-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                </div>
+              )}
+              <div className="w-full flex items-center justify-between p-3 rounded-xl border border-amber-200/50 dark:border-amber-900/30 bg-amber-500/5 dark:bg-amber-950/10 text-sm font-semibold shadow-sm hover:scale-[1.01] hover:border-amber-400/50 transition-all cursor-default">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-extrabold shadow-inner shrink-0">
+                    {i + 1}
+                  </div>
+                  <span className="text-foreground tracking-tight font-medium">{step}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
+        <span>⏱️ {stack.estimatedTimeMinutes} min</span>
+        <span>📈 {stack.expectedSuccessRate}% success rate</span>
+      </div>
+
+      <p className="text-xs italic text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded">
+        💡 {stack.reasoning}
+      </p>
+
+      <Button
+        size="sm"
+        className="w-full bg-amber-600 hover:bg-amber-700"
+        onClick={() => onActivate(stack, index)}
+        disabled={isActivating}
+      >
+        {isActivating ? (
+          <>
+            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            Activating...
+          </>
+        ) : (
+          <>
+            <Link2 className="h-3 w-3 mr-1" />
+            Activate Stack
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
 export function HabitStackSuggestions() {
   const [stacks, setStacks] = useState<HabitStack[]>([]);
   const [loading, setLoading] = useState(false);
@@ -28,39 +140,7 @@ export function HabitStackSuggestions() {
 
     setLoading(true);
     try {
-      // Calculate completion rates for last 30 days
-      const now = new Date();
-      const habitData = activeHabits.map(h => {
-        const habitCompletions = completions.filter(c => {
-          const completionDate = new Date(c.date);
-          const daysDiff = (now.getTime() - completionDate.getTime()) / (1000 * 60 * 60 * 24);
-          return c.habitId === h.id && daysDiff <= 30;
-        });
-
-        const completionRate = (habitCompletions.length / 30) * 100;
-
-        // Calculate current streak
-        let currentStreak = 0;
-        for (let i = 0; i < 30; i++) {
-          const checkDate = new Date(now);
-          checkDate.setDate(checkDate.getDate() - i);
-          const dateStr = getLocalIsoDate(checkDate);
-          const completed = habitCompletions.some(c => c.date === dateStr);
-          if (completed) {
-            currentStreak++;
-          } else {
-            break;
-          }
-        }
-
-        return {
-          id: h.id,
-          name: h.name,
-          category: h.category,
-          completionRate,
-          currentStreak
-        };
-      });
+      const habitData = buildHabitStackInputs(activeHabits, completions);
 
       const response = await fetch('/api/ai/suggest-habit-stacks', {
         method: 'POST',
@@ -189,73 +269,13 @@ export function HabitStackSuggestions() {
           </div>
         ) : (
           stacks.map((stack, index) => (
-            <div key={index} className="border rounded-lg p-4 bg-white/50 dark:bg-gray-900/50 space-y-3 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1">
-                  <h4 className="font-semibold text-sm mb-1">{stack.name}</h4>
-                  <p className="text-xs text-muted-foreground">{stack.description}</p>
-                </div>
-                <Badge variant="secondary" className="shrink-0">
-                  {stack.difficulty}
-                </Badge>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                  <Zap className="h-3.5 w-3.5 animate-bounce" />
-                  Visual Stack Sequence:
-                </div>
-                <div className="flex flex-col items-center gap-1.5 py-1">
-                  {stack.suggestedOrder?.map((step, i) => (
-                    <div key={i} className="flex flex-col items-center w-full">
-                      {i > 0 && (
-                        <div className="flex flex-col items-center my-1 text-amber-500/80">
-                          <svg className="w-4 h-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                          </svg>
-                        </div>
-                      )}
-                      <div className="w-full flex items-center justify-between p-3 rounded-xl border border-amber-200/50 dark:border-amber-900/30 bg-amber-500/5 dark:bg-amber-950/10 text-sm font-semibold shadow-sm hover:scale-[1.01] hover:border-amber-400/50 transition-all cursor-default">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center text-xs font-extrabold shadow-inner shrink-0">
-                            {i + 1}
-                          </div>
-                          <span className="text-foreground tracking-tight font-medium">{step}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                <span>⏱️ {stack.estimatedTimeMinutes} min</span>
-                <span>📈 {stack.expectedSuccessRate}% success rate</span>
-              </div>
-
-              <p className="text-xs italic text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded">
-                💡 {stack.reasoning}
-              </p>
-
-              <Button
-                size="sm"
-                className="w-full bg-amber-600 hover:bg-amber-700"
-                onClick={() => handleActivateStack(stack, index)}
-                disabled={activatingStack === index}
-              >
-                {activatingStack === index ? (
-                  <>
-                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                    Activating...
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="h-3 w-3 mr-1" />
-                    Activate Stack
-                  </>
-                )}
-              </Button>
-            </div>
+            <HabitStackCard
+              key={index}
+              stack={stack}
+              index={index}
+              isActivating={activatingStack === index}
+              onActivate={handleActivateStack}
+            />
           ))
         )}
       </CardContent>
