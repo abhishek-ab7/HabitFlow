@@ -320,6 +320,28 @@ function AnchorHabitRow({
   );
 }
 
+function AnchorSupplementRow({
+  sup,
+  taken,
+  onTakeSupplement,
+}: {
+  sup: ReturnType<typeof useFitnessStore.getState>['supplementInventory'][number];
+  taken: boolean;
+  onTakeSupplement: (sup: ReturnType<typeof useFitnessStore.getState>['supplementInventory'][number]) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/25 px-3 py-2 text-xs">
+      <div className="flex items-center gap-2 min-w-0">
+        <Pill className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+        <span className="font-medium text-foreground truncate">{sup.name} ({sup.dailyDosage} {sup.unitLabel})</span>
+      </div>
+      <Button type="button" size="sm" variant={taken ? 'ghost' : 'secondary'} disabled={taken} onClick={() => onTakeSupplement(sup)} className="h-7 px-2.5 text-[11px] shrink-0">
+        {taken ? 'Taken ✓' : 'Take Dose'}
+      </Button>
+    </div>
+  );
+}
+
 function AnchorBlockCard(props: {
   block: (typeof ANCHOR_BLOCKS)[number];
   blockHabits: Habit[];
@@ -364,20 +386,14 @@ function AnchorBlockCard(props: {
             <AnchorHabitRow key={h.id} habit={h} done={isCompletedOnDate(h.id)} rest={isRestOnDate(h.id)} onToggleHabit={onToggleHabit} />
           ))}
 
-          {blockSupps.map((sup) => {
-            const taken = isSupplementTakenToday(sup.id);
-            return (
-              <div key={sup.id} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/25 px-3 py-2 text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Pill className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                  <span className="font-medium text-foreground truncate">{sup.name} ({sup.dailyDosage} {sup.unitLabel})</span>
-                </div>
-                <Button type="button" size="sm" variant={taken ? 'ghost' : 'secondary'} disabled={taken} onClick={() => onTakeSupplement(sup)} className="h-7 px-2.5 text-[11px] shrink-0">
-                  {taken ? 'Taken ✓' : 'Take Dose'}
-                </Button>
-              </div>
-            );
-          })}
+          {blockSupps.map((sup) => (
+            <AnchorSupplementRow
+              key={sup.id}
+              sup={sup}
+              taken={isSupplementTakenToday(sup.id)}
+              onTakeSupplement={onTakeSupplement}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -426,31 +442,60 @@ function isHabitRestOnDate(completions: ReturnType<typeof useHabitStore.getState
   return completions.some((c) => c.habitId === habitId && c.date === selectedDate && (c.status === 'rest' || c.skipped));
 }
 
-function useRoutineAndQuitState(selectedDate: string, userId: string) {
+async function toggleHabitWithFallback(params: {
+  habit: Habit;
+  selectedDate: string;
+  done: boolean;
+  toggleHabit: ReturnType<typeof useHabitStore.getState>['toggle'];
+}) {
+  const { habit, selectedDate, done, toggleHabit } = params;
+  try {
+    await toggleHabit(habit.id, selectedDate);
+  } catch {
+    const { CrossDomainActionMediator } = await import('@/lib/stores/mediator');
+    await CrossDomainActionMediator.dispatch({
+      type: done ? 'HABIT_UNCOMPLETED' : 'HABIT_COMPLETED',
+      payload: { habitId: habit.id, date: selectedDate, category: habit.category, difficulty: habit.difficulty },
+    });
+  }
+}
+
+async function createStarterQuitHabit(params: {
+  starter: (typeof STARTER_QUIT_TRACKERS)[number];
+  userId: string;
+  addHabit: ReturnType<typeof useHabitStore.getState>['addHabit'];
+}) {
+  const { starter, userId, addHabit } = params;
+  try {
+    await addHabit(starter.payload);
+    toast.success(`Added Quit Tracker: ${starter.label}`);
+  } catch {
+    const { createHabit } = await import('@/lib/db');
+    const created = await createHabit({ ...starter.payload, userId });
+    useHabitStore.setState((s) => ({ habits: [...s.habits, created] }));
+    toast.success(`Added Quit Tracker: ${starter.label}`);
+  }
+}
+
+function isQuitOrZeroJunkHabit(h: Habit): boolean {
+  return h.polarity === 'quit' || h.autoTrackRule === 'zero_junk_today' || h.autoTrackRule === 'no_junk_food';
+}
+
+function useRoutineDerivedData(selectedDate: string) {
   const habits = useHabitStore((s) => s.habits);
   const completions = useHabitStore((s) => s.completions);
-  const addHabit = useHabitStore((s) => s.addHabit);
-  const editHabit = useHabitStore((s) => s.editHabit);
-  const toggleHabit = useHabitStore((s) => s.toggle);
   const getCurrentStreaks = useHabitStore((s) => s.getCurrentStreaks);
-
   const profile = useFitnessStore((s) => s.profile);
   const dailyLogs = useFitnessStore((s) => s.dailyLogs);
   const mealLogs = useFitnessStore((s) => s.mealLogs);
   const supplementInventory = useFitnessStore((s) => s.supplementInventory);
   const supplementLogs = useFitnessStore((s) => s.supplementLogs);
-  const takeSupplementDose = useFitnessStore((s) => s.takeSupplementDose);
-  const incrementWater = useFitnessStore((s) => s.incrementWater);
-
-  const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
-  const startPresetTimer = usePomodoroStore((s) => s.startPresetTimer);
-  const feedback = useFeedback();
 
   const activeHabits = useMemo(() => habits.filter((h) => !h.archived), [habits]);
   const streaks = useMemo(() => getCurrentStreaks(), [habits, completions, getCurrentStreaks]);
   const todayLog = useMemo(() => dailyLogs.find((d) => d.date === selectedDate && !d.deletedAt), [dailyLogs, selectedDate]);
   const fuelSummary = useMemo(() => calculateDailyFuelSummary(mealLogs, todayLog, profile, selectedDate), [mealLogs, todayLog, profile, selectedDate]);
-  const quitHabits = useMemo(() => activeHabits.filter((h) => h.polarity === 'quit' || h.autoTrackRule === 'zero_junk_today' || h.autoTrackRule === 'no_junk_food'), [activeHabits]);
+  const quitHabits = useMemo(() => activeHabits.filter(isQuitOrZeroJunkHabit), [activeHabits]);
   const unassignedHabits = useMemo(() => activeHabits.filter((h) => !h.anchorBlock && h.polarity !== 'quit'), [activeHabits]);
   const activeSupps = useMemo(() => supplementInventory.filter((s) => !s.deletedAt && s.isActive), [supplementInventory]);
 
@@ -458,37 +503,6 @@ function useRoutineAndQuitState(selectedDate: string, userId: string) {
   const isRestOnDate = (habitId: string) => isHabitRestOnDate(completions, habitId, selectedDate);
   const isSupplementTakenToday = (suppId: string) =>
     supplementLogs.some((l) => !l.deletedAt && l.supplementId === suppId && l.date.slice(0, 10) === selectedDate);
-
-  const handleToggleHabit = async (habit: Habit) => {
-    const done = isCompletedOnDate(habit.id);
-    if (done) feedback.uncheck();
-    else feedback.complete();
-    try {
-      await toggleHabit(habit.id, selectedDate);
-    } catch {
-      const { CrossDomainActionMediator } = await import('@/lib/stores/mediator');
-      await CrossDomainActionMediator.dispatch({
-        type: done ? 'HABIT_UNCOMPLETED' : 'HABIT_COMPLETED',
-        payload: { habitId: habit.id, date: selectedDate, category: habit.category, difficulty: habit.difficulty },
-      });
-    }
-  };
-
-  const handleCreateStarterQuit = async (starter: (typeof STARTER_QUIT_TRACKERS)[number]) => {
-    if (activeHabits.some((h) => h.name.trim().toLowerCase() === starter.payload.name.toLowerCase())) {
-      toast.info(`${starter.label} is already tracked`);
-      return;
-    }
-    try {
-      await addHabit(starter.payload);
-      toast.success(`Added Quit Tracker: ${starter.label}`);
-    } catch {
-      const { createHabit } = await import('@/lib/db');
-      const created = await createHabit({ ...starter.payload, userId });
-      useHabitStore.setState((s) => ({ habits: [...s.habits, created] }));
-      toast.success(`Added Quit Tracker: ${starter.label}`);
-    }
-  };
 
   return {
     activeHabits,
@@ -501,6 +515,38 @@ function useRoutineAndQuitState(selectedDate: string, userId: string) {
     isCompletedOnDate,
     isRestOnDate,
     isSupplementTakenToday,
+  };
+}
+
+function useRoutineAndQuitState(selectedDate: string, userId: string) {
+  const addHabit = useHabitStore((s) => s.addHabit);
+  const editHabit = useHabitStore((s) => s.editHabit);
+  const toggleHabit = useHabitStore((s) => s.toggle);
+  const takeSupplementDose = useFitnessStore((s) => s.takeSupplementDose);
+  const incrementWater = useFitnessStore((s) => s.incrementWater);
+  const startUrgeTimer = usePomodoroStore((s) => s.startUrgeTimer);
+  const startPresetTimer = usePomodoroStore((s) => s.startPresetTimer);
+  const feedback = useFeedback();
+
+  const derived = useRoutineDerivedData(selectedDate);
+
+  const handleToggleHabit = async (habit: Habit) => {
+    const done = derived.isCompletedOnDate(habit.id);
+    if (done) feedback.uncheck();
+    else feedback.complete();
+    await toggleHabitWithFallback({ habit, selectedDate, done, toggleHabit });
+  };
+
+  const handleCreateStarterQuit = async (starter: (typeof STARTER_QUIT_TRACKERS)[number]) => {
+    if (derived.activeHabits.some((h) => h.name.trim().toLowerCase() === starter.payload.name.toLowerCase())) {
+      toast.info(`${starter.label} is already tracked`);
+      return;
+    }
+    await createStarterQuitHabit({ starter, userId, addHabit });
+  };
+
+  return {
+    ...derived,
     handleToggleHabit,
     handleCreateStarterQuit,
     editHabit,
