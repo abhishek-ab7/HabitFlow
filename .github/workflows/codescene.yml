@@ -1,0 +1,23 @@
+name: CodeScene Code Health Gate
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  codescene:
+    name: CodeScene Delta Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CodeScene Delta Analysis
+        uses: codescene-actions/codescene-delta-analysis@v1
+        with:
+          codescene-token: ${{ secrets.CODESCENE_ACCESS_TOKEN }}
+          project-id: 80666
+          fail-on-failed-goal: true
