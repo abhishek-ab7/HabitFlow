@@ -404,18 +404,30 @@ function getScheduleDefaults(habit: Habit) {
   };
 }
 
+function getQuantitativeDefaults(habit: Habit) {
+  return {
+    isQuantitative: Boolean(habit.isQuantitative),
+    targetValue: habit.targetValue || 0,
+    unit: habit.unit || '',
+  };
+}
+
+function getHabitBehaviorDefaults(habit: Habit) {
+  return {
+    polarity: (habit.polarity || 'build') as HabitPolarity,
+    anchorBlock: (habit.anchorBlock || '') as HabitAnchorBlock | '',
+    icon: habit.icon || '',
+    difficulty: (habit.difficulty || 'medium') as 'easy' | 'medium' | 'hard',
+  };
+}
+
 function getMetadataDefaults(habit: Habit) {
   const autoTrackRule = normalizeAutoTrackRule(habit.autoTrackRule);
   const stackAfterHabitId = habit.metadata?.stackTriggerHabitId || '';
   return {
     autoTrackRule,
-    polarity: (habit.polarity || 'build') as HabitPolarity,
-    anchorBlock: (habit.anchorBlock || '') as HabitAnchorBlock | '',
-    icon: habit.icon || '',
-    isQuantitative: Boolean(habit.isQuantitative),
-    targetValue: habit.targetValue || 0,
-    unit: habit.unit || '',
-    difficulty: (habit.difficulty || 'medium') as 'easy' | 'medium' | 'hard',
+    ...getHabitBehaviorDefaults(habit),
+    ...getQuantitativeDefaults(habit),
     stackAfterHabitId,
     showAdvanced: autoTrackRule !== 'none' || Boolean(stackAfterHabitId),
   };
@@ -515,6 +527,40 @@ function useHabitFormState({
     setActiveTab('details');
   };
 
+function buildQuantitativePayload(fields: {
+  isQuantitative: boolean;
+  targetValue: number;
+  unit: string;
+}) {
+  if (!fields.isQuantitative) {
+    return { isQuantitative: false, targetValue: undefined, unit: undefined };
+  }
+  return {
+    isQuantitative: true,
+    targetValue: fields.targetValue,
+    unit: fields.unit.trim(),
+  };
+}
+
+function buildSchedulePayload(fields: {
+  frequencyType: HabitFrequencyType;
+  scheduledDays: number[];
+  intervalDays: number;
+  targetDays: number;
+}) {
+  return {
+    frequencyType: fields.frequencyType,
+    targetDaysPerWeek: computeEffectiveTargetDays(
+      fields.frequencyType,
+      fields.scheduledDays,
+      fields.intervalDays,
+      fields.targetDays
+    ),
+    scheduledDays: fields.frequencyType === 'specific_days' ? fields.scheduledDays : undefined,
+    intervalDays: fields.frequencyType === 'interval' ? fields.intervalDays : undefined,
+  };
+}
+
 function buildHabitFormPayload(fields: {
   name: string;
   category: Category;
@@ -533,26 +579,15 @@ function buildHabitFormPayload(fields: {
   stackAfterHabitId: string;
   existingMetadata?: Habit['metadata'];
 }): HabitFormData {
-  const effectiveTargetDays = computeEffectiveTargetDays(
-    fields.frequencyType,
-    fields.scheduledDays,
-    fields.intervalDays,
-    fields.targetDays
-  );
   return {
     name: fields.name.trim(),
     category: fields.category,
-    frequencyType: fields.frequencyType,
-    targetDaysPerWeek: effectiveTargetDays,
-    scheduledDays: fields.frequencyType === 'specific_days' ? fields.scheduledDays : undefined,
-    intervalDays: fields.frequencyType === 'interval' ? fields.intervalDays : undefined,
+    ...buildSchedulePayload(fields),
     autoTrackRule: fields.autoTrackRule,
     polarity: fields.polarity,
     anchorBlock: fields.anchorBlock || undefined,
     icon: fields.icon || undefined,
-    isQuantitative: fields.isQuantitative,
-    targetValue: fields.isQuantitative ? fields.targetValue : undefined,
-    unit: fields.isQuantitative ? fields.unit.trim() : undefined,
+    ...buildQuantitativePayload(fields),
     difficulty: fields.difficulty,
     metadata: {
       ...(fields.existingMetadata || {}),
@@ -793,6 +828,31 @@ function HabitCategorySelector({
   );
 }
 
+const POLARITY_OPTIONS = [
+  {
+    id: 'build' as const,
+    label: 'Build Habit',
+    activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
+    hint: 'Standard positive daily habit with completion streaks.',
+    Icon: Sparkles,
+  },
+  {
+    id: 'quit' as const,
+    label: 'Quit / Anti-Habit',
+    activeClass: 'bg-rose-600 text-white border-rose-600 shadow-sm',
+    hint: 'Shows clean-streak shield ("Clean so far") and 1-tap 10-Min Urge Timer.',
+    Icon: Shield,
+  },
+] as const;
+
+const ANCHOR_BLOCKS = [
+  { id: '' as const, key: 'any', label: 'Any Time' },
+  { id: 'morning' as const, key: 'morning', label: 'Morning' },
+  { id: 'work' as const, key: 'work', label: 'Work' },
+  { id: 'gym' as const, key: 'gym', label: 'Gym' },
+  { id: 'night' as const, key: 'night', label: 'Night' },
+] as const;
+
 function HabitPolarityAndAnchorFields({
   polarity,
   setPolarity,
@@ -804,63 +864,42 @@ function HabitPolarityAndAnchorFields({
   anchorBlock: HabitAnchorBlock | '';
   setAnchorBlock: (b: HabitAnchorBlock | '') => void;
 }) {
+  const activePolarity = POLARITY_OPTIONS.find((opt) => opt.id === polarity) ?? POLARITY_OPTIONS[0];
+
   return (
     <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-muted/20 p-3.5">
       <div>
         <label className="text-sm font-medium mb-1.5 block">Habit Polarity</label>
         <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            data-testid="habit-polarity-build"
-            onClick={() => setPolarity('build')}
-            className={cn(
-              'py-2 px-3 rounded-lg text-xs font-semibold border transition-all flex items-center justify-center gap-1.5',
-              polarity === 'build'
-                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                : 'bg-background text-muted-foreground border-border/70 hover:text-foreground'
-            )}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Build Habit
-          </button>
-          <button
-            type="button"
-            data-testid="habit-polarity-quit"
-            onClick={() => setPolarity('quit')}
-            className={cn(
-              'py-2 px-3 rounded-lg text-xs font-semibold border transition-all flex items-center justify-center gap-1.5',
-              polarity === 'quit'
-                ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                : 'bg-background text-muted-foreground border-border/70 hover:text-foreground'
-            )}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            Quit / Anti-Habit
-          </button>
+          {POLARITY_OPTIONS.map(({ id, label, activeClass, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              data-testid={`habit-polarity-${id}`}
+              onClick={() => setPolarity(id)}
+              className={cn(
+                'py-2 px-3 rounded-lg text-xs font-semibold border transition-all flex items-center justify-center gap-1.5',
+                polarity === id
+                  ? activeClass
+                  : 'bg-background text-muted-foreground border-border/70 hover:text-foreground'
+              )}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          ))}
         </div>
-        <p className="text-[11px] text-muted-foreground mt-1.5">
-          {polarity === 'quit'
-            ? 'Shows clean-streak shield ("Clean so far") and 1-tap 10-Min Urge Timer.'
-            : 'Standard positive daily habit with completion streaks.'}
-        </p>
+        <p className="text-[11px] text-muted-foreground mt-1.5">{activePolarity.hint}</p>
       </div>
 
       <div>
         <label className="text-sm font-medium mb-1.5 block">Anchor Time Block (optional)</label>
         <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              { id: '', label: 'Any Time' },
-              { id: 'morning', label: 'Morning' },
-              { id: 'work', label: 'Work' },
-              { id: 'gym', label: 'Gym' },
-              { id: 'night', label: 'Night' },
-            ] as const
-          ).map((block) => (
+          {ANCHOR_BLOCKS.map((block) => (
             <button
-              key={block.id || 'any'}
+              key={block.key}
               type="button"
-              data-testid={`habit-anchor-${block.id || 'any'}`}
+              data-testid={`habit-anchor-${block.key}`}
               onClick={() => setAnchorBlock(block.id)}
               className={cn(
                 'px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors',

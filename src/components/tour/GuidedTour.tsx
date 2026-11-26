@@ -72,6 +72,350 @@ function buildScrolledRect(rect: DOMRect): DOMRect {
   } as DOMRect;
 }
 
+function clampCoordinate(value: number, size: number, viewportSize: number) {
+  return Math.max(16, Math.min(value, viewportSize - size - 16));
+}
+
+function computeTooltipPosition(activeRect: DOMRect | null, placement?: string) {
+  const windowHeight = window.innerHeight;
+  const windowWidth = window.innerWidth;
+  const tooltipWidth = Math.min(360, windowWidth - 32);
+  const tooltipHeight = 280;
+
+  if (!activeRect) {
+    return {
+      top: `${Math.max(16, windowHeight / 2 - tooltipHeight / 2)}px`,
+      left: `${Math.max(16, windowWidth / 2 - tooltipWidth / 2)}px`,
+      width: `${tooltipWidth}px`,
+    };
+  }
+
+  const spaceBelow = windowHeight - activeRect.bottom;
+  const spaceAbove = activeRect.top;
+  const placeBelow =
+    placement === 'bottom'
+      ? spaceBelow > tooltipHeight + 20
+      : placement === 'top'
+        ? !(spaceAbove > tooltipHeight + 20)
+        : spaceBelow > spaceAbove;
+
+  const rawTop = placeBelow ? activeRect.bottom + 12 : activeRect.top - tooltipHeight - 12;
+  const rawLeft = activeRect.left + activeRect.width / 2 - tooltipWidth / 2;
+
+  return {
+    top: `${clampCoordinate(rawTop, tooltipHeight, windowHeight)}px`,
+    left: `${clampCoordinate(rawLeft, tooltipWidth, windowWidth)}px`,
+    width: `${tooltipWidth}px`,
+  };
+}
+
+function computeArrowDetails(activeRect: DOMRect | null, placement?: string) {
+  if (!activeRect) return null;
+  const windowHeight = window.innerHeight;
+  const tooltipHeight = 280;
+  const tooltipStyle = computeTooltipPosition(activeRect, placement);
+  const tooltipWidth = parseFloat(tooltipStyle.width);
+  const spaceBelow = windowHeight - activeRect.bottom;
+  const spaceAbove = activeRect.top;
+
+  let isBelow = spaceBelow > spaceAbove;
+  if (placement === 'bottom' && spaceBelow > tooltipHeight + 20) isBelow = true;
+  else if (placement === 'top' && spaceAbove > tooltipHeight + 20) isBelow = false;
+
+  const cardLeft = parseFloat(tooltipStyle.left);
+  const elementCenter = activeRect.left + activeRect.width / 2;
+  const arrowLeft = Math.max(24, Math.min(tooltipWidth - 24, elementCenter - cardLeft));
+  return { isBelow, left: `${arrowLeft}px` };
+}
+
+function playTourAudioChime(
+  audioCtxRef: React.MutableRefObject<AudioContext | null>,
+  type: 'pop' | 'success' | 'close'
+) {
+  try {
+    const AudioCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtor) return;
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new AudioCtor();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+
+    if (type === 'pop') {
+      osc.frequency.setValueAtTime(450, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(750, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.12);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.12);
+    } else if (type === 'success') {
+      osc.frequency.setValueAtTime(520, ctx.currentTime);
+      osc.frequency.setValueAtTime(780, ctx.currentTime + 0.08);
+      osc.frequency.setValueAtTime(1040, ctx.currentTime + 0.16);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } else {
+      osc.frequency.setValueAtTime(320, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    }
+  } catch {
+    // Audio fallback
+  }
+}
+
+function markTourCompleted(tourKey: string) {
+  try {
+    localStorage.setItem(`habitflow_tour_${tourKey}_completed`, 'true');
+    if (tourKey === 'dashboard') {
+      localStorage.setItem('habitflow_dashboard_tutorial_completed', 'true');
+    }
+  } catch {}
+}
+
+function TourSpotlightOverlay({ tourKey, activeRect }: { tourKey: string; activeRect: DOMRect }) {
+  return (
+    <motion.svg
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 w-full h-full pointer-events-none z-[1001]"
+    >
+      <defs>
+        <mask id={`tour-cutout-${tourKey}`}>
+          <rect x="0" y="0" width="100%" height="100%" fill="white" />
+          <rect
+            x={activeRect.x - 6}
+            y={activeRect.y - 6}
+            width={activeRect.width + 12}
+            height={activeRect.height + 12}
+            rx="14"
+            fill="black"
+          />
+        </mask>
+      </defs>
+      <rect x="0" y="0" width="100%" height="100%" fill="rgba(0, 0, 0, 0.72)" mask={`url(#tour-cutout-${tourKey})`} />
+      <rect
+        x={activeRect.x - 6}
+        y={activeRect.y - 6}
+        width={activeRect.width + 12}
+        height={activeRect.height + 12}
+        rx="14"
+        fill="none"
+        stroke="hsl(var(--primary))"
+        strokeWidth="2"
+        className="animate-pulse"
+      />
+    </motion.svg>
+  );
+}
+
+function TourWelcomePrompt({
+  pageTitle,
+  welcomeTitle,
+  welcomeDescription,
+  welcomeBenefit,
+  onSkip,
+  onStart,
+}: {
+  pageTitle: string;
+  welcomeTitle: string;
+  welcomeDescription: string;
+  welcomeBenefit: string;
+  onSkip: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center p-4 z-[1003] pointer-events-auto">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.2 }}
+        className="w-full max-w-md bg-card border border-border/80 shadow-2xl rounded-2xl p-6 relative overflow-hidden"
+      >
+        <button
+          onClick={onSkip}
+          className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Skip Tour"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
+        <div className="flex items-center gap-2 mb-3">
+          <div className="p-2 rounded-xl bg-primary/10 text-primary">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <span className="text-xs font-bold uppercase tracking-wider text-primary">{pageTitle} Tour</span>
+        </div>
+
+        <h3 className="text-xl font-extrabold tracking-tight text-foreground mb-2">{welcomeTitle}</h3>
+        <p className="text-xs text-muted-foreground leading-relaxed mb-4">{welcomeDescription}</p>
+
+        <div className="bg-primary/5 border border-primary/20 p-3 rounded-xl flex items-start gap-2.5 mb-6">
+          <span className="text-sm mt-0.5">💡</span>
+          <p className="text-[11px] text-primary font-medium leading-relaxed">{welcomeBenefit}</p>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-border/40">
+          <Button variant="ghost" size="sm" onClick={onSkip} className="text-xs text-muted-foreground hover:text-foreground h-9">
+            Maybe Later
+          </Button>
+          <Button
+            size="sm"
+            onClick={onStart}
+            className="h-9 px-4 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm flex items-center gap-1.5 rounded-xl"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            Start Tour
+          </Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function TourStepTooltip(props: {
+  cardRef: React.RefObject<HTMLDivElement | null>;
+  tooltipStyle: React.CSSProperties;
+  arrowDetails: { isBelow: boolean; left: string } | null;
+  pageTitle: string;
+  currentStep: number;
+  totalSteps: number;
+  stepData: TourStep;
+  audioEnabled: boolean;
+  onToggleSound: () => void;
+  onClose: () => void;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const { cardRef, tooltipStyle, arrowDetails, pageTitle, currentStep, totalSteps, stepData, audioEnabled, onToggleSound, onClose, onBack, onNext } = props;
+  const isLastStep = currentStep === totalSteps - 1;
+
+  return (
+    <motion.div
+      ref={cardRef}
+      style={tooltipStyle}
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.94 }}
+      transition={{ duration: 0.2 }}
+      className="fixed z-[1003] pointer-events-auto"
+    >
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentStep}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.15 }}
+          className="bg-card border border-border shadow-2xl rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 relative text-left"
+        >
+          {arrowDetails && (
+            <div
+              className={cn(
+                'absolute w-3 h-3 bg-card border-border transform rotate-45 pointer-events-none',
+                arrowDetails.isBelow ? '-top-1.5 border-t border-l' : '-bottom-1.5 border-b border-r'
+              )}
+              style={{ left: arrowDetails.left }}
+            />
+          )}
+
+          <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="p-1 rounded-md bg-primary/10 text-primary">
+                <HelpCircle className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">{pageTitle} Tour</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={onToggleSound}
+                className="p-1 rounded-md hover:bg-muted text-muted-foreground transition-colors"
+                title={audioEnabled ? 'Mute tour sound' : 'Enable tour sound'}
+                aria-label="Toggle Sound"
+              >
+                {audioEnabled ? <Volume2 className="w-3.5 h-3.5 text-primary" /> : <VolumeX className="w-3.5 h-3.5 opacity-50" />}
+              </button>
+              <button
+                onClick={onClose}
+                className="p-1 rounded-md hover:bg-muted text-muted-foreground transition-colors"
+                title="Skip Tour"
+                aria-label="Close Tour"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <h4 className="text-sm sm:text-base font-bold text-foreground leading-snug">{stepData.title}</h4>
+            <p className="text-xs text-muted-foreground leading-relaxed">{stepData.content}</p>
+          </div>
+
+          <div className="bg-primary/5 border border-primary/20 p-2.5 rounded-xl flex items-start gap-2">
+            <span className="text-xs mt-0.5">💡</span>
+            <p className="text-[10px] text-primary font-semibold leading-relaxed">{stepData.benefit}</p>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-border/40">
+            <div className="text-[10px] font-bold text-muted-foreground font-mono">
+              {currentStep + 1} / {totalSteps}
+            </div>
+
+            <div className="flex gap-2">
+              {currentStep > 0 && (
+                <Button variant="outline" size="sm" onClick={onBack} className="h-8 rounded-xl text-xs font-semibold px-3 flex items-center gap-1 hover:bg-muted">
+                  <ArrowLeft className="w-3 h-3" />
+                  Prev
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={onNext}
+                className="h-8 rounded-xl text-xs font-bold px-4 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs flex items-center gap-1"
+              >
+                {isLastStep ? (
+                  <>
+                    Finish
+                    <Check className="w-3.5 h-3.5 ml-0.5" />
+                  </>
+                ) : (
+                  <>
+                    Next
+                    <ArrowRight className="w-3 h-3 ml-0.5" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function resolveTargetRect(target: string): { element: HTMLElement; rect: DOMRect } | null {
+  if (target === 'body') return null;
+  const element = findVisibleTargetElement(target);
+  const rect = element?.getBoundingClientRect();
+  if (!element || !rect) return null;
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return { element, rect };
+}
+
 export function GuidedTour({
   tourKey,
   pageTitle,
@@ -133,51 +477,7 @@ export function GuidedTour({
 
   // Audio chimes synthesized via Web Audio API
   const playTourSound = useCallback((type: 'pop' | 'success' | 'close') => {
-    if (!audioEnabled) return;
-    try {
-      const AudioCtor = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtor) return;
-      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
-        audioCtxRef.current = new AudioCtor();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      if (type === 'pop') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(450, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(750, ctx.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.04, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.12);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.12);
-      } else if (type === 'success') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(520, ctx.currentTime);
-        osc.frequency.setValueAtTime(780, ctx.currentTime + 0.08);
-        osc.frequency.setValueAtTime(1040, ctx.currentTime + 0.16);
-        gain.gain.setValueAtTime(0.05, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.35);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
-      } else if (type === 'close') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(320, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.04, ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.15);
-      }
-    } catch (e) {
-      // Audio fallback
-    }
+    if (audioEnabled) playTourAudioChime(audioCtxRef, type);
   }, [audioEnabled]);
 
   const currentStepData = steps[currentStep] || steps[0];
@@ -187,30 +487,24 @@ export function GuidedTour({
     if (!isOpen || showPrompt || !currentStepData) return;
 
     const updateCoordinates = (forceScroll = false) => {
-      if (currentStepData.target === 'body') {
-        setActiveRect(null);
-        return;
-      }
-
-      const element = findVisibleTargetElement(currentStepData.target);
-      const rect = element?.getBoundingClientRect();
-      if (!element || !rect || rect.width <= 0 || rect.height <= 0) {
+      const targetInfo = resolveTargetRect(currentStepData.target);
+      if (!targetInfo) {
         setActiveRect(null);
         return;
       }
 
       if (!forceScroll) {
-        if (!isTransitioningRef.current) setActiveRect(rect);
+        if (!isTransitioningRef.current) setActiveRect(targetInfo.rect);
         return;
       }
 
       isTransitioningRef.current = true;
-      setActiveRect(buildScrolledRect(rect));
+      setActiveRect(buildScrolledRect(targetInfo.rect));
       if (transitionTimeoutRef.current) clearTimeout(transitionTimeoutRef.current);
       transitionTimeoutRef.current = setTimeout(() => {
         transitionTimeoutRef.current = null;
         isTransitioningRef.current = false;
-        setActiveRect(element.getBoundingClientRect());
+        setActiveRect(targetInfo.element.getBoundingClientRect());
       }, 600);
     };
 
@@ -255,12 +549,7 @@ export function GuidedTour({
 
   const handleSkipOrClose = () => {
     playTourSound('close');
-    try {
-      localStorage.setItem(`habitflow_tour_${tourKey}_completed`, 'true');
-      if (tourKey === 'dashboard') {
-        localStorage.setItem('habitflow_dashboard_tutorial_completed', 'true');
-      }
-    } catch (e) {}
+    markTourCompleted(tourKey);
     onClose();
     if (onComplete) onComplete();
   };
@@ -271,12 +560,7 @@ export function GuidedTour({
       setCurrentStep((prev) => prev + 1);
     } else {
       playTourSound('success');
-      try {
-        localStorage.setItem(`habitflow_tour_${tourKey}_completed`, 'true');
-        if (tourKey === 'dashboard') {
-          localStorage.setItem('habitflow_dashboard_tutorial_completed', 'true');
-        }
-      } catch (e) {}
+      markTourCompleted(tourKey);
       onClose();
       if (onComplete) onComplete();
     }
@@ -294,138 +578,22 @@ export function GuidedTour({
     setAudioEnabled(nextVal);
     try {
       const feedbackSettings = localStorage.getItem('feedback_settings');
-      let current = {};
-      if (feedbackSettings) {
-        current = JSON.parse(feedbackSettings);
-      }
+      const current = feedbackSettings ? JSON.parse(feedbackSettings) : {};
       localStorage.setItem('feedback_settings', JSON.stringify({ ...current, sound: nextVal }));
-    } catch (e) {}
-  };
-
-function clampCoordinate(value: number, size: number, viewportSize: number) {
-  return Math.max(16, Math.min(value, viewportSize - size - 16));
-}
-
-function computeTooltipPosition(activeRect: DOMRect | null, placement?: string) {
-  const windowHeight = window.innerHeight;
-  const windowWidth = window.innerWidth;
-  const tooltipWidth = Math.min(360, windowWidth - 32);
-  const tooltipHeight = 280;
-
-  if (!activeRect) {
-    return {
-      top: `${Math.max(16, windowHeight / 2 - tooltipHeight / 2)}px`,
-      left: `${Math.max(16, windowWidth / 2 - tooltipWidth / 2)}px`,
-      width: `${tooltipWidth}px`,
-    };
-  }
-
-  const spaceBelow = windowHeight - activeRect.bottom;
-  const spaceAbove = activeRect.top;
-  const placeBelow =
-    placement === 'bottom'
-      ? spaceBelow > tooltipHeight + 20
-      : placement === 'top'
-        ? !(spaceAbove > tooltipHeight + 20)
-        : spaceBelow > spaceAbove;
-
-  const rawTop = placeBelow ? activeRect.bottom + 12 : activeRect.top - tooltipHeight - 12;
-  const rawLeft = activeRect.left + activeRect.width / 2 - tooltipWidth / 2;
-
-  return {
-    top: `${clampCoordinate(rawTop, tooltipHeight, windowHeight)}px`,
-    left: `${clampCoordinate(rawLeft, tooltipWidth, windowWidth)}px`,
-    width: `${tooltipWidth}px`,
-  };
-}
-
-  // Tooltip position calculation
-  const getTooltipStyle = () => computeTooltipPosition(activeRect, currentStepData.placement);
-
-  const getArrowDetails = () => {
-    if (!activeRect) return null;
-
-    const windowHeight = window.innerHeight;
-    const tooltipHeight = 280;
-    const tooltipStyle = getTooltipStyle();
-    const tooltipWidth = parseFloat(tooltipStyle.width);
-
-    const spaceBelow = windowHeight - activeRect.bottom;
-    const spaceAbove = activeRect.top;
-
-    let isBelow = true;
-    if (currentStepData.placement === 'bottom' && spaceBelow > tooltipHeight + 20) {
-      isBelow = true;
-    } else if (currentStepData.placement === 'top' && spaceAbove > tooltipHeight + 20) {
-      isBelow = false;
-    } else {
-      isBelow = spaceBelow > spaceAbove;
-    }
-
-    const cardLeft = parseFloat(tooltipStyle.left);
-    const elementCenter = activeRect.left + activeRect.width / 2;
-    let arrowLeft = elementCenter - cardLeft;
-    arrowLeft = Math.max(24, Math.min(tooltipWidth - 24, arrowLeft));
-
-    return {
-      isBelow,
-      left: `${arrowLeft}px`,
-    };
+    } catch {}
   };
 
   if (!isOpen) return null;
 
-  const arrowDetails = getArrowDetails();
+  const tooltipStyle = computeTooltipPosition(activeRect, currentStepData.placement);
+  const arrowDetails = computeArrowDetails(activeRect, currentStepData.placement);
 
   return (
     <div className="fixed inset-0 z-[1000] overflow-y-auto">
-      {/* Dynamic SVG Spotlight Cutout Mask */}
       <AnimatePresence>
-        {!showPrompt && activeRect && (
-          <motion.svg
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 w-full h-full pointer-events-none z-[1001]"
-          >
-            <defs>
-              <mask id={`tour-cutout-${tourKey}`}>
-                <rect x="0" y="0" width="100%" height="100%" fill="white" />
-                <rect
-                  x={activeRect.x - 6}
-                  y={activeRect.y - 6}
-                  width={activeRect.width + 12}
-                  height={activeRect.height + 12}
-                  rx="14"
-                  fill="black"
-                />
-              </mask>
-            </defs>
-            <rect
-              x="0"
-              y="0"
-              width="100%"
-              height="100%"
-              fill="rgba(0, 0, 0, 0.72)"
-              mask={`url(#tour-cutout-${tourKey})`}
-            />
-            {/* Soft highlight border glow */}
-            <rect
-              x={activeRect.x - 6}
-              y={activeRect.y - 6}
-              width={activeRect.width + 12}
-              height={activeRect.height + 12}
-              rx="14"
-              fill="none"
-              stroke="hsl(var(--primary))"
-              strokeWidth="2"
-              className="animate-pulse"
-            />
-          </motion.svg>
-        )}
+        {!showPrompt && activeRect && <TourSpotlightOverlay tourKey={tourKey} activeRect={activeRect} />}
       </AnimatePresence>
 
-      {/* Dark overlay backdrop for prompt or fallback */}
       <AnimatePresence>
         {(showPrompt || !activeRect) && (
           <motion.div
@@ -440,195 +608,30 @@ function computeTooltipPosition(activeRect: DOMRect | null, placement?: string) 
 
       <div className="relative min-h-screen z-[1002] pointer-events-none">
         <AnimatePresence mode="wait">
-          {/* STEP 0: FIRST-TIME PROMPT DIALOG */}
           {showPrompt ? (
-            <div className="fixed inset-0 flex items-center justify-center p-4 z-[1003] pointer-events-auto">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                transition={{ duration: 0.2 }}
-                className="w-full max-w-md bg-card border border-border/80 shadow-2xl rounded-2xl p-6 relative overflow-hidden"
-              >
-                {/* Close Button */}
-                <button
-                  onClick={handleSkipOrClose}
-                  className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Skip Tour"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-primary">
-                    {pageTitle} Tour
-                  </span>
-                </div>
-
-                <h3 className="text-xl font-extrabold tracking-tight text-foreground mb-2">
-                  {welcomeTitle}
-                </h3>
-                <p className="text-xs text-muted-foreground leading-relaxed mb-4">
-                  {welcomeDescription}
-                </p>
-
-                <div className="bg-primary/5 border border-primary/20 p-3 rounded-xl flex items-start gap-2.5 mb-6">
-                  <span className="text-sm mt-0.5">💡</span>
-                  <p className="text-[11px] text-primary font-medium leading-relaxed">
-                    {welcomeBenefit}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-border/40">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSkipOrClose}
-                    className="text-xs text-muted-foreground hover:text-foreground h-9"
-                  >
-                    Maybe Later
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleStartTour}
-                    className="h-9 px-4 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm flex items-center gap-1.5 rounded-xl"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    Start Tour
-                  </Button>
-                </div>
-              </motion.div>
-            </div>
+            <TourWelcomePrompt
+              pageTitle={pageTitle}
+              welcomeTitle={welcomeTitle}
+              welcomeDescription={welcomeDescription}
+              welcomeBenefit={welcomeBenefit}
+              onSkip={handleSkipOrClose}
+              onStart={handleStartTour}
+            />
           ) : (
-            /* STEP 1..N: FLOATING SPOTLIGHT TOOLTIP */
-            <motion.div
-              ref={cardRef}
-              style={getTooltipStyle()}
-              initial={{ opacity: 0, scale: 0.94 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.94 }}
-              transition={{ duration: 0.2 }}
-              className="fixed z-[1003] pointer-events-auto"
-            >
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={currentStep}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.15 }}
-                  className="bg-card border border-border shadow-2xl rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 relative text-left"
-                >
-                  {/* Tooltip Connector Arrow */}
-                  {arrowDetails && (
-                    <div
-                      className={cn(
-                        'absolute w-3 h-3 bg-card border-border transform rotate-45 pointer-events-none',
-                        arrowDetails.isBelow
-                          ? '-top-1.5 border-t border-l'
-                          : '-bottom-1.5 border-b border-r'
-                      )}
-                      style={{ left: arrowDetails.left }}
-                    />
-                  )}
-
-                  {/* Header row: badge, sound toggle, skip/close */}
-                  <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="p-1 rounded-md bg-primary/10 text-primary">
-                        <HelpCircle className="w-3.5 h-3.5" />
-                      </span>
-                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">
-                        {pageTitle} Tour
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={toggleSoundPreference}
-                        className="p-1 rounded-md hover:bg-muted text-muted-foreground transition-colors"
-                        title={audioEnabled ? 'Mute tour sound' : 'Enable tour sound'}
-                        aria-label="Toggle Sound"
-                      >
-                        {audioEnabled ? (
-                          <Volume2 className="w-3.5 h-3.5 text-primary" />
-                        ) : (
-                          <VolumeX className="w-3.5 h-3.5 opacity-50" />
-                        )}
-                      </button>
-
-                      <button
-                        onClick={handleSkipOrClose}
-                        className="p-1 rounded-md hover:bg-muted text-muted-foreground transition-colors"
-                        title="Skip Tour"
-                        aria-label="Close Tour"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Title & Body */}
-                  <div className="space-y-1.5">
-                    <h4 className="text-sm sm:text-base font-bold text-foreground leading-snug">
-                      {currentStepData.title}
-                    </h4>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {currentStepData.content}
-                    </p>
-                  </div>
-
-                  {/* Benefit Card */}
-                  <div className="bg-primary/5 border border-primary/20 p-2.5 rounded-xl flex items-start gap-2">
-                    <span className="text-xs mt-0.5">💡</span>
-                    <p className="text-[10px] text-primary font-semibold leading-relaxed">
-                      {currentStepData.benefit}
-                    </p>
-                  </div>
-
-                  {/* Navigation Actions */}
-                  <div className="flex items-center justify-between pt-2 border-t border-border/40">
-                    <div className="text-[10px] font-bold text-muted-foreground font-mono">
-                      {currentStep + 1} / {steps.length}
-                    </div>
-
-                    <div className="flex gap-2">
-                      {currentStep > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleBack}
-                          className="h-8 rounded-xl text-xs font-semibold px-3 flex items-center gap-1 hover:bg-muted"
-                        >
-                          <ArrowLeft className="w-3 h-3" />
-                          Prev
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        onClick={handleNext}
-                        className="h-8 rounded-xl text-xs font-bold px-4 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs flex items-center gap-1"
-                      >
-                        {currentStep === steps.length - 1 ? (
-                          <>
-                            Finish
-                            <Check className="w-3.5 h-3.5 ml-0.5" />
-                          </>
-                        ) : (
-                          <>
-                            Next
-                            <ArrowRight className="w-3 h-3 ml-0.5" />
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </motion.div>
-              </AnimatePresence>
-            </motion.div>
+            <TourStepTooltip
+              cardRef={cardRef}
+              tooltipStyle={tooltipStyle}
+              arrowDetails={arrowDetails}
+              pageTitle={pageTitle}
+              currentStep={currentStep}
+              totalSteps={steps.length}
+              stepData={currentStepData}
+              audioEnabled={audioEnabled}
+              onToggleSound={toggleSoundPreference}
+              onClose={handleSkipOrClose}
+              onBack={handleBack}
+              onNext={handleNext}
+            />
           )}
         </AnimatePresence>
       </div>
