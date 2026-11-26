@@ -1,5 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { syncSensoryPrefsFromSettings } from '@/lib/feedback/sensory-engine';
+import {
+  isAutoRestNote,
+  isNonCompletedSpecialState,
+  upsertCompletionState,
+} from './db-helpers/completion-ops';
+import { cleanupDuplicateEntities, remapForeignKey } from './db-helpers/dedup-cleanup';
+import { buildNewTaskRecord, buildNewUserSettings } from './db-helpers/entity-defaults';
 import type {
   Habit,
   HabitCompletion,
@@ -575,28 +582,29 @@ export async function toggleCompletion(habitId: HabitId, date: ISODate, userId: 
     status: 'completed',
     skipped: false,
   });
-  const now = new Date().toISOString();
 
-  if (existing) {
-    // If it was marked as a rest day or frozen, a 1-tap primary click marks it completed
-    if (completion.status === 'rest' || completion.skipped || completion.status === 'frozen') {
-      completion.completed = true;
-      completion.status = 'completed';
-      completion.skipped = false;
-      completion.restReason = undefined;
-    } else {
-      completion.completed = !completion.completed;
-      completion.status = completion.completed ? 'completed' : undefined;
-      completion.skipped = false;
-    }
-    completion.updatedAt = now;
-    await db.completions.update(completion.id, completion);
-  } else {
-    completion.status = 'completed';
-    completion.skipped = false;
-    await db.completions.add(completion);
-  }
-  return completion;
+  return upsertCompletionState({
+    completionsTable: db.completions,
+    existing,
+    completion,
+    applyUpdate: (target) => {
+      if (!existing) {
+        target.status = 'completed';
+        target.skipped = false;
+        return;
+      }
+      if (isNonCompletedSpecialState(target)) {
+        target.completed = true;
+        target.status = 'completed';
+        target.skipped = false;
+        target.restReason = undefined;
+      } else {
+        target.completed = !target.completed;
+        target.status = target.completed ? 'completed' : undefined;
+        target.skipped = false;
+      }
+    },
+  });
 }
 
 export async function markRestCompletion(
@@ -605,29 +613,29 @@ export async function markRestCompletion(
   userId: UserId,
   reason?: string
 ): Promise<HabitCompletion> {
+  const normalizedReason = reason || 'Recovery';
   const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, {
     completed: false,
     status: 'rest',
     skipped: true,
-    restReason: reason || 'Recovery',
+    restReason: normalizedReason,
   });
-  const now = new Date().toISOString();
-  const normalizedReason = reason || 'Recovery';
 
-  completion.completed = false;
-  completion.status = 'rest';
-  completion.skipped = true;
-  completion.restReason = normalizedReason;
-  if (!completion.note || /^Rest Day:\s*(Low-Energy|Recovery)/i.test(completion.note)) {
-    completion.note = `Rest Day: ${normalizedReason}`;
-  }
-  completion.updatedAt = now;
+  await upsertCompletionState({
+    completionsTable: db.completions,
+    existing,
+    completion,
+    applyUpdate: (target) => {
+      target.completed = false;
+      target.status = 'rest';
+      target.skipped = true;
+      target.restReason = normalizedReason;
+      if (!target.note || /^Rest Day:\s*(Low-Energy|Recovery)/i.test(target.note)) {
+        target.note = `Rest Day: ${normalizedReason}`;
+      }
+    },
+  });
 
-  if (existing) {
-    await db.completions.update(completion.id, completion);
-  } else {
-    await db.completions.add(completion);
-  }
   const persisted = await db.completions.get(completion.id);
   return persisted || completion;
 }
@@ -640,58 +648,77 @@ export async function clearRestCompletion(
   const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, {
     completed: false,
   });
-  const now = new Date().toISOString();
 
-  completion.completed = false;
-  completion.status = undefined;
-  completion.skipped = false;
-  if (
-    completion.note &&
-    ((completion.restReason && completion.note === `Rest Day: ${completion.restReason}`) ||
-      /^Rest Day:\s*(Low-Energy|Recovery)/i.test(completion.note))
-  ) {
-    completion.note = undefined;
-  }
-  completion.restReason = undefined;
-  completion.updatedAt = now;
+  await upsertCompletionState({
+    completionsTable: db.completions,
+    existing,
+    completion,
+    addIfMissing: false,
+    applyUpdate: (target) => {
+      target.completed = false;
+      target.status = undefined;
+      target.skipped = false;
+      if (isAutoRestNote(target.note, target.restReason)) {
+        target.note = undefined;
+      }
+      target.restReason = undefined;
+    },
+  });
 
-  if (existing) {
-    await db.completions.update(completion.id, completion);
-  }
   const persisted = await db.completions.get(completion.id);
   return persisted || completion;
 }
 
+async function applyCompletionPatch(params: {
+  habitId: HabitId;
+  date: ISODate;
+  userId: UserId;
+  initialData: Partial<HabitCompletion>;
+  addIfMissing?: boolean;
+  applyUpdate: (completion: HabitCompletion, now: string, existing: boolean) => void;
+}): Promise<HabitCompletion> {
+  const { existing, completion } = await getOrCreateCompletion(
+    params.habitId,
+    params.date,
+    params.userId,
+    params.initialData
+  );
+  return upsertCompletionState({
+    completionsTable: db.completions,
+    existing,
+    completion,
+    addIfMissing: params.addIfMissing,
+    applyUpdate: params.applyUpdate,
+  });
+}
+
 export async function freezeCompletion(habitId: HabitId, date: ISODate, userId: UserId): Promise<HabitCompletion> {
-  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: true, status: 'frozen' });
-  const now = new Date().toISOString();
-
-  completion.completed = true;
-  completion.status = 'frozen';
-  completion.skipped = false;
-  completion.updatedAt = now;
-
-  if (existing) {
-    await db.completions.update(completion.id, completion);
-  } else {
-    await db.completions.add(completion);
-  }
-  return completion;
+  return applyCompletionPatch({
+    habitId,
+    date,
+    userId,
+    initialData: { completed: true, status: 'frozen' },
+    applyUpdate: (target) => {
+      target.completed = true;
+      target.status = 'frozen';
+      target.skipped = false;
+    },
+  });
 }
 
 export async function unfreezeCompletion(habitId: HabitId, date: ISODate, userId: UserId): Promise<HabitCompletion> {
-  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: false });
-  const now = new Date().toISOString();
-
-  completion.completed = false;
-  completion.status = undefined;
-  completion.skipped = false;
-  completion.updatedAt = now;
-
-  if (existing) {
-    await db.completions.update(completion.id, completion);
-  }
-  return completion;
+  return applyCompletionPatch({
+    habitId,
+    date,
+    userId,
+    initialData: { completed: false },
+    addIfMissing: false,
+    applyUpdate: (target) => {
+      target.completed = false;
+      target.status = undefined;
+      target.skipped = false;
+    },
+  });
 }
 
 export async function batchCompleteHabits(habitIds: HabitId[], date: ISODate, userId: UserId): Promise<HabitCompletion[]> {
@@ -770,72 +797,32 @@ export async function cleanupDuplicateCompletions(): Promise<number> {
 
 export async function cleanupDuplicateHabits(): Promise<number> {
   const allHabits = await db.habits.toArray();
-  const seen = new Map<string, Habit>();
-  const duplicates: string[] = [];
-  const completionUpdates: Array<{ id: string; habitId: HabitId }> = [];
-
-  for (const habit of allHabits) {
-    const key = `${habit.name}-${habit.category}`;
-    const existing = seen.get(key);
-
-    if (existing) {
-      const { keepId, discardId } = resolveDuplicateEntity(existing, habit);
-      duplicates.push(discardId);
-
-      const keptHabit = keepId === habit.id ? habit : existing;
-      seen.set(key, keptHabit);
-
-      const comps = await db.completions.where('habitId').equals(discardId).toArray();
-      comps.forEach(c => completionUpdates.push({ id: c.id, habitId: keepId }));
-    } else {
-      seen.set(key, habit);
-    }
-  }
-
-  for (const update of completionUpdates) {
-    await db.completions.update(update.id, { habitId: update.habitId });
-  }
-
-  if (duplicates.length > 0) {
-    await db.habits.bulkDelete(duplicates);
-  }
-
-  return duplicates.length;
+  return cleanupDuplicateEntities({
+    entities: allHabits,
+    getKey: (habit) => `${habit.name}-${habit.category}`,
+    resolveDuplicate: resolveDuplicateEntity,
+    remapChildren: (discardId, keepId) =>
+      remapForeignKey(
+        () => db.completions.where('habitId').equals(discardId).toArray(),
+        (id) => db.completions.update(id, { habitId: keepId })
+      ),
+    bulkDelete: (ids) => db.habits.bulkDelete(ids),
+  });
 }
 
 export async function cleanupDuplicateGoals(): Promise<number> {
   const allGoals = await db.goals.toArray();
-  const seen = new Map<string, Goal>();
-  const duplicates: string[] = [];
-  const milestoneUpdates: Array<{ id: string; goalId: GoalId }> = [];
-
-  for (const goal of allGoals) {
-    const key = goal.title.toLowerCase();
-    const existing = seen.get(key);
-
-    if (existing) {
-      const { keepId, discardId } = resolveDuplicateEntity(existing, goal);
-      duplicates.push(discardId);
-
-      const keptGoal = keepId === goal.id ? goal : existing;
-      seen.set(key, keptGoal);
-
-      const miles = await db.milestones.where('goalId').equals(discardId).toArray();
-      miles.forEach(m => milestoneUpdates.push({ id: m.id, goalId: keepId }));
-    } else {
-      seen.set(key, goal);
-    }
-  }
-
-  for (const update of milestoneUpdates) {
-    await db.milestones.update(update.id, { goalId: update.goalId });
-  }
-
-  if (duplicates.length > 0) {
-    await db.goals.bulkDelete(duplicates);
-  }
-
-  return duplicates.length;
+  return cleanupDuplicateEntities({
+    entities: allGoals,
+    getKey: (goal) => goal.title.toLowerCase(),
+    resolveDuplicate: resolveDuplicateEntity,
+    remapChildren: (discardId, keepId) =>
+      remapForeignKey(
+        () => db.milestones.where('goalId').equals(discardId).toArray(),
+        (id) => db.milestones.update(id, { goalId: keepId })
+      ),
+    bulkDelete: (ids) => db.goals.bulkDelete(ids),
+  });
 }
 
 // ==================
@@ -951,53 +938,12 @@ export async function updateSettings(data: Partial<UserSettings> & { userId: Use
         hapticsEnabled: data.hapticsEnabled ?? existing.hapticsEnabled,
       });
     }
-  } else {
-    const settings: UserSettings = {
-      id: crypto.randomUUID(),
-      userId: data.userId,
-      theme: data.theme || 'system',
-      accent: data.accent || 'mint',
-      userName: data.userName,
-      weekStartsOn: data.weekStartsOn ?? 0,
-      showMotivationalQuotes: data.showMotivationalQuotes ?? true,
-      defaultCategory: data.defaultCategory || 'health',
-      createdAt: now,
-      updatedAt: now,
-      xp: 0,
-      level: 1,
-      gems: 0,
-      streakShield: 0,
-      avatarId: 'avatar-1',
-      soundEnabled: data.soundEnabled ?? true,
-      hapticsEnabled: data.hapticsEnabled ?? true,
-      stats: data.stats || {
-        vitality: 1,
-        intelligence: 1,
-        discipline: 1,
-        charisma: 1,
-        wealth: 1,
-        creativity: 1,
-      },
-      showTasks: data.showTasks ?? true,
-      showGoals: data.showGoals ?? true,
-      showMilestones: data.showMilestones ?? true,
-      showFinance: data.showFinance ?? true,
-      showFitness: data.showFitness ?? true,
-      habitOnlyMode: data.habitOnlyMode ?? false,
-      unlockedThemes: data.unlockedThemes || [],
-      dashboardLayout: data.dashboardLayout || [
-        { id: 'metrics', size: 'full', hidden: false, pinned: true },
-        { id: 'today-tasks', size: 'full', hidden: false, pinned: false },
-        { id: 'finance-overview', size: 'full', hidden: false, pinned: false },
-        { id: 'habit-overview', size: '1/2', hidden: false, pinned: false },
-        { id: 'focus-goal', size: '1/2', hidden: false, pinned: false },
-        { id: 'ai-coach', size: '1/2', hidden: false, pinned: false },
-        { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
-      ],
-    };
-    await db.userSettings.add(settings);
-    syncSensoryPrefsFromSettings(settings);
+    return;
   }
+
+  const settings = buildNewUserSettings(data, now);
+  await db.userSettings.add(settings);
+  syncSensoryPrefsFromSettings(settings);
 }
 
 // ==================
@@ -1084,29 +1030,7 @@ export async function getTasks(userId: UserId): Promise<Task[]> {
 
 export async function createTask(data: TaskFormData & { userId: UserId }): Promise<Task> {
   const now = new Date().toISOString();
-  const task: Task = {
-    id: crypto.randomUUID(),
-    userId: data.userId,
-    title: data.title,
-    description: data.description || null,
-    notes: data.notes || null,
-    status: 'todo',
-    priority: data.priority,
-    due_date: data.due_date || null,
-    goal_id: data.goal_id || null,
-    tags: data.tags || [],
-    metadata: data.metadata || {},
-    created_at: now,
-    updated_at: now,
-    recurrenceRule: data.recurrenceRule || '',
-    estimatedTime: data.estimatedTime || 0,
-    actualTime: data.actualTime || 0,
-    isUrgent: data.isUrgent ?? false,
-    isImportant: data.isImportant ?? false,
-    parentTaskId: data.parentTaskId || null,
-    depth: data.depth || 0,
-  };
-
+  const task = buildNewTaskRecord(data, now);
   await db.tasks.add(task);
   return task;
 }
@@ -1136,21 +1060,18 @@ export async function updateCompletionNote(
   note: string,
   userId: UserId
 ): Promise<HabitCompletion> {
-  const { existing, completion } = await getOrCreateCompletion(habitId, date, userId, { completed: true, note });
-  const now = new Date().toISOString();
-
-  completion.note = note;
-  completion.updatedAt = now;
-  if (!existing) {
-    completion.completed = true;
-  }
-
-  if (existing) {
-    await db.completions.update(completion.id, completion);
-  } else {
-    await db.completions.add(completion);
-  }
-  return completion;
+  return applyCompletionPatch({
+    habitId,
+    date,
+    userId,
+    initialData: { completed: true, note },
+    applyUpdate: (target, _now, existing) => {
+      target.note = note;
+      if (!existing) {
+        target.completed = true;
+      }
+    },
+  });
 }
 
 export async function updateCompletionValue(
