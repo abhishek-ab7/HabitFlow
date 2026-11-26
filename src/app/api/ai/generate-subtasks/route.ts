@@ -4,46 +4,33 @@ import { subtaskGenerationSchema } from '@/lib/ai/schemas';
 import { buildSubtaskPrompt } from '@/lib/ai/prompts';
 import type { SubtaskGenerationInput, SubtaskGenerationOutput } from '@/lib/ai/types';
 
+function buildSubtasksErrorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const isRateLimit = message.includes('429') || message.includes('quota') || message.includes('rate limit');
+  return NextResponse.json(
+    {
+      error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to generate subtasks',
+      details: message,
+    },
+    { status: isRateLimit ? 429 : 500 }
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // Check if AI features are enabled
     if (process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES !== 'true') {
-      return NextResponse.json(
-        { error: 'AI features are currently disabled' },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: 'AI features are currently disabled' }, { status: 503 });
     }
 
     const { title, description } = await req.json() as SubtaskGenerationInput;
-
-    // AI Service will handle key validation from pool
-
     const ai = new HabitFlowAI('tasks');
     const prompt = buildSubtaskPrompt({ title, description });
 
     console.log(`[AI Subtasks] Generating for task: "${title}"`);
-
-    // No caching for subtasks - each task is unique
-    const result = await ai.generate<SubtaskGenerationOutput>(
-      'generate-subtasks',
-      prompt,
-      subtaskGenerationSchema
-    );
-
+    const result = await ai.generate<SubtaskGenerationOutput>('generate-subtasks', prompt, subtaskGenerationSchema);
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('AI Generation Error:', error);
-
-    const isRateLimit = error.message?.includes('429') ||
-      error.message?.includes('quota') ||
-      error.message?.includes('rate limit');
-
-    return NextResponse.json(
-      {
-        error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to generate subtasks',
-        details: error.message
-      },
-      { status: isRateLimit ? 429 : 500 }
-    );
+    return buildSubtasksErrorResponse(error);
   }
 }

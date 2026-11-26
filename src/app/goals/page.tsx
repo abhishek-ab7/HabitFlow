@@ -424,47 +424,40 @@ function useGoalsFilterControls(params: {
   return { searchQuery, setSearchQuery, sortBy, setSortBy, viewMode, setViewMode, toggleStatus, toggleArea, clearFilters, hasActiveFilters };
 }
 
-function GoalsPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [formModalOpen, setFormModalOpen] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<Goal | undefined>();
-
-  const { isOpen: isTourOpen, startTour, closeTour, completeTour } = usePageTour('goals');
-  const { isAuthenticated, user } = useAuth();
+function useGoalsPageInitialization(params: {
+  searchParams: ReturnType<typeof useSearchParams>;
+  router: ReturnType<typeof useRouter>;
+  setFormModalOpen: (v: boolean) => void;
+  isAuthenticated: boolean;
+  userId?: string;
+  loadGoals: () => Promise<unknown>;
+  loadAllMilestones: () => Promise<unknown>;
+}) {
+  const { searchParams, router, setFormModalOpen, isAuthenticated, userId, loadGoals, loadAllMilestones } = params;
 
   useEffect(() => {
     if (searchParams.get('new') !== 'true') return;
     setFormModalOpen(true);
     router.replace('/goals');
-  }, [searchParams, router]);
-
-  const store = useGoalsStoreBindings();
-  const filters = useGoalsFilterControls({
-    statusFilter: store.statusFilter,
-    areaFilter: store.areaFilter,
-    setStatusFilter: store.setStatusFilter,
-    setAreaFilter: store.setAreaFilter,
-  });
+  }, [searchParams, router, setFormModalOpen]);
 
   useEffect(() => {
-    if (!isAuthenticated || !user?.id) return;
-    store.loadGoals();
-    store.loadAllMilestones();
+    if (!isAuthenticated || !userId) return;
+    loadGoals();
+    loadAllMilestones();
     const fitState = useFitnessStore.getState();
-    if (!fitState.hasLoaded) void fitState.loadFitnessData(user.id);
-  }, [isAuthenticated, user?.id, store.loadGoals, store.loadAllMilestones]);
+    if (!fitState.hasLoaded) void fitState.loadFitnessData(userId);
+  }, [isAuthenticated, userId, loadGoals, loadAllMilestones]);
+}
 
-  const { displayGoals, milestonesByGoalId, goalStatsById } = useGoalsViewModel({
-    goals: store.goals,
-    milestones: store.milestones,
-    statusFilter: store.statusFilter,
-    areaFilter: store.areaFilter,
-    searchQuery: filters.searchQuery,
-    sortBy: filters.sortBy,
-    getFilteredGoals: store.getFilteredGoals,
-    getGoalStats: store.getGoalStats,
-  });
+function isFocusGoalLimitReached(goal: Goal, goals: Goal[]): boolean {
+  if (goal.isFocus) return false;
+  return goals.filter((g) => g.isFocus && !g.archived).length >= 2;
+}
+
+function useGoalsModalAndActions(store: ReturnType<typeof useGoalsStoreBindings>) {
+  const [formModalOpen, setFormModalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | undefined>();
 
   const handleOpenEditModal = useCallback((goal: Goal) => {
     setEditingGoal(goal);
@@ -500,19 +493,70 @@ function GoalsPageContent() {
   const handleSetFocus = useCallback(async (goalId: string) => {
     const goal = store.goals.find((g) => g.id === goalId);
     if (!goal) return;
-    if (!goal.isFocus && store.goals.filter((g) => g.isFocus && !g.archived).length >= 2) {
+    if (isFocusGoalLimitReached(goal, store.goals)) {
       toast.error('Maximum of 2 focus goals allowed');
       return;
     }
     await store.setFocus(goalId);
   }, [store.goals, store.setFocus]);
 
-  const activeGoalsCount = store.goals.filter((g) => !g.archived && g.status !== 'completed').length;
+  return {
+    formModalOpen,
+    setFormModalOpen,
+    editingGoal,
+    handleOpenEditModal,
+    handleCloseModal,
+    handleArchiveGoal,
+    handleAddMilestonePrompt,
+    handleEditGoal,
+    handleSetFocus,
+  };
+}
+
+function GoalsPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isOpen: isTourOpen, startTour, closeTour, completeTour } = usePageTour('goals');
+  const { isAuthenticated, user } = useAuth();
+
+  const store = useGoalsStoreBindings();
+  const filters = useGoalsFilterControls({
+    statusFilter: store.statusFilter,
+    areaFilter: store.areaFilter,
+    setStatusFilter: store.setStatusFilter,
+    setAreaFilter: store.setAreaFilter,
+  });
+  const actions = useGoalsModalAndActions(store);
+
+  useGoalsPageInitialization({
+    searchParams,
+    router,
+    setFormModalOpen: actions.setFormModalOpen,
+    isAuthenticated,
+    userId: user?.id,
+    loadGoals: store.loadGoals,
+    loadAllMilestones: store.loadAllMilestones,
+  });
+
+  const { displayGoals, milestonesByGoalId, goalStatsById } = useGoalsViewModel({
+    goals: store.goals,
+    milestones: store.milestones,
+    statusFilter: store.statusFilter,
+    areaFilter: store.areaFilter,
+    searchQuery: filters.searchQuery,
+    sortBy: filters.sortBy,
+    getFilteredGoals: store.getFilteredGoals,
+    getGoalStats: store.getGoalStats,
+  });
+
   if (store.isLoading) return <GoalsPageSkeleton />;
+
+  const activeGoalsCount = store.goals.filter((g) => !g.archived && g.status !== 'completed').length;
+  const existingMilestones = actions.editingGoal ? store.getGoalMilestones(actions.editingGoal.id).map((m) => m.title) : [];
 
   return (
     <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto pb-24 md:pb-12">
-      <GoalsHeaderBanner activeGoalsCount={activeGoalsCount} onStartTour={startTour} onNewGoal={() => setFormModalOpen(true)} />
+      <GoalsHeaderBanner activeGoalsCount={activeGoalsCount} onStartTour={startTour} onNewGoal={() => actions.setFormModalOpen(true)} />
 
       {store.goals.length > 0 && (
         <GoalsFilterToolbar
@@ -538,23 +582,23 @@ function GoalsPageContent() {
         milestonesByGoalId={milestonesByGoalId}
         goalStatsById={goalStatsById}
         getGoalStats={store.getGoalStats}
-        onCreateGoal={() => setFormModalOpen(true)}
+        onCreateGoal={() => actions.setFormModalOpen(true)}
         onClearFilters={filters.clearFilters}
-        onEdit={handleOpenEditModal}
+        onEdit={actions.handleOpenEditModal}
         onDelete={store.removeGoal}
-        onArchive={handleArchiveGoal}
-        onSetFocus={handleSetFocus}
+        onArchive={actions.handleArchiveGoal}
+        onSetFocus={actions.handleSetFocus}
         onToggleMilestone={store.toggleMilestoneComplete}
-        onAddMilestone={handleAddMilestonePrompt}
+        onAddMilestone={actions.handleAddMilestonePrompt}
       />
 
-      {formModalOpen && (
+      {actions.formModalOpen && (
         <GoalFormModal
-          open={formModalOpen}
-          onOpenChange={handleCloseModal}
-          onSubmit={editingGoal ? handleEditGoal : store.addGoal}
-          goal={editingGoal}
-          existingMilestones={editingGoal ? store.getGoalMilestones(editingGoal.id).map((m) => m.title) : []}
+          open={actions.formModalOpen}
+          onOpenChange={actions.handleCloseModal}
+          onSubmit={actions.editingGoal ? actions.handleEditGoal : store.addGoal}
+          goal={actions.editingGoal}
+          existingMilestones={existingMilestones}
         />
       )}
 

@@ -4,59 +4,44 @@ import { taskPrioritySchema } from '@/lib/ai/schemas';
 import { buildPrioritizePrompt } from '@/lib/ai/prompts';
 import type { TaskPriorityInput, TaskPriorityOutput } from '@/lib/ai/types';
 
+function buildPriorityErrorResponse(error: any) {
+  const msg = String(error?.message || '');
+  const isRateLimit = msg.includes('429') || msg.includes('quota') || msg.includes('rate limit');
+  return NextResponse.json(
+    { error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to prioritize task', details: msg },
+    { status: isRateLimit ? 429 : 500 }
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // Check if AI features are enabled
     if (process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES !== 'true') {
-      return NextResponse.json(
-        { error: 'AI features are currently disabled' },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: 'AI features are currently disabled' }, { status: 503 });
     }
 
-    const body = await req.json() as TaskPriorityInput;
-    const { task, userContext } = body;
-
-    if (!task || !task.id || !task.title) {
+    const body = (await req.json()) as TaskPriorityInput;
+    const { task } = body;
+    const isValidTask = Boolean(task?.id && task?.title);
+    if (!isValidTask) {
       return NextResponse.json({ error: 'Task id and title are required' }, { status: 400 });
     }
 
-    // AI Service will handle key validation from pool
-
     const ai = new HabitFlowAI('tasks');
-    const prompt = buildPrioritizePrompt(body);
-
-    // Cache task priority for 6 hours (invalidate when task is updated/completed)
     const cacheKey = `priority:${task.id}:${task.due_date || 'no-due'}`;
-    const cacheTTL = 6 * 60 * 60;
-
     console.log(`[AI Priority] Analyzing task: "${task.title}"`);
 
     const result = await ai.generate<TaskPriorityOutput>(
       'prioritize',
-      prompt,
+      buildPrioritizePrompt(body),
       taskPrioritySchema,
       cacheKey,
-      cacheTTL
+      6 * 60 * 60
     );
 
-    // Ensure taskId matches
     result.taskId = task.id;
-
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('[AI Priority] Error:', error);
-
-    const isRateLimit = error.message?.includes('429') ||
-      error.message?.includes('quota') ||
-      error.message?.includes('rate limit');
-
-    return NextResponse.json(
-      {
-        error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to prioritize task',
-        details: error.message
-      },
-      { status: isRateLimit ? 429 : 500 }
-    );
+    return buildPriorityErrorResponse(error);
   }
 }

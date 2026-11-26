@@ -4,66 +4,47 @@ import { habitDescriptionSchema } from '@/lib/ai/schemas';
 import { buildHabitDescriptionPrompt } from '@/lib/ai/prompts';
 import type { HabitDescriptionInput, HabitDescriptionOutput } from '@/lib/ai/types';
 
+function buildHabitDescriptionErrorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Unknown error';
+  const isRateLimit = message.includes('429') || message.includes('quota') || message.includes('rate limit');
+  return NextResponse.json(
+    {
+      error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to generate habit description',
+      details: message,
+      isRateLimit,
+    },
+    { status: isRateLimit ? 429 : 500 }
+  );
+}
+
+async function generateHabitDescription(input: HabitDescriptionInput) {
+  const ai = new HabitFlowAI('habits');
+  const prompt = buildHabitDescriptionPrompt(input);
+  const habitKey = `${input.habit.name}-${input.habit.category}`.toLowerCase().replace(/\s+/g, '-');
+  const cacheKey = `habit-desc:${habitKey}`;
+  const cacheTTL = 30 * 24 * 60 * 60;
+
+  console.log(`[AI Habit Description] Generating for ${input.habit.name} (${input.habit.category})`);
+  return ai.generate<HabitDescriptionOutput>('enhance-habit', prompt, habitDescriptionSchema, cacheKey, cacheTTL);
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // Check if AI features are enabled
     if (process.env.NEXT_PUBLIC_ENABLE_AI_FEATURES !== 'true') {
-      return NextResponse.json(
-        { error: 'AI features are currently disabled' },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: 'AI features are currently disabled' }, { status: 503 });
     }
 
-    let body;
-    try {
-      body = await req.json();
-    } catch (e) {
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
-    }
+    const input = await req.json().catch(() => null) as HabitDescriptionInput | null;
+    if (!input) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
 
-    const input = body as HabitDescriptionInput;
-
-    if (!input.habit || !input.habit.name) {
+    if (!input.habit?.name) {
       return NextResponse.json({ error: 'Habit information is required' }, { status: 400 });
     }
 
-    // AI Service will handle key validation from pool
-
-    const ai = new HabitFlowAI('habits');
-    const prompt = buildHabitDescriptionPrompt(input);
-
-    // Cache key: based on habit name and category (static content, long cache)
-    const habitKey = `${input.habit.name}-${input.habit.category}`.toLowerCase().replace(/\s+/g, '-');
-    const cacheKey = `habit-desc:${habitKey}`;
-    const cacheTTL = 30 * 24 * 60 * 60; // 30 days (descriptions rarely change)
-
-    console.log(`[AI Habit Description] Generating for ${input.habit.name} (${input.habit.category})`);
-
-    const result = await ai.generate<HabitDescriptionOutput>(
-      'enhance-habit',
-      prompt,
-      habitDescriptionSchema,
-      cacheKey,
-      cacheTTL
-    );
-
+    const result = await generateHabitDescription(input);
     return NextResponse.json(result);
-
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Habit Description Route Error:', error);
-
-    // Check for rate limit error
-    const isRateLimit = error.message?.includes('429') ||
-      error.message?.includes('quota') ||
-      error.message?.includes('rate limit');
-
-    return NextResponse.json(
-      {
-        error: isRateLimit ? 'AI quota exceeded. Try again later.' : 'Failed to generate habit description',
-        details: error.message || 'Unknown error',
-        isRateLimit
-      },
-      { status: isRateLimit ? 429 : 500 }
-    );
+    return buildHabitDescriptionErrorResponse(error);
   }
 }

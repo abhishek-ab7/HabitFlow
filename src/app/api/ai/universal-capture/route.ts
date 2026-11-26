@@ -92,7 +92,13 @@ const UNIVERSAL_CAPTURE_SCHEMA = {
   },
 };
 
-function buildUniversalCapturePrompt(rawText: string, todayIso: string, context: UniversalParserContext): string {
+interface CapturePromptParams {
+  rawText: string;
+  todayIso: string;
+  context: UniversalParserContext;
+}
+
+function buildUniversalCapturePrompt({ rawText, todayIso, context }: CapturePromptParams): string {
   const accountList = (context.accounts || []).map((a) => `${a.name} (${a.type})`).join(', ');
   const categoryList = (context.categories || []).map((c) => `${c.name} [${c.slug}]`).join(', ');
   const stapleList = (context.mealTemplates || [])
@@ -114,17 +120,25 @@ Rules:
 4. Use YYYY-MM-DD dates anchored on IST ${todayIso}.`;
 }
 
-function resolveMatchedAccount(accs: NonNullable<UniversalParserContext['accounts']>, hintRaw: unknown) {
+function resolveMatchedAccount(
+  accs: NonNullable<UniversalParserContext['accounts']>,
+  hintRaw: unknown
+) {
   const hint = String(hintRaw || '').toLowerCase();
   if (!hint) return accs[0];
-  return accs.find((a) => a.name.toLowerCase().includes(hint)) || accs.find((a) => a.type === hint) || accs[0];
+  return (
+    accs.find((a) => a.name.toLowerCase().includes(hint)) ||
+    accs.find((a) => a.type === hint) ||
+    accs[0]
+  );
 }
 
-function resolveMatchedCategory(
-  cats: NonNullable<UniversalParserContext['categories']>,
-  slugRaw: unknown,
-  isJunkFood: boolean
-) {
+function resolveMatchedCategory(params: {
+  cats: NonNullable<UniversalParserContext['categories']>;
+  slugRaw: unknown;
+  isJunkFood: boolean;
+}) {
+  const { cats, slugRaw, isJunkFood } = params;
   const slug = String(slugRaw || '').toLowerCase();
   const bySlug = cats.find((c) => c.slug.toLowerCase() === slug);
   if (bySlug) return bySlug;
@@ -148,7 +162,11 @@ function nonNegNum(val: unknown): number {
   return Math.max(0, Number(val) || 0);
 }
 
-function buildExpenseCategoryProps(matchedCat: { id: string; slug: string; name: string } | undefined, rawSlug: unknown) {
+function buildExpenseCategoryProps(params: {
+  matchedCat: { id: string; slug: string; name: string } | undefined;
+  rawSlug: unknown;
+}) {
+  const { matchedCat, rawSlug } = params;
   const fallbackSlug = String(rawSlug || '').toLowerCase() || 'other-expense';
   return {
     categoryId: matchedCat?.id,
@@ -157,16 +175,21 @@ function buildExpenseCategoryProps(matchedCat: { id: string; slug: string; name:
   };
 }
 
-function mapSingleAiExpense(
-  exp: any,
-  index: number,
-  context: UniversalParserContext,
-  todayIso: string
-): UniversalCaptureAction | null {
+function mapSingleAiExpense(params: {
+  exp: any;
+  index: number;
+  context: UniversalParserContext;
+  todayIso: string;
+}): UniversalCaptureAction | null {
+  const { exp, index, context, todayIso } = params;
   const amount = Number(exp.amount) || 0;
   if (amount <= 0) return null;
   const matchedAcc = resolveMatchedAccount(context.accounts || [], exp.accountNameHint);
-  const matchedCat = resolveMatchedCategory(context.categories || [], exp.categorySlug, Boolean(exp.isJunkFood));
+  const matchedCat = resolveMatchedCategory({
+    cats: context.categories || [],
+    slugRaw: exp.categorySlug,
+    isJunkFood: Boolean(exp.isJunkFood),
+  });
 
   return {
     id: `ai_exp_${index}`,
@@ -177,21 +200,21 @@ function mapSingleAiExpense(
     txType: normalizeExpenseTxType(exp.txType),
     accountId: matchedAcc?.id,
     accountName: matchedAcc?.name ?? exp.accountNameHint ?? 'UPI',
-    ...buildExpenseCategoryProps(matchedCat, exp.categorySlug),
+    ...buildExpenseCategoryProps({ matchedCat, rawSlug: exp.categorySlug }),
     date: exp.date ?? todayIso,
     isJunkFood: Boolean(exp.isJunkFood),
   };
 }
 
-function mapAiExpenses(
-  expenses: any[],
-  context: UniversalParserContext,
-  todayIso: string
-): { actions: UniversalCaptureAction[]; expenseIds: string[] } {
+function mapAiExpenses(params: {
+  expenses: any[];
+  context: UniversalParserContext;
+  todayIso: string;
+}): { actions: UniversalCaptureAction[]; expenseIds: string[] } {
   const actions: UniversalCaptureAction[] = [];
   const expenseIds: string[] = [];
-  expenses.forEach((exp, i) => {
-    const action = mapSingleAiExpense(exp, i, context, todayIso);
+  params.expenses.forEach((exp, index) => {
+    const action = mapSingleAiExpense({ exp, index, context: params.context, todayIso: params.todayIso });
     if (!action) return;
     expenseIds.push(action.id);
     actions.push(action);
@@ -199,12 +222,13 @@ function mapAiExpenses(
   return { actions, expenseIds };
 }
 
-function mapSingleAiMeal(
-  meal: any,
-  index: number,
-  singleExpenseId: string | undefined,
-  todayIso: string
-): UniversalCaptureAction {
+function mapSingleAiMeal(params: {
+  meal: any;
+  index: number;
+  singleExpenseId: string | undefined;
+  todayIso: string;
+}): UniversalCaptureAction {
+  const { meal, index, singleExpenseId, todayIso } = params;
   return {
     id: `ai_meal_${index}`,
     kind: 'meal',
@@ -222,9 +246,15 @@ function mapSingleAiMeal(
   };
 }
 
-function mapAiMeals(meals: any[], expenseIds: string[], todayIso: string): UniversalCaptureAction[] {
-  const singleExpenseId = expenseIds.length === 1 ? expenseIds[0] : undefined;
-  return meals.map((meal, i) => mapSingleAiMeal(meal, i, singleExpenseId, todayIso));
+function mapAiMeals(params: {
+  meals: any[];
+  expenseIds: string[];
+  todayIso: string;
+}): UniversalCaptureAction[] {
+  const singleExpenseId = params.expenseIds.length === 1 ? params.expenseIds[0] : undefined;
+  return params.meals.map((meal, index) =>
+    mapSingleAiMeal({ meal, index, singleExpenseId, todayIso: params.todayIso })
+  );
 }
 
 function mapAiWorkouts(workouts: any[], todayIso: string): UniversalCaptureAction[] {
@@ -293,20 +323,21 @@ function mapAiTasks(tasks: any[], todayIso: string): UniversalCaptureAction[] {
     });
 }
 
-function mapAiResponseToActions(
-  aiResponse: any,
-  context: UniversalParserContext,
-  deterministicActions: UniversalCaptureAction[],
-  todayIso: string
-): UniversalCaptureAction[] {
+function mapAiResponseToActions(params: {
+  aiResponse: any;
+  context: UniversalParserContext;
+  deterministicActions: UniversalCaptureAction[];
+  todayIso: string;
+}): UniversalCaptureAction[] {
+  const { aiResponse, context, deterministicActions, todayIso } = params;
   const { actions: expenseActions, expenseIds } = Array.isArray(aiResponse.expenses)
-    ? mapAiExpenses(aiResponse.expenses, context, todayIso)
+    ? mapAiExpenses({ expenses: aiResponse.expenses, context, todayIso })
     : { actions: [], expenseIds: [] };
 
   const bioAction = mapAiBio(aiResponse.bio, todayIso);
   return [
     ...expenseActions,
-    ...(Array.isArray(aiResponse.meals) ? mapAiMeals(aiResponse.meals, expenseIds, todayIso) : []),
+    ...(Array.isArray(aiResponse.meals) ? mapAiMeals({ meals: aiResponse.meals, expenseIds, todayIso }) : []),
     ...(Array.isArray(aiResponse.workouts) ? mapAiWorkouts(aiResponse.workouts, todayIso) : []),
     ...(bioAction ? [bioAction] : []),
     ...(Array.isArray(aiResponse.tasks) ? mapAiTasks(aiResponse.tasks, todayIso) : []),
@@ -347,14 +378,19 @@ async function resolveCaptureResponse(params: {
     const aiResponse = await runWithGeminiFailover(async (ai) => {
       const res = await ai.models.generateContent({
         model: DEFAULT_GEMINI_MODEL,
-        contents: buildUniversalCapturePrompt(rawText, todayIso, context),
+        contents: buildUniversalCapturePrompt({ rawText, todayIso, context }),
         config: { responseMimeType: 'application/json', responseSchema: UNIVERSAL_CAPTURE_SCHEMA },
       });
       return res.text ? JSON.parse(res.text) : null;
     });
     if (!aiResponse) return deterministicJsonResponse(deterministic);
 
-    const actions = mapAiResponseToActions(aiResponse, context, deterministic.actions, todayIso);
+    const actions = mapAiResponseToActions({
+      aiResponse,
+      context,
+      deterministicActions: deterministic.actions,
+      todayIso,
+    });
     return NextResponse.json({
       actions: actions.length > 0 ? actions : deterministic.actions,
       detectedDate: todayIso,
@@ -366,16 +402,23 @@ async function resolveCaptureResponse(params: {
   }
 }
 
+async function authorizeUniversalCapture(req: NextRequest) {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const limitResult = await rateLimit(req, { limit: 25, windowMs: 60 * 1000 });
+  if (!limitResult.success) return rateLimitResponse(limitResult.retryAfter);
+
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createServerSupabaseClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const limitResult = await rateLimit(req, { limit: 25, windowMs: 60 * 1000 });
-    if (!limitResult.success) return rateLimitResponse(limitResult.retryAfter);
+    const authError = await authorizeUniversalCapture(req);
+    if (authError) return authError;
 
     const body = await req.json();
     const rawText = typeof body?.text === 'string' ? body.text.trim() : '';

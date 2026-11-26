@@ -98,14 +98,19 @@ function cleanExpenseTitle(text: string, type: ParsedExpenseResult['type']): str
   return type === 'income' ? 'Income Entry' : 'Quick Expense';
 }
 
-function parseExpenseDeterministically(rawText: string): ParsedExpenseResult {
-  const text = rawText.trim();
-  const lower = text.toLowerCase();
+function extractExpenseAmount(text: string): number {
   const amountMatch =
     text.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i) ||
     text.match(/\b([\d,]+(?:\.\d{1,2})?)\s*(?:rs|inr|rupees|bucks)\b/i) ||
     text.match(/\b(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)\b/);
-  const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
+  const parsed = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function parseExpenseDeterministically(rawText: string): ParsedExpenseResult {
+  const text = rawText.trim();
+  const lower = text.toLowerCase();
+  const amount = extractExpenseAmount(text);
 
   const type = inferTxType(lower);
   const paymentMethodType = PAYMENT_METHOD_RULES.find(([re]) => re.test(lower))?.[1] ?? 'upi';
@@ -113,7 +118,7 @@ function parseExpenseDeterministically(rawText: string): ParsedExpenseResult {
 
   return {
     title: cleanExpenseTitle(text, type),
-    amount: isNaN(amount) ? 0 : amount,
+    amount,
     type,
     categorySlug,
     subcategory,
@@ -142,7 +147,13 @@ const EXPENSE_RESPONSE_SCHEMA = {
   required: ['title', 'amount', 'type', 'categorySlug', 'paymentMethodType', 'date'],
 };
 
-function buildExpensePrompt(rawText: string, categories: CategoryInput[], todayIso: string): string {
+interface ExpensePromptInput {
+  rawText: string;
+  categories: CategoryInput[];
+  todayIso: string;
+}
+
+function buildExpensePrompt({ rawText, categories, todayIso }: ExpensePromptInput): string {
   const categoryCatalog = categories.length
     ? categories
         .map((c) => `- slug: "${c.slug}" | name: "${c.name}" | subcategories: [${(c.subcategories || []).join(', ')}]`)
@@ -172,8 +183,8 @@ function resolveMergedType(
   return fallbackType;
 }
 
-function resolveParsedDate(rawDate: string | undefined, fallbackDate: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(rawDate || '') ? rawDate! : fallbackDate;
+function resolveParsedDate(params: { rawDate?: string; fallbackDate: string }): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(params.rawDate || '') ? params.rawDate! : params.fallbackDate;
 }
 
 function mergeParsedExpense(parsed: Partial<ParsedExpenseResult>, fallback: ParsedExpenseResult): ParsedExpenseResult {
@@ -185,23 +196,24 @@ function mergeParsedExpense(parsed: Partial<ParsedExpenseResult>, fallback: Pars
     categorySlug: parsed.categorySlug ?? fallback.categorySlug,
     subcategory: parsed.subcategory ?? fallback.subcategory,
     paymentMethodType: parsed.paymentMethodType ?? fallback.paymentMethodType,
-    date: resolveParsedDate(parsed.date, fallback.date),
+    date: resolveParsedDate({ rawDate: parsed.date, fallbackDate: fallback.date }),
     suggestedCommitmentKeyword: parsed.suggestedCommitmentKeyword ?? fallback.suggestedCommitmentKeyword,
     tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 4) : [],
     confidence: Number(parsed.confidence) || 92,
   };
 }
 
-async function parseExpenseWithGemini(
-  rawText: string,
-  categories: CategoryInput[],
-  fallback: ParsedExpenseResult
-): Promise<{ data: ParsedExpenseResult; source: 'gemini' | 'deterministic' }> {
+async function parseExpenseWithGemini(params: {
+  rawText: string;
+  categories: CategoryInput[];
+  fallback: ParsedExpenseResult;
+}): Promise<{ data: ParsedExpenseResult; source: 'gemini' | 'deterministic' }> {
+  const { rawText, categories, fallback } = params;
   try {
     const response = await runWithGeminiFailover((ai) =>
       ai.models.generateContent({
         model: DEFAULT_GEMINI_MODEL,
-        contents: buildExpensePrompt(rawText, categories, getTodayIso()),
+        contents: buildExpensePrompt({ rawText, categories, todayIso: getTodayIso() }),
         config: { responseMimeType: 'application/json', responseSchema: EXPENSE_RESPONSE_SCHEMA },
       })
     );
@@ -229,7 +241,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ data: fallback, source: 'deterministic' });
     }
 
-    return NextResponse.json(await parseExpenseWithGemini(rawText, categories, fallback));
+    return NextResponse.json(await parseExpenseWithGemini({ rawText, categories, fallback }));
   } catch (error) {
     console.error('[parse-expense] Unexpected error:', error);
     return NextResponse.json({ error: 'Failed to parse expense text' }, { status: 500 });

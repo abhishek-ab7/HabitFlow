@@ -78,44 +78,29 @@ function validateOAuthRequestParams(params: {
   return null;
 }
 
-export default async function OAuthAuthorizePage({ searchParams }: AuthorizePageProps) {
-  const params = await searchParams;
-  const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, resource } = params;
+interface OAuthConsentCardProps {
+  clientId: string;
+  clientName: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod?: string;
+  state?: string;
+  resource?: string;
+  userEmail?: string;
+  scopesToDisplay: McpScope[];
+}
 
-  const supabase = await createServerSupabaseClient();
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (!session) {
-    const fullQuery = new URLSearchParams(params as Record<string, string>).toString();
-    redirect(`/login?redirectedFrom=/oauth/authorize?${fullQuery}`);
-  }
-
-  const paramError = validateOAuthRequestParams(params);
-  if (paramError) return paramError;
-
-  const clientId = client_id!;
-  const redirectUri = redirect_uri!;
-  const codeChallenge = code_challenge!;
-
-  const validation = await validateOAuthClient(clientId, redirectUri);
-  if (!validation.valid) {
-    return (
-      <OAuthErrorView title="Client Verification Failed">
-        <p className="text-sm text-zinc-400 mb-2">{validation.error}</p>
-        <div className="bg-zinc-950/60 p-3 rounded-lg text-xs font-mono text-zinc-400 break-all">
-          client_id: {clientId}
-          <br />
-          redirect_uri: {redirectUri}
-        </div>
-      </OAuthErrorView>
-    );
-  }
-
-  const requestedScopesList = (scope ? scope.split(' ') : [...MCP_SCOPES])
-    .map((s) => s.trim())
-    .filter((s): s is McpScope => MCP_SCOPES.includes(s as McpScope));
-  const scopesToDisplay = requestedScopesList.length > 0 ? requestedScopesList : [...MCP_SCOPES];
-
+function OAuthConsentCard({
+  clientId,
+  clientName,
+  redirectUri,
+  codeChallenge,
+  codeChallengeMethod,
+  state,
+  resource,
+  userEmail,
+  scopesToDisplay,
+}: OAuthConsentCardProps) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#090D0E] p-4 text-zinc-100 selection:bg-emerald-500/20 selection:text-emerald-300">
       <div className="max-w-lg w-full bg-[#111618] border border-zinc-800/80 rounded-3xl p-7 shadow-2xl shadow-black/60 relative overflow-hidden">
@@ -133,24 +118,22 @@ export default async function OAuthAuthorizePage({ searchParams }: AuthorizePage
         <div className="bg-[#171E20] border border-zinc-800/60 rounded-2xl p-4 mb-5">
           <div className="text-xs text-zinc-400 font-medium uppercase tracking-wider mb-1">Connecting Application</div>
           <div className="text-base font-semibold text-emerald-400 flex items-center gap-1.5">
-            {validation.clientName}
+            {clientName}
             {clientId.startsWith('https://') && <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />}
           </div>
-          <div className="text-xs text-zinc-400 mt-1 truncate font-mono">
-            Redirect URI: {redirectUri}
-          </div>
+          <div className="text-xs text-zinc-400 mt-1 truncate font-mono">Redirect URI: {redirectUri}</div>
         </div>
 
         <p className="text-xs text-zinc-300 mb-4 leading-relaxed">
-          <strong>{validation.clientName}</strong> is requesting permission to access your HabitFlow workspace logged in as{' '}
-          <span className="text-zinc-100 font-medium">{session.user.email}</span>.
+          <strong>{clientName}</strong> is requesting permission to access your HabitFlow workspace logged in as{' '}
+          <span className="text-zinc-100 font-medium">{userEmail}</span>.
         </p>
 
         <form action={approveAuthorizationAction} className="space-y-4">
           <input type="hidden" name="client_id" value={clientId} />
           <input type="hidden" name="redirect_uri" value={redirectUri} />
           <input type="hidden" name="code_challenge" value={codeChallenge} />
-          <input type="hidden" name="code_challenge_method" value={code_challenge_method || 'S256'} />
+          <input type="hidden" name="code_challenge_method" value={codeChallengeMethod || 'S256'} />
           {state && <input type="hidden" name="state" value={state} />}
           {resource && <input type="hidden" name="resource" value={resource} />}
 
@@ -203,5 +186,58 @@ export default async function OAuthAuthorizePage({ searchParams }: AuthorizePage
         </div>
       </div>
     </div>
+  );
+}
+
+export default async function OAuthAuthorizePage({ searchParams }: AuthorizePageProps) {
+  const params = await searchParams;
+  const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, resource } = params;
+
+  const supabase = await createServerSupabaseClient();
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    const fullQuery = new URLSearchParams(params as Record<string, string>).toString();
+    redirect(`/login?redirectedFrom=/oauth/authorize?${fullQuery}`);
+  }
+
+  const paramError = validateOAuthRequestParams(params);
+  if (paramError) return paramError;
+
+  const clientId = client_id!;
+  const redirectUri = redirect_uri!;
+  const codeChallenge = code_challenge!;
+
+  const validation = await validateOAuthClient(clientId, redirectUri);
+  if (!validation.valid) {
+    return (
+      <OAuthErrorView title="Client Verification Failed">
+        <p className="text-sm text-zinc-400 mb-2">{validation.error}</p>
+        <div className="bg-zinc-950/60 p-3 rounded-lg text-xs font-mono text-zinc-400 break-all">
+          client_id: {clientId}
+          <br />
+          redirect_uri: {redirectUri}
+        </div>
+      </OAuthErrorView>
+    );
+  }
+
+  const requestedScopesList = (scope ? scope.split(' ') : [...MCP_SCOPES])
+    .map((s) => s.trim())
+    .filter((s): s is McpScope => MCP_SCOPES.includes(s as McpScope));
+  const scopesToDisplay = requestedScopesList.length > 0 ? requestedScopesList : [...MCP_SCOPES];
+
+  return (
+    <OAuthConsentCard
+      clientId={clientId}
+      clientName={validation.clientName}
+      redirectUri={redirectUri}
+      codeChallenge={codeChallenge}
+      codeChallengeMethod={code_challenge_method}
+      state={state}
+      resource={resource}
+      userEmail={session.user.email}
+      scopesToDisplay={scopesToDisplay}
+    />
   );
 }

@@ -55,7 +55,8 @@ function formatTokenResponse(
 
 async function handleAuthorizationCodeGrant(body: Record<string, string>, clientId: string, origin: string | null) {
   const { code, code_verifier: codeVerifier, redirect_uri: redirectUri, resource } = body;
-  if (!code || !codeVerifier || !redirectUri) {
+  const hasRequired = Boolean(code && codeVerifier && redirectUri);
+  if (!hasRequired) {
     return corsJson(
       { error: 'invalid_request', error_description: 'code, code_verifier (PKCE S256), and redirect_uri are required.' },
       400,
@@ -75,27 +76,37 @@ async function handleRefreshTokenGrant(body: Record<string, string>, clientId: s
   return formatTokenResponse(tokens, origin);
 }
 
-export async function POST(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+async function dispatchTokenGrant(grantType: string, body: Record<string, string>, clientId: string, origin: string | null) {
+  if (grantType === 'authorization_code') return handleAuthorizationCodeGrant(body, clientId, origin);
+  if (grantType === 'refresh_token') return handleRefreshTokenGrant(body, clientId, origin);
+  return corsJson({ error: 'unsupported_grant_type', error_description: `Unsupported grant_type: ${grantType}` }, 400, origin);
+}
 
+async function validateTokenRequest(request: NextRequest, origin: string | null) {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   const { success, retryAfter } = await checkMcpRateLimit(ip, 'oauth');
-  if (!success) return corsJson({ error: 'rate_limit_exceeded', retryAfter }, 429, origin);
+  if (!success) return { error: corsJson({ error: 'rate_limit_exceeded', retryAfter }, 429, origin) };
 
   const body = await parseTokenRequestBody(request);
   if (!body) {
-    return corsJson({ error: 'invalid_request', error_description: 'Malformed JSON payload.' }, 400, origin);
+    return { error: corsJson({ error: 'invalid_request', error_description: 'Malformed JSON payload.' }, 400, origin) };
   }
 
   const { grant_type: grantType, client_id: clientId } = body;
   if (!grantType || !clientId) {
-    return corsJson({ error: 'invalid_request', error_description: 'grant_type and client_id are required.' }, 400, origin);
+    return { error: corsJson({ error: 'invalid_request', error_description: 'grant_type and client_id are required.' }, 400, origin) };
   }
 
+  return { body, grantType, clientId };
+}
+
+export async function POST(request: NextRequest) {
+  const origin = request.headers.get('origin');
+  const validated = await validateTokenRequest(request, origin);
+  if (validated.error) return validated.error;
+
   try {
-    if (grantType === 'authorization_code') return await handleAuthorizationCodeGrant(body, clientId, origin);
-    if (grantType === 'refresh_token') return await handleRefreshTokenGrant(body, clientId, origin);
-    return corsJson({ error: 'unsupported_grant_type', error_description: `Unsupported grant_type: ${grantType}` }, 400, origin);
+    return await dispatchTokenGrant(validated.grantType, validated.body, validated.clientId, origin);
   } catch (err: any) {
     return corsJson({ error: 'invalid_grant', error_description: err.message }, 400, origin);
   }
