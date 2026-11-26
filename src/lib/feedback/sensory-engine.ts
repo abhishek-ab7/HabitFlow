@@ -139,6 +139,17 @@ function getOrCreateAudioContext(): AudioContext | null {
   }
 }
 
+function primeSilentAudioBuffer(ctx: AudioContext): void {
+  if (audioUnlocked) return;
+  if (typeof ctx.createBuffer !== 'function' || typeof ctx.createBufferSource !== 'function') return;
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+  audioUnlocked = true;
+}
+
 export function unlockAudio(): boolean {
   const ctx = getOrCreateAudioContext();
   if (!ctx) return false;
@@ -146,14 +157,7 @@ export function unlockAudio(): boolean {
     if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
       void ctx.resume().catch(() => undefined);
     }
-    if (!audioUnlocked && typeof ctx.createBuffer === 'function' && typeof ctx.createBufferSource === 'function') {
-      const buffer = ctx.createBuffer(1, 1, 22050);
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      source.start(0);
-      audioUnlocked = true;
-    }
+    primeSilentAudioBuffer(ctx);
     return true;
   } catch {
     return false;
@@ -196,13 +200,47 @@ function scheduleTone(ctx: AudioContext, baseTime: number, spec: ToneSpec): void
   }
 }
 
-export function playSound(
-  type: SensoryEventType,
-  options?: { isOn?: boolean }
-): void {
-  const prefs = getSensoryPreferences();
-  if (!prefs.soundEnabled) return;
+const SOUND_SEQUENCES: Record<Exclude<SensoryEventType, 'toggle'>, ToneSpec[]> = {
+  tap: [{ fromFreq: 880, toFreq: 520, durationSec: 0.028, gainLevel: 0.14, type: 'triangle' }],
+  complete: [
+    { fromFreq: 523.25, startOffsetSec: 0, durationSec: 0.075, gainLevel: 0.2, type: 'triangle' },
+    { fromFreq: 783.99, startOffsetSec: 0.06, durationSec: 0.08, gainLevel: 0.24, type: 'sine' },
+  ],
+  uncheck: [{ fromFreq: 580, toFreq: 390, durationSec: 0.065, gainLevel: 0.15, type: 'sine' }],
+  success: [
+    { fromFreq: 523.25, startOffsetSec: 0, durationSec: 0.085, gainLevel: 0.19, type: 'triangle' },
+    { fromFreq: 659.25, startOffsetSec: 0.065, durationSec: 0.095, gainLevel: 0.2, type: 'triangle' },
+    { fromFreq: 783.99, startOffsetSec: 0.13, durationSec: 0.11, gainLevel: 0.23, type: 'sine' },
+  ],
+  milestone: [
+    { fromFreq: 523.25, startOffsetSec: 0, durationSec: 0.09, gainLevel: 0.2, type: 'triangle' },
+    { fromFreq: 659.25, startOffsetSec: 0.08, durationSec: 0.09, gainLevel: 0.21, type: 'triangle' },
+    { fromFreq: 783.99, startOffsetSec: 0.16, durationSec: 0.1, gainLevel: 0.22, type: 'sine' },
+    { fromFreq: 1046.5, startOffsetSec: 0.24, durationSec: 0.13, gainLevel: 0.26, type: 'sine' },
+  ],
+  warning: [
+    { fromFreq: 330, startOffsetSec: 0, durationSec: 0.055, gainLevel: 0.18, type: 'triangle' },
+    { fromFreq: 260, startOffsetSec: 0.075, durationSec: 0.065, gainLevel: 0.18, type: 'triangle' },
+  ],
+  error: [
+    { fromFreq: 240, startOffsetSec: 0, durationSec: 0.075, gainLevel: 0.22, type: 'triangle' },
+    { fromFreq: 180, startOffsetSec: 0.095, durationSec: 0.085, gainLevel: 0.24, type: 'triangle' },
+  ],
+  coin: [
+    { fromFreq: 1318.51, startOffsetSec: 0, durationSec: 0.075, gainLevel: 0.19, type: 'triangle' },
+    { fromFreq: 1975.53, startOffsetSec: 0.055, durationSec: 0.11, gainLevel: 0.22, type: 'sine' },
+  ],
+};
 
+function resolveToneSpecs(type: SensoryEventType, isOn?: boolean): ToneSpec[] {
+  if (type !== 'toggle') return SOUND_SEQUENCES[type];
+  return isOn === false
+    ? [{ fromFreq: 760, toFreq: 480, durationSec: 0.045, gainLevel: 0.16, type: 'sine' }]
+    : [{ fromFreq: 620, toFreq: 940, durationSec: 0.045, gainLevel: 0.18, type: 'triangle' }];
+}
+
+export function playSound(type: SensoryEventType, options?: { isOn?: boolean }): void {
+  if (!getSensoryPreferences().soundEnabled) return;
   const ctx = getOrCreateAudioContext();
   if (!ctx) return;
 
@@ -211,163 +249,7 @@ export function playSound(
       void ctx.resume().catch(() => undefined);
     }
     const now = ctx.currentTime;
-
-    switch (type) {
-      case 'tap':
-        scheduleTone(ctx, now, {
-          fromFreq: 880,
-          toFreq: 520,
-          durationSec: 0.028,
-          gainLevel: 0.14,
-          type: 'triangle',
-        });
-        break;
-      case 'toggle':
-        if (options?.isOn === false) {
-          scheduleTone(ctx, now, {
-            fromFreq: 760,
-            toFreq: 480,
-            durationSec: 0.045,
-            gainLevel: 0.16,
-            type: 'sine',
-          });
-        } else {
-          scheduleTone(ctx, now, {
-            fromFreq: 620,
-            toFreq: 940,
-            durationSec: 0.045,
-            gainLevel: 0.18,
-            type: 'triangle',
-          });
-        }
-        break;
-      case 'complete':
-        scheduleTone(ctx, now, {
-          fromFreq: 523.25,
-          startOffsetSec: 0,
-          durationSec: 0.075,
-          gainLevel: 0.2,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 783.99,
-          startOffsetSec: 0.06,
-          durationSec: 0.08,
-          gainLevel: 0.24,
-          type: 'sine',
-        });
-        break;
-      case 'uncheck':
-        scheduleTone(ctx, now, {
-          fromFreq: 580,
-          toFreq: 390,
-          durationSec: 0.065,
-          gainLevel: 0.15,
-          type: 'sine',
-        });
-        break;
-      case 'success':
-        scheduleTone(ctx, now, {
-          fromFreq: 523.25,
-          startOffsetSec: 0,
-          durationSec: 0.085,
-          gainLevel: 0.19,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 659.25,
-          startOffsetSec: 0.065,
-          durationSec: 0.095,
-          gainLevel: 0.2,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 783.99,
-          startOffsetSec: 0.13,
-          durationSec: 0.11,
-          gainLevel: 0.23,
-          type: 'sine',
-        });
-        break;
-      case 'milestone':
-        scheduleTone(ctx, now, {
-          fromFreq: 523.25,
-          startOffsetSec: 0,
-          durationSec: 0.09,
-          gainLevel: 0.2,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 659.25,
-          startOffsetSec: 0.08,
-          durationSec: 0.09,
-          gainLevel: 0.21,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 783.99,
-          startOffsetSec: 0.16,
-          durationSec: 0.1,
-          gainLevel: 0.22,
-          type: 'sine',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 1046.5,
-          startOffsetSec: 0.24,
-          durationSec: 0.13,
-          gainLevel: 0.26,
-          type: 'sine',
-        });
-        break;
-      case 'warning':
-        scheduleTone(ctx, now, {
-          fromFreq: 330,
-          startOffsetSec: 0,
-          durationSec: 0.055,
-          gainLevel: 0.18,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 260,
-          startOffsetSec: 0.075,
-          durationSec: 0.065,
-          gainLevel: 0.18,
-          type: 'triangle',
-        });
-        break;
-      case 'error':
-        scheduleTone(ctx, now, {
-          fromFreq: 240,
-          startOffsetSec: 0,
-          durationSec: 0.075,
-          gainLevel: 0.22,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 180,
-          startOffsetSec: 0.095,
-          durationSec: 0.085,
-          gainLevel: 0.24,
-          type: 'triangle',
-        });
-        break;
-      case 'coin':
-        scheduleTone(ctx, now, {
-          fromFreq: 1318.51,
-          startOffsetSec: 0,
-          durationSec: 0.075,
-          gainLevel: 0.19,
-          type: 'triangle',
-        });
-        scheduleTone(ctx, now, {
-          fromFreq: 1975.53,
-          startOffsetSec: 0.055,
-          durationSec: 0.11,
-          gainLevel: 0.22,
-          type: 'sine',
-        });
-        break;
-    }
+    resolveToneSpecs(type, options?.isOn).forEach((spec) => scheduleTone(ctx, now, spec));
   } catch {
     // Non-blocking
   }

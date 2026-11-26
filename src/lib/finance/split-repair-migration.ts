@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import type { FinanceTransaction } from '@/lib/types';
+import type { DebtRecord, FinanceAccount, FinanceTransaction } from '@/lib/types';
 
 export interface SplitRepairResult {
   repairedCount: number;
@@ -58,253 +58,255 @@ export function deriveRepairedSplitLegId(splitGroupId: string): string {
 export function parseSplitNote(notes: string): { friendName: string; amount: number } | null {
   if (!notes) return null;
 
-  // Regex pattern matching:
-  // Optional "Split with <Name> ("
-  // Optional "Your share: ₹..., "
-  // Optional "<Name> " before "owes:"
-  // "owes: ₹<amount>"
   const match = notes.match(
     /(?:Split with\s+([^(]+?)\s*\()?(?:Your share:\s*[^,]+,\s*)?(?:([\p{L}\p{M}\p{N} '._-]+?)\s+)?owes:\s*[^\d]*([\d,]+(?:\.\d+)?)/iu
   );
-
   if (!match) return null;
 
   const friendName = (match[1] || match[2] || 'Friend').trim();
-  const rawAmount = match[3]?.replace(/,/g, '');
-  const amount = rawAmount ? parseFloat(rawAmount) : 0;
-
-  if (isNaN(amount) || amount <= 0) return null;
-
-  return { friendName, amount };
+  const amount = match[3] ? parseFloat(match[3].replace(/,/g, '')) : 0;
+  return !isNaN(amount) && amount > 0 ? { friendName, amount } : null;
 }
 
-/**
- * Idempotently scans for legacy single-legged split transactions in Dexie and creates the
- * missing friend-share leg on the same account/card under EMIs & Debt ('Friend Split').
- *
- * CRITICAL SAFETY:
- * Does NOT alter `financeAccounts.balance` because the legacy code already deducted
- * `friendPortion` from the balance. Adding the transaction record in Dexie restores
- * ledger integrity and unbilled credit card spend without double-deduction.
- *
- * ROBUSTNESS GUARANTEE:
- * Inspects all transactions (including soft-deleted records) for each splitGroupId.
- * If a split group already had multiple legs (or a leg was explicitly deleted by the user),
- * it is NEVER touched.
- */
-export async function repairLegacySplitTransactions(
-  userId: string,
-  syncCardStatementsFn?: (cardId: string) => Promise<void>
-): Promise<SplitRepairResult> {
-  const result: SplitRepairResult = {
-    repairedCount: 0,
-    affectedCardIds: [],
-  };
+async function fetchWithUserFallback<T>(
+  queryByUser: () => Promise<T[]>,
+  queryAll: () => Promise<T[]>
+): Promise<T[]> {
+  const scoped = await queryByUser();
+  return scoped.length > 0 ? scoped : queryAll();
+}
 
-  if (!userId) return result;
+function sortDuplicateBucket(bucket: FinanceTransaction[], canonicalId: string): FinanceTransaction[] {
+  return [...bucket].sort((a, b) => {
+    if (a.id === canonicalId && b.id !== canonicalId) return -1;
+    if (b.id === canonicalId && a.id !== canonicalId) return 1;
+    return (a.createdAt || '').localeCompare(b.createdAt || '') || a.id.localeCompare(b.id);
+  });
+}
 
-  // 1. Fetch all transactions for user that belong to a split group (including soft-deleted)
-  let allSplitTxs = await db.financeTransactions
-    .where('userId')
-    .equals(userId)
-    .filter((t) => !!t.splitGroupId)
-    .toArray();
-
-  if (allSplitTxs.length === 0) {
-    allSplitTxs = await db.financeTransactions
-      .filter((t) => !!t.splitGroupId)
-      .toArray();
+function collectDuplicateLegsBySignature(activeRepaired: FinanceTransaction[]): FinanceTransaction[][] {
+  const bySig = new Map<string, FinanceTransaction[]>();
+  for (const t of activeRepaired) {
+    const sig = `${t.amount}_${t.accountId}_${t.date}`;
+    const bucket = bySig.get(sig) || [];
+    bucket.push(t);
+    bySig.set(sig, bucket);
   }
+  return Array.from(bySig.values()).filter((bucket) => bucket.length > 1);
+}
 
-  if (allSplitTxs.length === 0) return result;
+async function softDeleteLeg(params: { dup: FinanceTransaction; now: string }): Promise<void> {
+  const { dup, now } = params;
+  await db.financeTransactions.update(dup.id, {
+    deletedAt: now,
+    isDirty: true,
+    generationCounter: (dup.generationCounter || 1) + 1,
+    updatedAt: now,
+  });
+}
 
-  // 2. Group by splitGroupId
+async function softDeleteDuplicateRepairedLegs(params: {
+  splitGroupId: string;
+  groupTxs: FinanceTransaction[];
+  now: string;
+}): Promise<void> {
+  const { splitGroupId, groupTxs, now } = params;
+  if (groupTxs.length <= 2) return;
+  const activeRepaired = groupTxs.filter(
+    (t) => !t.deletedAt && t.notes?.includes('(repaired)') && t.tags?.includes('friend-share')
+  );
+  if (activeRepaired.length <= 1) return;
+
+  const canonicalId = deriveRepairedSplitLegId(splitGroupId);
+  const duplicatesToDelete = collectDuplicateLegsBySignature(activeRepaired).flatMap((bucket) =>
+    sortDuplicateBucket(bucket, canonicalId).slice(1)
+  );
+  for (const dup of duplicatesToDelete) {
+    await softDeleteLeg({ dup, now });
+  }
+}
+
+function isEligibleLegacySingleSplit(singleTx: FinanceTransaction): boolean {
+  if (singleTx.deletedAt || singleTx.type !== 'expense') return false;
+  if (singleTx.tags?.includes('multi-split') || singleTx.tags?.includes('friend-share')) return false;
+  return !singleTx.notes?.includes('(repaired)');
+}
+
+function findMatchingEverydayDebt(singleTx: FinanceTransaction, userDebts: DebtRecord[]): DebtRecord | undefined {
+  const tagSet = new Set((singleTx.tags || []).map((t) => t.toLowerCase()));
+  return userDebts.find(
+    (d) => d.bucketType === 'everyday_split' && d.startDate === singleTx.date && tagSet.has(d.personName.toLowerCase())
+  );
+}
+
+function resolveFriendSplitDetails(
+  singleTx: FinanceTransaction,
+  userDebts: DebtRecord[]
+): { friendName: string; friendAmount: number } | null {
+  const parsed = singleTx.notes ? parseSplitNote(singleTx.notes) : null;
+  if (parsed && parsed.amount > 0) {
+    return { friendName: parsed.friendName, friendAmount: parsed.amount };
+  }
+  if (!singleTx.tags?.includes('split')) return null;
+
+  const matchingDebt = findMatchingEverydayDebt(singleTx, userDebts);
+  if (!matchingDebt || matchingDebt.principalAmount <= 0) return null;
+  return { friendName: matchingDebt.personName, friendAmount: matchingDebt.principalAmount };
+}
+
+function buildRepairedFriendTx(params: {
+  singleTx: FinanceTransaction;
+  splitGroupId: string;
+  friendName: string;
+  friendAmount: number;
+  debtCatId: string;
+  now: string;
+}): FinanceTransaction {
+  const { singleTx, splitGroupId, friendName, friendAmount, debtCatId, now } = params;
+  return {
+    id: deriveRepairedSplitLegId(splitGroupId),
+    userId: singleTx.userId,
+    title: `${friendName}'s Share: ${singleTx.title.replace(/^Split with .*?:\s*/, '')}`,
+    amount: friendAmount,
+    type: 'expense',
+    categoryId: debtCatId,
+    subcategory: 'Friend Split',
+    accountId: singleTx.accountId,
+    date: singleTx.date,
+    monthKey: singleTx.monthKey || singleTx.date.slice(0, 7),
+    notes: `Friend split portion for ${friendName} (repaired) · ${singleTx.title}`,
+    tags: Array.from(new Set([...(singleTx.tags || []), 'split', friendName.toLowerCase(), 'friend-share'])),
+    isRecurring: false,
+    recurrenceRule: undefined,
+    linkedCommitmentId: null,
+    commitmentContributionType: null,
+    linkedDebtId: null,
+    linkedDebtInstallmentId: null,
+    linkedEmiId: null,
+    linkedSipId: null,
+    statementCycleKey: singleTx.statementCycleKey || null,
+    paidStatementId: null,
+    isCreditCardPayment: false,
+    merchantName: singleTx.merchantName,
+    rawMerchant: singleTx.rawMerchant,
+    needsReview: false,
+    splitGroupId,
+    isDirty: true,
+    generationCounter: 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function groupTransactionsBySplitId(txs: FinanceTransaction[]): Map<string, FinanceTransaction[]> {
   const groups = new Map<string, FinanceTransaction[]>();
-  for (const tx of allSplitTxs) {
+  for (const tx of txs) {
     if (!tx.splitGroupId) continue;
     const list = groups.get(tx.splitGroupId) || [];
     list.push(tx);
     groups.set(tx.splitGroupId, list);
   }
+  return groups;
+}
 
-  // 3. Find user accounts, categories, and debts for lookups
-  let userAccounts = await db.financeAccounts
-    .where('userId')
-    .equals(userId)
-    .filter((a) => !a.deletedAt)
-    .toArray();
-
-  if (userAccounts.length === 0) {
-    userAccounts = await db.financeAccounts.filter((a) => !a.deletedAt).toArray();
-  }
-
-  let userCategories = await db.financeCategories
-    .where('userId')
-    .equals(userId)
-    .filter((c) => !c.deletedAt)
-    .toArray();
-
-  if (userCategories.length === 0) {
-    userCategories = await db.financeCategories.filter((c) => !c.deletedAt).toArray();
-  }
-
-  let userDebts = await db.debtRecords
-    .where('userId')
-    .equals(userId)
-    .filter((d) => !d.deletedAt)
-    .toArray();
-
-  if (userDebts.length === 0) {
-    userDebts = await db.debtRecords.filter((d) => !d.deletedAt).toArray();
-  }
-
+async function loadSplitRepairDependencies(userId: string) {
+  const userAccounts = await fetchWithUserFallback(
+    () => db.financeAccounts.where('userId').equals(userId).filter((a) => !a.deletedAt).toArray(),
+    () => db.financeAccounts.filter((a) => !a.deletedAt).toArray()
+  );
+  const userCategories = await fetchWithUserFallback(
+    () => db.financeCategories.where('userId').equals(userId).filter((c) => !c.deletedAt).toArray(),
+    () => db.financeCategories.filter((c) => !c.deletedAt).toArray()
+  );
+  const userDebts = await fetchWithUserFallback(
+    () => db.debtRecords.where('userId').equals(userId).filter((d) => !d.deletedAt).toArray(),
+    () => db.debtRecords.filter((d) => !d.deletedAt).toArray()
+  );
   const debtCat =
     userCategories.find((c) => c.slug === 'emis-debt-repayment') ||
     userCategories.find((c) => c.name.toLowerCase().includes('debt') || c.name.toLowerCase().includes('emi')) ||
     userCategories[0];
 
+  return { userAccounts, userDebts, debtCatId: debtCat?.id };
+}
+
+async function processSingleSplitGroup(params: {
+  splitGroupId: string;
+  groupTxs: FinanceTransaction[];
+  userAccounts: FinanceAccount[];
+  userDebts: DebtRecord[];
+  fallbackDebtCatId?: string;
+  now: string;
+}): Promise<{ repaired: boolean; cardAccountId?: string }> {
+  const { splitGroupId, groupTxs, userAccounts, userDebts, fallbackDebtCatId, now } = params;
+  await softDeleteDuplicateRepairedLegs({ splitGroupId, groupTxs, now });
+  if (groupTxs.length !== 1) return { repaired: false };
+
+  const singleTx = groupTxs[0];
+  if (!isEligibleLegacySingleSplit(singleTx)) return { repaired: false };
+
+  const details = resolveFriendSplitDetails(singleTx, userDebts);
+  if (!details) return { repaired: false };
+
+  const account = userAccounts.find((a) => a.id === singleTx.accountId) || (await db.financeAccounts.get(singleTx.accountId));
+  const friendTx = buildRepairedFriendTx({
+    singleTx,
+    splitGroupId,
+    friendName: details.friendName,
+    friendAmount: details.friendAmount,
+    debtCatId: fallbackDebtCatId || singleTx.categoryId,
+    now,
+  });
+
+  await db.financeTransactions.put(friendTx);
+  return {
+    repaired: true,
+    cardAccountId: account?.type === 'credit_card' ? account.id : undefined,
+  };
+}
+
+async function syncAffectedCards(
+  affectedCardIds: string[],
+  syncCardStatementsFn?: (cardId: string) => Promise<void>
+): Promise<void> {
+  if (!syncCardStatementsFn) return;
+  for (const cardId of affectedCardIds) {
+    await syncCardStatementsFn(cardId);
+  }
+}
+
+export async function repairLegacySplitTransactions(
+  userId: string,
+  syncCardStatementsFn?: (cardId: string) => Promise<void>
+): Promise<SplitRepairResult> {
+  if (!userId) return { repairedCount: 0, affectedCardIds: [] };
+
+  const allSplitTxs = await fetchWithUserFallback(
+    () => db.financeTransactions.where('userId').equals(userId).filter((t) => Boolean(t.splitGroupId)).toArray(),
+    () => db.financeTransactions.filter((t) => Boolean(t.splitGroupId)).toArray()
+  );
+  if (allSplitTxs.length === 0) return { repairedCount: 0, affectedCardIds: [] };
+
+  const groups = groupTransactionsBySplitId(allSplitTxs);
+  const { userAccounts, userDebts, debtCatId } = await loadSplitRepairDependencies(userId);
   const affectedCardSet = new Set<string>();
   const now = new Date().toISOString();
+  let repairedCount = 0;
 
   for (const [splitGroupId, groupTxs] of groups.entries()) {
-    // If duplicate `(repaired)` friend-share legs exist from prior non-deterministic runs,
-    // soft-delete redundant extras without altering account balances.
-    if (groupTxs.length > 2) {
-      const activeRepaired = groupTxs.filter(
-        (t) => !t.deletedAt && t.notes?.includes('(repaired)') && t.tags?.includes('friend-share')
-      );
-      if (activeRepaired.length > 1) {
-        const canonicalId = deriveRepairedSplitLegId(splitGroupId);
-        const bySig = new Map<string, FinanceTransaction[]>();
-        for (const t of activeRepaired) {
-          const sig = `${t.amount}_${t.accountId}_${t.date}`;
-          const bucket = bySig.get(sig) || [];
-          bucket.push(t);
-          bySig.set(sig, bucket);
-        }
-        for (const bucket of bySig.values()) {
-          if (bucket.length <= 1) continue;
-          bucket.sort((a, b) => {
-            if (a.id === canonicalId && b.id !== canonicalId) return -1;
-            if (b.id === canonicalId && a.id !== canonicalId) return 1;
-            return (a.createdAt || '').localeCompare(b.createdAt || '') || a.id.localeCompare(b.id);
-          });
-          for (const dup of bucket.slice(1)) {
-            await db.financeTransactions.update(dup.id, {
-              deletedAt: now,
-              isDirty: true,
-              generationCounter: (dup.generationCounter || 1) + 1,
-              updatedAt: now,
-            });
-          }
-        }
-      }
-    }
-
-    // A legacy split group ONLY ever had exactly 1 transaction created in history.
-    // If there is more than 1 transaction (active or deleted), this was already a multi-legged
-    // split or a repaired split, and must never be touched.
-    if (groupTxs.length !== 1) continue;
-
-    const singleTx = groupTxs[0];
-
-    // If the single transaction itself is deleted, do not resurrect it
-    if (singleTx.deletedAt) continue;
-
-    // A legacy split transaction was always an active user expense leg.
-    // If it's tagged 'friend-share' or 'multi-split', or already contains '(repaired)', skip.
-    if (
-      singleTx.type !== 'expense' ||
-      singleTx.tags?.includes('multi-split') ||
-      singleTx.tags?.includes('friend-share') ||
-      singleTx.notes?.includes('(repaired)')
-    ) {
-      continue;
-    }
-
-    let friendName: string | null = null;
-    let friendAmount: number | null = null;
-
-    const parsed = singleTx.notes ? parseSplitNote(singleTx.notes) : null;
-    if (parsed && parsed.amount > 0) {
-      friendName = parsed.friendName;
-      friendAmount = parsed.amount;
-    } else if (singleTx.tags?.includes('split')) {
-      // Fallback: look for everyday split debt matching date or friend tag
-      const matchingDebt = userDebts.find(
-        (d) =>
-          d.bucketType === 'everyday_split' &&
-          d.startDate === singleTx.date &&
-          singleTx.tags?.some((t) => t.toLowerCase() === d.personName.toLowerCase())
-      );
-      if (matchingDebt && matchingDebt.principalAmount > 0) {
-        friendName = matchingDebt.personName;
-        friendAmount = matchingDebt.principalAmount;
-      }
-    }
-
-    if (!friendName || !friendAmount || friendAmount <= 0) continue;
-
-    // Check account
-    const account =
-      userAccounts.find((a) => a.id === singleTx.accountId) ||
-      (await db.financeAccounts.get(singleTx.accountId));
-    const debtCatId = debtCat ? debtCat.id : singleTx.categoryId;
-
-    // Create the missing friend-share transaction with deterministic ID
-    const friendTx: FinanceTransaction = {
-      id: deriveRepairedSplitLegId(splitGroupId),
-      userId: singleTx.userId,
-      title: `${friendName}'s Share: ${singleTx.title.replace(/^Split with .*?:\s*/, '')}`,
-      amount: friendAmount,
-      type: 'expense',
-      categoryId: debtCatId,
-      subcategory: 'Friend Split',
-      accountId: singleTx.accountId,
-      date: singleTx.date,
-      monthKey: singleTx.monthKey || singleTx.date.slice(0, 7),
-      notes: `Friend split portion for ${friendName} (repaired) · ${singleTx.title}`,
-      tags: Array.from(
-        new Set([...(singleTx.tags || []), 'split', friendName.toLowerCase(), 'friend-share'])
-      ),
-      isRecurring: false,
-      recurrenceRule: undefined,
-      linkedCommitmentId: null,
-      commitmentContributionType: null,
-      linkedDebtId: null,
-      linkedDebtInstallmentId: null,
-      linkedEmiId: null,
-      linkedSipId: null,
-      statementCycleKey: singleTx.statementCycleKey || null,
-      paidStatementId: null,
-      isCreditCardPayment: false,
-      merchantName: singleTx.merchantName,
-      rawMerchant: singleTx.rawMerchant,
-      needsReview: false,
+    const outcome = await processSingleSplitGroup({
       splitGroupId,
-      isDirty: true,
-      generationCounter: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    // IMPORTANT: Add transaction to Dexie WITHOUT altering financeAccounts.balance
-    // because legacy code already deducted friendPortion from account.balance.
-    await db.financeTransactions.put(friendTx);
-    result.repairedCount++;
-
-    if (account?.type === 'credit_card') {
-      affectedCardSet.add(account.id);
-    }
+      groupTxs,
+      userAccounts,
+      userDebts,
+      fallbackDebtCatId: debtCatId,
+      now,
+    });
+    if (outcome.repaired) repairedCount++;
+    if (outcome.cardAccountId) affectedCardSet.add(outcome.cardAccountId);
   }
 
-  result.affectedCardIds = Array.from(affectedCardSet);
-
-  if (syncCardStatementsFn && result.affectedCardIds.length > 0) {
-    for (const cardId of result.affectedCardIds) {
-      await syncCardStatementsFn(cardId);
-    }
-  }
-
-  return result;
+  const affectedCardIds = Array.from(affectedCardSet);
+  await syncAffectedCards(affectedCardIds, syncCardStatementsFn);
+  return { repairedCount, affectedCardIds };
 }

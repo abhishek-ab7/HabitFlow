@@ -127,200 +127,75 @@ describe('life-os-aggregator', () => {
     expect(habitOnly.fitness.hasData).toBe(false);
   });
 
-  it('aggregates cross-domain Habits, Finance, and Fitness metrics accurately inside range boundaries', () => {
-    const habits: Habit[] = [
-      {
-        id: 'h1',
-        userId: 'u1',
-        name: 'Morning Run',
-        category: 'health',
-        frequencyType: 'daily',
-        targetDaysPerWeek: 7,
-        order: 0,
-        archived: false,
-        createdAt: '2026-10-01T00:00:00.000Z',
-      },
-    ];
+  function buildCrossDomainRangeFixtures() {
+    const habits: Habit[] = [{
+      id: 'h1', userId: 'u1', name: 'Morning Run', category: 'health', frequencyType: 'daily',
+      targetDaysPerWeek: 7, order: 0, archived: false, createdAt: '2026-10-01T00:00:00.000Z',
+    }];
     const completions: HabitCompletion[] = [
       { id: 'c1', userId: 'u1', habitId: 'h1', date: '2026-11-25', completed: true },
       { id: 'c2', userId: 'u1', habitId: 'h1', date: '2026-11-24', completed: true },
-      // Outside 7d window (Nov 19..Nov 25): should be excluded from 7d periodCompletions
       { id: 'c3', userId: 'u1', habitId: 'h1', date: '2026-11-10', completed: true },
     ];
-
-    const accounts: FinanceAccount[] = [
-      {
-        id: 'acc1',
-        userId: 'u1',
-        name: 'HDFC Bank',
-        type: 'bank',
-        balance: 50000,
-        currency: 'INR',
-        color: '#2563eb',
-        icon: 'bank',
-        isDefault: true,
-        archived: false,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-11-25T00:00:00.000Z',
-      },
-    ];
-
-    const categories: FinanceCategory[] = [
-      {
-        id: 'cat-food',
-        userId: 'u1',
-        name: 'Food & Dining',
-        slug: 'food-dining',
-        type: 'expense',
-        icon: 'utensils',
-        color: '#f97316',
-        monthlyBudgetLimit: 10000,
-        subcategories: [],
-        order: 1,
-        isSystem: true,
-        archived: false,
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-      },
-    ];
-
+    const accounts: FinanceAccount[] = [{
+      id: 'acc1', userId: 'u1', name: 'HDFC Bank', type: 'bank', balance: 50000, currency: 'INR',
+      color: '#2563eb', icon: 'bank', isDefault: true, archived: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-11-25T00:00:00.000Z',
+    }];
+    const categories: FinanceCategory[] = [{
+      id: 'cat-food', userId: 'u1', name: 'Food & Dining', slug: 'food-dining', type: 'expense',
+      icon: 'utensils', color: '#f97316', monthlyBudgetLimit: 10000, subcategories: [], order: 1,
+      isSystem: true, archived: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    }];
     const transactions: FinanceTransaction[] = [
       {
-        id: 't1',
-        userId: 'u1',
-        title: 'Salary',
-        amount: 80000,
-        type: 'income',
-        categoryId: 'cat-inc',
-        accountId: 'acc1',
-        date: '2026-11-20',
-        monthKey: '2026-11',
-        tags: [],
-        isRecurring: true,
-        createdAt: '2026-11-20T00:00:00.000Z',
-        updatedAt: '2026-11-20T00:00:00.000Z',
+        id: 't1', userId: 'u1', title: 'Salary', amount: 80000, type: 'income', categoryId: 'cat-inc',
+        accountId: 'acc1', date: '2026-11-20', monthKey: '2026-11', tags: [], isRecurring: true,
+        createdAt: '2026-11-20T00:00:00.000Z', updatedAt: '2026-11-20T00:00:00.000Z',
       },
       {
-        id: 't2',
-        userId: 'u1',
-        title: 'Swiggy Dinner',
-        amount: 500,
-        type: 'expense',
-        categoryId: 'cat-food',
-        accountId: 'acc1',
-        date: '2026-11-25',
-        monthKey: '2026-11',
-        tags: [],
-        isRecurring: false,
-        createdAt: '2026-11-25T00:00:00.000Z',
-        updatedAt: '2026-11-25T00:00:00.000Z',
+        id: 't2', userId: 'u1', title: 'Swiggy Dinner', amount: 500, type: 'expense', categoryId: 'cat-food',
+        accountId: 'acc1', date: '2026-11-25', monthKey: '2026-11', tags: [], isRecurring: false,
+        createdAt: '2026-11-25T00:00:00.000Z', updatedAt: '2026-11-25T00:00:00.000Z',
       },
       {
-        id: 't-old',
-        userId: 'u1',
-        title: 'Old Expense',
-        amount: 9999,
-        type: 'expense',
-        categoryId: 'cat-food',
-        accountId: 'acc1',
-        date: '2026-10-05',
-        monthKey: '2026-10',
-        tags: [],
-        isRecurring: false,
-        createdAt: '2026-10-05T00:00:00.000Z',
-        updatedAt: '2026-10-05T00:00:00.000Z',
+        id: 't-old', userId: 'u1', title: 'Old Expense', amount: 9999, type: 'expense', categoryId: 'cat-food',
+        accountId: 'acc1', date: '2026-10-05', monthKey: '2026-10', tags: [], isRecurring: false,
+        createdAt: '2026-10-05T00:00:00.000Z', updatedAt: '2026-10-05T00:00:00.000Z',
       },
     ];
-
     const dailyLogs: FitnessDailyLog[] = [
-      {
-        id: 'fl1',
-        userId: 'u1',
-        date: '2026-11-24',
-        weightKg: 74.2,
-        waistInches: 32.5,
-        waterMl: 3000,
-        steps: 9000,
-        sleepHours: 7.5,
-        createdAt: '2026-11-24T00:00:00.000Z',
-        updatedAt: '2026-11-24T00:00:00.000Z',
-      },
-      {
-        id: 'fl2',
-        userId: 'u1',
-        date: '2026-11-25',
-        weightKg: 74.0,
-        waterMl: 2800,
-        steps: 10000,
-        sleepHours: 8.0,
-        createdAt: '2026-11-25T00:00:00.000Z',
-        updatedAt: '2026-11-25T00:00:00.000Z',
-      },
+      { id: 'fl1', userId: 'u1', date: '2026-11-24', weightKg: 74.2, waistInches: 32.5, waterMl: 3000, steps: 9000, sleepHours: 7.5, createdAt: '2026-11-24T00:00:00.000Z', updatedAt: '2026-11-24T00:00:00.000Z' },
+      { id: 'fl2', userId: 'u1', date: '2026-11-25', weightKg: 74.0, waterMl: 2800, steps: 10000, sleepHours: 8.0, createdAt: '2026-11-25T00:00:00.000Z', updatedAt: '2026-11-25T00:00:00.000Z' },
     ];
+    const mealLogs: MealLog[] = [{
+      id: 'm1', userId: 'u1', date: '2026-11-25', mealType: 'lunch', name: 'Chicken + Rice',
+      calories: 520, proteinG: 42, carbsG: 45, fatG: 12, quantityMultiplier: 1, isJunk: false,
+      source: 'staple', loggedAt: '2026-11-25T13:00:00.000Z', createdAt: '2026-11-25T13:00:00.000Z', updatedAt: '2026-11-25T13:00:00.000Z',
+    }];
+    const workoutSessions: WorkoutSession[] = [{
+      id: 'w1', userId: 'u1', date: '2026-11-25', title: 'Push Day', workoutType: 'push', durationMinutes: 55,
+      exercises: [{ name: 'Bench Press', sets: [{ reps: 8, weightKg: 60 }] }], source: 'manual',
+      createdAt: '2026-11-25T08:00:00.000Z', updatedAt: '2026-11-25T08:00:00.000Z',
+    }];
+    return { habits, completions, accounts, categories, transactions, dailyLogs, mealLogs, workoutSessions };
+  }
 
-    const mealLogs: MealLog[] = [
-      {
-        id: 'm1',
-        userId: 'u1',
-        date: '2026-11-25',
-        mealType: 'lunch',
-        name: 'Chicken + Rice',
-        calories: 520,
-        proteinG: 42,
-        carbsG: 45,
-        fatG: 12,
-        quantityMultiplier: 1,
-        isJunk: false,
-        source: 'staple',
-        loggedAt: '2026-11-25T13:00:00.000Z',
-        createdAt: '2026-11-25T13:00:00.000Z',
-        updatedAt: '2026-11-25T13:00:00.000Z',
-      },
-    ];
-
-    const workoutSessions: WorkoutSession[] = [
-      {
-        id: 'w1',
-        userId: 'u1',
-        date: '2026-11-25',
-        title: 'Push Day',
-        workoutType: 'push',
-        durationMinutes: 55,
-        exercises: [{ name: 'Bench Press', sets: [{ reps: 8, weightKg: 60 }] }],
-        source: 'manual',
-        createdAt: '2026-11-25T08:00:00.000Z',
-        updatedAt: '2026-11-25T08:00:00.000Z',
-      },
-    ];
-
+  it('aggregates cross-domain Habits, Finance, and Fitness metrics accurately inside range boundaries', () => {
+    const fixtures = buildCrossDomainRangeFixtures();
     const snapshot = computeLifeOsAnalytics({
       range: '7d',
       referenceDate: FIXED_NOW,
       settings: { showFinance: true, showFitness: true, habitOnlyMode: false, weekStartsOn: 1 },
-      habits,
-      completions,
-      accounts,
-      categories,
-      transactions,
-      dailyLogs,
-      mealLogs,
-      workoutSessions,
+      ...fixtures,
     });
 
     expect(snapshot.habits.periodCompletions).toBe(2);
     expect(snapshot.habits.currentBestActiveStreak).toBe(2);
-
     expect(snapshot.finance.totalIncome).toBe(80000);
     expect(snapshot.finance.totalExpense).toBe(500);
     expect(snapshot.finance.discretionarySpend).toBe(500);
     expect(snapshot.finance.savingsRatePct).toBe(99);
-    expect(snapshot.finance.categorySpend[0]).toMatchObject({
-      categoryId: 'cat-food',
-      name: 'Food & Dining',
-      amount: 500,
-      sharePct: 100,
-    });
-
+    expect(snapshot.finance.categorySpend[0]).toMatchObject({ categoryId: 'cat-food', name: 'Food & Dining', amount: 500, sharePct: 100 });
     expect(snapshot.fitness.latestWeightKg).toBe(74.0);
     expect(snapshot.fitness.latestWaistInches).toBe(32.5);
     expect(snapshot.fitness.avgSteps).toBe(9500);
@@ -332,86 +207,23 @@ describe('life-os-aggregator', () => {
   });
 
   it('computes high-habit vs low-habit daily spend correlation inside the range', () => {
-    const habits: Habit[] = [
-      {
-        id: 'h1',
-        userId: 'u1',
-        name: 'Discipline',
-        category: 'health',
-        frequencyType: 'daily',
-        targetDaysPerWeek: 7,
-        order: 0,
-        archived: false,
-        createdAt: '2026-11-01T00:00:00.000Z',
-      },
-    ];
-    // High-habit days: Nov 25, Nov 24 (completed = true) -> spend ₹100 each
-    // Low-habit days: Nov 23, Nov 22, Nov 21, Nov 20, Nov 19 (completed = false) -> spend ₹600 on Nov 23, ₹400 on Nov 22
+    const habits: Habit[] = [{
+      id: 'h1', userId: 'u1', name: 'Discipline', category: 'health', frequencyType: 'daily',
+      targetDaysPerWeek: 7, order: 0, archived: false, createdAt: '2026-11-01T00:00:00.000Z',
+    }];
     const completions: HabitCompletion[] = [
       { id: 'c1', userId: 'u1', habitId: 'h1', date: '2026-11-25', completed: true },
       { id: 'c2', userId: 'u1', habitId: 'h1', date: '2026-11-24', completed: true },
     ];
+    const mkTx = (id: string, title: string, amount: number, date: string): FinanceTransaction => ({
+      id, userId: 'u1', title, amount, type: 'expense', categoryId: 'cat-food', accountId: 'acc1',
+      date, monthKey: '2026-11', tags: [], isRecurring: false, createdAt: `${date}T00:00:00.000Z`, updatedAt: `${date}T00:00:00.000Z`,
+    });
     const transactions: FinanceTransaction[] = [
-      {
-        id: 't1',
-        userId: 'u1',
-        title: 'Tea',
-        amount: 100,
-        type: 'expense',
-        categoryId: 'cat-food',
-        accountId: 'acc1',
-        date: '2026-11-25',
-        monthKey: '2026-11',
-        tags: [],
-        isRecurring: false,
-        createdAt: '2026-11-25T00:00:00.000Z',
-        updatedAt: '2026-11-25T00:00:00.000Z',
-      },
-      {
-        id: 't2',
-        userId: 'u1',
-        title: 'Fruit',
-        amount: 100,
-        type: 'expense',
-        categoryId: 'cat-food',
-        accountId: 'acc1',
-        date: '2026-11-24',
-        monthKey: '2026-11',
-        tags: [],
-        isRecurring: false,
-        createdAt: '2026-11-24T00:00:00.000Z',
-        updatedAt: '2026-11-24T00:00:00.000Z',
-      },
-      {
-        id: 't3',
-        userId: 'u1',
-        title: 'Takeout',
-        amount: 600,
-        type: 'expense',
-        categoryId: 'cat-food',
-        accountId: 'acc1',
-        date: '2026-11-23',
-        monthKey: '2026-11',
-        tags: [],
-        isRecurring: false,
-        createdAt: '2026-11-23T00:00:00.000Z',
-        updatedAt: '2026-11-23T00:00:00.000Z',
-      },
-      {
-        id: 't4',
-        userId: 'u1',
-        title: 'Snacks',
-        amount: 400,
-        type: 'expense',
-        categoryId: 'cat-food',
-        accountId: 'acc1',
-        date: '2026-11-22',
-        monthKey: '2026-11',
-        tags: [],
-        isRecurring: false,
-        createdAt: '2026-11-22T00:00:00.000Z',
-        updatedAt: '2026-11-22T00:00:00.000Z',
-      },
+      mkTx('t1', 'Tea', 100, '2026-11-25'),
+      mkTx('t2', 'Fruit', 100, '2026-11-24'),
+      mkTx('t3', 'Takeout', 600, '2026-11-23'),
+      mkTx('t4', 'Snacks', 400, '2026-11-22'),
     ];
 
     const result = computeLifeOsAnalytics({

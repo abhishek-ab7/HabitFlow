@@ -38,92 +38,45 @@ describe('Cross-Domain Interconnection Fixes (Client & Domain Engines)', () => {
   const nowIso = '2026-11-25T10:00:00.000Z';
 
   describe('Bug 1: Persisted paydayOfMonth in buildCashFlowForecast', () => {
-    it('shifts salary inflow to saved paydayOfMonth (7th) and exposes Dec 3-5 cash crunch', () => {
+    function buildPaydayForecastInputs() {
       const bank: FinanceAccount = {
-        id: 'acc-hdfc',
-        userId: 'u1',
-        name: 'HDFC Bank',
-        type: 'bank',
-        balance: 3000,
-        currency: 'INR',
-        color: '#10b981',
-        icon: 'Landmark',
-        isDefault: true,
-        archived: false,
-        createdAt: nowIso,
-        updatedAt: nowIso,
+        id: 'acc-hdfc', userId: 'u1', name: 'HDFC Bank', type: 'bank', balance: 3000, currency: 'INR',
+        color: '#10b981', icon: 'Landmark', isDefault: true, archived: false, createdAt: nowIso, updatedAt: nowIso,
       };
       const budget: FinanceBudget = {
-        id: 'b-nov',
-        userId: 'u1',
-        monthKey: '2026-11',
-        totalBudget: 15000,
-        expectedIncome: 19000,
-        paydayOfMonth: 7,
-        currency: 'INR',
-        createdAt: nowIso,
-        updatedAt: nowIso,
+        id: 'b-nov', userId: 'u1', monthKey: '2026-11', totalBudget: 15000, expectedIncome: 19000,
+        paydayOfMonth: 7, currency: 'INR', createdAt: nowIso, updatedAt: nowIso,
       };
       const emi: EmiTracker = {
-        id: 'emi-1',
-        userId: 'u1',
-        loanName: 'Phone EMI',
-        lenderName: 'Bajaj',
-        principalAmount: 12000,
-        interestRateAnnual: 0,
-        emiAmount: 2000,
-        tenureMonths: 6,
-        paidMonths: 1,
-        startDate: '2026-10-03',
-        billingDayOfMonth: 3,
-        categoryId: 'cat-emi',
-        autoCreateTaskReminder: false,
-        status: 'active',
-        createdAt: nowIso,
-        updatedAt: nowIso,
+        id: 'emi-1', userId: 'u1', loanName: 'Phone EMI', lenderName: 'Bajaj', principalAmount: 12000,
+        interestRateAnnual: 0, emiAmount: 2000, tenureMonths: 6, paidMonths: 1, startDate: '2026-10-03',
+        billingDayOfMonth: 3, categoryId: 'cat-emi', autoCreateTaskReminder: false, status: 'active',
+        createdAt: nowIso, updatedAt: nowIso,
       };
       const ccStmt: CreditCardStatement = {
-        id: 'cc-1_2026-11',
-        userId: 'u1',
-        accountId: 'acc-cc',
-        cycleKey: '2026-11',
-        periodStart: '2026-10-21',
-        periodEnd: '2026-11-20',
-        dueDate: '2026-12-05',
-        calculatedAmount: 5000,
-        manualAdjustment: 0,
-        totalDue: 5000,
-        carriedForwardAmount: 0,
-        paidAmount: 0,
-        remainingDue: 5000,
-        status: 'billed',
-        createdAt: nowIso,
-        updatedAt: nowIso,
+        id: 'cc-1_2026-11', userId: 'u1', accountId: 'acc-cc', cycleKey: '2026-11',
+        periodStart: '2026-10-21', periodEnd: '2026-11-20', dueDate: '2026-12-05',
+        calculatedAmount: 5000, manualAdjustment: 0, totalDue: 5000, carriedForwardAmount: 0,
+        paidAmount: 0, remainingDue: 5000, status: 'billed', createdAt: nowIso, updatedAt: nowIso,
       };
+      return { bank, budget, emi, ccStmt };
+    }
 
+    it('shifts salary inflow to saved paydayOfMonth (7th) and exposes Dec 3-5 cash crunch', () => {
+      const { bank, budget, emi, ccStmt } = buildPaydayForecastInputs();
       const forecast = buildCashFlowForecast({
-        accounts: [bank],
-        transactions: [],
-        budgets: [budget],
-        recurringBills: [],
-        emiTrackers: [emi],
-        sipPlans: [],
-        commitments: [],
-        creditCardStatements: [ccStmt],
-        horizonDays: 30,
-        includeDiscretionaryBurn: false,
-        referenceDate: '2026-11-28',
+        accounts: [bank], transactions: [], budgets: [budget], recurringBills: [], emiTrackers: [emi],
+        sipPlans: [], commitments: [], creditCardStatements: [ccStmt], horizonDays: 30,
+        includeDiscretionaryBurn: false, referenceDate: '2026-11-28',
       });
 
       expect(forecast.paydayOfMonth).toBe(7);
       expect(forecast.estimatedMonthlyIncome).toBe(19000);
-
       const dec1 = forecast.points.find((p) => p.dateStr === '2026-12-01');
       const dec5 = forecast.points.find((p) => p.dateStr === '2026-12-05');
       const dec7 = forecast.points.find((p) => p.dateStr === '2026-12-07');
-
       expect(dec1?.scheduledInflow).toBe(0);
-      expect(dec5?.projectedBalance).toBe(-4000); // 3000 - 2000 (Dec 3 EMI) - 5000 (Dec 5 CC)
+      expect(dec5?.projectedBalance).toBe(-4000);
       expect(forecast.crunchDate).toBe('2026-12-05');
       expect(dec7?.scheduledInflow).toBe(19000);
       expect(dec7?.projectedBalance).toBe(15000);
@@ -191,73 +144,40 @@ describe('Cross-Domain Interconnection Fixes (Client & Domain Engines)', () => {
       useHabitStore.setState({ habits: [], completions: [] });
     });
 
-    it('preserves streaks and reports isRestedToday for explicit Low-Energy rest days, and reverts only auto-rested rows', async () => {
+    async function seedLowEnergyHabitFixtures() {
       const gymHabit: Habit = {
-        id: 'hab-gym-1',
-        userId: 'u1',
-        name: 'Gym Workout',
-        icon: 'Dumbbell',
-        category: 'health',
-        targetDaysPerWeek: 4,
-        frequencyType: 'weekly_flexible',
-        anchorBlock: 'gym',
-        autoTrackRule: 'workout_logged',
-        polarity: 'build',
-        archived: false,
-        order: 0,
-        createdAt: '2026-11-01T00:00:00.000Z',
-        updatedAt: nowIso,
+        id: 'hab-gym-1', userId: 'u1', name: 'Gym Workout', icon: 'Dumbbell', category: 'health',
+        targetDaysPerWeek: 4, frequencyType: 'weekly_flexible', anchorBlock: 'gym',
+        autoTrackRule: 'workout_logged', polarity: 'build', archived: false, order: 0,
+        createdAt: '2026-11-01T00:00:00.000Z', updatedAt: nowIso,
       };
       const walkHabit: Habit = {
-        id: 'hab-walk-1',
-        userId: 'u1',
-        name: 'Morning Walk',
-        icon: 'Footprints',
-        category: 'health',
-        targetDaysPerWeek: 7,
-        frequencyType: 'daily',
-        anchorBlock: 'gym',
-        polarity: 'build',
-        archived: false,
-        order: 1,
-        createdAt: '2026-11-01T00:00:00.000Z',
-        updatedAt: nowIso,
+        id: 'hab-walk-1', userId: 'u1', name: 'Morning Walk', icon: 'Footprints', category: 'health',
+        targetDaysPerWeek: 7, frequencyType: 'daily', anchorBlock: 'gym', polarity: 'build',
+        archived: false, order: 1, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: nowIso,
       };
       await db.habits.bulkPut([gymHabit, walkHabit]);
-      // Walk habit already manually completed today -> must NOT be reverted
       const walkDone: HabitCompletion = {
-        id: 'comp-walk-today',
-        userId: 'u1',
-        habitId: walkHabit.id,
-        date: '2026-11-25',
-        completed: true,
-        status: 'completed',
-        generationCounter: 1,
-        updatedAt: nowIso,
+        id: 'comp-walk-today', userId: 'u1', habitId: walkHabit.id, date: '2026-11-25',
+        completed: true, status: 'completed', generationCounter: 1, updatedAt: nowIso,
       };
       const gymPrev: HabitCompletion = {
-        id: 'comp-gym-prev',
-        userId: 'u1',
-        habitId: gymHabit.id,
-        date: '2026-11-24',
-        completed: true,
-        status: 'completed',
-        generationCounter: 1,
-        updatedAt: nowIso,
+        id: 'comp-gym-prev', userId: 'u1', habitId: gymHabit.id, date: '2026-11-24',
+        completed: true, status: 'completed', generationCounter: 1, updatedAt: nowIso,
       };
       await db.completions.bulkPut([walkDone, gymPrev]);
-      useHabitStore.setState({
-        habits: [gymHabit, walkHabit],
-        completions: [walkDone, gymPrev],
-      });
+      useHabitStore.setState({ habits: [gymHabit, walkHabit], completions: [walkDone, gymPrev] });
+      return { gymHabit, walkHabit };
+    }
+
+    it('preserves streaks and reports isRestedToday for explicit Low-Energy rest days, and reverts only auto-rested rows', async () => {
+      const { gymHabit, walkHabit } = await seedLowEnergyHabitFixtures();
 
       const onRes = await useFitnessStore.getState().toggleLowEnergyMode('2026-11-25', true, 'u1');
       expect(onRes.lowEnergyMode).toBe(true);
       expect(onRes.restedHabitIds).toEqual([gymHabit.id]);
 
-      const gymComps = useHabitStore
-        .getState()
-        .completions.filter((c) => c.habitId === gymHabit.id);
+      const gymComps = useHabitStore.getState().completions.filter((c) => c.habitId === gymHabit.id);
       const refDate = new Date('2026-11-25T10:00:00');
       const weekProg = getHabitWeekProgress(gymHabit, gymComps, refDate);
       expect(weekProg.isRestedToday).toBe(true);
@@ -268,16 +188,11 @@ describe('Cross-Domain Interconnection Fixes (Client & Domain Engines)', () => {
       expect(offRes.lowEnergyMode).toBe(false);
       expect(offRes.restedHabitIds).toEqual([]);
 
-      const afterGymToday = useHabitStore
-        .getState()
-        .completions.find((c) => c.habitId === gymHabit.id && c.date === '2026-11-25');
+      const afterGymToday = useHabitStore.getState().completions.find((c) => c.habitId === gymHabit.id && c.date === '2026-11-25');
       expect(afterGymToday?.status).toBeUndefined();
       expect(afterGymToday?.skipped).toBe(false);
 
-      // Manually completed habit stayed completed
-      const afterWalkToday = useHabitStore
-        .getState()
-        .completions.find((c) => c.habitId === walkHabit.id && c.date === '2026-11-25');
+      const afterWalkToday = useHabitStore.getState().completions.find((c) => c.habitId === walkHabit.id && c.date === '2026-11-25');
       expect(afterWalkToday?.completed).toBe(true);
       expect(afterWalkToday?.status).toBe('completed');
     });

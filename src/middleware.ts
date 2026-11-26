@@ -3,61 +3,41 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { rateLimit, rateLimitResponse } from '@/lib/security/rate-limit';
 import { isSupabaseConfigured } from '@/lib/supabase/mock-client';
 
+const STATIC_EXACT_PATHS = new Set(['/manifest.json', '/sw.js']);
+const STATIC_PREFIXES = ['/icons/', '/.well-known/'];
+const STATIC_EXTENSIONS = /\.(?:ico|png|svg|jpg|jpeg|webp)$/i;
+const PUBLIC_ROUTES = ['/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout', '/.well-known'];
+
+function isStaticAssetRequest(pathname: string): boolean {
+  if (STATIC_EXACT_PATHS.has(pathname)) return true;
+  if (STATIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return true;
+  return STATIC_EXTENSIONS.test(pathname);
+}
+
+async function checkAuthRateLimit(request: NextRequest, pathname: string) {
+  const limit = pathname === '/login' ? 20 : 10;
+  const shouldLimit =
+    pathname === '/login' ||
+    pathname.startsWith('/auth/callback') ||
+    pathname.startsWith('/auth/signout');
+  if (!shouldLimit) return null;
+
+  const result = await rateLimit(request, { limit, windowMs: 60 * 1000 });
+  return result.success ? null : rateLimitResponse(result.retryAfter);
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  if (isStaticAssetRequest(pathname)) return NextResponse.next();
 
-  // Skip middleware for static files - this is a safety check
-  if (
-    pathname === '/manifest.json' ||
-    pathname === '/sw.js' ||
-    pathname.startsWith('/icons/') ||
-    pathname.startsWith('/.well-known/') ||
-    pathname.endsWith('.ico') ||
-    pathname.endsWith('.png') ||
-    pathname.endsWith('.svg') ||
-    pathname.endsWith('.jpg') ||
-    pathname.endsWith('.jpeg') ||
-    pathname.endsWith('.webp')
-  ) {
-    return NextResponse.next();
-  }
-
-  // Public routes that don't require authentication.
-  // We exclude '/login' from isPublicRoute so middleware can check the session and redirect logged-in users.
-  const publicRoutes = ['/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout', '/.well-known'];
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
-  
-  // We skip middleware logic for static routes / authentication callback endpoints early,
-  // but allow the root page '/' to proceed down so that session cookies can be validated/refreshed
-  // on public homepage hits before server components render.
-  const isSkipPublicRoute = publicRoutes.some(route => cleanPath.startsWith(route));
+  const isSkipPublicRoute = PUBLIC_ROUTES.some((route) => cleanPath.startsWith(route));
   const isPublicRoute = isSkipPublicRoute || cleanPath === '/';
 
-  // Apply rate limiting to sensitive public routes
-  if (pathname.startsWith('/auth/callback')) {
-    const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
-    if (!result.success) {
-      return rateLimitResponse(result.retryAfter);
-    }
-  }
+  const rateLimited = await checkAuthRateLimit(request, pathname);
+  if (rateLimited) return rateLimited;
 
-  if (pathname === '/login') {
-    const result = await rateLimit(request, { limit: 20, windowMs: 60 * 1000 }); // 20 req/min
-    if (!result.success) {
-      return rateLimitResponse(result.retryAfter);
-    }
-  }
-
-  if (pathname.startsWith('/auth/signout')) {
-    const result = await rateLimit(request, { limit: 10, windowMs: 60 * 1000 }); // 10 req/min
-    if (!result.success) {
-      return rateLimitResponse(result.retryAfter);
-    }
-  }
-
-  if (isSkipPublicRoute) {
-    return NextResponse.next();
-  }
+  if (isSkipPublicRoute) return NextResponse.next();
 
   // Create a response object
   let response = NextResponse.next({

@@ -75,188 +75,102 @@ describe('Cross-Domain Intelligence Engine (computeCrossDomainInsights)', () => 
     expect(report.alerts).toEqual([]);
   });
 
-  it('computes Wallet <-> Waistline 14d/30d junk spend, linkedTransactionId deduped kcal, fat-loss drag & 70% savings', () => {
-    const categories = [
-      makeCat('cat-junk', 'Junk Food', 'junk-food'),
-      makeCat('cat-food', 'Food & Dining', 'food-dining'),
-    ];
+function makeMealLog(
+  id: string,
+  date: string,
+  name: string,
+  calories: number,
+  extra: Partial<MealLog> = {}
+): MealLog {
+  return {
+    id,
+    userId: 'u1',
+    date,
+    mealType: 'snack',
+    name,
+    calories,
+    proteinG: 20,
+    carbsG: 60,
+    fatG: 20,
+    quantityMultiplier: 1,
+    isJunk: true,
+    source: 'manual',
+    loggedAt: nowIso,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    ...extra,
+  };
+}
+
+  function buildWalletWaistlineFixtures() {
+    const categories = [makeCat('cat-junk', 'Junk Food', 'junk-food'), makeCat('cat-food', 'Food & Dining', 'food-dining')];
     const transactions = [
       makeTx('tx-1', '2026-11-24', 350, 'cat-junk', 'Momos & Cold Drink'),
       makeTx('tx-2', '2026-11-18', 650, 'cat-junk', 'Pizza Night'),
-      // Older than 14d (11..25 = 14d window [2026-11-12..2026-11-25]), inside 30d
       makeTx('tx-3', '2026-11-05', 1000, 'cat-junk', 'Burger Combo'),
-      // Non-junk normal food should NOT count toward junk spend
       makeTx('tx-4', '2026-11-22', 200, 'cat-food', 'Boiled Eggs & Oats'),
     ];
-
     const mealLogs: MealLog[] = [
-      {
-        id: 'm1',
-        userId: 'u1',
-        date: '2026-11-24',
-        mealType: 'snack',
-        name: 'Momos & Cold Drink',
-        calories: 700,
-        proteinG: 10,
-        carbsG: 90,
-        fatG: 28,
-        quantityMultiplier: 1,
-        isJunk: true,
-        linkedTransactionId: 'tx-1',
-        source: 'finance_bridge',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      // Duplicate bridge row sharing linkedTransactionId 'tx-1' MUST be deduped!
-      {
-        id: 'm1-dup',
-        userId: 'u1',
-        date: '2026-11-24',
-        mealType: 'snack',
-        name: 'Momos & Cold Drink (Dup)',
-        calories: 700,
-        proteinG: 10,
-        carbsG: 90,
-        fatG: 28,
-        quantityMultiplier: 1,
-        isJunk: true,
-        linkedTransactionId: 'tx-1',
-        source: 'finance_bridge',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: 'm2',
-        userId: 'u1',
-        date: '2026-11-18',
-        mealType: 'dinner',
-        name: 'Pizza Night',
-        calories: 1400,
-        proteinG: 35,
-        carbsG: 160,
-        fatG: 65,
-        quantityMultiplier: 1,
-        isJunk: true,
-        linkedTransactionId: 'tx-2',
-        source: 'finance_bridge',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: 'm3',
-        userId: 'u1',
-        date: '2026-11-05',
-        mealType: 'lunch',
-        name: 'Burger Combo',
-        calories: 1750,
-        proteinG: 28,
-        carbsG: 190,
-        fatG: 80,
-        quantityMultiplier: 1,
-        isJunk: true,
-        linkedTransactionId: null,
-        source: 'manual',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
+      makeMealLog('m1', '2026-11-24', 'Momos & Cold Drink', 700, { linkedTransactionId: 'tx-1', source: 'finance_bridge' }),
+      makeMealLog('m1-dup', '2026-11-24', 'Momos & Cold Drink (Dup)', 700, { linkedTransactionId: 'tx-1', source: 'finance_bridge' }),
+      makeMealLog('m2', '2026-11-18', 'Pizza Night', 1400, { mealType: 'dinner', linkedTransactionId: 'tx-2', source: 'finance_bridge' }),
+      makeMealLog('m3', '2026-11-05', 'Burger Combo', 1750, { mealType: 'lunch', linkedTransactionId: null }),
     ];
+    return { categories, transactions, mealLogs };
+  }
 
-    const report = computeCrossDomainInsights({
-      todayDate: '2026-11-25',
-      transactions,
-      categories,
-      mealLogs,
-    });
-
+  it('computes Wallet <-> Waistline 14d/30d junk spend, linkedTransactionId deduped kcal, fat-loss drag & 70% savings', () => {
+    const report = computeCrossDomainInsights({ todayDate: '2026-11-25', ...buildWalletWaistlineFixtures() });
     const ww = report.walletWaistline;
-    expect(ww.spend14dInr).toBe(1000); // 350 + 650
-    expect(ww.spend30dInr).toBe(2000); // 350 + 650 + 1000
-    expect(ww.emptyKcal14d).toBe(2100); // 700 + 1400 (m1-dup ignored!)
-    expect(ww.emptyKcal30d).toBe(3850); // 2100 + 1750
-    expect(ww.fatLossDragKg30d).toBe(0.5); // 3850 / 7700 = 0.50 kg
-    expect(ww.savings70PctMonthlyInr).toBe(1400); // 70% of 2000
-    expect(ww.linkedIncidentCount14d).toBe(2); // tx-1 + tx-2
-    expect(ww.linkedIncidentCount30d).toBe(4); // tx-1 + tx-2 + tx-3 + unlinked m3
+    expect(ww.spend14dInr).toBe(1000);
+    expect(ww.spend30dInr).toBe(2000);
+    expect(ww.emptyKcal14d).toBe(2100);
+    expect(ww.emptyKcal30d).toBe(3850);
+    expect(ww.fatLossDragKg30d).toBe(0.5);
+    expect(ww.savings70PctMonthlyInr).toBe(1400);
+    expect(ww.linkedIncidentCount14d).toBe(2);
+    expect(ww.linkedIncidentCount30d).toBe(4);
     expect(ww.unlinkedJunkMealCount30d).toBe(1);
     expect(report.alerts.some((a) => a.pillar === 'wallet_waistline')).toBe(true);
   });
 
+function buildGymRoiFixtures() {
+  const categories = [makeCat('cat-health', 'Health & Gym', 'health-gym')];
+  const transactions = [makeTx('tx-gym', '2026-11-02', 2400, 'cat-health', 'Cult Gym Monthly')];
+  const supplementInventory: SupplementInventory[] = [{
+    id: 'sup-whey', userId: 'u1', name: 'ON Gold Whey', category: 'protein', unitLabel: 'scoop',
+    totalServings: 60, remainingServings: 50, dailyDosage: 1, costInr: 4800, proteinPerServingG: 24,
+    manualAdjustment: 0, lowStockThresholdDays: 7, isActive: true, createdAt: nowIso, updatedAt: nowIso,
+  }];
+  const supplementLogs: SupplementLog[] = Array.from({ length: 24 }, (_, idx) => ({
+    id: `sl-${idx}`, userId: 'u1', supplementId: 'sup-whey',
+    date: `2026-11-${String(Math.min(25, idx + 1)).padStart(2, '0')}`, servingsTaken: 1,
+    takenAt: nowIso, createdAt: nowIso, updatedAt: nowIso,
+  }));
+  return { categories, transactions, supplementInventory, supplementLogs };
+}
+
   it('audits Gym ROI (4x/week target & zero-workout F grade) and Supplement ₹/scoop + ₹/25g protein grade', () => {
-    const categories = [makeCat('cat-health', 'Health & Gym', 'health-gym')];
-    const transactions = [makeTx('tx-gym', '2026-11-02', 2400, 'cat-health', 'Cult Gym Monthly')];
+    const { categories, transactions, supplementInventory, supplementLogs } = buildGymRoiFixtures();
 
-    const supplementInventory: SupplementInventory[] = [
-      {
-        id: 'sup-whey',
-        userId: 'u1',
-        name: 'ON Gold Whey',
-        category: 'protein',
-        unitLabel: 'scoop',
-        totalServings: 60,
-        remainingServings: 50,
-        dailyDosage: 1,
-        costInr: 4800, // ₹80/scoop, 24g protein -> ₹83.33/25g -> Grade B
-        proteinPerServingG: 24,
-        manualAdjustment: 0,
-        lowStockThresholdDays: 7,
-        isActive: true,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-    ];
-
-    const supplementLogs: SupplementLog[] = Array.from({ length: 24 }, (_, idx) => ({
-      id: `sl-${idx}`,
-      userId: 'u1',
-      supplementId: 'sup-whey',
-      date: `2026-11-${String(Math.min(25, idx + 1)).padStart(2, '0')}`,
-      servingsTaken: 1,
-      takenAt: nowIso,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    }));
-
-    // Case A: 0 workouts -> Grade F critical alert
     const zeroReport = computeCrossDomainInsights({
-      todayDate: '2026-11-25',
-      transactions,
-      categories,
-      supplementInventory,
-      supplementLogs,
-      workoutSessions: [],
+      todayDate: '2026-11-25', transactions, categories, supplementInventory, supplementLogs, workoutSessions: [],
     });
     expect(zeroReport.gymSupplementRoi.gymSpend30dInr).toBe(2400);
     expect(zeroReport.gymSupplementRoi.workouts30dCount).toBe(0);
     expect(zeroReport.gymSupplementRoi.gymRoiGrade).toBe('F');
-    expect(zeroReport.gymSupplementRoi.targetGymCostPerWorkoutInr).toBe(150); // 2400 / 16
+    expect(zeroReport.gymSupplementRoi.targetGymCostPerWorkoutInr).toBe(150);
     expect(zeroReport.gymSupplementRoi.primaryCostPerScoopInr).toBe(80);
     expect(zeroReport.gymSupplementRoi.primaryCostPer25gProteinInr).toBe(83.33);
     expect(zeroReport.gymSupplementRoi.primaryProteinGrade).toBe('B');
 
-    // Case B: 8 workouts -> ₹300/workout vs ₹150 target
     const workoutSessions: WorkoutSession[] = Array.from({ length: 8 }, (_, idx) => ({
-      id: `w-${idx}`,
-      userId: 'u1',
-      date: `2026-11-${String(idx * 2 + 2).padStart(2, '0')}`,
-      title: 'Push/Pull',
-      workoutType: 'push',
-      durationMinutes: 50,
-      exercises: [],
-      source: 'manual',
-      createdAt: nowIso,
-      updatedAt: nowIso,
+      id: `w-${idx}`, userId: 'u1', date: `2026-11-${String(idx * 2 + 2).padStart(2, '0')}`,
+      title: 'Push/Pull', workoutType: 'push', durationMinutes: 50, exercises: [], source: 'manual',
+      createdAt: nowIso, updatedAt: nowIso,
     }));
     const activeReport = computeCrossDomainInsights({
-      todayDate: '2026-11-25',
-      transactions,
-      categories,
-      supplementInventory,
-      supplementLogs,
-      workoutSessions,
+      todayDate: '2026-11-25', transactions, categories, supplementInventory, supplementLogs, workoutSessions,
     });
     expect(activeReport.gymSupplementRoi.gymCostPerWorkoutInr).toBe(300);
     expect(activeReport.gymSupplementRoi.gymRoiGrade).toBe('C');
@@ -323,81 +237,25 @@ describe('Cross-Domain Intelligence Engine (computeCrossDomainInsights)', () => 
 
   it('correlates social split food hangouts with calorie spikes and suggests swaps', () => {
     const categories = [makeCat('cat-food', 'Food & Dining', 'food-dining')];
-    const debtRecords: DebtRecord[] = [
-      {
-        id: 'd-split',
-        userId: 'u1',
-        personName: 'Rohan',
-        direction: 'lent',
-        title: 'Cafe pizza split',
-        principalAmount: 600,
-        totalRepaidAmount: 0,
-        remainingAmount: 600,
-        startDate: '2026-11-24',
-        repaymentSchedule: 'flexible',
-        status: 'active',
-        bucketType: 'everyday_split',
-        color: '#000',
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-    ];
+    const debtRecords: DebtRecord[] = [{
+      id: 'd-split', userId: 'u1', personName: 'Rohan', direction: 'lent', title: 'Cafe pizza split',
+      principalAmount: 600, totalRepaidAmount: 0, remainingAmount: 600, startDate: '2026-11-24',
+      repaymentSchedule: 'flexible', status: 'active', bucketType: 'everyday_split', color: '#000', createdAt: nowIso, updatedAt: nowIso,
+    }];
     const transactions = [
-      makeTx('tx-social', '2026-11-24', 900, 'cat-food', 'Group cafe dinner', {
-        splitGroupId: 'split-1',
-        linkedDebtId: 'd-split',
-      }),
+      makeTx('tx-social', '2026-11-24', 900, 'cat-food', 'Group cafe dinner', { splitGroupId: 'split-1', linkedDebtId: 'd-split' }),
       makeTx('tx-solo', '2026-11-23', 180, 'cat-food', 'Solo chicken bowl'),
     ];
     const mealLogs: MealLog[] = [
-      {
-        id: 'ms1',
-        userId: 'u1',
-        date: '2026-11-24',
-        mealType: 'dinner',
-        name: 'Cafe pizza & shake',
-        calories: 1900,
-        proteinG: 35,
-        carbsG: 200,
-        fatG: 80,
-        quantityMultiplier: 1,
-        isJunk: true,
-        source: 'manual',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: 'ms2',
-        userId: 'u1',
-        date: '2026-11-23',
-        mealType: 'dinner',
-        name: 'Chicken rice bowl',
-        calories: 650,
-        proteinG: 45,
-        carbsG: 70,
-        fatG: 15,
-        quantityMultiplier: 1,
-        isJunk: false,
-        source: 'manual',
-        loggedAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
+      makeMealLog('ms1', '2026-11-24', 'Cafe pizza & shake', 1900, { mealType: 'dinner' }),
+      makeMealLog('ms2', '2026-11-23', 'Chicken rice bowl', 650, { mealType: 'dinner', isJunk: false, proteinG: 45 }),
     ];
 
-    const report = computeCrossDomainInsights({
-      todayDate: '2026-11-25',
-      categories,
-      debtRecords,
-      transactions,
-      mealLogs,
-    });
-
+    const report = computeCrossDomainInsights({ todayDate: '2026-11-25', categories, debtRecords, transactions, mealLogs });
     expect(report.socialSpendDiet.hasSpike).toBe(true);
     expect(report.socialSpendDiet.socialFoodSpend30dInr).toBe(900);
-    expect(report.socialSpendDiet.hangoutSpendMultiplier).toBe(5); // 900 vs 180
-    expect(report.socialSpendDiet.hangoutCalorieSpikeKcal).toBe(1250); // 1900 - 650
+    expect(report.socialSpendDiet.hangoutSpendMultiplier).toBe(5);
+    expect(report.socialSpendDiet.hangoutCalorieSpikeKcal).toBe(1250);
     expect(report.socialSpendDiet.suggestedSwaps.length).toBeGreaterThan(0);
     expect(report.alerts.some((a) => a.pillar === 'social_spend_diet')).toBe(true);
   });

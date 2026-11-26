@@ -15,42 +15,37 @@ export type FinanceBridgeKind =
   | 'health_supplements'
   | 'none';
 
+const BRIDGE_CLASSIFIERS: Array<{
+  kind: FinanceBridgeKind;
+  match: (slug: string, combined: string) => boolean;
+}> = [
+  {
+    kind: 'junk',
+    match: (slug, combined) =>
+      slug === 'junk-food' || slug.includes('junk') || /\bjunk\s*food\b/i.test(combined),
+  },
+  {
+    kind: 'food_dining',
+    match: (slug, combined) =>
+      slug.includes('food') || slug.includes('dining') || /\b(food|dining|restaurant|cafe|meals?)\b/i.test(combined),
+  },
+  {
+    kind: 'health_supplements',
+    match: (slug, combined) =>
+      slug === 'medical-supplements' ||
+      slug === 'health-supplements' ||
+      slug.includes('supplement') ||
+      /\b(supplement|supplements|whey|creatine|protein|vitamin|medical|pharmacy)\b/i.test(combined),
+  },
+];
+
 export function classifyCategoryBridgeKind(
   category?: Pick<FinanceCategory, 'slug' | 'name'> | null
 ): FinanceBridgeKind {
   if (!category) return 'none';
   const slug = (category.slug || '').toLowerCase();
-  const name = (category.name || '').toLowerCase();
-  const combined = `${slug} ${name}`.trim();
-
-  if (
-    slug === 'junk-food' ||
-    slug.includes('junk') ||
-    /\bjunk\s*food\b/i.test(combined)
-  ) {
-    return 'junk';
-  }
-
-  if (
-    slug.includes('food') ||
-    slug.includes('dining') ||
-    /\b(food|dining|restaurant|cafe|meals?)\b/i.test(combined)
-  ) {
-    return 'food_dining';
-  }
-
-  if (
-    slug === 'medical-supplements' ||
-    slug === 'health-supplements' ||
-    slug.includes('supplement') ||
-    /\b(supplement|supplements|whey|creatine|protein|vitamin|medical|pharmacy)\b/i.test(
-      combined
-    )
-  ) {
-    return 'health_supplements';
-  }
-
-  return 'none';
+  const combined = `${slug} ${(category.name || '').toLowerCase()}`.trim();
+  return BRIDGE_CLASSIFIERS.find((c) => c.match(slug, combined))?.kind ?? 'none';
 }
 
 export function inferSupplementCategoryFromTitle(title: string): SupplementCategory {
@@ -83,33 +78,108 @@ export function findMatchingSupplementId(
 
 export function estimateDietBridgePreview(title: string, amountInr: number, isJunk: boolean) {
   const cleanTitle = title.trim() || (isJunk ? 'Junk Snack / Order' : 'Restaurant Meal');
-  const est = estimateHinglishFoodMacros(cleanTitle, {
-    amountInr,
-    forceJunk: isJunk,
-  });
+  const est = estimateHinglishFoodMacros(cleanTitle, { amountInr, forceJunk: isJunk });
   const isCatalogMatch = est.confidence >= 80;
-  const calories =
-    isCatalogMatch && est.calories > 0
-      ? est.calories
-      : isJunk
-        ? est.calories
-        : Math.min(1400, Math.max(250, Math.round((amountInr || 150) * 1.5)));
-  const proteinG =
-    isCatalogMatch && est.proteinG > 0
-      ? est.proteinG
-      : isJunk
-        ? est.proteinG
-        : 16;
-  const carbsG = isCatalogMatch ? est.carbsG : isJunk ? est.carbsG : 42;
-  const fatG = isCatalogMatch ? est.fatG : isJunk ? est.fatG : 14;
+  const fallbackCalories = Math.min(1400, Math.max(250, Math.round((amountInr || 150) * 1.5)));
+
+  if (isCatalogMatch || isJunk) {
+    return {
+      name: cleanTitle,
+      calories: est.calories,
+      proteinG: est.proteinG,
+      carbsG: est.carbsG,
+      fatG: est.fatG,
+      mealType: est.mealType as MealType,
+    };
+  }
   return {
     name: cleanTitle,
+    calories: fallbackCalories,
+    proteinG: 16,
+    carbsG: 42,
+    fatG: 14,
+    mealType: 'lunch' as MealType,
+  };
+}
+
+async function handleFoodDiningBridge(params: {
+  transaction: Pick<FinanceTransaction, 'id' | 'title' | 'amount' | 'date'>;
+  userId?: string;
+  dietCalories?: number;
+  dietProteinG?: number;
+}) {
+  const fitness = useFitnessStore.getState();
+  const preview = estimateDietBridgePreview(params.transaction.title, params.transaction.amount, false);
+  const calories = params.dietCalories && params.dietCalories > 0 ? Math.round(params.dietCalories) : preview.calories;
+  const proteinG =
+    params.dietProteinG !== undefined && params.dietProteinG >= 0 ? Number(params.dietProteinG) : preview.proteinG;
+
+  await fitness.upsertMealFromCapture({
+    userId: params.userId,
+    date: params.transaction.date,
+    name: preview.name,
     calories,
     proteinG,
-    carbsG,
-    fatG,
-    mealType: (isCatalogMatch ? est.mealType : isJunk ? est.mealType : 'lunch') as MealType,
-  };
+    carbsG: preview.carbsG,
+    fatG: preview.fatG,
+    mealType: preview.mealType,
+    isJunk: false,
+    linkedTransactionId: params.transaction.id,
+    source: 'finance_bridge',
+    notes: `Linked from ₹${params.transaction.amount} Food & Dining expense`,
+  });
+  return { dietLogged: true };
+}
+
+async function createRestockedSupplementFromTx(params: {
+  transaction: Pick<FinanceTransaction, 'id' | 'title' | 'amount' | 'date'>;
+  servings: number;
+  userId?: string;
+  newSupplementName?: string;
+}) {
+  const name = (params.newSupplementName || params.transaction.title || 'Supplement').trim() || 'Supplement';
+  const category = inferSupplementCategoryFromTitle(name);
+  const created = await useFitnessStore.getState().addSupplement(
+    {
+      name,
+      category,
+      totalServings: params.servings,
+      costInr: params.transaction.amount,
+      proteinPerServingG: category === 'protein' ? 24 : null,
+      linkedTransactionId: params.transaction.id,
+      lastRestockedAt: params.transaction.date,
+    },
+    params.userId
+  );
+  return { supplementRestocked: created.name };
+}
+
+async function handleSupplementRestockBridge(params: {
+  transaction: Pick<FinanceTransaction, 'id' | 'title' | 'amount' | 'date'>;
+  userId?: string;
+  supplementId?: string;
+  restockServings?: number;
+  newSupplementName?: string;
+}) {
+  const servings = Math.max(1, Math.round(Number(params.restockServings) || 30));
+  const chosenId = params.supplementId || '__new__';
+
+  if (chosenId !== '__new__') {
+    const updated = await useFitnessStore.getState().restockSupplement(chosenId, {
+      servingsAdded: servings,
+      costInr: params.transaction.amount,
+      linkedTransactionId: params.transaction.id,
+      date: params.transaction.date,
+    });
+    if (updated) return { supplementRestocked: updated.name };
+  }
+
+  return createRestockedSupplementFromTx({
+    transaction: params.transaction,
+    servings,
+    userId: params.userId,
+    newSupplementName: params.newSupplementName,
+  });
 }
 
 export async function executeFinanceFitnessBridge(params: {
@@ -125,73 +195,11 @@ export async function executeFinanceFitnessBridge(params: {
   newSupplementName?: string;
 }): Promise<{ dietLogged?: boolean; supplementRestocked?: string }> {
   if (params.transaction.type !== 'expense') return {};
-  const fitness = useFitnessStore.getState();
-
-  // Junk Food is ALWAYS auto-logged via CrossDomainActionMediator.onFinanceEvent;
-  // do NOT silently double-log here.
   if (params.bridgeKind === 'food_dining' && params.alsoLogToDiet) {
-    const preview = estimateDietBridgePreview(
-      params.transaction.title,
-      params.transaction.amount,
-      false
-    );
-    await fitness.upsertMealFromCapture({
-      userId: params.userId,
-      date: params.transaction.date,
-      name: preview.name,
-      calories:
-        params.dietCalories !== undefined && params.dietCalories > 0
-          ? Math.round(params.dietCalories)
-          : preview.calories,
-      proteinG:
-        params.dietProteinG !== undefined && params.dietProteinG >= 0
-          ? Number(params.dietProteinG)
-          : preview.proteinG,
-      carbsG: preview.carbsG,
-      fatG: preview.fatG,
-      mealType: preview.mealType,
-      isJunk: false,
-      linkedTransactionId: params.transaction.id,
-      source: 'finance_bridge',
-      notes: `Linked from ₹${params.transaction.amount} Food & Dining expense`,
-    });
-    return { dietLogged: true };
+    return handleFoodDiningBridge(params);
   }
-
   if (params.bridgeKind === 'health_supplements' && params.restockSupplement) {
-    const servings = Math.max(1, Math.round(Number(params.restockServings) || 30));
-    const chosenId = params.supplementId || '__new__';
-
-    if (chosenId !== '__new__') {
-      const updated = await fitness.restockSupplement(chosenId, {
-        servingsAdded: servings,
-        costInr: params.transaction.amount,
-        linkedTransactionId: params.transaction.id,
-        date: params.transaction.date,
-      });
-      if (updated) {
-        return { supplementRestocked: updated.name };
-      }
-    }
-
-    const name =
-      (params.newSupplementName || params.transaction.title || 'Supplement').trim() ||
-      'Supplement';
-    const category = inferSupplementCategoryFromTitle(name);
-    const created = await fitness.addSupplement(
-      {
-        name,
-        category,
-        totalServings: servings,
-        costInr: params.transaction.amount,
-        proteinPerServingG: category === 'protein' ? 24 : null,
-        linkedTransactionId: params.transaction.id,
-        lastRestockedAt: params.transaction.date,
-      },
-      params.userId
-    );
-    return { supplementRestocked: created.name };
+    return handleSupplementRestockBridge(params);
   }
-
   return {};
 }

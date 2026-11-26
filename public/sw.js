@@ -9,11 +9,10 @@ const STATIC_ASSETS = [
 const STATIC_ASSET_EXTENSIONS = /\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf)$/i;
 
 function isSafeStaticResponse(response) {
-  if (!response || !response.ok || response.redirected) return false;
-  if (response.type !== 'basic') return false;
+  if (!response || !response.ok) return false;
+  if (response.redirected || response.type !== 'basic') return false;
   const ct = (response.headers.get('Content-Type') || '').toLowerCase();
-  if (ct.includes('text/html')) return false;
-  return true;
+  return !ct.includes('text/html');
 }
 
 async function trimCache(cache) {
@@ -57,64 +56,43 @@ function isCacheablePublicAsset(url) {
   return STATIC_ASSET_EXTENSIONS.test(url.pathname);
 }
 
+function isBypassedRoute(url, request) {
+  const { pathname, searchParams } = url;
+  if (pathname.startsWith('/api') || pathname.includes('/api/') || pathname.startsWith('/_next/')) return true;
+  if (searchParams.has('_rsc')) return true;
+  const rscHeaders = ['RSC', 'Next-Router-Prefetch', 'Next-Router-State-Tree'];
+  if (rscHeaders.some((h) => request.headers.get(h) === '1')) return true;
+  const accept = request.headers.get('Accept') || '';
+  return request.mode === 'navigate' || accept.includes('text/html') || accept.includes('text/x-component');
+}
+
+function handleStaticAssetFetch(event) {
+  return caches.open(CACHE_NAME).then(async (cache) => {
+    const cachedResponse = await cache.match(event.request);
+    const networkFetch = fetch(event.request)
+      .then(async (response) => {
+        if (isSafeStaticResponse(response)) {
+          await cache.put(event.request, response.clone());
+          await trimCache(cache);
+        }
+        return response;
+      })
+      .catch(() => cachedResponse);
+
+    if (cachedResponse) {
+      event.waitUntil(networkFetch);
+      return cachedResponse;
+    }
+    return networkFetch;
+  });
+}
+
 // Fetch event - ONLY cache static public assets (manifest, icons, images, fonts).
-// Never intercept Next.js chunks (/_next/*), RSC payloads, API calls, or HTML navigations.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith(self.location.origin)) return;
 
   const url = new URL(event.request.url);
-
-  if (
-    url.pathname.startsWith('/api') ||
-    url.pathname.includes('/api/') ||
-    url.pathname.startsWith('/_next/')
-  ) {
-    return;
-  }
-
-  if (
-    url.searchParams.has('_rsc') ||
-    event.request.headers.get('RSC') === '1' ||
-    event.request.headers.get('Next-Router-Prefetch') === '1' ||
-    event.request.headers.get('Next-Router-State-Tree')
-  ) {
-    return;
-  }
-
-  const accept = event.request.headers.get('Accept') || '';
-  if (
-    event.request.mode === 'navigate' ||
-    accept.includes('text/html') ||
-    accept.includes('text/x-component')
-  ) {
-    return;
-  }
-
-  if (!isCacheablePublicAsset(url)) {
-    return;
-  }
-
-  event.respondWith(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const cachedResponse = await cache.match(event.request);
-      const networkFetch = fetch(event.request)
-        .then(async (response) => {
-          if (isSafeStaticResponse(response)) {
-            await cache.put(event.request, response.clone());
-            await trimCache(cache);
-          }
-          return response;
-        })
-        .catch(() => cachedResponse);
-
-      if (cachedResponse) {
-        // Keep SW alive until background SWR revalidation completes
-        event.waitUntil(networkFetch);
-        return cachedResponse;
-      }
-
-      return networkFetch;
-    })
-  );
+  if (isBypassedRoute(url, event.request) || !isCacheablePublicAsset(url)) return;
+  event.respondWith(handleStaticAssetFetch(event));
 });

@@ -25,9 +25,55 @@ function getIstHour(): number {
   return Number.isNaN(parsed) ? 9 : parsed;
 }
 
+function formatCoachLists(context?: CoachBriefingInput['context']) {
+  const habitsText = Array.isArray(context?.todaysHabits)
+    ? context.todaysHabits.length > 0
+      ? context.todaysHabits.join(', ')
+      : 'No habits tracked yet'
+    : context?.todaysHabits || 'No habits tracked yet';
+
+  const tasksText = Array.isArray(context?.unfinishedTasks)
+    ? context.unfinishedTasks.length > 0
+      ? `${context.unfinishedTasks.length} pending (${context.unfinishedTasks.slice(0, 5).join(', ')})`
+      : '0 pending'
+    : String(context?.unfinishedTasks ?? 0);
+
+  return { habitsText, tasksText };
+}
+
+function formatFitnessTelemetryBlock(ft?: NonNullable<CoachBriefingInput['context']>['fitnessTelemetry']): string {
+  if (!ft) return '';
+  const fmt = (v: number | null | undefined, suffix: string) =>
+    v !== null && v !== undefined ? `${v}${suffix}` : 'n/a';
+  const weightDelta =
+    ft.rollingWeightDeltaKg !== null && ft.rollingWeightDeltaKg !== undefined
+      ? ` (${ft.rollingWeightDeltaKg >= 0 ? '+' : ''}${ft.rollingWeightDeltaKg} kg 7d delta)`
+      : '';
+  const proteinTarget = ft.proteinTargetG ? ` / ${ft.proteinTargetG}g target` : '';
+  const drag = ft.fatLossDragKg14d ? `, ~${ft.fatLossDragKg14d} kg fat-loss drag` : '';
+
+  return `\n14-Day Fitness, Sleep & Junk Telemetry:
+- Avg Sleep (14d): ${fmt(ft.avgSleepHours14d, ' hrs')} | Avg Energy: ${fmt(ft.avgEnergy14d, '/5')}
+- Workouts (14d): ${ft.workouts14dCount ?? 0} | Avg Steps (14d): ${ft.avgSteps14d ?? 'n/a'}
+- Rolling Weight: ${fmt(ft.rollingWeightKg, ' kg')}${weightDelta}
+- Avg Protein (14d): ${fmt(ft.avgProtein14dG, 'g')}${proteinTarget}
+- 14d Junk Spend & Empty Calories: ₹${ft.junkSpend14dInr ?? 0} (${ft.junkEmptyKcal14d ?? 0} kcal${drag})`;
+}
+
+function formatCrossDomainBlock(cd?: NonNullable<CoachBriefingInput['context']>['crossDomainInsights']): string {
+  if (!cd) return '';
+  const lines: string[] = [];
+  if (cd.gymCostPerWorkoutInr) lines.push(`- Gym Cost/Workout (30d): ₹${cd.gymCostPerWorkoutInr}`);
+  if (cd.primaryProteinCostPer25gInr) lines.push(`- Protein Cost/25g: ₹${cd.primaryProteinCostPer25gInr}`);
+  if (cd.triggerMultiplier) {
+    lines.push(`- Trigger Pattern: Junk/'idk' spend is ${cd.triggerMultiplier}x higher on ${cd.topTriggerLabel || 'low-recovery'} days`);
+  }
+  (cd.alerts || []).slice(0, 3).forEach((a) => lines.push(`- [${a.metricBadge || 'Alert'}] ${a.title}: ${a.description}`));
+  return lines.length > 0 ? `\nCross-Domain Life OS Insights:\n${lines.join('\n')}` : '';
+}
+
 export function buildCoachPrompt(input: CoachBriefingInput): string {
   const { userData, context } = input;
-  
   if (context?.mode === 'suggestion') {
     return `You are an expert Habit Coach. The user wants to improve in the area of "${context.category || 'general productivity'}".
 Suggest 3 small, atomic habits they could start today. 
@@ -43,34 +89,9 @@ Be specific, actionable, and encouraging.`;
   const todayIst = context?.todayIso || getIstIsoDate();
   const istHour = getIstHour();
   const timeOfDay = istHour < 12 ? 'morning' : istHour < 18 ? 'afternoon' : 'evening';
-
-  const habitsText = Array.isArray(context?.todaysHabits)
-    ? context.todaysHabits.length > 0
-      ? context.todaysHabits.join(', ')
-      : 'No habits tracked yet'
-    : context?.todaysHabits || 'No habits tracked yet';
-
-  const tasksText = Array.isArray(context?.unfinishedTasks)
-    ? context.unfinishedTasks.length > 0
-      ? `${context.unfinishedTasks.length} pending (${context.unfinishedTasks.slice(0, 5).join(', ')})`
-      : '0 pending'
-    : String(context?.unfinishedTasks ?? 0);
-
-  const ft = context?.fitnessTelemetry;
-  const cd = context?.crossDomainInsights;
-
-  const fitnessBlock = ft
-    ? `\n14-Day Fitness, Sleep & Junk Telemetry:
-- Avg Sleep (14d): ${ft.avgSleepHours14d !== null && ft.avgSleepHours14d !== undefined ? `${ft.avgSleepHours14d} hrs` : 'n/a'} | Avg Energy: ${ft.avgEnergy14d !== null && ft.avgEnergy14d !== undefined ? `${ft.avgEnergy14d}/5` : 'n/a'}
-- Workouts (14d): ${ft.workouts14dCount ?? 0} | Avg Steps (14d): ${ft.avgSteps14d ?? 'n/a'}
-- Rolling Weight: ${ft.rollingWeightKg !== null && ft.rollingWeightKg !== undefined ? `${ft.rollingWeightKg} kg` : 'n/a'}${ft.rollingWeightDeltaKg !== null && ft.rollingWeightDeltaKg !== undefined ? ` (${ft.rollingWeightDeltaKg >= 0 ? '+' : ''}${ft.rollingWeightDeltaKg} kg 7d delta)` : ''}
-- Avg Protein (14d): ${ft.avgProtein14dG !== null && ft.avgProtein14dG !== undefined ? `${ft.avgProtein14dG}g` : 'n/a'}${ft.proteinTargetG ? ` / ${ft.proteinTargetG}g target` : ''}
-- 14d Junk Spend & Empty Calories: ₹${ft.junkSpend14dInr ?? 0} (${ft.junkEmptyKcal14d ?? 0} kcal${ft.fatLossDragKg14d ? `, ~${ft.fatLossDragKg14d} kg fat-loss drag` : ''})`
-    : '';
-
-  const crossDomainBlock = cd
-    ? `\nCross-Domain Life OS Insights:
-${cd.gymCostPerWorkoutInr ? `- Gym Cost/Workout (30d): ₹${cd.gymCostPerWorkoutInr}\n` : ''}${cd.primaryProteinCostPer25gInr ? `- Protein Cost/25g: ₹${cd.primaryProteinCostPer25gInr}\n` : ''}${cd.triggerMultiplier ? `- Trigger Pattern: Junk/'idk' spend is ${cd.triggerMultiplier}x higher on ${cd.topTriggerLabel || 'low-recovery'} days\n` : ''}${cd.alerts?.length ? cd.alerts.slice(0, 3).map((a) => `- [${a.metricBadge || 'Alert'}] ${a.title}: ${a.description}`).join('\n') : ''}`
+  const { habitsText, tasksText } = formatCoachLists(context);
+  const deadlines = context?.upcomingDeadlines?.length
+    ? `- Upcoming Deadlines: ${context.upcomingDeadlines.map((d) => `${d.title} (${d.daysLeft} days)`).join(', ')}`
     : '';
 
   return `You are an expert HabitFlow Life OS Coach for a user named "${userData?.userName || 'Friend'}". 
@@ -82,7 +103,7 @@ Current Context:
 - Today's Habits: ${habitsText}
 ${context?.burnoutRisk ? `- Burnout Risk: ${context.burnoutRisk}/100` : ''}
 ${context?.topPriorityTask ? `- Top Priority: ${context.topPriorityTask}` : ''}
-${context?.upcomingDeadlines?.length ? `- Upcoming Deadlines: ${context.upcomingDeadlines.map(d => `${d.title} (${d.daysLeft} days)`).join(', ')}` : ''}${fitnessBlock}${crossDomainBlock}
+${deadlines}${formatFitnessTelemetryBlock(context?.fitnessTelemetry)}${formatCrossDomainBlock(context?.crossDomainInsights)}
 
 Instructions:
 1. Start with a personalized greeting that acknowledges their momentum and time of day (${timeOfDay})
@@ -490,148 +511,156 @@ Instructions:
 7. Return JSON matching expenseParseSchema.`;
 }
 
+const PAYMENT_METHOD_RULES: Array<[RegExp, ExpenseParseOutput['paymentMethodType']]> = [
+  [/\bcash\b/, 'cash'],
+  [/\b(credit card|card|cc|icici|amex)\b/, 'credit_card'],
+  [/\b(neft|imps|rtgs|bank transfer|salary account)\b/, 'bank'],
+  [/\b(paytm wallet|wallet)\b/, 'wallet'],
+];
+
+const CATEGORY_MATCH_RULES: Array<{
+  pattern: RegExp;
+  slug: string;
+  name: string;
+  getSubcategory: (lower: string, type: ExpenseParseOutput['type']) => string;
+}> = [
+  {
+    pattern: /\b(whey|protein|creatine|vitamin|supplement|pharmacy|medicine|doctor|hospital|medical)\b/,
+    slug: 'medical-supplements',
+    name: 'Medical & Supplements',
+    getSubcategory: (l) =>
+      /\b(whey|protein)\b/.test(l) ? 'Whey / Protein' : /\b(vitamin|creatine)\b/.test(l) ? 'Vitamins & Creatine' : 'Pharmacy',
+  },
+  {
+    pattern: /\b(electricity|water|wifi|wi-fi|broadband|recharge|bill|gas|utility)\b/,
+    slug: 'utilities-bills',
+    name: 'Utilities & Bills',
+    getSubcategory: (l) =>
+      /\belectricity\b/.test(l) ? 'Electricity Bill' : /\b(wifi|wi-fi|broadband)\b/.test(l) ? 'Wi-Fi / Broadband' : 'Mobile Recharge',
+  },
+  {
+    pattern: /\b(lipstick|cosmetic|makeup|skincare|shirt|dress|clothing|shoes|nykaa|myntra|amazon)\b/,
+    slug: 'shopping-personal-care',
+    name: 'Shopping & Personal Care',
+    getSubcategory: (l) => (/\b(lipstick|cosmetic|makeup|nykaa)\b/.test(l) ? 'Cosmetics / Lipstick' : 'Clothing'),
+  },
+  {
+    pattern: /\b(grocery|groceries|vegetable|milk|dairy|fruit|supermarket|blinkit|zepto|instamart)\b/,
+    slug: 'groceries-household',
+    name: 'Groceries & Household',
+    getSubcategory: () => 'Vegetables & Dairy',
+  },
+  {
+    pattern: /\b(food|dinner|lunch|breakfast|coffee|cafe|restaurant|swiggy|zomato|pizza|burger)\b/,
+    slug: 'food-dining',
+    name: 'Food & Dining',
+    getSubcategory: () => 'Restaurants',
+  },
+  {
+    pattern: /\b(uber|ola|auto|cab|petrol|fuel|metro|train|bus|flight)\b/,
+    slug: 'transport-fuel',
+    name: 'Transport & Fuel',
+    getSubcategory: () => 'Uber / Ola / Auto',
+  },
+  {
+    pattern: /\b(emi|loan|borrowed|repay|repaid|installment|debt)\b/,
+    slug: 'emis-debt-repayment',
+    name: 'EMIs & Debt Repayment',
+    getSubcategory: (l) => (/\b(emi|loan)\b/.test(l) ? 'Loan EMI' : 'Friend Debt Repayment'),
+  },
+  {
+    pattern: /\b(allowance|mother|mom|parents|family|gift)\b/,
+    slug: 'family-commitments',
+    name: 'Family & Commitments',
+    getSubcategory: () => 'Parental Allowance',
+  },
+  {
+    pattern: /\b(netflix|spotify|gym|movie|ott|subscription)\b/,
+    slug: 'entertainment-subscriptions',
+    name: 'Entertainment & Subscriptions',
+    getSubcategory: () => 'OTT & Streaming',
+  },
+  {
+    pattern: /\b(sip|mutual fund|gold|investment|salary)\b/,
+    slug: 'investments-savings',
+    name: 'Investments & Savings',
+    getSubcategory: (_l, t) => (t === 'income' ? 'Salary / Income' : 'SIP / Mutual Funds'),
+  },
+];
+
+function detectDeterministicCommitment(
+  lower: string,
+  categorySlug: string,
+  commitments: NonNullable<ExpenseParseInput['commitments']>
+) {
+  for (const comm of commitments) {
+    const recLower = comm.recipientName.toLowerCase();
+    const isMotherMatch = recLower === 'mother' && /\b(mother|mom|mummy|maa|ammi)\b/.test(lower);
+    if (!lower.includes(recLower) && !isMotherMatch) continue;
+
+    const isDirect =
+      /\b(allowance|transfer|settle|direct|monthly support)\b/.test(lower) &&
+      !lower.includes('deduct') &&
+      !lower.includes('offset') &&
+      categorySlug === 'family-commitments';
+    return {
+      matchedCommitmentId: comm.id,
+      matchedCommitmentRecipient: comm.recipientName,
+      commitmentContributionType: (isDirect ? 'direct_payment' : 'offset_expense') as ExpenseParseOutput['commitmentContributionType'],
+    };
+  }
+  return { matchedCommitmentId: null, matchedCommitmentRecipient: null, commitmentContributionType: null };
+}
+
+function detectDeterministicDebt(
+  lower: string,
+  categorySlug: string,
+  debts: NonNullable<ExpenseParseInput['debts']>
+) {
+  for (const debt of debts) {
+    const firstName = debt.personName.split(' ')[0].toLowerCase();
+    if (!firstName || !lower.includes(firstName)) continue;
+    const isDebtRepay = categorySlug === 'shopping-personal-care' && /\b(paid|repay|installment|borrowed|lent|owe)\b/.test(lower);
+    return { matchedDebtId: debt.id, matchedDebtPerson: debt.personName, overrideToDebtCategory: isDebtRepay };
+  }
+  return { matchedDebtId: null, matchedDebtPerson: null, overrideToDebtCategory: false };
+}
+
 export function parseExpenseDeterministically(input: ExpenseParseInput): ExpenseParseOutput {
   const text = (input.rawText || '').trim();
   const lower = text.toLowerCase();
 
-  // 1. Extract amount (supports ₹1,850, 450, Rs. 500, etc.)
   const amountMatches = text.match(/(?:₹|rs\.?|inr\s*)?\s*(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/gi);
-  let amount = 0;
-  if (amountMatches && amountMatches.length > 0) {
-    // Pick the first number that is not a huge total reference after "towards" or "out of"
-    const cleanedFirst = amountMatches[0].replace(/[₹,a-zA-Z.\s]/g, '');
-    amount = parseInt(cleanedFirst, 10) || 0;
-  }
+  const amount = amountMatches?.[0] ? parseInt(amountMatches[0].replace(/[₹,a-zA-Z.\s]/g, ''), 10) || 0 : 0;
 
-  // 2. Detect payment method
-  let paymentMethodType: ExpenseParseOutput['paymentMethodType'] = 'upi';
-  if (/\bcash\b/.test(lower)) paymentMethodType = 'cash';
-  else if (/\b(credit card|card|cc|icici|amex)\b/.test(lower)) paymentMethodType = 'credit_card';
-  else if (/\b(neft|imps|rtgs|bank transfer|salary account)\b/.test(lower))
-    paymentMethodType = 'bank';
-  else if (/\b(paytm wallet|wallet)\b/.test(lower)) paymentMethodType = 'wallet';
+  const paymentMethodType = PAYMENT_METHOD_RULES.find(([re]) => re.test(lower))?.[1] ?? 'upi';
+  const type: ExpenseParseOutput['type'] = /\b(salary|received|credited|income|freelance|refund)\b/.test(lower)
+    ? 'income'
+    : 'expense';
 
-  // 3. Detect Transaction Type
-  let type: ExpenseParseOutput['type'] = 'expense';
-  if (/\b(salary|received|credited|income|freelance|refund)\b/.test(lower)) {
-    type = 'income';
-  }
+  const catRule = CATEGORY_MATCH_RULES.find((r) => r.pattern.test(lower));
+  let categorySlug = catRule?.slug ?? 'shopping-personal-care';
+  let categoryName = catRule?.name ?? 'Shopping & Personal Care';
+  let subcategory: string | undefined = catRule?.getSubcategory(lower, type);
 
-  // 4. Match Category & Subcategory
-  let categorySlug = 'shopping-personal-care';
-  let categoryName = 'Shopping & Personal Care';
-  let subcategory: string | undefined = undefined;
-
-  if (/\b(whey|protein|creatine|vitamin|supplement|pharmacy|medicine|doctor|hospital|medical)\b/.test(lower)) {
-    categorySlug = 'medical-supplements';
-    categoryName = 'Medical & Supplements';
-    subcategory = /\b(whey|protein)\b/.test(lower)
-      ? 'Whey / Protein'
-      : /\b(vitamin|creatine)\b/.test(lower)
-      ? 'Vitamins & Creatine'
-      : 'Pharmacy';
-  } else if (/\b(electricity|water|wifi|wi-fi|broadband|recharge|bill|gas|utility)\b/.test(lower)) {
-    categorySlug = 'utilities-bills';
-    categoryName = 'Utilities & Bills';
-    subcategory = /\belectricity\b/.test(lower)
-      ? 'Electricity Bill'
-      : /\b(wifi|wi-fi|broadband)\b/.test(lower)
-      ? 'Wi-Fi / Broadband'
-      : 'Mobile Recharge';
-  } else if (/\b(lipstick|cosmetic|makeup|skincare|shirt|dress|clothing|shoes|nykaa|myntra|amazon)\b/.test(lower)) {
-    categorySlug = 'shopping-personal-care';
-    categoryName = 'Shopping & Personal Care';
-    subcategory = /\b(lipstick|cosmetic|makeup|nykaa)\b/.test(lower)
-      ? 'Cosmetics / Lipstick'
-      : 'Clothing';
-  } else if (/\b(grocery|groceries|vegetable|milk|dairy|fruit|supermarket|blinkit|zepto|instamart)\b/.test(lower)) {
-    categorySlug = 'groceries-household';
-    categoryName = 'Groceries & Household';
-    subcategory = 'Vegetables & Dairy';
-  } else if (/\b(food|dinner|lunch|breakfast|coffee|cafe|restaurant|swiggy|zomato|pizza|burger)\b/.test(lower)) {
-    categorySlug = 'food-dining';
-    categoryName = 'Food & Dining';
-    subcategory = 'Restaurants';
-  } else if (/\b(uber|ola|auto|cab|petrol|fuel|metro|train|bus|flight)\b/.test(lower)) {
-    categorySlug = 'transport-fuel';
-    categoryName = 'Transport & Fuel';
-    subcategory = 'Uber / Ola / Auto';
-  } else if (/\b(emi|loan|borrowed|repay|repaid|installment|debt)\b/.test(lower)) {
+  const comm = detectDeterministicCommitment(lower, categorySlug, input.commitments || []);
+  const debt = detectDeterministicDebt(lower, categorySlug, input.debts || []);
+  if (debt.overrideToDebtCategory) {
     categorySlug = 'emis-debt-repayment';
     categoryName = 'EMIs & Debt Repayment';
-    subcategory = /\b(emi|loan)\b/.test(lower) ? 'Loan EMI' : 'Friend Debt Repayment';
-  } else if (/\b(allowance|mother|mom|parents|family|gift)\b/.test(lower)) {
-    categorySlug = 'family-commitments';
-    categoryName = 'Family & Commitments';
-    subcategory = 'Parental Allowance';
-  } else if (/\b(netflix|spotify|gym|movie|ott|subscription)\b/.test(lower)) {
-    categorySlug = 'entertainment-subscriptions';
-    categoryName = 'Entertainment & Subscriptions';
-    subcategory = 'OTT & Streaming';
-  } else if (/\b(sip|mutual fund|gold|investment|salary)\b/.test(lower)) {
-    categorySlug = 'investments-savings';
-    categoryName = 'Investments & Savings';
-    subcategory = type === 'income' ? 'Salary / Income' : 'SIP / Mutual Funds';
+    subcategory = 'Friend Debt Repayment';
   }
 
-  // 5. Detect Monthly Commitment link (e.g., Mother / Mom)
-  let matchedCommitmentId: string | null = null;
-  let matchedCommitmentRecipient: string | null = null;
-  let commitmentContributionType: ExpenseParseOutput['commitmentContributionType'] = null;
-
-  const commitments = input.commitments || [];
-  for (const comm of commitments) {
-    const recLower = comm.recipientName.toLowerCase();
-    if (
-      lower.includes(recLower) ||
-      (recLower === 'mother' && /\b(mother|mom|mummy|maa|ammi)\b/.test(lower))
-    ) {
-      matchedCommitmentId = comm.id;
-      matchedCommitmentRecipient = comm.recipientName;
-      const isDirectAllowance =
-        /\b(allowance|transfer|settle|direct|monthly support)\b/.test(lower) &&
-        !lower.includes('deduct') &&
-        !lower.includes('offset') &&
-        categorySlug === 'family-commitments';
-      commitmentContributionType = isDirectAllowance ? 'direct_payment' : 'offset_expense';
-      break;
-    }
-  }
-
-  // 6. Detect Friend Debt link (e.g., Rahul, Priya)
-  let matchedDebtId: string | null = null;
-  let matchedDebtPerson: string | null = null;
-  const debts = input.debts || [];
-  for (const debt of debts) {
-    const firstName = debt.personName.split(' ')[0].toLowerCase();
-    if (firstName && lower.includes(firstName)) {
-      matchedDebtId = debt.id;
-      matchedDebtPerson = debt.personName;
-      if (categorySlug === 'shopping-personal-care' && /\b(paid|repay|installment|borrowed|lent|owe)\b/.test(lower)) {
-        categorySlug = 'emis-debt-repayment';
-        categoryName = 'EMIs & Debt Repayment';
-        subcategory = 'Friend Debt Repayment';
-      }
-      break;
-    }
-  }
-
-  // 7. Clean title
   let cleanTitle = text
     .replace(/^(paid|spent|bought|ordered|logged|sent|gave)\s+/i, '')
     .replace(/\b(via|by|using)\s+(upi|gpay|phonepe|cash|card|credit card|bank)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
-
-  if (cleanTitle.length > 0) {
-    cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
-  } else {
-    cleanTitle = `${categoryName} Expense`;
-  }
+  cleanTitle = cleanTitle.length > 0 ? cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1) : `${categoryName} Expense`;
 
   const tags: string[] = [categorySlug.split('-')[0]];
-  if (matchedCommitmentRecipient) tags.push(matchedCommitmentRecipient.toLowerCase(), 'offset');
-  if (matchedDebtPerson) tags.push(matchedDebtPerson.split(' ')[0].toLowerCase(), 'debt');
+  if (comm.matchedCommitmentRecipient) tags.push(comm.matchedCommitmentRecipient.toLowerCase(), 'offset');
+  if (debt.matchedDebtPerson) tags.push(debt.matchedDebtPerson.split(' ')[0].toLowerCase(), 'debt');
 
   return {
     title: cleanTitle,
@@ -641,11 +670,9 @@ export function parseExpenseDeterministically(input: ExpenseParseInput): Expense
     categoryName,
     subcategory,
     paymentMethodType,
-    matchedCommitmentRecipient,
-    matchedCommitmentId,
-    commitmentContributionType,
-    matchedDebtPerson,
-    matchedDebtId,
+    ...comm,
+    matchedDebtPerson: debt.matchedDebtPerson,
+    matchedDebtId: debt.matchedDebtId,
     notes: text,
     tags,
     confidence: amount > 0 ? 94 : 60,

@@ -170,6 +170,26 @@ const HINGLISH_FOOD_CATALOG: FoodCatalogRule[] = [
 /**
  * Matches a fragment like "4 boiled eggs" or "oats" against user's saved templates.
  */
+function extractAliasMultiplier(clean: string, tName: string, alias: string): number {
+  const multMatch = clean.match(/\b(\d+(?:\.\d+)?)\s*(?:x|scoops?|cups?|bowls?|servings?)?\b/i);
+  if (!multMatch) return 1;
+  if (tName.includes(multMatch[1]) || alias.includes(multMatch[1])) return 1;
+  const parsedMult = parseFloat(multMatch[1]);
+  return parsedMult > 0 && parsedMult <= 10 ? parsedMult : 1;
+}
+
+function matchTemplateByAlias(clean: string, tpl: MealTemplate): { template: MealTemplate; multiplier: number } | null {
+  const tName = tpl.name.toLowerCase();
+  for (const alias of tpl.hindiAliases || []) {
+    const a = alias.toLowerCase().trim();
+    if (!a) continue;
+    if (clean === a || clean.includes(a)) {
+      return { template: tpl, multiplier: extractAliasMultiplier(clean, tName, a) };
+    }
+  }
+  return null;
+}
+
 export function matchMealTemplate(
   rawFragment: string,
   templates: MealTemplate[]
@@ -177,36 +197,36 @@ export function matchMealTemplate(
   const clean = rawFragment.trim().toLowerCase();
   if (!clean) return null;
 
-  const active = templates.filter((t) => !t.deletedAt);
-  // Exact or alias match first
-  for (const tpl of active) {
+  for (const tpl of templates) {
+    if (tpl.deletedAt) continue;
     const tName = tpl.name.toLowerCase();
-    if (clean === tName || clean.includes(tName)) {
-      return { template: tpl, multiplier: 1 };
-    }
-    for (const alias of tpl.hindiAliases || []) {
-      const a = alias.toLowerCase().trim();
-      if (!a) continue;
-      if (clean === a || clean.includes(a)) {
-        // Check if user specified e.g. "2 scoops whey" or "2x oats"
-        const multMatch = clean.match(/\b(\d+(?:\.\d+)?)\s*(?:x|scoops?|cups?|bowls?|servings?)?\b/i);
-        let multiplier = 1;
-        if (multMatch && !tName.includes(multMatch[1]) && !a.includes(multMatch[1])) {
-          const parsedMult = parseFloat(multMatch[1]);
-          if (parsedMult > 0 && parsedMult <= 10) multiplier = parsedMult;
-        }
-        return { template: tpl, multiplier };
-      }
-    }
+    if (clean === tName || clean.includes(tName)) return { template: tpl, multiplier: 1 };
+    const aliasMatch = matchTemplateByAlias(clean, tpl);
+    if (aliasMatch) return aliasMatch;
   }
-
   return null;
 }
 
-/**
- * Estimates calories and macros for Hinglish food / junk food descriptions offline.
- * Used both by the Junk Food Finance -> Diet auto-bridge and Universal Capture fallback.
- */
+function scaleEggEstimate(
+  rule: (typeof HINGLISH_FOOD_CATALOG)[number],
+  clean: string,
+  lower: string,
+  forceJunk?: boolean
+): EstimatedFoodMacros {
+  const countMatch = lower.match(/\b(\d+)\s*(?:boiled\s*)?(?:eggs?|anda|ande)\b/i);
+  const count = countMatch ? Math.max(1, Math.min(12, parseInt(countMatch[1], 10))) : 2;
+  return {
+    name: clean || `${count} Eggs`,
+    calories: Math.round(rule.calories * count),
+    proteinG: Math.round(rule.proteinG * count * 10) / 10,
+    carbsG: Math.round(rule.carbsG * count * 10) / 10,
+    fatG: Math.round(rule.fatG * count * 10) / 10,
+    isJunk: forceJunk ?? rule.isJunk,
+    mealType: rule.mealType,
+    confidence: 88,
+  };
+}
+
 export function estimateHinglishFoodMacros(
   rawText: string,
   options?: { amountInr?: number; forceJunk?: boolean }
@@ -214,50 +234,29 @@ export function estimateHinglishFoodMacros(
   const clean = (rawText || '').trim();
   const lower = clean.toLowerCase();
 
-  for (const rule of HINGLISH_FOOD_CATALOG) {
-    if (rule.pattern.test(lower)) {
-      // Special scaling for eggs ("4 eggs", "6 eggs", "2 anda") when matched generically
-      if (rule.name === 'Eggs') {
-        const countMatch = lower.match(/\b(\d+)\s*(?:boiled\s*)?(?:eggs?|anda|ande)\b/i);
-        const count = countMatch ? Math.max(1, Math.min(12, parseInt(countMatch[1], 10))) : 2;
-        return {
-          name: clean || `${count} Eggs`,
-          calories: Math.round(rule.calories * count),
-          proteinG: Math.round(rule.proteinG * count * 10) / 10,
-          carbsG: Math.round(rule.carbsG * count * 10) / 10,
-          fatG: Math.round(rule.fatG * count * 10) / 10,
-          isJunk: options?.forceJunk ?? rule.isJunk,
-          mealType: rule.mealType,
-          confidence: 88,
-        };
-      }
-
-      return {
-        name: clean || rule.name,
-        calories: rule.calories,
-        proteinG: rule.proteinG,
-        carbsG: rule.carbsG,
-        fatG: rule.fatG,
-        isJunk: options?.forceJunk ?? rule.isJunk,
-        mealType: rule.mealType,
-        confidence: 85,
-      };
-    }
+  const rule = HINGLISH_FOOD_CATALOG.find((r) => r.pattern.test(lower));
+  if (rule) {
+    if (rule.name === 'Eggs') return scaleEggEstimate(rule, clean, lower, options?.forceJunk);
+    return {
+      name: clean || rule.name,
+      calories: rule.calories,
+      proteinG: rule.proteinG,
+      carbsG: rule.carbsG,
+      fatG: rule.fatG,
+      isJunk: options?.forceJunk ?? rule.isJunk,
+      mealType: rule.mealType,
+      confidence: 85,
+    };
   }
 
-  // Fallback heuristic when unrecognized food/junk expense is logged
   const amt = Number(options?.amountInr || 0);
   const calories = amt >= 350 ? 550 : amt >= 180 ? 420 : 350;
-  const proteinG = amt >= 350 ? 14 : 9;
-  const carbsG = Math.round((calories * 0.52) / 4);
-  const fatG = Math.round((calories * 0.36) / 9);
-
   return {
     name: clean || 'Junk Food Meal',
     calories,
-    proteinG,
-    carbsG,
-    fatG,
+    proteinG: amt >= 350 ? 14 : 9,
+    carbsG: Math.round((calories * 0.52) / 4),
+    fatG: Math.round((calories * 0.36) / 9),
     isJunk: options?.forceJunk ?? true,
     mealType: 'snack',
     confidence: 55,

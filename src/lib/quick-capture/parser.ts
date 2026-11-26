@@ -55,147 +55,97 @@ const NON_PERSON_SPLIT_WORDS = new Set([
 /**
  * Detects whether the input phrase is likely an expense or a task.
  */
+const PAST_SPEND_RE = /\b(spent|paid|bought|ordered|cost)\b/i;
+const MERCHANT_EXPENSE_RE = /\b(swiggy|zomato|coffee|chai|uber|ola|lunch|dinner|groceries|zepto|blinkit)\b/i;
+const TASK_KEYWORDS_RE = /\b(call|email|send|write|finish|read|review|study|fix|prepare|meeting|meet|todo|remind|schedule|clean|submit|organize|task)\b/i;
+const FUTURE_CUE_RE = /\b(tomorrow|tonight|next\s+week|reminder|remind|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
+
+interface QuickTextCtx {
+  text: string;
+  lower: string;
+}
+
+function hasStandaloneNumber(text: string): boolean {
+  const cleaned = text.replace(/\b50[-/]50\b/gi, '');
+  return /(?<!:)\b(?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?(?!\s*(?::|am|pm|hours?|mins?|minutes?|days?|months?|years?|o'clock|th|st|nd|rd))\b/i.test(
+    cleaned
+  );
+}
+
+function classifyPayOrBillIntent(ctx: QuickTextCtx, hasNumber: boolean): QuickCaptureIntent {
+  if (FUTURE_CUE_RE.test(ctx.lower) || TASK_KEYWORDS_RE.test(ctx.lower)) return 'task';
+  return hasNumber ? 'expense' : 'task';
+}
+
+function hasCurrencyMention(text: string): boolean {
+  return /(?:₹|rs\.?|inr|\$|€)\s*[\d,]+|[\d,]+\s*(?:rs|inr|rupees|bucks)/i.test(text);
+}
+
+function classifySpendOrMerchantIntent(ctx: QuickTextCtx, hasNumber: boolean): QuickCaptureIntent {
+  return TASK_KEYWORDS_RE.test(ctx.lower) && !hasNumber ? 'task' : 'expense';
+}
+
+function resolveIntentFromCues(ctx: QuickTextCtx, hasNumber: boolean): QuickCaptureIntent {
+  if (PAST_SPEND_RE.test(ctx.lower) || MERCHANT_EXPENSE_RE.test(ctx.lower)) {
+    return classifySpendOrMerchantIntent(ctx, hasNumber);
+  }
+  if (/\b(pay|bill|recharge|expense|split)\b/i.test(ctx.lower)) {
+    return classifyPayOrBillIntent(ctx, hasNumber);
+  }
+  if (!hasNumber || TASK_KEYWORDS_RE.test(ctx.lower) || FUTURE_CUE_RE.test(ctx.lower)) return 'task';
+  return 'expense';
+}
+
 export function detectIntent(input: string): QuickCaptureIntent {
   const text = input.trim();
   const lower = text.toLowerCase();
-  if (!lower) return 'expense';
-
-  // Explicit currency indicator (₹, rs, inr, $, €, rupees, bucks)
-  const hasCurrency = /(?:₹|rs\.?|inr|\$|€)\s*[\d,]+|[\d,]+\s*(?:rs|inr|rupees|bucks)/i.test(text);
-
-  // Past-tense spend cues
-  const pastSpendKeywords = /\b(spent|paid|bought|ordered|cost)\b/i;
-  const merchantExpenseKeywords = /\b(swiggy|zomato|coffee|chai|uber|ola|lunch|dinner|groceries|zepto|blinkit)\b/i;
-
-  // Task & Future reminder cues
-  const taskKeywords = /\b(call|email|send|write|finish|read|review|study|fix|prepare|meeting|meet|todo|remind|schedule|clean|submit|organize|task)\b/i;
-  const futureReminderCues = /\b(tomorrow|tonight|next\s+week|reminder|remind|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
-
-  // Standalone numbers not part of time (e.g. not "6pm", "6:00", "6 am") or split ratios ("50/50")
-  const textWithoutSplitRatios = text.replace(/\b50[-/]50\b/gi, '');
-  const explicitNumberMatch = textWithoutSplitRatios.match(
-    /(?<!:)\b(?:\d{1,3}(?:,\d{2,3})+|\d+)(?:\.\d{1,2})?(?!\s*(?::|am|pm|hours?|mins?|minutes?|days?|months?|years?|o'clock|th|st|nd|rd))\b/i
-  );
-  const hasExplicitNumber = !!explicitNumberMatch;
-
-  // 1. Explicit currency always indicates expense
-  if (hasCurrency) return 'expense';
-
-  // 2. Past-tense spending verbs or common spend services
-  if (pastSpendKeywords.test(lower) || merchantExpenseKeywords.test(lower)) {
-    if (taskKeywords.test(lower) && !hasExplicitNumber) return 'task';
-    return 'expense';
-  }
-
-  // 3. For "pay ..." or "bill ...":
-  // Only classify as expense when explicit monetary amount is present and no future reminder cues without currency
-  const isPayOrBill = /\b(pay|bill|recharge|expense|split)\b/i.test(lower);
-  if (isPayOrBill) {
-    if (futureReminderCues.test(lower) || taskKeywords.test(lower)) {
-      return 'task';
-    }
-    if (hasExplicitNumber) {
-      return 'expense';
-    }
-    return 'task';
-  }
-
-  // 4. Task keywords or future cues
-  if (taskKeywords.test(lower) || futureReminderCues.test(lower)) {
-    return 'task';
-  }
-
-  // 5. Standalone number with spend context
-  if (hasExplicitNumber && /\b(spend|buy)\b/i.test(lower)) {
-    return 'expense';
-  }
-
-  // 6. Generic numbers without task verbs (e.g. "uber 350", "cab 100")
-  if (hasExplicitNumber && !taskKeywords.test(lower)) {
-    return 'expense';
-  }
-
-  return 'task';
+  if (!lower || hasCurrencyMention(text)) return 'expense';
+  return resolveIntentFromCues({ text, lower }, hasStandaloneNumber(text));
 }
 
-/**
- * Heuristically parses an expense from natural language input.
- */
-export function parseExpenseNaturalLanguage(input: string): ParsedQuickExpense {
-  const text = input.trim();
-  const lower = text.toLowerCase();
+const EXPENSE_CATEGORY_RULES: Array<[RegExp, string]> = [
+  [/\b(zomato|swiggy|food|dinner|lunch|breakfast|coffee|chai|cafe|pizza|burger|restaurant|snack|tea)\b/, 'food-dining'],
+  [/\b(zepto|blinkit|instamart|grocery|groceries|bigbasket|dmart|milk|veggies|vegetables)\b/, 'groceries-household'],
+  [/\b(uber|ola|rapido|metro|fuel|petrol|diesel|cab|auto|flight|train|irctc|bus)\b/, 'transport-fuel'],
+  [/\b(electricity|wifi|broadband|recharge|bill|water|gas|jio|airtel)\b/, 'utilities-bills'],
+  [/\b(netflix|spotify|prime|movie|gym|subscription|hotstar|youtube|game|cinema)\b/, 'entertainment-subscriptions'],
+  [/\b(medicine|pharmacy|doctor|apollo|1mg|hospital|clinic)\b/, 'medical-supplements'],
+];
 
-  // 1. Amount: matches ₹1,200, 1,200 rs, 12,500.50, 420 (excluding split ratios like 50/50)
-  const textWithoutSplitRatios = text.replace(/\b50[-/]50\b/gi, '');
-  const amountMatch =
-    textWithoutSplitRatios.match(/(?:₹|rs\.?|inr|\$|€)\s*([\d,]+(?:\.\d{1,2})?)/i) ||
-    textWithoutSplitRatios.match(/\b([\d,]+(?:\.\d{1,2})?)\s*(?:rs|inr|rupees|bucks)\b/i) ||
-    textWithoutSplitRatios.match(/(?<!:)\b(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?!\s*:)\b/);
+function inferExpenseCategorySlug(ctx: QuickTextCtx): string {
+  return EXPENSE_CATEGORY_RULES.find(([re]) => re.test(ctx.lower))?.[1] ?? 'shopping-personal-care';
+}
 
-  const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
+const SPLIT_FRIEND_PATTERNS: RegExp[] = [
+  /(?:split\s+with|shared\s+with|share\s+with|split\s+50[-/]50\s+with)\s+([A-Za-z0-9_-]+)/i,
+  /with\s+([A-Za-z0-9_-]+)\s+(?:split|50[-/]50|half|shares?|owes?)/i,
+  /([A-Za-z0-9_-]+)\s+(?:split|owes?|shares?|half)/i,
+  /with\s+([A-Za-z0-9_-]+)/i,
+];
 
-  // 2. Split with friend detection
-  // Requires explicit split cues (split, 50-50, 50/50, share, owes, half)
-  let splitWithFriend: string | undefined;
-  let isSplit = false;
-
-  const hasExplicitSplitCue = /\b(split|50[-/]50|share|shared|sharing|owes?|half)\b/i.test(lower);
-
-  if (hasExplicitSplitCue) {
-    const splitWithMatch =
-      text.match(/(?:split\s+with|shared\s+with|share\s+with|split\s+50[-/]50\s+with)\s+([A-Za-z0-9_-]+)/i) ||
-      text.match(/with\s+([A-Za-z0-9_-]+)\s+(?:split|50[-/]50|half|shares?|owes?)/i) ||
-      text.match(/([A-Za-z0-9_-]+)\s+(?:split|owes?|shares?|half)/i) ||
-      text.match(/with\s+([A-Za-z0-9_-]+)/i);
-
-    if (splitWithMatch) {
-      const candidate = splitWithMatch[1].trim();
-      const candidateLower = candidate.toLowerCase();
-      if (!NON_PERSON_SPLIT_WORDS.has(candidateLower)) {
-        splitWithFriend = candidate.charAt(0).toUpperCase() + candidate.slice(1);
-        isSplit = true;
-      } else {
-        isSplit = true; // generic split without a valid friend name
-      }
-    } else {
-      isSplit = true;
-    }
+function parseSplitDetails(ctx: QuickTextCtx): { isSplit: boolean; splitWithFriend?: string } {
+  if (!/\b(split|50[-/]50|share|shared|sharing|owes?|half)\b/i.test(ctx.lower)) {
+    return { isSplit: false };
   }
+  const match = SPLIT_FRIEND_PATTERNS.map((re) => ctx.text.match(re)).find(Boolean);
+  if (!match) return { isSplit: true };
+  const candidate = match[1].trim();
+  if (NON_PERSON_SPLIT_WORDS.has(candidate.toLowerCase())) return { isSplit: true };
+  return { isSplit: true, splitWithFriend: candidate.charAt(0).toUpperCase() + candidate.slice(1) };
+}
 
-  const splitAmount = isSplit && amount > 0 ? Math.round((amount / 2) * 100) / 100 : undefined;
-
-  // 3. Category inference
-  let categorySlug = 'shopping-personal-care';
-  if (/\b(zomato|swiggy|food|dinner|lunch|breakfast|coffee|chai|cafe|pizza|burger|restaurant|snack|tea)\b/.test(lower)) {
-    categorySlug = 'food-dining';
-  } else if (/\b(zepto|blinkit|instamart|grocery|groceries|bigbasket|dmart|milk|veggies|vegetables)\b/.test(lower)) {
-    categorySlug = 'groceries-household';
-  } else if (/\b(uber|ola|rapido|metro|fuel|petrol|diesel|cab|auto|flight|train|irctc|bus)\b/.test(lower)) {
-    categorySlug = 'transport-fuel';
-  } else if (/\b(electricity|wifi|broadband|recharge|bill|water|gas|jio|airtel)\b/.test(lower)) {
-    categorySlug = 'utilities-bills';
-  } else if (/\b(netflix|spotify|prime|movie|gym|subscription|hotstar|youtube|game|cinema)\b/.test(lower)) {
-    categorySlug = 'entertainment-subscriptions';
-  } else if (/\b(medicine|pharmacy|doctor|apollo|1mg|hospital|clinic)\b/.test(lower)) {
-    categorySlug = 'medical-supplements';
-  }
-
-  // 4. Date
-  const parsedDateObj = chrono.parseDate(input);
-  const date = parsedDateObj ? getLocalIsoDate(parsedDateObj) : getLocalIsoDate();
-
-  // 5. Clean Title (remove amounts, commas, explicit split phrases)
+function cleanExpenseTitle(params: { text: string; categorySlug: string; splitWithFriend?: string }): string {
+  const { text, categorySlug, splitWithFriend } = params;
   let cleaned = text;
-
-  if (isSplit && splitWithFriend) {
+  if (splitWithFriend) {
     const friendPattern = new RegExp(
       `(?:split\\s+with|shared\\s+with|share\\s+with|with)\\s+${splitWithFriend}(?:\\s+(?:split|50[-/]50|half))?`,
       'gi'
     );
-    cleaned = cleaned.replace(friendPattern, '');
-    cleaned = cleaned.replace(new RegExp(`\\b${splitWithFriend}\\s+(?:split|owes?|shares?|half)\\b`, 'gi'), '');
+    cleaned = cleaned
+      .replace(friendPattern, '')
+      .replace(new RegExp(`\\b${splitWithFriend}\\s+(?:split|owes?|shares?|half)\\b`, 'gi'), '');
   }
-
   cleaned = cleaned
     .replace(/\b(split|50[-/]50|half)\b/gi, '')
     .replace(/(?:₹|rs\.?|inr|\$|€)\s*[\d,]+(?:\.\d{1,2})?/gi, '')
@@ -207,21 +157,33 @@ export function parseExpenseNaturalLanguage(input: string): ParsedQuickExpense {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // If title was stripped away, derive fallback from category
-  if (!cleaned) {
-    cleaned = categorySlug === 'food-dining' ? 'Food & Drinks' : 'Expense';
-  } else {
-    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-  }
+  if (!cleaned) return categorySlug === 'food-dining' ? 'Food & Drinks' : 'Expense';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+export function parseExpenseNaturalLanguage(input: string): ParsedQuickExpense {
+  const text = input.trim();
+  const ctx: QuickTextCtx = { text, lower: text.toLowerCase() };
+  const stripped = text.replace(/\b50[-/]50\b/gi, '');
+  const amountMatch =
+    stripped.match(/(?:₹|rs\.?|inr|\$|€)\s*([\d,]+(?:\.\d{1,2})?)/i) ||
+    stripped.match(/\b([\d,]+(?:\.\d{1,2})?)\s*(?:rs|inr|rupees|bucks)\b/i) ||
+    stripped.match(/(?<!:)\b(\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)(?!\s*:)\b/);
+
+  const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0;
+  const { isSplit, splitWithFriend } = parseSplitDetails(ctx);
+  const splitAmount = isSplit && amount > 0 ? Math.round((amount / 2) * 100) / 100 : undefined;
+  const categorySlug = inferExpenseCategorySlug(ctx);
+  const parsedDateObj = chrono.parseDate(input);
 
   return {
     amount,
-    title: cleaned,
+    title: cleanExpenseTitle({ text, categorySlug, splitWithFriend }),
     categorySlug,
     splitWithFriend,
     isSplit,
     splitAmount,
-    date,
+    date: parsedDateObj ? getLocalIsoDate(parsedDateObj) : getLocalIsoDate(),
   };
 }
 
