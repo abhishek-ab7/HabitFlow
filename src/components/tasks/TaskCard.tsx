@@ -1,775 +1,85 @@
-"use client"
+'use client';
 
-import { memo, useState, useEffect } from "react"
-import { useShallow } from "zustand/react/shallow"
-import { motion, useMotionValue, useTransform } from "framer-motion"
-import { CheckCircle2, Circle, Calendar, Tag, Sparkles, Play, Pause, Trash2, ChevronDown, ChevronRight, Edit, StickyNote, Check, Zap, Star } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { isAIEnabled } from "@/lib/ai-features-flag"
-import { format } from "date-fns"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import type { Task } from "@/lib/types"
-import { usePomodoroStore } from "@/lib/stores/pomodoro-store"
-import { useTaskStore } from "@/lib/stores/task-store"
-import { useFeedback } from "@/hooks/use-feedback"
-import { SubtaskList } from "./SubtaskList"
-import { AddSubtaskButton } from "./AddSubtaskButton"
-import { EditTaskModal } from "./EditTaskModal"
+import { memo } from 'react';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+import type { Task } from '@/lib/types';
+import { EditTaskModal } from './EditTaskModal';
+import { TaskCardSwipeBackdrop } from './card/TaskCardParts';
+import { TaskCardBody, TaskCardCheckColumn, TaskCardSubtasksDrawer } from './card/TaskCardSections';
+import { useTaskCardController } from './card/useTaskCardController';
 
 interface TaskCardProps {
-    task: Task
-    onComplete?: (id: string) => void
-    onUpdate?: (task: Task) => void
-    isOverlay?: boolean
-    compact?: boolean
-    isMit?: boolean
-    mitRank?: number | null
-    onToggleMit?: (task: Task) => void
-    subtasks?: Task[]
-    disableSwipe?: boolean
+  task: Task;
+  onComplete?: (id: string) => void;
+  onUpdate?: (task: Task) => void;
+  isOverlay?: boolean;
+  compact?: boolean;
+  isMit?: boolean;
+  mitRank?: number | null;
+  onToggleMit?: (task: Task) => void;
+  subtasks?: Task[];
+  disableSwipe?: boolean;
 }
 
-const formatMinutesSeconds = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remaining = secs % 60;
-    return `${mins}:${remaining.toString().padStart(2, '0')}`;
-};
+function TaskCardSurface(params: {
+  task: Task;
+  vm: ReturnType<typeof useTaskCardController>;
+  isDone: boolean;
+  compact?: boolean;
+  isMit?: boolean;
+  mitRank?: number | null;
+  onComplete?: (id: string) => void;
+  onToggleMit?: (task: Task) => void;
+  disableSwipe?: boolean;
+}) {
+  const { task, vm, isDone, compact } = params;
+  return (
+    <motion.div
+      drag={params.disableSwipe ? false : 'x'}
+      dragDirectionLock
+      dragConstraints={{ left: -100, right: 100 }}
+      dragElastic={{ left: 0.6, right: 0.6 }}
+      style={{ x: vm.x }}
+      onDragEnd={vm.handleDragEnd}
+      className={cn(
+        'group relative rounded-2xl border transition-transform transition-colors duration-200 hover:-translate-y-0.5 hover:shadow-md bg-card border-border shadow-xs hover:border-primary/35',
+        compact ? 'p-3' : 'p-5',
+        isDone && 'opacity-60 grayscale-[0.3]'
+      )}
+    >
+      <div className={cn('flex items-start', compact ? 'gap-2.5' : 'gap-4')}>
+        <TaskCardCheckColumn
+          isDone={isDone}
+          compact={compact}
+          hasSubtasks={vm.subtasks.length > 0}
+          isExpanded={vm.isExpanded}
+          onComplete={(e) => { e.stopPropagation(); params.onComplete?.(task.id); }}
+          onToggleExpand={(e) => { e.stopPropagation(); vm.setIsExpanded((p) => !p); }}
+        />
+        <TaskCardBody task={task} vm={vm} isDone={isDone} compact={compact} isMit={params.isMit} mitRank={params.mitRank} onToggleMit={params.onToggleMit} />
+      </div>
 
-function ActiveTaskTimerPill() {
-    const { isRunning, timeLeft, pauseTimer, resumeTimer } = usePomodoroStore(
-        useShallow((s) => ({
-            isRunning: s.isRunning,
-            timeLeft: s.timeLeft,
-            pauseTimer: s.pauseTimer,
-            resumeTimer: s.resumeTimer,
-        }))
-    );
+      <TaskCardSubtasksDrawer task={task} vm={vm} compact={compact} />
 
-    if (isRunning) {
-        return (
-            <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    pauseTimer();
-                }}
-                className="h-6 px-2 text-[10px] gap-1 text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 rounded-md font-semibold"
-            >
-                <Pause className="h-3 w-3 fill-current animate-pulse" />
-                <span>Focusing ({formatMinutesSeconds(timeLeft)})</span>
-            </Button>
-        );
-    }
-
-    return (
-        <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={(e) => {
-                e.stopPropagation();
-                resumeTimer();
-            }}
-            className="h-6 px-2 text-[10px] gap-1 text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 rounded-md font-semibold"
-        >
-            <Play className="h-3 w-3 fill-current" />
-            <span>Paused ({formatMinutesSeconds(timeLeft)})</span>
-        </Button>
-    );
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-white/10 via-white/5 to-transparent opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-700" />
+      {task.priority === 'high' && !task.status && <div className="absolute -z-10 -inset-1 blur-2xl opacity-10 bg-red-500 rounded-2xl" />}
+    </motion.div>
+  );
 }
 
-interface AIPriority {
-  suggestedPriority: string;
-  reasoning: string;
-  urgencyScore: number;
-}
+export const TaskCard = memo(function TaskCard({
+  task, onComplete, onUpdate, compact, isMit, mitRank, onToggleMit, subtasks: subtasksProp, disableSwipe,
+}: TaskCardProps) {
+  const vm = useTaskCardController({ task, subtasksProp, onComplete, onUpdate });
 
-export const TaskCard = memo(function TaskCard({ task, onComplete, onUpdate, compact, isMit, mitRank, onToggleMit, subtasks: subtasksProp, disableSwipe }: TaskCardProps) {
-    const [aiPriority, setAIPriority] = useState<AIPriority | null>(null);
-    const [loadingPriority, setLoadingPriority] = useState(false);
-
-    const { removeTask, editTask, addTask, toggleTaskComplete } = useTaskStore(
-        useShallow((s) => ({
-            removeTask: s.removeTask,
-            editTask: s.editTask,
-            addTask: s.addTask,
-            toggleTaskComplete: s.toggleTaskComplete,
-        }))
-    );
-    const fallbackSubtasks = useTaskStore(
-        useShallow((s) =>
-            subtasksProp
-                ? null
-                : s.tasks.filter((t) => t.parentTaskId === task.id && t.status !== 'archived')
-        )
-    );
-    const [isExpanded, setIsExpanded] = useState(false);
-    const [expandedSubtasks, setExpandedSubtasks] = useState<Set<string>>(new Set());
-    const [activeEditTask, setActiveEditTask] = useState<Task | null>(null);
-    const [isNotesOpen, setIsNotesOpen] = useState(false);
-    const [noteDraft, setNoteDraft] = useState(task.notes ?? "");
-    const [isSavingNote, setIsSavingNote] = useState(false);
-    const [justSavedNote, setJustSavedNote] = useState(false);
-    const feedback = useFeedback();
-
-    useEffect(() => {
-        setNoteDraft(task.notes ?? "");
-    }, [task.notes]);
-
-    const normalizedExistingNote = (task.notes ?? "").trim();
-    const hasUnsavedNote = noteDraft.trim() !== normalizedExistingNote;
-
-    const handleSaveNote = async () => {
-        const nextNote = noteDraft.trim();
-        if (nextNote === normalizedExistingNote || isSavingNote) return;
-
-        setIsSavingNote(true);
-        try {
-            const valueToPersist = nextNote.length > 0 ? nextNote : null;
-            await editTask(task.id, { notes: valueToPersist });
-            onUpdate?.({ ...task, notes: valueToPersist });
-            setJustSavedNote(true);
-            setTimeout(() => setJustSavedNote(false), 1800);
-        } catch (err) {
-            console.error("Failed to save task note:", err);
-            toast.error("Failed to save note");
-        } finally {
-            setIsSavingNote(false);
-        }
-    };
-
-    const toggleExpandSubtask = (subtaskId: string) => {
-        const next = new Set(expandedSubtasks);
-        if (next.has(subtaskId)) {
-            next.delete(subtaskId);
-        } else {
-            next.add(subtaskId);
-        }
-        setExpandedSubtasks(next);
-    };
-    
-    const isCurrentTaskActive = usePomodoroStore((s) => s.activeTaskId === task.id);
-    const startTimer = usePomodoroStore((s) => s.startTimer);
-    const startPresetTimer = usePomodoroStore((s) => s.startPresetTimer);
-
-    const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done'
-
-    const priorityStyles = {
-        low: "border-blue-500/30 bg-blue-500/5 text-blue-500 shadow-[0_0_15px_-5px_rgba(59,130,246,0.3)]",
-        medium: "border-yellow-500/30 bg-yellow-500/5 text-yellow-500 shadow-[0_0_15px_-5px_rgba(234,179,8,0.3)]",
-        high: "border-red-500/30 bg-red-500/5 text-red-500 shadow-[0_0_15px_-5px_rgba(239,68,68,0.3)]",
-    }
-
-    const subtasks = Array.isArray(subtasksProp)
-        ? subtasksProp
-        : Array.isArray(fallbackSubtasks)
-            ? fallbackSubtasks
-            : [];
-    const completedSubtasks = subtasks.filter(s => s.status === 'done').length;
-    const subtaskProgress = subtasks.length > 0 ? (completedSubtasks / subtasks.length) * 100 : 0;
-
-    const getAIPriority = async () => {
-        setLoadingPriority(true);
-        try {
-            const response = await fetch('/api/ai/prioritize-task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    task: {
-                        id: task.id,
-                        title: task.title,
-                        description: task.description || '',
-                        due_date: task.due_date,
-                        priority: task.priority,
-                        tags: task.tags
-                    },
-                    userContext: {
-                        currentTime: new Date().toISOString()
-                    }
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                setAIPriority(data);
-                toast.success('AI priority calculated!');
-            } else {
-                const error = await response.json();
-                toast.error(error.error || 'Failed to get AI priority');
-            }
-        } catch (error) {
-            console.error('AI priority error:', error);
-            toast.error('Failed to get AI priority');
-        } finally {
-            setLoadingPriority(false);
-        }
-    };
-
-    const x = useMotionValue(0);
-
-    // Transform values for checking/completing (drag right)
-    const checkScale = useTransform(x, [0, 80], [0.7, 1.25]);
-    const checkOpacity = useTransform(x, [0, 50], [0, 1]);
-
-    // Transform values for deleting (drag left)
-    const trashScale = useTransform(x, [-80, 0], [1.25, 0.7]);
-    const trashOpacity = useTransform(x, [-50, 0], [1, 0]);
-
-    return (
-        <div className="relative overflow-hidden rounded-2xl w-full">
-            {/* Backdrop Actions */}
-            <div className="absolute inset-0 flex items-center justify-between pointer-events-none rounded-2xl">
-                {/* Complete Backdrop (Visible when dragging right) */}
-                <motion.div 
-                    style={{ opacity: checkOpacity }}
-                    className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-emerald-500/80 to-emerald-500/10 flex items-center pl-6 rounded-l-2xl"
-                >
-                    <motion.div style={{ scale: checkScale }}>
-                        <CheckCircle2 className="h-6 w-6 text-white stroke-[2.5] drop-shadow-md" />
-                    </motion.div>
-                </motion.div>
-
-                {/* Delete Backdrop (Visible when dragging left) */}
-                <motion.div 
-                    style={{ opacity: trashOpacity }}
-                    className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-red-500/80 to-red-500/10 flex items-center justify-end pr-6 rounded-r-2xl"
-                >
-                    <motion.div style={{ scale: trashScale }}>
-                        <Trash2 className="h-6 w-6 text-white drop-shadow-md" />
-                    </motion.div>
-                </motion.div>
-            </div>
-
-            {/* Draggable Card */}
-            <motion.div
-                drag={disableSwipe ? false : "x"}
-                dragDirectionLock
-                dragConstraints={{ left: -100, right: 100 }}
-                dragElastic={{ left: 0.6, right: 0.6 }}
-                style={{ x }}
-                onDragEnd={async (event, info) => {
-                    const threshold = 60;
-                    if (info.offset.x > threshold) {
-                        if (onComplete) {
-                            onComplete(task.id);
-                        }
-                    } else if (info.offset.x < -threshold) {
-                        feedback.warning();
-                        try {
-                            await removeTask(task.id);
-                            toast.success("Task deleted", {
-                                action: {
-                                    label: "Undo",
-                                    onClick: async () => {
-                                        try {
-                                            await addTask({
-                                                title: task.title,
-                                                description: task.description || undefined,
-                                                notes: task.notes || undefined,
-                                                priority: task.priority,
-                                                due_date: task.due_date || undefined,
-                                                estimatedTime: task.estimatedTime,
-                                                actualTime: task.actualTime,
-                                                metadata: task.metadata || undefined,
-                                                tags: task.tags,
-                                                parentTaskId: task.parentTaskId,
-                                                depth: task.depth
-                                            });
-                                            toast.success("Task restored");
-                                        } catch (undoErr) {
-                                            toast.error("Failed to restore task");
-                                            console.error(undoErr);
-                                        }
-                                    }
-                                }
-                            });
-                        } catch (err) {
-                            toast.error("Failed to delete task");
-                            console.error(err);
-                        }
-                    }
-                }}
-                className={cn(
-                    "group relative rounded-2xl border transition-transform transition-colors duration-200 hover:-translate-y-0.5 hover:shadow-md",
-                    compact ? "p-3" : "p-5",
-                    "bg-card border-border shadow-xs",
-                    "hover:border-primary/35",
-                    task.status === 'done' && "opacity-60 grayscale-[0.3]"
-                )}
-            >
-                <div className={cn("flex items-start", compact ? "gap-2.5" : "gap-4")}>
-                    {/* Custom Checkbox + Expand Button Container */}
-                    <div className="flex flex-col items-center shrink-0">
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation()
-                                onComplete?.(task.id)
-                            }}
-                            className={cn(
-                                "relative flex items-center justify-center rounded-full border-2 transition-colors duration-200",
-                                compact ? "mt-0.5 h-4 w-4" : "mt-1 h-6 w-6",
-                                task.status === 'done'
-                                    ? "bg-primary border-primary text-primary-foreground"
-                                    : "border-muted-foreground/30 group-hover:border-primary"
-                            )}
-                        >
-                            {task.status === 'done' ? (
-                                <CheckCircle2 className={cn("stroke-[3px]", compact ? "h-2 w-2" : "h-4 w-4")} />
-                            ) : (
-                                <Circle className={cn("text-primary opacity-0 group-hover:opacity-100 transition-opacity", compact ? "h-2.5 w-2.5" : "h-4 w-4")} />
-                            )}
-                        </button>
-                        
-                        {subtasks.length > 0 && !compact && (
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setIsExpanded(!isExpanded);
-                                }}
-                                className="mt-2.5 p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors cursor-pointer"
-                                title={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
-                            >
-                                {isExpanded ? <ChevronDown className="h-4 w-4 text-emerald-500" /> : <ChevronRight className="h-4 w-4" />}
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Content */}
-                    <div className={cn("flex-1 min-w-0", compact ? "space-y-1" : "space-y-3")}>
-                        <div className="flex items-start justify-between gap-2">
-                            <h3 className={cn(
-                                "font-semibold text-foreground tracking-tight transition-all truncate",
-                                compact ? "text-sm" : "text-base",
-                                task.status === 'done' && "line-through text-muted-foreground font-normal"
-                            )}>
-                                {task.title}
-                            </h3>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                {/* Enhanced Priority Badge */}
-                                {task.priority && (
-                                    <span className={cn(
-                                        "px-1.5 py-0.5 text-[8px] uppercase tracking-widest rounded-md border font-bold transition-all",
-                                        priorityStyles[task.priority as keyof typeof priorityStyles] || priorityStyles.medium
-                                    )}>
-                                        {task.priority.charAt(0)}
-                                    </span>
-                                )}
-
-                                {/* AI Priority Badge */}
-                                {aiPriority && !compact && (
-                                    <TooltipProvider>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Badge 
-                                                    variant="outline" 
-                                                    className="flex items-center gap-1 border-invest/35 bg-invest/10 text-invest text-[8px] px-1.5 py-0.5"
-                                                >
-                                                    <Sparkles className="h-2.5 w-2.5" />
-                                                    AI: {aiPriority.suggestedPriority.charAt(0).toUpperCase()}
-                                                    <span className="ml-0.5">({aiPriority.urgencyScore})</span>
-                                                </Badge>
-                                            </TooltipTrigger>
-                                            <TooltipContent className="max-w-xs">
-                                                <p className="text-sm">{aiPriority.reasoning}</p>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </TooltipProvider>
-                                )}
-                                {/* Edit Task Button */}
-                                <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-6 w-6 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 opacity-40 md:opacity-0 md:group-hover:opacity-60 md:hover:!opacity-100 transition-all duration-200 cursor-pointer"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setActiveEditTask(task);
-                                    }}
-                                    title="Edit task"
-                                >
-                                    <Edit className="h-3.5 w-3.5" />
-                                </Button>
-
-                                {/* Delete Task Button */}
-                                <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-6 w-6 rounded-md text-muted-foreground hover:text-red-500 hover:bg-red-500/10 opacity-40 md:opacity-0 md:group-hover:opacity-60 md:hover:!opacity-100 transition-all duration-200 cursor-pointer"
-                                    onClick={async (e) => {
-                                        e.stopPropagation();
-                                        if (confirm("Are you sure you want to delete this task?")) {
-                                            feedback.warning();
-                                            try {
-                                                await removeTask(task.id);
-                                                toast.success("Task deleted successfully");
-                                            } catch (err) {
-                                                toast.error("Failed to delete task");
-                                                console.error(err);
-                                            }
-                                        }
-                                    }}
-                                    title="Delete task"
-                                >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                            </div>
-                        </div>
-
-                        {task.description && !compact && (
-                            <p className="text-sm text-muted-foreground/80 line-clamp-2 leading-relaxed">
-                                {task.description}
-                            </p>
-                        )}
-
-                        {/* Meta Section */}
-                        <div className={cn("flex flex-wrap items-center pt-0.5", compact ? "gap-2" : "gap-4")}>
-                            {task.due_date && (
-                                <div
-                                    className={cn(
-                                        "flex items-center gap-1 text-[10px] text-muted-foreground font-medium",
-                                        isOverdue && "text-red-500 font-semibold"
-                                    )}
-                                >
-                                    <Calendar className={cn(compact ? "h-3 w-3" : "h-3.5 w-3.5")} />
-                                    <span>{format(new Date(task.due_date), compact ? "MMM d" : "MMM d, h:mm a")}</span>
-                                </div>
-                            )}
-
-                            {task.estimatedTime !== undefined && task.estimatedTime > 0 && (
-                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium bg-muted/40 px-2 py-0.5 rounded border border-border/50">
-                                    <span>Est: {task.estimatedTime}m</span>
-                                    {task.actualTime !== undefined && task.actualTime > 0 ? (
-                                        <span className={cn(
-                                            "ml-1 font-bold",
-                                            task.actualTime > task.estimatedTime ? "text-rose-500" : "text-emerald-500"
-                                        )}>
-                                            Act: {task.actualTime}m
-                                        </span>
-                                    ) : (
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                const act = prompt("Enter actual time spent (in minutes):");
-                                                if (act !== null) {
-                                                    const mins = parseInt(act);
-                                                    if (!isNaN(mins)) {
-                                                        editTask(task.id, { actualTime: mins });
-                                                    }
-                                                }
-                                            }}
-                                            className="ml-1 text-primary hover:underline hover:text-primary/80 font-bold"
-                                        >
-                                            + Act
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-
-                            {task.tags && task.tags.length > 0 && !compact && (
-                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                    <Tag className="h-3.5 w-3.5" />
-                                    <span className="bg-muted px-1.5 py-0.5 rounded-md border border-border/50">
-                                        {task.tags[0]}
-                                        {task.tags.length > 1 && ` +${task.tags.length - 1}`}
-                                    </span>
-                                </div>
-                            )}
-
-                            {/* AI Priority Button */}
-                            {isAIEnabled() && !aiPriority && !compact && task.status !== 'done' && (
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={getAIPriority}
-                                    disabled={loadingPriority}
-                                    className="h-6 px-2 text-[10px] gap-1 text-invest hover:text-invest hover:bg-invest/10"
-                                >
-                                    <Sparkles className="h-3 w-3" />
-                                    {loadingPriority ? 'Analyzing...' : 'AI Priority'}
-                                </Button>
-                            )}
-
-                            {/* Pomodoro Timer Trigger */}
-                            {task.status !== 'done' && (
-                                <div className="flex items-center">
-                                    {isCurrentTaskActive ? (
-                                        <ActiveTaskTimerPill />
-                                    ) : (
-                                        <div className="flex items-center gap-1">
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const starter =
-                                                        startPresetTimer ||
-                                                        usePomodoroStore.getState?.()?.startPresetTimer;
-                                                    if (starter) {
-                                                        starter('starter_2m', {
-                                                            taskId: task.id,
-                                                            title: task.title,
-                                                            durationSecs: 120,
-                                                            openPanel: true,
-                                                        });
-                                                    }
-                                                }}
-                                                data-testid={`task-2m-start-${task.id}`}
-                                                aria-label={`2m Start ${task.title}`}
-                                                className="h-6 px-2 text-[10px] gap-1 text-amber-600 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded-md font-semibold"
-                                            >
-                                                <Zap className="h-3 w-3" />
-                                                <span>2m Start</span>
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    startTimer(task.id, task.title);
-                                                }}
-                                                className="h-6 px-2 text-[10px] gap-1 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/5 rounded-md font-medium"
-                                            >
-                                                <Play className="h-3 w-3" />
-                                                <span>Start Focus</span>
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* MIT Pin Badge / Toggle */}
-                            {(isMit || onToggleMit) && task.status !== 'done' && (
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onToggleMit?.(task);
-                                    }}
-                                    aria-label={isMit ? `Unpin MIT ${task.title}` : `Pin MIT ${task.title}`}
-                                    className={cn(
-                                        "h-6 px-2 text-[10px] gap-1 rounded-md font-semibold",
-                                        isMit
-                                            ? "text-primary bg-primary/10 hover:bg-primary/20"
-                                            : "text-muted-foreground hover:text-primary hover:bg-primary/5"
-                                    )}
-                                >
-                                    <Star className={cn("h-3 w-3", isMit && "fill-current")} />
-                                    <span>{isMit ? `MIT #${mitRank ?? ''}`.trim() : 'MIT'}</span>
-                                </Button>
-                            )}
-
-                            {/* Quick Notes Toggle */}
-                            <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setIsNotesOpen((prev) => !prev);
-                                }}
-                                aria-expanded={isNotesOpen}
-                                aria-label={isNotesOpen ? "Hide quick notes" : "Quick notes"}
-                                className={cn(
-                                    "h-6 px-2 text-[10px] gap-1 rounded-md font-medium transition-colors",
-                                    isNotesOpen || normalizedExistingNote
-                                        ? "text-primary bg-primary/10 hover:bg-primary/15"
-                                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                                )}
-                            >
-                                <StickyNote className="h-3 w-3" />
-                                <span>{normalizedExistingNote ? "Notes" : "Add Note"}</span>
-                            </Button>
-                        </div>
-
-                        {/* Collapsed Note Preview */}
-                        {!isNotesOpen && normalizedExistingNote && (
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setIsNotesOpen(true);
-                                }}
-                                className="w-full text-left flex items-start gap-1.5 rounded-lg bg-muted/40 hover:bg-muted/70 border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors"
-                            >
-                                <StickyNote className="h-3.5 w-3.5 mt-0.5 text-primary/80 shrink-0" />
-                                <span className="line-clamp-2 whitespace-pre-wrap break-words text-foreground/85">
-                                    {normalizedExistingNote}
-                                </span>
-                            </button>
-                        )}
-
-                        {/* Quick Notes Textarea Editor */}
-                        {isNotesOpen && (
-                            <div
-                                className="space-y-1.5 pt-1"
-                                onClick={(e) => e.stopPropagation()}
-                                onPointerDown={(e) => e.stopPropagation()}
-                            >
-                                <Textarea
-                                    value={noteDraft}
-                                    onChange={(e) => setNoteDraft(e.target.value)}
-                                    onBlur={handleSaveNote}
-                                    onKeyDown={(e) => {
-                                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                                            e.preventDefault();
-                                            handleSaveNote();
-                                        }
-                                    }}
-                                    placeholder="Write quick notes, context, or reminders..."
-                                    aria-label={`Quick notes for ${task.title}`}
-                                    rows={compact ? 2 : 3}
-                                    className="min-h-[68px] text-xs sm:text-sm bg-muted/35 border-border/70 focus-visible:ring-1 focus-visible:ring-primary/40 rounded-xl resize-y"
-                                />
-                                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                                    <span>
-                                        {isSavingNote ? (
-                                            "Saving..."
-                                        ) : justSavedNote ? (
-                                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                                                <Check className="h-3 w-3" />
-                                                Saved
-                                            </span>
-                                        ) : hasUnsavedNote ? (
-                                            "Unsaved changes"
-                                        ) : (
-                                            "Auto-saves on blur"
-                                        )}
-                                    </span>
-                                    <div className="flex items-center gap-1.5">
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={() => {
-                                                setNoteDraft(task.notes ?? "");
-                                                setIsNotesOpen(false);
-                                            }}
-                                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                                        >
-                                            Close
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            disabled={!hasUnsavedNote || isSavingNote}
-                                            onClick={handleSaveNote}
-                                            className="h-7 px-2.5 text-xs rounded-lg"
-                                        >
-                                            {isSavingNote ? "Saving..." : "Save Note"}
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Enhanced Progress Bar for Subtasks */}
-                        {subtasks.length > 0 && !compact && (
-                            <div className="space-y-1.5">
-                                <div className="flex items-center justify-between text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                                    <span>Progress</span>
-                                    <span>{completedSubtasks}/{subtasks.length}</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden border border-border/10">
-                                    <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${subtaskProgress}%` }}
-                                        className={cn(
-                                            "h-full rounded-full transition-all duration-500",
-                                            subtaskProgress === 100
-                                                ? "bg-gradient-to-r from-green-500 to-emerald-400"
-                                                : "bg-gradient-to-r from-primary to-primary/60"
-                                        )}
-                                    />
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Inline Subtasks List */}
-                {isExpanded && !compact && subtasks.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-border/40 relative z-10" onClick={(e) => e.stopPropagation()}>
-                        <SubtaskList
-                            tasks={subtasks}
-                            parentId={task.id}
-                            allTasks={subtasks}
-                            onToggle={async (subId) => {
-                                const target = subtasks.find((s) => s.id === subId);
-                                if (target?.status === 'done') {
-                                    feedback.uncheck();
-                                } else {
-                                    feedback.complete();
-                                }
-                                await toggleTaskComplete(subId);
-                            }}
-                            onDelete={async (subId) => {
-                                if (confirm("Are you sure you want to delete this subtask?")) {
-                                    feedback.warning();
-                                    await removeTask(subId);
-                                    toast.success("Subtask deleted");
-                                }
-                            }}
-                            expandedTasks={expandedSubtasks}
-                            onToggleExpand={toggleExpandSubtask}
-                        />
-                        
-                        {/* Inline Add Subtask Button */}
-                        <AddSubtaskButton
-                            parentTask={task}
-                            onAdd={async (subtaskData) => {
-                                try {
-                                    await addTask({
-                                        title: subtaskData.title!,
-                                        priority: task.priority,
-                                        parentTaskId: task.id,
-                                        depth: (task.depth || 0) + 1,
-                                        isUrgent: false,
-                                        isImportant: false
-                                    });
-                                    toast.success("Subtask added");
-                                } catch (error) {
-                                    toast.error("Failed to add subtask");
-                                }
-                            }}
-                        />
-                    </div>
-                )}
-
-                {/* Hover Shine Effect */}
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-white/10 via-white/5 to-transparent opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-700" />
-
-                {/* Ambient Background Light */}
-                {task.priority === 'high' && !task.status && (
-                    <div className="absolute -z-10 -inset-1 blur-2xl opacity-10 bg-red-500 rounded-2xl" />
-                )}
-            </motion.div>
-
-            {/* Edit Task Modal */}
-            {activeEditTask && (
-                <EditTaskModal
-                    task={activeEditTask}
-                    isOpen={!!activeEditTask}
-                    onOpenChange={(open) => !open && setActiveEditTask(null)}
-                />
-            )}
-        </div>
-    );
+  return (
+    <div className="relative overflow-hidden rounded-2xl w-full">
+      <TaskCardSwipeBackdrop checkOpacity={vm.checkOpacity} checkScale={vm.checkScale} trashOpacity={vm.trashOpacity} trashScale={vm.trashScale} />
+      <TaskCardSurface task={task} vm={vm} isDone={task.status === 'done'} compact={compact} isMit={isMit} mitRank={mitRank} onComplete={onComplete} onToggleMit={onToggleMit} disableSwipe={disableSwipe} />
+      {vm.activeEditTask && (
+        <EditTaskModal task={vm.activeEditTask} isOpen={Boolean(vm.activeEditTask)} onOpenChange={(open: boolean) => !open && vm.setActiveEditTask(null)} />
+      )}
+    </div>
+  );
 });
