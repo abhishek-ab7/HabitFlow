@@ -2,15 +2,15 @@
 
 import { useEffect } from 'react';
 
+function isServiceWorkerSupported(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
+  if (typeof window === 'undefined') return false;
+  return 'serviceWorker' in navigator;
+}
+
 export function ServiceWorkerRegistration() {
   useEffect(() => {
-    if (
-      process.env.NODE_ENV !== 'production' ||
-      typeof window === 'undefined' ||
-      !('serviceWorker' in navigator)
-    ) {
-      return;
-    }
+    if (!isServiceWorkerSupported()) return;
 
     let isMounted = true;
     let updateIntervalId: number | undefined;
@@ -20,11 +20,7 @@ export function ServiceWorkerRegistration() {
         .register('/sw.js', { scope: '/', updateViaCache: 'none' })
         .then((registration) => {
           if (!isMounted) return;
-
-          // Proactively check for an updated SW immediately on page load
           registration.update().catch(() => {});
-
-          // Check for updates periodically
           updateIntervalId = window.setInterval(() => {
             registration.update().catch(() => {});
           }, 60 * 60 * 1000);
@@ -34,11 +30,8 @@ export function ServiceWorkerRegistration() {
         });
     };
 
-    if (document.readyState === 'complete') {
-      registerSW();
-    } else {
-      window.addEventListener('load', registerSW);
-    }
+    if (document.readyState === 'complete') registerSW();
+    else window.addEventListener('load', registerSW);
 
     return () => {
       isMounted = false;

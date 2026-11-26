@@ -407,23 +407,23 @@ function useHabitsPageHandlers({
   };
 }
 
-export default function HabitsPageContent() {
-  const {
-    habits,
-    completions,
-    isLoading,
-    selectedMonth,
-    categoryFilter,
-    loadHabits,
-    loadCompletions,
-    addHabit,
-    editHabit,
-    removeHabit,
-    toggle,
-    setSelectedMonth,
-    setCategoryFilter,
-    getCurrentStreaks,
-  } = useHabitStore(
+function HabitsLoadingView() {
+  return (
+    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <Skeleton className="h-9 w-48 mb-2" />
+          <Skeleton className="h-5 w-72" />
+        </div>
+        <Skeleton className="h-10 w-32" />
+      </div>
+      <HabitListSkeleton />
+    </div>
+  );
+}
+
+function useHabitsPageController() {
+  const store = useHabitStore(
     useShallow((s) => ({
       habits: s.habits,
       completions: s.completions,
@@ -450,33 +450,23 @@ export default function HabitsPageContent() {
   const [showAIAssist, setShowAIAssist] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [habitIdToDelete, setHabitIdToDelete] = useState<string | null>(null);
-  const {
-    isOpen: isTourOpen,
-    startTour,
-    closeTour,
-    completeTour,
-  } = usePageTour('habits');
+  const tour = usePageTour('habits');
 
-  useHabitsPageLoader({ selectedMonth, loadHabits, loadCompletions, setShowModal });
+  useHabitsPageLoader({
+    selectedMonth: store.selectedMonth,
+    loadHabits: store.loadHabits,
+    loadCompletions: store.loadCompletions,
+    setShowModal,
+  });
 
-  const {
-    handleMonthChange,
-    handleToggle,
-    handleCreateHabit,
-    handleEditHabit,
-    handleOpenEdit,
-    handleArchive,
-    handleDelete,
-    handleConfirmDelete,
-    handleCategoryFilter,
-  } = useHabitsPageHandlers({
-    addHabit,
-    editHabit,
-    removeHabit,
-    toggle,
-    setSelectedMonth,
-    categoryFilter,
-    setCategoryFilter,
+  const handlers = useHabitsPageHandlers({
+    addHabit: store.addHabit,
+    editHabit: store.editHabit,
+    removeHabit: store.removeHabit,
+    toggle: store.toggle,
+    setSelectedMonth: store.setSelectedMonth,
+    categoryFilter: store.categoryFilter,
+    setCategoryFilter: store.setCategoryFilter,
     editingHabit,
     setEditingHabit,
     setShowModal,
@@ -485,38 +475,64 @@ export default function HabitsPageContent() {
     setDeleteConfirmOpen,
   });
 
-  // Get filtered habits - OPTIMIZED: Memoized
-  const filteredHabits = useMemo(() => 
-    categoryFilter.length > 0 
-      ? habits.filter(h => categoryFilter.includes(h.category))
-      : habits,
-    [habits, categoryFilter]
+  const filteredHabits = useMemo(
+    () => (store.categoryFilter.length > 0 ? store.habits.filter((h) => store.categoryFilter.includes(h.category)) : store.habits),
+    [store.habits, store.categoryFilter]
   );
 
-  // Get streaks - OPTIMIZED: Memoized
-  const streaks = useMemo(() => getCurrentStreaks(), [habits, completions, getCurrentStreaks]);
+  const streaks = useMemo(() => store.getCurrentStreaks(), [store.habits, store.completions, store.getCurrentStreaks]);
 
-function HabitsLoadingView() {
-  return (
-    <div className="w-full px-4 py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <Skeleton className="h-9 w-48 mb-2" />
-          <Skeleton className="h-5 w-72" />
-        </div>
-        <Skeleton className="h-10 w-32" />
-      </div>
-      <HabitListSkeleton />
-    </div>
-  );
+  return {
+    store,
+    tour,
+    handlers,
+    filteredHabits,
+    streaks,
+    showModal,
+    setShowModal,
+    showSmartGenerator,
+    setShowSmartGenerator,
+    editingHabit,
+    setEditingHabit,
+    modalTab,
+    setModalTab,
+    showArchivedModal,
+    setShowArchivedModal,
+    showAIAssist,
+    setShowAIAssist,
+    deleteConfirmOpen,
+    setDeleteConfirmOpen,
+  };
 }
 
-  if (isLoading && habits.length === 0) return <HabitsLoadingView />;
+export default function HabitsPageContent() {
+  const {
+    store,
+    tour,
+    handlers,
+    filteredHabits,
+    streaks,
+    showModal,
+    setShowModal,
+    showSmartGenerator,
+    setShowSmartGenerator,
+    editingHabit,
+    setEditingHabit,
+    modalTab,
+    setModalTab,
+    showArchivedModal,
+    setShowArchivedModal,
+    showAIAssist,
+    setShowAIAssist,
+    deleteConfirmOpen,
+    setDeleteConfirmOpen,
+  } = useHabitsPageController();
+
+  if (store.isLoading && store.habits.length === 0) return <HabitsLoadingView />;
 
   return (
     <div className="w-full overflow-x-hidden px-4 py-6 sm:py-8 md:px-6 lg:px-8 max-w-[1600px] mx-auto pb-24 md:pb-12">
       <FadeIn>
-        {/* Standardized Header (max 3 controls) */}
         <PageHeader
           title="Habit Tracker"
           description="Track your daily habits and build consistency"
@@ -530,7 +546,7 @@ function HabitsLoadingView() {
                 setShowModal(true);
               }}
               onOpenArchived={() => setShowArchivedModal(true)}
-              onStartTour={startTour}
+              onStartTour={tour.startTour}
               onNewHabit={() => {
                 setModalTab('details');
                 setShowModal(true);
@@ -540,25 +556,24 @@ function HabitsLoadingView() {
         />
 
         <HabitsCategoryFilterBar
-          selectedMonth={selectedMonth}
-          categoryFilter={categoryFilter}
-          onMonthChange={handleMonthChange}
-          onToggleCategory={handleCategoryFilter}
-          onClear={() => setCategoryFilter([])}
+          selectedMonth={store.selectedMonth}
+          categoryFilter={store.categoryFilter}
+          onMonthChange={handlers.handleMonthChange}
+          onToggleCategory={handlers.handleCategoryFilter}
+          onClear={() => store.setCategoryFilter([])}
         />
 
         <div className="w-full">
-          {/* Habit Grid - Full width */}
           <Card className="border-none shadow-none md:border md:shadow-sm tour-habits-grid">
             <CardContent className="p-2 sm:p-4 md:p-6">
               <HabitGrid
                 habits={filteredHabits}
-                completions={completions}
-                selectedMonth={selectedMonth}
-                onToggle={handleToggle}
-                onEdit={handleOpenEdit}
-                onDelete={handleDelete}
-                onArchive={handleArchive}
+                completions={store.completions}
+                selectedMonth={store.selectedMonth}
+                onToggle={handlers.handleToggle}
+                onEdit={handlers.handleOpenEdit}
+                onDelete={handlers.handleDelete}
+                onArchive={handlers.handleArchive}
                 streaks={streaks}
               />
             </CardContent>
@@ -574,25 +589,24 @@ function HabitsLoadingView() {
         editingHabit={editingHabit}
         setEditingHabit={setEditingHabit}
         modalTab={modalTab}
-        onEditHabit={handleEditHabit}
-        onCreateHabit={handleCreateHabit}
+        onEditHabit={handlers.handleEditHabit}
+        onCreateHabit={handlers.handleCreateHabit}
         showSmartGenerator={showSmartGenerator}
         setShowSmartGenerator={setShowSmartGenerator}
         showArchivedModal={showArchivedModal}
         setShowArchivedModal={setShowArchivedModal}
         deleteConfirmOpen={deleteConfirmOpen}
         setDeleteConfirmOpen={setDeleteConfirmOpen}
-        onConfirmDelete={handleConfirmDelete}
+        onConfirmDelete={handlers.handleConfirmDelete}
       />
 
       <HabitsAiAssistDrawer open={showAIAssist} onClose={() => setShowAIAssist(false)} />
 
-      {/* Guided Tour */}
       <GuidedTour
         {...PAGE_TOURS.habits}
-        isOpen={isTourOpen}
-        onClose={closeTour}
-        onComplete={completeTour}
+        isOpen={tour.isOpen}
+        onClose={tour.closeTour}
+        onComplete={tour.completeTour}
       />
     </div>
   );

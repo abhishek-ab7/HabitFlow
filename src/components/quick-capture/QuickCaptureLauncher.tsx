@@ -10,14 +10,17 @@ const QuickCaptureModal = dynamic(
 
 function isEditableElement(el: Element | null): boolean {
   if (!el) return false;
-  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true;
+  if (el.tagName === 'INPUT') return true;
+  if (el.tagName === 'TEXTAREA') return true;
   return (el as HTMLElement).getAttribute('contenteditable') === 'true';
 }
 
 function isQuickCaptureShortcut(e: KeyboardEvent): boolean {
   const key = e.key.toLowerCase();
-  if ((e.metaKey || e.ctrlKey) && key === 'k') return true;
-  if (key !== 'q' || e.metaKey || e.ctrlKey || e.altKey) return false;
+  const hasCmdOrCtrl = e.metaKey || e.ctrlKey;
+  if (hasCmdOrCtrl && key === 'k') return true;
+  if (key !== 'q') return false;
+  if (hasCmdOrCtrl || e.altKey) return false;
   return !isEditableElement(document.activeElement);
 }
 

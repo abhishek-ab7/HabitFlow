@@ -8,21 +8,20 @@ const ShortcutsModal = dynamic(() => import('@/components/ui/ShortcutsModal'), {
   ssr: false,
 });
 
+function isEditableActiveElement(): boolean {
+  const active = document.activeElement;
+  if (!active) return false;
+  if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') return true;
+  return active.getAttribute('contenteditable') === 'true';
+}
+
 export function ShortcutsProvider() {
   useKeyboardShortcuts();
   const [hasOpened, setHasOpened] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const active = document.activeElement;
-      if (
-        active &&
-        (active.tagName === 'INPUT' ||
-          active.tagName === 'TEXTAREA' ||
-          active.getAttribute('contenteditable') === 'true')
-      ) {
-        return;
-      }
+      if (isEditableActiveElement()) return;
       if (event.key === '?' && event.shiftKey) {
         setHasOpened(true);
       }

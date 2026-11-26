@@ -137,6 +137,19 @@ async function submitBioActions(params: {
   }
 }
 
+function findSupplementTarget(
+  action: UniversalSupplementAction,
+  supplements: SupplementInventory[]
+): SupplementInventory | undefined {
+  const active = supplements.filter((s) => !s.deletedAt);
+  if (action.supplementId) {
+    const byId = active.find((s) => s.id === action.supplementId);
+    if (byId) return byId;
+  }
+  const needle = action.supplementName.toLowerCase();
+  return active.find((s) => s.name.toLowerCase().includes(needle));
+}
+
 async function submitSupplementActions(params: {
   actions: UniversalSupplementAction[];
   uid: string;
@@ -145,8 +158,7 @@ async function submitSupplementActions(params: {
   logsSummary: string[];
 }) {
   for (const action of params.actions) {
-    const byId = action.supplementId ? params.supplements.find((s) => s.id === action.supplementId && !s.deletedAt) : undefined;
-    const target = byId || params.supplements.find((s) => !s.deletedAt && s.name.toLowerCase().includes(action.supplementName.toLowerCase()));
+    const target = findSupplementTarget(action, params.supplements);
     if (!target) {
       toast.info(`Add "${action.supplementName}" in Fitness → Supplements to track stock`);
       continue;
@@ -156,21 +168,28 @@ async function submitSupplementActions(params: {
   }
 }
 
+function buildTaskPayload(action: UniversalTaskAction) {
+  return {
+    title: action.title,
+    priority: action.priority,
+    isUrgent: action.isUrgent,
+    due_date: action.dueDate,
+    estimatedTime: action.estimateMinutes,
+    tags: action.domainTag ? [action.domainTag] : [],
+    metadata: {
+      ...(action.dueTime ? { dueTime: action.dueTime } : {}),
+      ...(action.domainTag ? { domain: action.domainTag } : {}),
+    },
+  };
+}
+
 async function submitTaskActions(params: {
   actions: UniversalTaskAction[];
   addTask: TaskState['addTask'];
   logsSummary: string[];
 }) {
   for (const action of params.actions) {
-    await params.addTask({
-      title: action.title, priority: action.priority, isUrgent: action.isUrgent,
-      due_date: action.dueDate, estimatedTime: action.estimateMinutes,
-      tags: action.domainTag ? [action.domainTag] : [],
-      metadata: {
-        ...(action.dueTime ? { dueTime: action.dueTime } : {}),
-        ...(action.domainTag ? { domain: action.domainTag } : {}),
-      },
-    });
+    await params.addTask(buildTaskPayload(action));
     params.logsSummary.push(`Task: ${action.title}`);
   }
 }

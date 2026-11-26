@@ -143,6 +143,69 @@ function MilestoneTimelineRow({
   );
 }
 
+function HealthScoreRing({ score }: { score: number }) {
+  const healthColorClass = getHealthStrokeClass(score);
+  const circumference = 2 * Math.PI * 20;
+  return (
+    <div className="flex items-center gap-3 bg-muted/30 px-4 py-2 rounded-lg border border-border/40">
+      <div className="relative flex items-center justify-center w-12 h-12">
+        <svg className="w-full h-full transform -rotate-90">
+          <circle cx="24" cy="24" r="20" className="stroke-muted" strokeWidth="4" fill="transparent" />
+          <motion.circle
+            cx="24"
+            cy="24"
+            r="20"
+            className={cn('stroke-current', healthColorClass)}
+            strokeWidth="4"
+            fill="transparent"
+            strokeDasharray={circumference}
+            initial={{ strokeDashoffset: circumference }}
+            animate={{ strokeDashoffset: circumference * (1 - score / 100) }}
+            transition={{ duration: 1, ease: 'easeOut' }}
+          />
+        </svg>
+        <span className="absolute text-sm font-bold">{score}</span>
+      </div>
+      <div>
+        <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">Health Status</div>
+        <div className="text-sm font-bold flex items-center gap-1">
+          <span className={healthColorClass}>{getHealthLabel(score)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HealthMetricBarCard({
+  icon,
+  label,
+  pct,
+  barClass,
+  footnote,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  pct: number;
+  barClass: string;
+  footnote: string;
+}) {
+  return (
+    <div className="bg-muted/20 p-3.5 rounded-lg border border-border/30">
+      <div className="flex justify-between items-center mb-1.5">
+        <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+          {icon}
+          {label}
+        </span>
+        <span className="text-xs font-bold">{pct}%</span>
+      </div>
+      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+        <div className={cn('h-full rounded-full transition-all duration-500', barClass)} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-1">{footnote}</p>
+    </div>
+  );
+}
+
 export function GoalRoadmapView({ goal, milestones, stats, onToggleMilestone }: GoalRoadmapViewProps) {
   const { habits, completions } = useHabitStore();
   const feedback = useFeedback();
@@ -164,8 +227,6 @@ export function GoalRoadmapView({ goal, milestones, stats, onToggleMilestone }: 
     onToggleMilestone?.(milestone.id);
   };
 
-  const healthColorClass = getHealthStrokeClass(healthScoreDetails.finalScore);
-
   return (
     <div className="space-y-6 p-6 bg-card rounded-xl border border-border/60 shadow-lg relative overflow-hidden">
       <div className="absolute top-0 right-0 w-64 h-64 bg-radial-gradient from-emerald-500/5 to-transparent blur-3xl pointer-events-none" />
@@ -181,76 +242,31 @@ export function GoalRoadmapView({ goal, milestones, stats, onToggleMilestone }: 
           </p>
         </div>
 
-        <div className="flex items-center gap-3 bg-muted/30 px-4 py-2 rounded-lg border border-border/40">
-          <div className="relative flex items-center justify-center w-12 h-12">
-            <svg className="w-full h-full transform -rotate-90">
-              <circle cx="24" cy="24" r="20" className="stroke-muted" strokeWidth="4" fill="transparent" />
-              <motion.circle
-                cx="24"
-                cy="24"
-                r="20"
-                className={cn('stroke-current', healthColorClass)}
-                strokeWidth="4"
-                fill="transparent"
-                strokeDasharray={2 * Math.PI * 20}
-                initial={{ strokeDashoffset: 2 * Math.PI * 20 }}
-                animate={{ strokeDashoffset: 2 * Math.PI * 20 * (1 - healthScoreDetails.finalScore / 100) }}
-                transition={{ duration: 1, ease: 'easeOut' }}
-              />
-            </svg>
-            <span className="absolute text-sm font-bold">{healthScoreDetails.finalScore}</span>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">Health Status</div>
-            <div className="text-sm font-bold flex items-center gap-1">
-              <span className={healthColorClass}>{getHealthLabel(healthScoreDetails.finalScore)}</span>
-            </div>
-          </div>
-        </div>
+        <HealthScoreRing score={healthScoreDetails.finalScore} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-muted/20 p-3.5 rounded-lg border border-border/30">
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-              <Flame className="h-3.5 w-3.5 text-orange-500" />
-              Habit Consistency (40%)
-            </span>
-            <span className="text-xs font-bold">{healthScoreDetails.consistency}%</span>
-          </div>
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-orange-500 rounded-full transition-all duration-500" style={{ width: `${healthScoreDetails.consistency}%` }} />
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-1">{healthScoreDetails.linkedHabitsCount} linked habits in area of life.</p>
-        </div>
-
-        <div className="bg-muted/20 p-3.5 rounded-lg border border-border/30">
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-              <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
-              Milestone Progress (40%)
-            </span>
-            <span className="text-xs font-bold">{healthScoreDetails.milestoneProgress}%</span>
-          </div>
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${healthScoreDetails.milestoneProgress}%` }} />
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-1">{stats.milestonesCompleted} of {stats.milestonesTotal} milestones completed.</p>
-        </div>
-
-        <div className="bg-muted/20 p-3.5 rounded-lg border border-border/30">
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5 text-blue-500" />
-              Timeline Proximity (20%)
-            </span>
-            <span className="text-xs font-bold">{healthScoreDetails.proximityScore}%</span>
-          </div>
-          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${healthScoreDetails.proximityScore}%` }} />
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-1">{stats.daysRemaining} days remaining out of {stats.totalDays}.</p>
-        </div>
+        <HealthMetricBarCard
+          icon={<Flame className="h-3.5 w-3.5 text-orange-500" />}
+          label="Habit Consistency (40%)"
+          pct={healthScoreDetails.consistency}
+          barClass="bg-orange-500"
+          footnote={`${healthScoreDetails.linkedHabitsCount} linked habits in area of life.`}
+        />
+        <HealthMetricBarCard
+          icon={<Sparkles className="h-3.5 w-3.5 text-emerald-500" />}
+          label="Milestone Progress (40%)"
+          pct={healthScoreDetails.milestoneProgress}
+          barClass="bg-emerald-500"
+          footnote={`${stats.milestonesCompleted} of ${stats.milestonesTotal} milestones completed.`}
+        />
+        <HealthMetricBarCard
+          icon={<Calendar className="h-3.5 w-3.5 text-blue-500" />}
+          label="Timeline Proximity (20%)"
+          pct={healthScoreDetails.proximityScore}
+          barClass="bg-blue-500"
+          footnote={`${stats.daysRemaining} days remaining out of ${stats.totalDays}.`}
+        />
       </div>
 
       <div className="mt-6 space-y-4">

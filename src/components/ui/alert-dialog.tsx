@@ -63,84 +63,47 @@ function AlertDialogContent({
   )
 }
 
-function AlertDialogHeader({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="alert-dialog-header"
-      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
-      {...props}
-    />
-  )
+function createAlertSlot<P extends { className?: string }>(
+  Component: React.ComponentType<P>,
+  baseClass: string,
+  slot?: string
+) {
+  return function AlertSlot({ className, ...props }: P) {
+    const slotProp = slot ? { 'data-slot': slot } : {};
+    return <Component {...slotProp} className={cn(baseClass, className)} {...(props as P)} />;
+  };
 }
 
-function AlertDialogFooter({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="alert-dialog-footer"
-      className={cn(
-        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+const AlertDialogHeader = createAlertSlot(
+  'div' as unknown as React.ComponentType<React.ComponentProps<'div'>>,
+  'flex flex-col gap-2 text-center sm:text-left',
+  'alert-dialog-header'
+);
 
-function AlertDialogTitle({
-  className,
-  ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Title>) {
-  return (
-    <AlertDialogPrimitive.Title
-      data-slot="alert-dialog-title"
-      className={cn("text-lg font-semibold", className)}
-      {...props}
-    />
-  )
-}
+const AlertDialogFooter = createAlertSlot(
+  'div' as unknown as React.ComponentType<React.ComponentProps<'div'>>,
+  'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+  'alert-dialog-footer'
+);
 
-function AlertDialogDescription({
-  className,
-  ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Description>) {
-  return (
-    <AlertDialogPrimitive.Description
-      data-slot="alert-dialog-description"
-      className={cn("text-muted-foreground text-sm", className)}
-      {...props}
-    />
-  )
-}
+const AlertDialogTitle = createAlertSlot(
+  AlertDialogPrimitive.Title,
+  'text-lg font-semibold',
+  'alert-dialog-title'
+);
 
-function AlertDialogAction({
-  className,
-  ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
-  return (
-    <AlertDialogPrimitive.Action
-      className={cn(buttonVariants(), className)}
-      {...props}
-    />
-  )
-}
+const AlertDialogDescription = createAlertSlot(
+  AlertDialogPrimitive.Description,
+  'text-muted-foreground text-sm',
+  'alert-dialog-description'
+);
 
-function AlertDialogCancel({
-  className,
-  ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
-  return (
-    <AlertDialogPrimitive.Cancel
-      className={cn(buttonVariants({ variant: "outline" }), className)}
-      {...props}
-    />
-  )
-}
+const AlertDialogAction = createAlertSlot(AlertDialogPrimitive.Action, buttonVariants());
+
+const AlertDialogCancel = createAlertSlot(
+  AlertDialogPrimitive.Cancel,
+  buttonVariants({ variant: 'outline' })
+);
 
 export {
   AlertDialog,
