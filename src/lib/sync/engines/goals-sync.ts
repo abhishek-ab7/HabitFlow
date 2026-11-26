@@ -71,6 +71,17 @@ export class GoalsSyncEngine implements ISynchronizer {
   public domainName = 'goals';
   private supabase = getSupabaseClient();
 
+  private async pushGoalBatch(userId: string, batch: Goal[]): Promise<number> {
+    const payload = batch.map((g) => mapGoalToRemoteRow(userId, g));
+    const { error } = await upsertRowsWithColumnFallback(this.supabase, 'goals', payload, { onConflict: 'id' });
+    if (error) throw new Error(`[GoalsSyncEngine Bulk Push Failure]: ${error.message}`);
+
+    await db.transaction('rw', db.goals, async () => {
+      await Promise.all(batch.map((b) => db.goals.update(b.id, { isDirty: false })));
+    });
+    return batch.length;
+  }
+
   private async pushDirtyGoals(userId: string): Promise<number> {
     const dirtyLocalGoals = await db.goals
       .where('userId')
@@ -80,25 +91,9 @@ export class GoalsSyncEngine implements ISynchronizer {
 
     let pushedCount = 0;
     const BATCH_SIZE = 50;
-
     for (let i = 0; i < dirtyLocalGoals.length; i += BATCH_SIZE) {
-      const batch = dirtyLocalGoals.slice(i, i + BATCH_SIZE);
-      const payload = batch.map((g) => mapGoalToRemoteRow(userId, g));
-
-      const { error } = await upsertRowsWithColumnFallback(
-        this.supabase,
-        'goals',
-        payload,
-        { onConflict: 'id' }
-      );
-      if (error) throw new Error(`[GoalsSyncEngine Bulk Push Failure]: ${error.message}`);
-
-      await db.transaction('rw', db.goals, async () => {
-        await Promise.all(batch.map((b) => db.goals.update(b.id, { isDirty: false })));
-      });
-      pushedCount += batch.length;
+      pushedCount += await this.pushGoalBatch(userId, dirtyLocalGoals.slice(i, i + BATCH_SIZE));
     }
-
     return pushedCount;
   }
 

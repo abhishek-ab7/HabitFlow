@@ -247,44 +247,45 @@ export function notifyFinanceSync() {
   }
 }
 
+function getDemoMigratableTables() {
+  return [
+    db.financeCategories,
+    db.financeAccounts,
+    db.financeTransactions,
+    db.financeBudgets,
+    db.monthlyCommitments,
+    db.debtRecords,
+    db.debtInstallments,
+    db.emiTrackers,
+    db.financeSipPlans,
+    db.financeCategorizationRules,
+    db.financeRecurringBills,
+    db.financeNetWorthSnapshots,
+    db.creditCardStatements,
+  ].filter(Boolean);
+}
+
+async function migrateDemoTableRecords(table: any, demoUserId: string, targetUserId: string): Promise<boolean> {
+  const demoRecords = await table.where('userId').equals(demoUserId).toArray();
+  if (demoRecords.length === 0) return false;
+  const now = new Date().toISOString();
+  for (const item of demoRecords) {
+    await table.update(item.id, {
+      userId: targetUserId,
+      isDirty: true,
+      generationCounter: (item.generationCounter || 1) + 1,
+      updatedAt: now,
+    });
+  }
+  return true;
+}
+
 export async function migrateLocalDemoFinanceRecords(targetUserId: string) {
   try {
-    const demoUserId = 'local-demo-user';
-    const tables = [
-      db.financeCategories,
-      db.financeAccounts,
-      db.financeTransactions,
-      db.financeBudgets,
-      db.monthlyCommitments,
-      db.debtRecords,
-      db.debtInstallments,
-      db.emiTrackers,
-      ...(db.financeSipPlans ? [db.financeSipPlans] : []),
-      ...(db.financeCategorizationRules ? [db.financeCategorizationRules] : []),
-      ...(db.financeRecurringBills ? [db.financeRecurringBills] : []),
-      ...(db.financeNetWorthSnapshots ? [db.financeNetWorthSnapshots] : []),
-      ...(db.creditCardStatements ? [db.creditCardStatements] : []),
-    ];
-
-    let migratedAny = false;
-    for (const table of tables) {
-      const demoRecords = await table.where('userId').equals(demoUserId).toArray();
-      if (demoRecords.length > 0) {
-        migratedAny = true;
-        for (const item of demoRecords) {
-          await table.update(item.id, {
-            userId: targetUserId,
-            isDirty: true,
-            generationCounter: (item.generationCounter || 1) + 1,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      }
-    }
-
-    if (migratedAny) {
-      notifyFinanceSync();
-    }
+    const results = await Promise.all(
+      getDemoMigratableTables().map((table) => migrateDemoTableRecords(table, 'local-demo-user', targetUserId))
+    );
+    if (results.some(Boolean)) notifyFinanceSync();
   } catch (err) {
     console.warn('[FinanceStore] Demo records migration error:', err);
   }

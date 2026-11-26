@@ -96,62 +96,34 @@ describe('SyncCoordinator Isolation & Pipeline Execution', () => {
     expect(report.globalStatus).toBe('degraded');
   });
 
-  it('should run both HabitsSyncEngine and TasksSyncEngine successfully and return a healthy globalStatus report', async () => {
-    const HabitsSyncEngine: ISynchronizer = {
-      domainName: 'habits',
-      sync: vi.fn().mockResolvedValue({ pushed: 3, pulled: 4, status: 'success' })
-    };
-    const TasksSyncEngine: ISynchronizer = {
-      domainName: 'tasks',
-      sync: vi.fn().mockResolvedValue({ pushed: 10, pulled: 1, status: 'success' })
-    };
-
+  async function runTwoEngineSyncScenario(habitsSyncMock: ReturnType<typeof vi.fn>, tasksSyncMock: ReturnType<typeof vi.fn>) {
+    const HabitsSyncEngine: ISynchronizer = { domainName: 'habits', sync: habitsSyncMock };
+    const TasksSyncEngine: ISynchronizer = { domainName: 'tasks', sync: tasksSyncMock };
     const coordinator = new SyncCoordinator([HabitsSyncEngine, TasksSyncEngine]);
     const report = await coordinator.syncAll('user-123');
-
     expect(HabitsSyncEngine.sync).toHaveBeenCalledWith('user-123');
     expect(TasksSyncEngine.sync).toHaveBeenCalledWith('user-123');
+    return report;
+  }
+
+  it('should run both HabitsSyncEngine and TasksSyncEngine successfully and return a healthy globalStatus report', async () => {
+    const report = await runTwoEngineSyncScenario(
+      vi.fn().mockResolvedValue({ pushed: 3, pulled: 4, status: 'success' }),
+      vi.fn().mockResolvedValue({ pushed: 10, pulled: 1, status: 'success' })
+    );
     expect(report.globalStatus).toBe('healthy');
-    expect(report.details['habits']).toEqual({
-      status: 'success',
-      pushed: 3,
-      pulled: 4
-    });
-    expect(report.details['tasks']).toEqual({
-      status: 'success',
-      pushed: 10,
-      pulled: 1
-    });
+    expect(report.details['habits']).toEqual({ status: 'success', pushed: 3, pulled: 4 });
+    expect(report.details['tasks']).toEqual({ status: 'success', pushed: 10, pulled: 1 });
   });
 
   it('should catch error in HabitsSyncEngine but allow TasksSyncEngine to succeed and return a degraded globalStatus report', async () => {
-    const HabitsSyncEngine: ISynchronizer = {
-      domainName: 'habits',
-      sync: vi.fn().mockRejectedValue(new Error('Network Error'))
-    };
-    const TasksSyncEngine: ISynchronizer = {
-      domainName: 'tasks',
-      sync: vi.fn().mockResolvedValue({ pushed: 2, pulled: 0, status: 'success' })
-    };
-
-    const coordinator = new SyncCoordinator([HabitsSyncEngine, TasksSyncEngine]);
-    const report = await coordinator.syncAll('user-123');
-
-    expect(HabitsSyncEngine.sync).toHaveBeenCalledWith('user-123');
-    expect(TasksSyncEngine.sync).toHaveBeenCalledWith('user-123');
-    
+    const report = await runTwoEngineSyncScenario(
+      vi.fn().mockRejectedValue(new Error('Network Error')),
+      vi.fn().mockResolvedValue({ pushed: 2, pulled: 0, status: 'success' })
+    );
     expect(report.globalStatus).toBe('degraded');
-    expect(report.details['habits']).toEqual({
-      status: 'failed',
-      error: 'Network Error',
-      pushed: 0,
-      pulled: 0
-    });
-    expect(report.details['tasks']).toEqual({
-      status: 'success',
-      pushed: 2,
-      pulled: 0
-    });
+    expect(report.details['habits']).toEqual({ status: 'failed', error: 'Network Error', pushed: 0, pulled: 0 });
+    expect(report.details['tasks']).toEqual({ status: 'success', pushed: 2, pulled: 0 });
   });
 });
 

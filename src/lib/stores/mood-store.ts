@@ -16,6 +16,24 @@ interface MoodState {
   getMoodForDate: (date: string) => MoodType | undefined;
 }
 
+export type IsoDateString = string;
+export type UserIdentifier = string | null;
+
+type LoadedRange = { start: IsoDateString; end: IsoDateString; userId: string } | null;
+
+function isMoodRangeCached(loadedRange: LoadedRange, uid: string, startDate: IsoDateString, endDate: IsoDateString) {
+  if (!loadedRange || loadedRange.userId !== uid) return false;
+  return startDate >= loadedRange.start && endDate <= loadedRange.end;
+}
+
+function resolveMoodUnionRange(loadedRange: LoadedRange, uid: string, startDate: IsoDateString, endDate: IsoDateString) {
+  if (!loadedRange || loadedRange.userId !== uid) return { unionStart: startDate, unionEnd: endDate };
+  return {
+    unionStart: loadedRange.start < startDate ? loadedRange.start : startDate,
+    unionEnd: loadedRange.end > endDate ? loadedRange.end : endDate,
+  };
+}
+
 export const useMoodStore = create<MoodState>((set, get) => ({
   moodLogs: [],
   isLoading: false,
@@ -34,24 +52,11 @@ export const useMoodStore = create<MoodState>((set, get) => ({
         return;
       }
 
-      if (
-        !force &&
-        state.loadedRange &&
-        state.loadedRange.userId === uid &&
-        startDate >= state.loadedRange.start &&
-        endDate <= state.loadedRange.end
-      ) {
+      if (!force && isMoodRangeCached(state.loadedRange, uid, startDate, endDate)) {
         return;
       }
 
-      const unionStart =
-        state.loadedRange && state.loadedRange.userId === uid && state.loadedRange.start < startDate
-          ? state.loadedRange.start
-          : startDate;
-      const unionEnd =
-        state.loadedRange && state.loadedRange.userId === uid && state.loadedRange.end > endDate
-          ? state.loadedRange.end
-          : endDate;
+      const { unionStart, unionEnd } = resolveMoodUnionRange(state.loadedRange, uid, startDate, endDate);
 
       if (!state.loadedRange) {
         set({ isLoading: true, error: null });

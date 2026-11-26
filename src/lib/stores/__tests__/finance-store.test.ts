@@ -51,17 +51,15 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     expect(summary.totalIncome).toBe(0);
   });
 
-  test('2. Monthly commitment offset math + settlement + rollover + resetAllFinanceData', async () => {
+  async function setupMotherAllowanceWithOffsets(month: string) {
     const store = useFinanceStore.getState();
     const familyCat = store.categories.find((c) => c.slug === 'family-commitments')!;
     const shoppingCat = store.categories.find((c) => c.slug === 'shopping-personal-care')!;
     const utilitiesCat = store.categories.find((c) => c.slug === 'utilities-bills')!;
-    const medCat = store.categories.find((c) => c.slug === 'medical-supplements')!;
     const upiAcc = store.accounts.find((a) => a.type === 'upi')!;
 
-    await store.setMonthlyBudget(currentMonth, 40000);
-
-    const motherCommitment = await store.addCommitment({
+    await store.setMonthlyBudget(month, 40000);
+    const commitment = await store.addCommitment({
       title: "Mother's Monthly Allowance",
       recipientName: 'Mother',
       relationship: 'Mother',
@@ -81,8 +79,8 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
       type: 'expense',
       categoryId: shoppingCat.id,
       accountId: upiAcc.id,
-      date: `${currentMonth}-05`,
-      linkedCommitmentId: motherCommitment.id,
+      date: `${month}-05`,
+      linkedCommitmentId: commitment.id,
       commitmentContributionType: 'offset_expense',
     });
 
@@ -92,14 +90,19 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
       type: 'expense',
       categoryId: utilitiesCat.id,
       accountId: upiAcc.id,
-      date: `${currentMonth}-06`,
-      linkedCommitmentId: motherCommitment.id,
+      date: `${month}-06`,
+      linkedCommitmentId: commitment.id,
       commitmentContributionType: 'offset_expense',
     });
 
-    const ledger = useFinanceStore
-      .getState()
-      .getCommitmentLedger(motherCommitment.id, currentMonth)!;
+    return { commitment, upiAcc };
+  }
+
+  test('2. Monthly commitment offset math + settlement + rollover + resetAllFinanceData', async () => {
+    const { commitment: motherCommitment, upiAcc } = await setupMotherAllowanceWithOffsets(currentMonth);
+    const medCat = useFinanceStore.getState().categories.find((c) => c.slug === 'medical-supplements')!;
+
+    const ledger = useFinanceStore.getState().getCommitmentLedger(motherCommitment.id, currentMonth)!;
     expect(ledger.offsetExpensesAmount).toBe(1300);
     expect(ledger.remainingBalance).toBe(1700);
     expect(ledger.status).toBe('in_progress');
@@ -109,13 +112,9 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     expect(summary.remainingUnpaidCommitments).toBe(1700);
     expect(summary.safeToSpendMonthly).toBe(40000 - (1300 + 1700));
 
-    // Settle remaining ₹1,700
-    const settlementTx = await useFinanceStore
-      .getState()
-      .settleCommitmentBalance(motherCommitment.id, upiAcc.id, currentMonth);
+    const settlementTx = await useFinanceStore.getState().settleCommitmentBalance(motherCommitment.id, upiAcc.id, currentMonth);
     expect(settlementTx?.amount).toBe(1700);
 
-    // Extra ₹500 medicine offset creates overpayment that rolls over to next month
     await useFinanceStore.getState().addTransaction({
       title: 'Calcium Supplements',
       amount: 500,
@@ -128,20 +127,14 @@ describe('FlowFinance Store — Fresh Start, Offsets, Partial Debts & EMI Engine
     });
 
     const [yStr, mStr] = currentMonth.split('-');
-    let nextY = parseInt(yStr, 10);
-    let nextM = parseInt(mStr, 10) + 1;
-    if (nextM > 12) {
-      nextM = 1;
-      nextY += 1;
-    }
+    const parsedM = parseInt(mStr, 10);
+    const nextY = parsedM === 12 ? parseInt(yStr, 10) + 1 : parseInt(yStr, 10);
+    const nextM = parsedM === 12 ? 1 : parsedM + 1;
     const nextMonthKey = `${nextY}-${String(nextM).padStart(2, '0')}`;
-    const nextLedger = useFinanceStore
-      .getState()
-      .getCommitmentLedger(motherCommitment.id, nextMonthKey)!;
+    const nextLedger = useFinanceStore.getState().getCommitmentLedger(motherCommitment.id, nextMonthKey)!;
     expect(nextLedger.rolloverFromPreviousMonth).toBe(500);
     expect(nextLedger.effectiveTargetAmount).toBe(2500);
 
-    // Verify resetAllFinanceData keeps categories and resets everything else to ₹0
     await useFinanceStore.getState().resetAllFinanceData(true);
     const afterReset = useFinanceStore.getState();
     expect(afterReset.categories.length).toBe(11);

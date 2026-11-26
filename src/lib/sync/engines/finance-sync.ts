@@ -28,6 +28,47 @@ export { deduplicateFinanceRecordsInDexie } from './finance';
  * and Supabase PostgreSQL with two-way push + pull, generationCounter conflict resolution,
  * and soft-delete tombstones (deletedAt).
  */
+function getMigratableFinanceTables(): any[] {
+  return [
+    db.financeCategories,
+    db.financeAccounts,
+    db.financeTransactions,
+    db.financeBudgets,
+    db.monthlyCommitments,
+    db.debtRecords,
+    db.debtInstallments,
+    db.emiTrackers,
+    db.financeSipPlans,
+    db.financeCategorizationRules,
+    db.financeRecurringBills,
+    db.financeNetWorthSnapshots,
+    db.creditCardStatements,
+  ].filter(Boolean);
+}
+
+async function migrateStrandedTableRows(table: any, demoUserId: string, userId: string, now: string): Promise<number> {
+  try {
+    const stranded = await table.where('userId').equals(demoUserId).toArray();
+    if (stranded.length === 0) return 0;
+    await db.transaction('rw', table, async () => {
+      await Promise.all(
+        stranded.map((item: any) =>
+          table.update(item.id, {
+            userId,
+            isDirty: true,
+            generationCounter: (item.generationCounter || 1) + 1,
+            updatedAt: now,
+          })
+        )
+      );
+    });
+    return stranded.length;
+  } catch (err) {
+    logger.warn('[FinanceSyncEngine] Error migrating orphaned records in table', err);
+    return 0;
+  }
+}
+
 export class FinanceSyncEngine implements ISynchronizer {
   readonly domainName = 'Finance';
 
@@ -37,50 +78,11 @@ export class FinanceSyncEngine implements ISynchronizer {
    */
   public async migrateOrphanedRecords(userId: string): Promise<number> {
     if (!userId || userId === 'local-demo-user') return 0;
-    const demoUserId = 'local-demo-user';
-    const tables: any[] = [
-      db.financeCategories,
-      db.financeAccounts,
-      db.financeTransactions,
-      db.financeBudgets,
-      db.monthlyCommitments,
-      db.debtRecords,
-      db.debtInstallments,
-      db.emiTrackers,
-      ...(db.financeSipPlans ? [db.financeSipPlans] : []),
-      ...(db.financeCategorizationRules ? [db.financeCategorizationRules] : []),
-      ...(db.financeRecurringBills ? [db.financeRecurringBills] : []),
-      ...(db.financeNetWorthSnapshots ? [db.financeNetWorthSnapshots] : []),
-      ...(db.creditCardStatements ? [db.creditCardStatements] : []),
-    ];
-
-    let count = 0;
     const now = new Date().toISOString();
-    await Promise.all(
-      tables.map(async (table) => {
-        try {
-          const stranded = await table.where('userId').equals(demoUserId).toArray();
-          if (stranded.length > 0) {
-            await db.transaction('rw', table, async () => {
-              await Promise.all(
-                stranded.map((item: any) =>
-                  table.update(item.id, {
-                    userId,
-                    isDirty: true,
-                    generationCounter: (item.generationCounter || 1) + 1,
-                    updatedAt: now,
-                  })
-                )
-              );
-            });
-            count += stranded.length;
-          }
-        } catch (err) {
-          logger.warn('[FinanceSyncEngine] Error migrating orphaned records in table', err);
-        }
-      })
+    const counts = await Promise.all(
+      getMigratableFinanceTables().map((table) => migrateStrandedTableRows(table, 'local-demo-user', userId, now))
     );
-    return count;
+    return counts.reduce((sum, n) => sum + n, 0);
   }
 
   async sync(userId: string): Promise<{ pushed: number; pulled: number; status: 'success' | 'partial_failure' }> {

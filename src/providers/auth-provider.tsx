@@ -17,6 +17,18 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
 }
 
+const AUTH_REFRESH_EVENTS = new Set(['SIGNED_IN', 'SIGNED_OUT', 'PASSWORD_RECOVERY']);
+
+async function unregisterClientServiceWorkers() {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((r) => r.unregister()));
+  } catch (error) {
+    console.error('Failed to unregister service worker on sign out:', error);
+  }
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -28,22 +40,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const supabase = getSupabaseClient();
 
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setIsLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         setIsLoading(false);
 
-        // Refresh server components on auth changes
-        if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'PASSWORD_RECOVERY') {
+        if (AUTH_REFRESH_EVENTS.has(event)) {
           router.refresh();
         }
       }
@@ -118,17 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Intentionally silent — client is already signed out
     });
 
-    // Unregister service workers so cached data is cleared on next load
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      try {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const registration of registrations) {
-          await registration.unregister();
-        }
-      } catch (error) {
-        console.error('Failed to unregister service worker on sign out:', error);
-      }
-    }
+    await unregisterClientServiceWorkers();
 
     // Navigate immediately — don't wait for server response
     router.push('/login');

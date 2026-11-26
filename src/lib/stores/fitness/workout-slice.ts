@@ -19,6 +19,46 @@ function resolveUserId(override?: string, current?: string | null): string {
   return override || current || 'local-demo-user';
 }
 
+function buildNewWorkoutSession(
+  data: Parameters<FitnessStoreActions['addWorkoutSession']>[0],
+  userId: string
+): WorkoutSession {
+  const now = new Date().toISOString();
+  const durationMinutes = Math.max(1, Math.round(Number(data.durationMinutes) || 30));
+  return {
+    id: crypto.randomUUID(),
+    userId,
+    date: data.date || getLocalIsoDate(),
+    title: data.title.trim() || 'Workout',
+    workoutType: data.workoutType || 'strength',
+    durationMinutes,
+    estimatedCaloriesBurned: data.estimatedCaloriesBurned ?? Math.round(durationMinutes * 6),
+    exercises: Array.isArray(data.exercises) ? data.exercises : [],
+    rpe: data.rpe ?? null,
+    notes: data.notes ?? null,
+    source: data.source || 'manual',
+    deletedAt: null,
+    generationCounter: 1,
+    isDirty: true,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function emitWorkoutLoggedEvent(session: WorkoutSession) {
+  try {
+    const { CrossDomainActionMediator } = await import('../mediator');
+    await CrossDomainActionMediator.onFitnessEvent({
+      type: 'WORKOUT_LOGGED',
+      date: session.date,
+      workoutType: session.workoutType,
+      durationMinutes: session.durationMinutes,
+    });
+  } catch (err) {
+    logger.warn('[FitnessStore] Mediator workout auto-complete skipped:', err);
+  }
+}
+
 export const createWorkoutSlice: FitnessSliceCreator<
   Pick<
     FitnessStoreActions,
@@ -27,30 +67,7 @@ export const createWorkoutSlice: FitnessSliceCreator<
 > = (set, get) => ({
   addWorkoutSession: async (data, userIdOverride) => {
     const userId = resolveUserId(userIdOverride, get().currentUserId);
-    const now = new Date().toISOString();
-    const date = data.date || getLocalIsoDate();
-
-    const session: WorkoutSession = {
-      id: crypto.randomUUID(),
-      userId,
-      date,
-      title: data.title.trim() || 'Workout',
-      workoutType: data.workoutType || 'strength',
-      durationMinutes: Math.max(1, Math.round(Number(data.durationMinutes) || 30)),
-      estimatedCaloriesBurned:
-        data.estimatedCaloriesBurned !== undefined
-          ? data.estimatedCaloriesBurned
-          : Math.round(Math.max(1, Number(data.durationMinutes) || 30) * 6),
-      exercises: Array.isArray(data.exercises) ? data.exercises : [],
-      rpe: data.rpe ?? null,
-      notes: data.notes ?? null,
-      source: data.source || 'manual',
-      deletedAt: null,
-      generationCounter: 1,
-      isDirty: true,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const session = buildNewWorkoutSession(data, userId);
 
     await db.workoutSessions.put(session);
     set((state) => ({
@@ -60,20 +77,7 @@ export const createWorkoutSlice: FitnessSliceCreator<
       currentUserId: userId,
     }));
     notifyFitnessSync();
-
-    // Auto-complete workout / exercise habits via mediator
-    try {
-      const { CrossDomainActionMediator } = await import('../mediator');
-      await CrossDomainActionMediator.onFitnessEvent({
-        type: 'WORKOUT_LOGGED',
-        date: session.date,
-        workoutType: session.workoutType,
-        durationMinutes: session.durationMinutes,
-      });
-    } catch (err) {
-      logger.warn('[FitnessStore] Mediator workout auto-complete skipped:', err);
-    }
-
+    await emitWorkoutLoggedEvent(session);
     return session;
   },
 

@@ -163,6 +163,20 @@ async function collectHabitDuplicateOps(
   }
 }
 
+async function applyHabitCleanupTransaction(
+  duplicateHabitIds: string[],
+  completionUpdates: Array<{ id: string; habitId: string }>,
+  completionDeletes: string[]
+) {
+  const hasChanges = duplicateHabitIds.length > 0 || completionUpdates.length > 0 || completionDeletes.length > 0;
+  if (!hasChanges) return;
+  await db.transaction('rw', [db.habits, db.completions], async () => {
+    for (const upd of completionUpdates) await db.completions.update(upd.id, { habitId: upd.habitId });
+    if (completionDeletes.length > 0) await db.completions.bulkDelete(completionDeletes);
+    if (duplicateHabitIds.length > 0) await db.habits.bulkDelete(duplicateHabitIds);
+  });
+}
+
 export async function cleanupDuplicateHabits(): Promise<number> {
   const allHabits = await db.habits.toArray();
   const habitMap = groupRowsByKey(allHabits, (h) => `${h.name}-${h.category}`);
@@ -176,21 +190,38 @@ export async function cleanupDuplicateHabits(): Promise<number> {
     await collectHabitDuplicateOps(habits, duplicateHabitIds, completionUpdates, completionDeletes);
   }
 
-  const hasChanges = duplicateHabitIds.length > 0 || completionUpdates.length > 0 || completionDeletes.length > 0;
-  if (hasChanges) {
-    await db.transaction('rw', [db.habits, db.completions], async () => {
-      for (const upd of completionUpdates) await db.completions.update(upd.id, { habitId: upd.habitId });
-      if (completionDeletes.length > 0) await db.completions.bulkDelete(completionDeletes);
-      if (duplicateHabitIds.length > 0) await db.habits.bulkDelete(duplicateHabitIds);
-    });
-  }
-
+  await applyHabitCleanupTransaction(duplicateHabitIds, completionUpdates, completionDeletes);
   return duplicateHabitIds.length;
 }
 
 export async function countDuplicateHabits(): Promise<number> {
   const allHabits = await db.habits.toArray();
   return countDuplicatesBy(allHabits, (h) => `${h.name}-${h.category}`);
+}
+
+async function collectGoalDuplicateOps(
+  goals: Array<{ id: string; createdAt: string }>,
+  duplicateGoalIds: string[],
+  milestoneUpdates: Array<{ id: string; goalId: string }>
+) {
+  const sorted = [...goals].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const [keep, ...duplicates] = sorted;
+  for (const duplicate of duplicates) {
+    duplicateGoalIds.push(duplicate.id);
+    const milestones = await db.milestones.where('goalId').equals(duplicate.id).toArray();
+    milestones.forEach((m) => milestoneUpdates.push({ id: m.id, goalId: keep.id }));
+  }
+}
+
+async function applyGoalCleanupTransaction(
+  duplicateGoalIds: string[],
+  milestoneUpdates: Array<{ id: string; goalId: string }>
+) {
+  if (duplicateGoalIds.length === 0 && milestoneUpdates.length === 0) return;
+  await db.transaction('rw', [db.goals, db.milestones], async () => {
+    for (const upd of milestoneUpdates) await db.milestones.update(upd.id, { goalId: upd.goalId });
+    if (duplicateGoalIds.length > 0) await db.goals.bulkDelete(duplicateGoalIds);
+  });
 }
 
 export async function cleanupDuplicateGoals(): Promise<number> {
@@ -202,22 +233,10 @@ export async function cleanupDuplicateGoals(): Promise<number> {
 
   for (const goals of goalMap.values()) {
     if (goals.length <= 1) continue;
-    const sorted = [...goals].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    const [keep, ...duplicates] = sorted;
-    for (const duplicate of duplicates) {
-      duplicateGoalIds.push(duplicate.id);
-      const milestones = await db.milestones.where('goalId').equals(duplicate.id).toArray();
-      milestones.forEach((m) => milestoneUpdates.push({ id: m.id, goalId: keep.id }));
-    }
+    await collectGoalDuplicateOps(goals, duplicateGoalIds, milestoneUpdates);
   }
 
-  if (duplicateGoalIds.length > 0 || milestoneUpdates.length > 0) {
-    await db.transaction('rw', [db.goals, db.milestones], async () => {
-      for (const upd of milestoneUpdates) await db.milestones.update(upd.id, { goalId: upd.goalId });
-      if (duplicateGoalIds.length > 0) await db.goals.bulkDelete(duplicateGoalIds);
-    });
-  }
-
+  await applyGoalCleanupTransaction(duplicateGoalIds, milestoneUpdates);
   return duplicateGoalIds.length;
 }
 

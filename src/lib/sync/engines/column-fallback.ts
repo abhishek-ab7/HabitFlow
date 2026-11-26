@@ -6,22 +6,32 @@ const missingColumnsByTable = new Map<string, Set<string>>();
 const MISSING_RELATION_CODES = new Set(['PGRST205', '42P01']);
 const MISSING_RELATION_PHRASES = ['Could not find the table', 'in the schema cache', 'does not exist'];
 
+const MISSING_COLUMN_PATTERNS = [
+  /Could not find the ['"]([a-z0-9_]+)['"] column/i,
+  /column\s+["']?([a-z0-9_]+)["']?\s+(?:of|does not exist)/i,
+  /column\s+["']?([a-z0-9_]+)["']?\s+does not exist/i,
+];
+
+function joinErrorFields(err: any): string {
+  return [err.message, err.details, err.hint].filter(Boolean).join(' ');
+}
+
 export function isMissingRelationError(err: any): boolean {
   if (!err) return false;
   if (MISSING_RELATION_CODES.has(String(err.code || ''))) return true;
   if (Number(err.status) === 404 || Number(err.statusCode) === 404) return true;
-  const msg = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`;
+  const msg = joinErrorFields(err);
   return MISSING_RELATION_PHRASES.some((phrase) => msg.includes(phrase));
 }
 
 export function extractMissingColumnName(err: any): string | null {
   if (!err) return null;
-  const msg = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`;
-  const match =
-    msg.match(/Could not find the ['"]([a-z0-9_]+)['"] column/i) ||
-    msg.match(/column\s+["']?([a-z0-9_]+)["']?\s+(?:of|does not exist)/i) ||
-    msg.match(/column\s+["']?([a-z0-9_]+)["']?\s+does not exist/i);
-  return match ? match[1] : null;
+  const msg = joinErrorFields(err);
+  for (const pattern of MISSING_COLUMN_PATTERNS) {
+    const match = msg.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
 }
 
 export function stripKnownMissingColumnsFromRow(

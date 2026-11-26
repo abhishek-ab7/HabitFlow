@@ -56,10 +56,14 @@ function isCacheablePublicAsset(url) {
   return STATIC_ASSET_EXTENSIONS.test(url.pathname);
 }
 
+function isApiOrNextPath(pathname, searchParams) {
+  if (pathname.startsWith('/api') || pathname.includes('/api/')) return true;
+  if (pathname.startsWith('/_next/')) return true;
+  return searchParams.has('_rsc');
+}
+
 function isBypassedRoute(url, request) {
-  const { pathname, searchParams } = url;
-  if (pathname.startsWith('/api') || pathname.includes('/api/') || pathname.startsWith('/_next/')) return true;
-  if (searchParams.has('_rsc')) return true;
+  if (isApiOrNextPath(url.pathname, url.searchParams)) return true;
   const rscHeaders = ['RSC', 'Next-Router-Prefetch', 'Next-Router-State-Tree'];
   if (rscHeaders.some((h) => request.headers.get(h) === '1')) return true;
   const accept = request.headers.get('Accept') || '';

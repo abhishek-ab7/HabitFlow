@@ -113,34 +113,13 @@ function resolveStoredAccentOverride(): AccentOverrideId {
   return legacyAccent;
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('system');
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
-  const [colorTheme, setColorThemeState] = useState<ColorThemeId>(DEFAULT_COLOR_THEME);
-  const [accentOverride, setAccentOverrideState] = useState<AccentOverrideId>(DEFAULT_ACCENT_OVERRIDE);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const initialTheme = resolveStoredTheme();
-    if (initialTheme) setThemeState(initialTheme);
-
-    const rawColorTheme = safeStorageGet(COLOR_THEME_STORAGE_KEY);
-    const initialColorTheme: ColorThemeId = isValidColorTheme(rawColorTheme)
-      ? rawColorTheme
-      : DEFAULT_COLOR_THEME;
-    setColorThemeState(initialColorTheme);
-    applyColorThemeToDom(initialColorTheme);
-
-    const initialAccentOverride = resolveStoredAccentOverride();
-    setAccentOverrideState(initialAccentOverride);
-    applyAccentOverrideToDom(initialAccentOverride);
-    setMounted(true);
-  }, []);
-
-  // Apply light/dark surface classes and listen to OS preference
+function useSurfaceThemeSync(
+  theme: Theme,
+  mounted: boolean,
+  setResolvedTheme: (t: 'light' | 'dark') => void
+) {
   useEffect(() => {
     if (!mounted) return;
-
     const root = window.document.documentElement;
     const applySurface = (isDark: boolean) => {
       root.classList.remove('light', 'dark', 'theme-morning', 'theme-afternoon', 'theme-night');
@@ -152,7 +131,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (theme === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       applySurface(mediaQuery.matches);
-
       const handleChange = (e: MediaQueryListEvent) => applySurface(e.matches);
       mediaQuery.addEventListener('change', handleChange);
       safeStorageSet('theme', 'system');
@@ -161,9 +139,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     applySurface(theme === 'dark');
     safeStorageSet('theme', theme);
-  }, [theme, mounted]);
+  }, [theme, mounted, setResolvedTheme]);
+}
 
-  // Apply colorTheme attribute and keep mobile browser theme-color meta synced
+function useAppearanceEffects(
+  mounted: boolean,
+  colorTheme: ColorThemeId,
+  resolvedTheme: 'light' | 'dark',
+  accentOverride: AccentOverrideId
+) {
   useEffect(() => {
     if (!mounted) return;
     applyColorThemeToDom(colorTheme);
@@ -171,51 +155,75 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     updateThemeColorMeta(colorTheme, resolvedTheme);
   }, [colorTheme, resolvedTheme, mounted]);
 
-  // Apply accentOverride attribute
   useEffect(() => {
     if (!mounted) return;
     applyAccentOverrideToDom(accentOverride);
     safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, accentOverride);
   }, [accentOverride, mounted]);
+}
+
+function useInitialThemeLoad(
+  setThemeState: (t: Theme) => void,
+  setColorThemeState: (c: ColorThemeId) => void,
+  setAccentOverrideState: (a: AccentOverrideId) => void,
+  setMounted: (m: boolean) => void
+) {
+  useEffect(() => {
+    const initialTheme = resolveStoredTheme();
+    if (initialTheme) setThemeState(initialTheme);
+    const rawColorTheme = safeStorageGet(COLOR_THEME_STORAGE_KEY);
+    const initialColorTheme: ColorThemeId = isValidColorTheme(rawColorTheme) ? rawColorTheme : DEFAULT_COLOR_THEME;
+    setColorThemeState(initialColorTheme);
+    applyColorThemeToDom(initialColorTheme);
+    const initialAccentOverride = resolveStoredAccentOverride();
+    setAccentOverrideState(initialAccentOverride);
+    applyAccentOverrideToDom(initialAccentOverride);
+    setMounted(true);
+  }, [setThemeState, setColorThemeState, setAccentOverrideState, setMounted]);
+}
+
+function saveWindowSetting(key: string, value: string, domApplier?: () => void) {
+  if (typeof window === 'undefined') return;
+  safeStorageSet(key, value);
+  domApplier?.();
+}
+
+function useThemeCallbacks() {
+  const [theme, setThemeState] = useState<Theme>('system');
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+  const [colorTheme, setColorThemeState] = useState<ColorThemeId>(DEFAULT_COLOR_THEME);
+  const [accentOverride, setAccentOverrideState] = useState<AccentOverrideId>(DEFAULT_ACCENT_OVERRIDE);
+  const [mounted, setMounted] = useState(false);
+
+  useInitialThemeLoad(setThemeState, setColorThemeState, setAccentOverrideState, setMounted);
+  useSurfaceThemeSync(theme, mounted, setResolvedTheme);
+  useAppearanceEffects(mounted, colorTheme, resolvedTheme, accentOverride);
 
   const setTheme = useCallback((nextTheme: Theme) => {
     if (!VALID_THEMES.includes(nextTheme)) return;
     setThemeState(nextTheme);
-    if (typeof window !== 'undefined') {
-      safeStorageSet('theme', nextTheme);
-    }
+    saveWindowSetting('theme', nextTheme);
   }, []);
 
   const setColorTheme = useCallback((nextColorTheme: ColorThemeId) => {
     if (!isValidColorTheme(nextColorTheme)) return;
     setColorThemeState(nextColorTheme);
-    if (typeof window !== 'undefined') {
-      safeStorageSet(COLOR_THEME_STORAGE_KEY, nextColorTheme);
-      applyColorThemeToDom(nextColorTheme);
-    }
+    saveWindowSetting(COLOR_THEME_STORAGE_KEY, nextColorTheme, () => applyColorThemeToDom(nextColorTheme));
   }, []);
 
   const setAccentOverride = useCallback((nextAccent: AccentOverrideId) => {
     if (!isValidAccentOverride(nextAccent)) return;
     setAccentOverrideState(nextAccent);
-    if (typeof window !== 'undefined') {
-      safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, nextAccent);
-      applyAccentOverrideToDom(nextAccent);
-    }
+    saveWindowSetting(ACCENT_OVERRIDE_STORAGE_KEY, nextAccent, () => applyAccentOverrideToDom(nextAccent));
   }, []);
 
   const resetAppearance = useCallback(() => {
     setColorThemeState(DEFAULT_COLOR_THEME);
     setAccentOverrideState(DEFAULT_ACCENT_OVERRIDE);
-    if (typeof window !== 'undefined') {
-      safeStorageSet(COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME);
-      safeStorageSet(ACCENT_OVERRIDE_STORAGE_KEY, DEFAULT_ACCENT_OVERRIDE);
-      applyColorThemeToDom(DEFAULT_COLOR_THEME);
-      applyAccentOverrideToDom(DEFAULT_ACCENT_OVERRIDE);
-    }
+    saveWindowSetting(COLOR_THEME_STORAGE_KEY, DEFAULT_COLOR_THEME, () => applyColorThemeToDom(DEFAULT_COLOR_THEME));
+    saveWindowSetting(ACCENT_OVERRIDE_STORAGE_KEY, DEFAULT_ACCENT_OVERRIDE, () => applyAccentOverrideToDom(DEFAULT_ACCENT_OVERRIDE));
   }, []);
 
-  // Backward-compatible AccentTheme mapping
   const accent: AccentTheme = LEGACY_ACCENTS.includes(accentOverride as AccentTheme)
     ? (accentOverride as AccentTheme)
     : 'mint';
@@ -228,38 +236,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     [setAccentOverride]
   );
 
-  const contextValue = useMemo<ThemeContextType>(
-    () => ({
-      theme,
-      setTheme,
-      resolvedTheme,
-      colorTheme,
-      setColorTheme,
-      accentOverride,
-      setAccentOverride,
-      resetAppearance,
-      accent,
-      setAccent,
-    }),
-    [
-      theme,
-      setTheme,
-      resolvedTheme,
-      colorTheme,
-      setColorTheme,
-      accentOverride,
-      setAccentOverride,
-      resetAppearance,
-      accent,
-      setAccent,
-    ]
-  );
+  return { theme, setTheme, resolvedTheme, colorTheme, setColorTheme, accentOverride, setAccentOverride, resetAppearance, accent, setAccent };
+}
 
-  return (
-    <ThemeContext.Provider value={contextValue}>
-      {children}
-    </ThemeContext.Provider>
-  );
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const value = useThemeCallbacks();
+  const contextValue = useMemo<ThemeContextType>(() => value, [
+    value.theme, value.setTheme, value.resolvedTheme, value.colorTheme, value.setColorTheme,
+    value.accentOverride, value.setAccentOverride, value.resetAppearance, value.accent, value.setAccent,
+  ]);
+
+  return <ThemeContext.Provider value={contextValue}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

@@ -51,7 +51,8 @@ export const normalizeLayout = (layout?: any[]): DashboardWidgetConfig[] => {
     { id: 'weekly-review', size: '1/2', hidden: false, pinned: false }
   ];
 
-  if (!layout || !Array.isArray(layout) || layout.length === 0) {
+  const isEmptyLayout = !Array.isArray(layout) || layout.length === 0;
+  if (isEmptyLayout) {
     return defaultLayout;
   }
 

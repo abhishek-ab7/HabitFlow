@@ -111,6 +111,50 @@ function finalizeTimerCompletion(
   }
 }
 
+function buildPresetTimerState(
+  mode: PomodoroMode,
+  options?: Parameters<PomodoroState['startPresetTimer']>[1]
+) {
+  const now = Date.now();
+  const dur = Math.max(5, Math.round(options?.durationSecs ?? POMODORO_DURATIONS[mode]));
+  const defaultTitles: Partial<Record<PomodoroMode, string>> = {
+    starter_2m: '2-Min Rule Starter',
+    urge_10m: '10-Min Urge Surf',
+    gym_rest: `Gym Rest (${dur}s)`,
+  };
+  return {
+    mode,
+    timeLeft: dur,
+    duration: dur,
+    isRunning: true,
+    endsAt: now + dur * 1000,
+    lastTickMs: now,
+    activeTaskId: options?.taskId ?? null,
+    activeTaskTitle: options?.title ?? defaultTitles[mode] ?? null,
+    urgeHabitId: options?.habitId ?? null,
+    urgeHabitName: options?.habitName ?? null,
+    pendingUrgeReflection: false,
+  };
+}
+
+function tryHandleWallClockTick(
+  state: PomodoroState,
+  set: (partial: Partial<PomodoroState>) => void,
+  nowMs: number
+): boolean {
+  const { timeLeft, endsAt, lastTickMs } = state;
+  const elapsedSinceLastTick = lastTickMs != null ? nowMs - lastTickMs : 1000;
+  if (endsAt == null || elapsedSinceLastTick < 500) return false;
+
+  const expectedFromEndsAt = Math.max(0, Math.ceil((endsAt - nowMs - 50) / 1000));
+  const shouldUseWallClock = Math.abs(timeLeft - expectedFromEndsAt) <= 1 || elapsedSinceLastTick >= 1500;
+  if (!shouldUseWallClock) return false;
+
+  if (expectedFromEndsAt <= 0) finalizeTimerCompletion(state, set);
+  else set({ timeLeft: expectedFromEndsAt, lastTickMs: nowMs });
+  return true;
+}
+
 export const usePomodoroStore = create<PomodoroState>((set, get) => ({
   activeTaskId: null,
   activeTaskTitle: null,
@@ -168,30 +212,7 @@ export const usePomodoroStore = create<PomodoroState>((set, get) => ({
   },
 
   startPresetTimer: (mode, options) => {
-    const now = Date.now();
-    const dur = Math.max(5, Math.round(options?.durationSecs ?? POMODORO_DURATIONS[mode]));
-    set({
-      mode,
-      timeLeft: dur,
-      duration: dur,
-      isRunning: true,
-      endsAt: now + dur * 1000,
-      lastTickMs: now,
-      activeTaskId: options?.taskId ?? null,
-      activeTaskTitle:
-        options?.title ??
-        (mode === 'starter_2m'
-          ? '2-Min Rule Starter'
-          : mode === 'urge_10m'
-            ? '10-Min Urge Surf'
-            : mode === 'gym_rest'
-              ? `Gym Rest (${dur}s)`
-              : null),
-      urgeHabitId: options?.habitId ?? null,
-      urgeHabitName: options?.habitName ?? null,
-      pendingUrgeReflection: false,
-    });
-
+    set(buildPresetTimerState(mode, options));
     if (typeof window !== 'undefined' && options?.openPanel !== false) {
       window.dispatchEvent(new CustomEvent('open-pomodoro'));
     }
@@ -307,39 +328,12 @@ export const usePomodoroStore = create<PomodoroState>((set, get) => ({
 
   tick: (nowMs = Date.now()) => {
     const state = get();
-    const { timeLeft, isRunning, endsAt, lastTickMs } = state;
-    if (!isRunning) return;
+    if (!state.isRunning) return;
+    if (tryHandleWallClockTick(state, set, nowMs)) return;
 
-    const elapsedSinceLastTick = lastTickMs != null ? nowMs - lastTickMs : 1000;
-
-    // If invoked via real wall-clock progression (>= 500ms or jumped clock), derive from endsAt
-    if (endsAt != null && elapsedSinceLastTick >= 500) {
-      // Detect if an external caller overrode timeLeft manually (e.g. unit test setState({ timeLeft: 2 }))
-      const expectedFromEndsAt = Math.max(0, Math.ceil((endsAt - nowMs - 50) / 1000));
-      if (Math.abs(timeLeft - expectedFromEndsAt) <= 1 || elapsedSinceLastTick >= 1500) {
-        if (expectedFromEndsAt <= 0) {
-          finalizeTimerCompletion(state, set);
-        } else {
-          set({
-            timeLeft: expectedFromEndsAt,
-            lastTickMs: nowMs,
-          });
-        }
-        return;
-      }
-    }
-
-    // Synchronous step fallback (e.g., direct unit-test tick() calls within <500ms)
-    if (timeLeft > 1) {
-      const nextLeft = timeLeft - 1;
-      set({
-        timeLeft: nextLeft,
-        endsAt: nowMs + nextLeft * 1000,
-        lastTickMs: nowMs,
-      });
-    } else {
-      finalizeTimerCompletion(state, set);
-    }
+    if (state.timeLeft <= 1) return finalizeTimerCompletion(state, set);
+    const nextLeft = state.timeLeft - 1;
+    set({ timeLeft: nextLeft, endsAt: nowMs + nextLeft * 1000, lastTickMs: nowMs });
   },
 
   setMode: (mode: PomodoroMode) => {

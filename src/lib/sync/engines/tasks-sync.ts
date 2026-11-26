@@ -79,6 +79,17 @@ export class TasksSyncEngine implements ISynchronizer {
   public domainName = 'tasks';
   private supabase = getSupabaseClient();
 
+  private async pushTaskBatch(userId: string, batch: any[]): Promise<number> {
+    const payload = batch.map((t) => mapTaskToRemoteRow(userId, t));
+    const { error } = await upsertRowsWithColumnFallback(this.supabase, 'tasks', payload, { onConflict: 'id' });
+    if (error) throw new Error(`[TasksSyncEngine Bulk Push Failure]: ${error.message}`);
+
+    await db.transaction('rw', db.tasks, async () => {
+      await Promise.all(batch.map((b) => db.tasks.update(b.id, { isDirty: false })));
+    });
+    return batch.length;
+  }
+
   private async pushDirtyTasks(userId: string): Promise<number> {
     const dirtyLocalTasks = await db.tasks
       .where('userId')
@@ -88,25 +99,9 @@ export class TasksSyncEngine implements ISynchronizer {
 
     let pushedCount = 0;
     const BATCH_SIZE = 50;
-
     for (let i = 0; i < dirtyLocalTasks.length; i += BATCH_SIZE) {
-      const batch = dirtyLocalTasks.slice(i, i + BATCH_SIZE);
-      const payload = batch.map((t) => mapTaskToRemoteRow(userId, t));
-
-      const { error } = await upsertRowsWithColumnFallback(
-        this.supabase,
-        'tasks',
-        payload,
-        { onConflict: 'id' }
-      );
-      if (error) throw new Error(`[TasksSyncEngine Bulk Push Failure]: ${error.message}`);
-
-      await db.transaction('rw', db.tasks, async () => {
-        await Promise.all(batch.map((b) => db.tasks.update(b.id, { isDirty: false })));
-      });
-      pushedCount += batch.length;
+      pushedCount += await this.pushTaskBatch(userId, dirtyLocalTasks.slice(i, i + BATCH_SIZE));
     }
-
     return pushedCount;
   }
 

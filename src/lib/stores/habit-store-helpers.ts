@@ -4,7 +4,10 @@ import { getSyncEngine } from '../sync';
 import type { Habit, HabitCompletion } from '../types';
 import { useGamificationStore } from './gamification-store';
 
-function assertWithinFreezeWindow(date: string): Date {
+export type IsoDateString = string;
+export type HabitIdentifier = string;
+
+function assertWithinFreezeWindow(date: IsoDateString): Date {
   const dateObj = parseISO(date);
   const diffDays = differenceInCalendarDays(new Date(), dateObj);
   if (diffDays < 0 || diffDays > 7) {

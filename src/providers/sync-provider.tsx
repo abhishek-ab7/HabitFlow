@@ -143,6 +143,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     let metadataInterval: NodeJS.Timeout | null = null;
     let unsubscribe: (() => void) | null = null;
 
+    const runIdleBackgroundSync = (syncEngine: ReturnType<typeof getSyncEngine>) => {
+      scheduleIdleTask(async () => {
+        if (!active) return;
+        try {
+          await syncEngine.syncAll();
+        } catch (syncErr) {
+          console.warn('[SyncProvider] Background initial sync failed:', syncErr);
+        }
+      }, 1500);
+    };
+
     const initializeData = async () => {
       try {
         const syncEngine = getSyncEngine();
@@ -152,7 +163,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           setIsSyncing(status.type === 'syncing');
         });
 
-        if (active) setSyncStatus({ type: 'syncing', message: 'Loading local data...', progress: 30 });
+        setSyncStatus({ type: 'syncing', message: 'Loading local data...', progress: 30 });
         await syncEngine.checkAndRunMigrations();
         if (!active) return;
 
@@ -170,14 +181,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           if (active) updateMetadata();
         }, 30000);
 
-        scheduleIdleTask(async () => {
-          if (!active) return;
-          try {
-            await syncEngine.syncAll();
-          } catch (syncErr) {
-            console.warn('[SyncProvider] Background initial sync failed:', syncErr);
-          }
-        }, 1500);
+        runIdleBackgroundSync(syncEngine);
       } catch (error) {
         console.error('[SyncProvider] Initialization failed:', error);
         if (active) {

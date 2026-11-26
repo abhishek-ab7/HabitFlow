@@ -295,10 +295,13 @@ export const useHabitStore = create<HabitState>((set, get) => ({
 
     const existing = get().completions.find(c => c.habitId === habitId && c.date === date);
     const isRest = existing?.status === 'rest' || existing?.skipped === true;
-    const result = isRest
-      ? await clearRestCompletion(habitId, date, userId)
-      : (assertRestDayAllowed(habit, get().completions, date),
-        await markRestCompletion(habitId, date, userId, reason));
+    if (isRest) {
+      const result = await clearRestCompletion(habitId, date, userId);
+      await updateLocalAndSync(set, result);
+      return;
+    }
+    assertRestDayAllowed(habit, get().completions, date);
+    const result = await markRestCompletion(habitId, date, userId, reason);
     await updateLocalAndSync(set, result);
   },
 
