@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { db, cleanupDuplicateGoals, cleanupDuplicateCompletions, cleanupDuplicateHabits } from '@/lib/db';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
-import { countAllDuplicates } from '@/lib/cleanup';
 import type { Habit, HabitCompletion, Goal, Milestone, MoodLog } from '@/lib/types';
 import { useSyncStatusStore } from '../stores/sync-status-store';
 import { logger } from '@/lib/logger';
@@ -17,6 +15,35 @@ import { UserSettingsSyncEngine, MoodLogsSyncEngine, syncUserSettingsWithRetry, 
 import { FinanceSyncEngine, syncFinanceWithRetry } from './engines/finance-sync';
 import { FitnessSyncEngine, syncFitnessWithRetry } from './engines/fitness-sync';
 import { upsertRowsWithColumnFallback } from './engines/column-fallback';
+import {
+  isFinanceRealtimeTable,
+  isFitnessRealtimeTable,
+  reloadRealtimeStores,
+  subscribeRealtimeTables,
+} from './engine-helpers/realtime-registrar';
+import { refreshStoresAfterSync } from './engine-helpers/post-sync-refresh';
+import {
+  buildCompletionSyncData,
+  buildOfflineGoalData,
+  buildOfflineHabitData,
+  buildOfflineSettingsData,
+  executeRemoteOperation,
+} from './engine-helpers/push-helpers';
+import { cleanupLocalDuplicatesWithReport } from './engine-helpers/duplicate-cleanup';
+import {
+  resolveSessionUserId,
+  runTriggeredFinanceSync,
+  runTriggeredFitnessSync,
+} from './engine-helpers/domain-trigger';
+import {
+  attachNetworkListeners,
+  initializeAuthSession,
+  migrateHabitArchivedProperty,
+} from './engine-helpers/lifecycle-listeners';
+
+export type SyncTableName = string;
+export type SyncRecordId = string;
+export type SyncUserId = string;
 
 const syncTableMap: Record<string, (engine: SyncEngine) => Promise<any>> = {
   habits: syncHabitsWithRetry,
@@ -138,13 +165,13 @@ export class SyncEngine {
   // INITIALIZATION
   // ===================
 
-  private getLastSyncTime(userId: string): Date | null {
+  private getLastSyncTime(userId: SyncUserId): Date | null {
     if (typeof localStorage === 'undefined') return null;
     const stored = localStorage.getItem(`habit_sync_last_at_${userId}`);
     return stored ? new Date(stored) : null;
   }
 
-  private handleAuthStateChange(newUserId: string | null) {
+  private handleAuthStateChange(newUserId: SyncUserId | null) {
     if (newUserId === this.userId) return;
 
     this.userId = newUserId;
@@ -162,87 +189,53 @@ export class SyncEngine {
   }
 
   private async setupAuth() {
-    try {
-      const { data: { session } } = await this.supabase.auth.getSession();
-      this.userId = session?.user?.id || null;
-
-      if (this.userId) {
-        this.lastSyncAt = this.getLastSyncTime(this.userId);
-      }
-
-      logger.info('[SyncEngine] Auth setup complete, userId:', this.userId);
-
-      // Resolve the auth ready promise
-      this.authReadyResolve();
-
-      const { data: { subscription } } = this.supabase.auth.onAuthStateChange((_event, session) => {
-        const newUserId = session?.user?.id || null;
-        this.handleAuthStateChange(newUserId);
-      });
-      this.authSubscription = subscription;
-
-      if (this.userId) {
-        this.setupRealtime();
-      }
-    } catch (error) {
-      this.log('error', 'Failed to setup auth', error);
-      // Resolve anyway to prevent hanging
-      this.authReadyResolve();
+    const { userId, subscription } = await initializeAuthSession(
+      this.supabase,
+      (newUserId) => this.handleAuthStateChange(newUserId),
+      this.log.bind(this)
+    );
+    this.userId = userId;
+    if (this.userId) {
+      this.lastSyncAt = this.getLastSyncTime(this.userId);
+    }
+    logger.info('[SyncEngine] Auth setup complete, userId:', this.userId);
+    this.authReadyResolve();
+    this.authSubscription = subscription;
+    if (this.userId) {
+      this.setupRealtime();
     }
   }
 
+  private canTriggerResumeSync(): boolean {
+    if (!this.isOnline || !this.userId) return false;
+    if (this.isSyncing || this.syncLock) return false;
+    const now = Date.now();
+    if (now - this.lastResumeSyncAt < 60_000) return false;
+    this.lastResumeSyncAt = now;
+    return true;
+  }
 
   private setupNetworkListeners() {
-    if (typeof window === 'undefined') return;
     if (this.networkAbortController) {
       this.networkAbortController.abort();
     }
-    const controller = new AbortController();
-    this.networkAbortController = controller;
-
-    window.addEventListener(
-      'online',
-      () => {
+    this.networkAbortController = attachNetworkListeners({
+      onOnline: () => {
         this.isOnline = true;
         this.log('info', 'Back online, syncing pending changes...');
-        // syncAll() already invokes processPendingOperations() under syncLock
         void this.syncAll();
       },
-      { signal: controller.signal }
-    );
-
-    window.addEventListener(
-      'offline',
-      () => {
+      onOffline: () => {
         this.isOnline = false;
         this.log('info', 'Offline mode activated');
         this.notifyStatus({ type: 'idle', message: 'Offline - changes will sync when online' });
       },
-      { signal: controller.signal }
-    );
-
-    const triggerResumeSync = () => {
-      if (!this.isOnline || !this.userId || this.isSyncing || this.syncLock) return;
-      const now = Date.now();
-      if (now - this.lastResumeSyncAt < 60_000) return;
-      this.lastResumeSyncAt = now;
-      this.log('info', 'App resumed to foreground, triggering sync...');
-      void this.syncAll();
-    };
-
-    if (typeof document !== 'undefined') {
-      document.addEventListener(
-        'visibilitychange',
-        () => {
-          if (document.visibilityState === 'visible') {
-            triggerResumeSync();
-          }
-        },
-        { signal: controller.signal }
-      );
-    }
-
-    window.addEventListener('focus', triggerResumeSync, { signal: controller.signal });
+      canResumeSync: () => this.canTriggerResumeSync(),
+      onResumeSync: () => {
+        this.log('info', 'App resumed to foreground, triggering sync...');
+        void this.syncAll();
+      },
+    });
   }
 
   private async loadPendingOperations() {
@@ -264,24 +257,7 @@ export class SyncEngine {
 
   private async migrateHabitProperties(): Promise<void> {
     if (!this.userId) return;
-
-    this.log('info', '🔧 Starting habit property migration...');
-
-    try {
-      const habits = await db.habits.where('userId').equals(this.userId).toArray();
-      let fixedCount = 0;
-
-      for (const habit of habits) {
-        if (habit.archived === undefined || habit.archived === null) {
-          await db.habits.update(habit.id, { archived: false });
-          fixedCount++;
-        }
-      }
-
-      this.log('info', `✅ Migration complete: Fixed ${fixedCount} habits`);
-    } catch (error) {
-      this.log('error', `❌ Migration failed: ${error}`);
-    }
+    await migrateHabitArchivedProperty(this.userId, this.log.bind(this));
   }
 
   async checkAndRunMigrations(): Promise<void> {
@@ -424,70 +400,7 @@ export class SyncEngine {
         localStorage.setItem(`habit_sync_last_at_${this.userId}`, this.lastSyncAt.toISOString());
       }
 
-      const details = report?.details ?? {};
-      const financePulled = details['Finance']?.pulled ?? 0;
-      const fitnessPulled = details['Fitness']?.pulled ?? 0;
-      const habitsPulled = (details['habits']?.pulled ?? 0) + (details['completions']?.pulled ?? 0);
-      const tasksPulled = details['tasks']?.pulled ?? 0;
-      const goalsPulled = (details['goals']?.pulled ?? 0) + (details['milestones']?.pulled ?? 0);
-      const settingsPulled = details['user_settings']?.pulled ?? 0;
-
-      if (financePulled > 0) {
-        try {
-          const { useFinanceStore } = await import('@/lib/stores/finance-store');
-          await useFinanceStore.getState().loadFinanceData(this.userId, true);
-        } catch (e) {
-          this.log('warn', 'Failed to refresh finance store after syncAll', e);
-        }
-      }
-
-      if (fitnessPulled > 0) {
-        try {
-          const { useFitnessStore } = await import('@/lib/stores/fitness');
-          await useFitnessStore.getState().loadFitnessData(this.userId, true);
-        } catch (e) {
-          this.log('warn', 'Failed to refresh fitness store after syncAll', e);
-        }
-      }
-
-      if (habitsPulled > 0) {
-        try {
-          const { useHabitStore } = await import('@/lib/stores/habit-store');
-          await useHabitStore.getState().loadHabits(true);
-        } catch (e) {
-          this.log('warn', 'Failed to refresh habits store after syncAll', e);
-        }
-      }
-
-      if (tasksPulled > 0) {
-        try {
-          const { useTaskStore } = await import('@/lib/stores/task-store');
-          await useTaskStore.getState().loadTasks(true);
-        } catch (e) {
-          this.log('warn', 'Failed to refresh tasks store after syncAll', e);
-        }
-      }
-
-      if (goalsPulled > 0) {
-        try {
-          const { useGoalStore } = await import('@/lib/stores/goal-store');
-          await Promise.all([
-            useGoalStore.getState().loadGoals(true),
-            useGoalStore.getState().loadAllMilestones(true),
-          ]);
-        } catch (e) {
-          this.log('warn', 'Failed to refresh goals store after syncAll', e);
-        }
-      }
-
-      if (settingsPulled > 0) {
-        try {
-          const { useUserStore } = await import('@/lib/stores/user-store');
-          await useUserStore.getState().loadUser(true);
-        } catch (e) {
-          this.log('warn', 'Failed to refresh user store after syncAll', e);
-        }
-      }
+      await refreshStoresAfterSync(report, this.userId, this.log.bind(this));
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('habitflow-sync-complete', { detail: report }));
@@ -570,25 +483,7 @@ export class SyncEngine {
 
   private async executePendingOperation(op: PendingOperation) {
     if (!this.userId) return;
-
-    switch (op.type) {
-      case 'create':
-      case 'update': {
-        const { error: upsertErr } = await upsertRowsWithColumnFallback(
-          this.supabase,
-          op.table,
-          op.data,
-          op.table === 'completions' ? { onConflict: 'habit_id,date' } : undefined
-        );
-        if (upsertErr) throw upsertErr;
-        break;
-      }
-      case 'delete': {
-        const { error: delErr } = await this.supabase.from(op.table).delete().eq('id', op.data.id);
-        if (delErr) throw delErr;
-        break;
-      }
-    }
+    await executeRemoteOperation(this.supabase, op);
   }
 
   public queueOperation(op: Omit<PendingOperation, 'id' | 'timestamp' | 'retryCount'>) {
@@ -611,39 +506,25 @@ export class SyncEngine {
   // PUBLIC CLIENT API
   // ===================
 
-  async pushHabit(habit: Habit) {
+  private async pushOrQueue(
+    table: PendingOperation['table'],
+    getOfflineData: () => Record<string, any>,
+    pushOnline: () => Promise<void>
+  ) {
     if (!this.userId) return;
-
     if (!this.isOnline) {
-      this.queueOperation({
-        type: 'update',
-        table: 'habits',
-        data: {
-          id: habit.id,
-          user_id: this.userId,
-          name: habit.name,
-          icon: habit.icon || '✓',
-          category: habit.category,
-          target_days: habit.targetDaysPerWeek,
-          is_archived: habit.archived,
-          order_index: habit.order,
-          updated_at: new Date().toISOString(),
-          is_quantitative: habit.isQuantitative || false,
-          target_value: habit.targetValue || 0,
-          unit: habit.unit || '',
-          frequency_type: habit.frequencyType || 'daily',
-          scheduled_days: habit.scheduledDays || null,
-          interval_days: habit.intervalDays || null,
-          auto_track_rule: habit.autoTrackRule || null,
-          polarity: habit.polarity || 'build',
-          anchor_block: habit.anchorBlock || null,
-          metadata: habit.metadata || {},
-        },
-      });
+      this.queueOperation({ type: 'update', table, data: getOfflineData() });
       return;
     }
+    await pushOnline();
+  }
 
-    await pushHabitToRemote(this, habit);
+  async pushHabit(habit: Habit) {
+    await this.pushOrQueue(
+      'habits',
+      () => buildOfflineHabitData(habit, this.userId!),
+      () => pushHabitToRemote(this, habit)
+    );
   }
 
   private async softDeleteHabit(habitId: string) {
@@ -674,46 +555,33 @@ export class SyncEngine {
     if (error) throw error;
   }
 
-  private async deleteEntity(table: any, id: string) {
+  private async deleteEntity(table: SyncTableName, id: SyncRecordId) {
     if (!this.userId) return;
 
     if (!this.isOnline) {
       this.queueOperation({
         type: 'delete',
-        table,
+        table: table as any,
         data: { id },
       });
       return;
     }
 
-    await this.supabase.from(table).delete().eq('id', id);
+    await (this.supabase.from(table as any) as any).delete().eq('id', id);
   }
 
-  async archiveHabit(habitId: string) {
+  async archiveHabit(habitId: SyncRecordId) {
     await this.softDeleteHabit(habitId);
   }
 
-  async deleteHabit(habitId: string) {
+  async deleteHabit(habitId: SyncRecordId) {
     await this.softDeleteHabit(habitId);
   }
 
   async pushCompletion(completion: HabitCompletion) {
     if (!this.userId) return;
 
-    const data = {
-      id: completion.id,
-      user_id: this.userId,
-      habit_id: completion.habitId,
-      date: completion.date,
-      completed: completion.completed,
-      status: completion.status || (completion.skipped ? 'rest' : completion.completed ? 'completed' : null),
-      skipped: completion.skipped ?? (completion.status === 'rest'),
-      rest_reason: completion.restReason || null,
-      notes: completion.note || null,
-      value: completion.value || 0,
-      generation_counter: completion.generationCounter || 1,
-      updated_at: completion.updatedAt || new Date().toISOString(),
-    };
+    const data = buildCompletionSyncData(completion, this.userId);
 
     if (!this.isOnline) {
       this.queueOperation({ type: 'update', table: 'completions', data });
@@ -725,38 +593,16 @@ export class SyncEngine {
     });
   }
 
-  async deleteCompletion(completionId: string) {
+  async deleteCompletion(completionId: SyncRecordId) {
     await this.deleteEntity('completions', completionId);
   }
 
   async pushGoal(goal: Goal) {
-    if (!this.userId) return;
-
-    if (!this.isOnline) {
-      this.queueOperation({
-        type: 'update',
-        table: 'goals',
-        data: {
-          id: goal.id,
-          user_id: this.userId,
-          title: goal.title,
-          description: goal.description || null,
-          category: goal.areaOfLife,
-          priority: goal.priority,
-          status: goal.status,
-          target_date: goal.deadline,
-          is_focus: goal.isFocus,
-          is_archived: goal.archived,
-          financial_link: goal.financialLink || null,
-          fitness_link: goal.fitnessLink || null,
-          metadata: goal.metadata || {},
-          updated_at: new Date().toISOString(),
-        },
-      });
-      return;
-    }
-
-    await pushGoalToRemote(this, goal);
+    await this.pushOrQueue(
+      'goals',
+      () => buildOfflineGoalData(goal, this.userId!),
+      () => pushGoalToRemote(this, goal)
+    );
   }
 
   async deleteGoal(goalId: string) {
@@ -796,63 +642,28 @@ export class SyncEngine {
     await this.supabase.from('milestones').upsert(data as any);
   }
 
-  async deleteMilestone(milestoneId: string) {
+  async deleteMilestone(milestoneId: SyncRecordId) {
     await this.deleteEntity('milestones', milestoneId);
   }
 
   async pushTask(task: any) {
-    if (!this.userId) return;
-
-    if (!this.isOnline) {
-      this.queueOperation({
-        type: 'update',
-        table: 'tasks' as any,
-        data: {
-          ...task,
-          user_id: this.userId,
-        },
-      });
-      return;
-    }
-
-    await pushTaskToRemote(this, task);
+    await this.pushOrQueue(
+      'tasks' as any,
+      () => ({ ...task, user_id: this.userId }),
+      () => pushTaskToRemote(this, task)
+    );
   }
 
-  async deleteTask(taskId: string) {
+  async deleteTask(taskId: SyncRecordId) {
     await this.deleteEntity('tasks' as any, taskId);
   }
 
   async pushUserSettings(settings: any) {
-    if (!this.userId) return;
-
-    if (!this.isOnline) {
-      this.queueOperation({
-        type: 'update',
-        table: 'user_settings' as any,
-        data: {
-          user_id: this.userId,
-          user_name: settings.userName,
-          avatar_id: settings.avatarId || 'avatar-1',
-          week_start_day: settings.weekStartsOn,
-          default_category: settings.defaultCategory,
-          xp: settings.xp,
-          level: settings.level,
-          gems: settings.gems,
-          streak_shield: settings.streakShield,
-          motivation_text: settings.motivation_text,
-          show_fitness: settings.showFitness ?? true,
-          show_finance: settings.showFinance ?? true,
-          show_tasks: settings.showTasks ?? true,
-          show_goals: settings.showGoals ?? true,
-          show_milestones: settings.showMilestones ?? true,
-          habit_only_mode: settings.habitOnlyMode ?? false,
-          updated_at: new Date().toISOString(),
-        },
-      });
-      return;
-    }
-
-    await pushUserSettingsToRemote(this, settings);
+    await this.pushOrQueue(
+      'user_settings' as any,
+      () => buildOfflineSettingsData(settings, this.userId!),
+      () => pushUserSettingsToRemote(this, settings)
+    );
   }
 
   async pushMoodLog(log: MoodLog) {
@@ -881,151 +692,41 @@ export class SyncEngine {
   private setupRealtime() {
     if (!this.userId || this.realtimeChannel) return;
 
-    this.realtimeChannel = this.supabase
-      .channel('db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'habits', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('habits')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'completions', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('completions')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'goals', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('goals')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('tasks')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'milestones', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('milestones')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_settings', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('user_settings')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mood_logs', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('mood_logs')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'credit_card_statements', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('credit_card_statements')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_net_worth_snapshots', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_net_worth_snapshots')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_transactions', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_transactions')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_accounts', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_accounts')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_categories', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_categories')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'monthly_commitments', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('monthly_commitments')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'debt_records', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('debt_records')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'debt_installments', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('debt_installments')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'emi_trackers', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('emi_trackers')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_budgets', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_budgets')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_sip_plans', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_sip_plans')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_categorization_rules', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_categorization_rules')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'finance_recurring_bills', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('finance_recurring_bills')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'fitness_profiles', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('fitness_profiles')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'fitness_daily_logs', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('fitness_daily_logs')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'meal_templates', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('meal_templates')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'meal_logs', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('meal_logs')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'workout_sessions', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('workout_sessions')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'supplement_inventory', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('supplement_inventory')
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'supplement_logs', filter: `user_id=eq.${this.userId}` },
-        () => this.debouncedSync('supplement_logs')
-      )
-      .subscribe((status) => {
+    this.realtimeChannel = subscribeRealtimeTables({
+      supabase: this.supabase,
+      userId: this.userId,
+      onTableChange: (table) => this.debouncedSync(table),
+      onStatus: (status) => {
         this.log('info', `Realtime subscription status: ${status}`);
-      });
+      },
+    });
   }
 
   private pendingRealtimeTables = new Set<string>();
 
-  private debouncedSync(table: string) {
+  private async syncPendingRealtimeTables(tablesToSync: string[]) {
+    let hasFinanceChange = false;
+    let hasFitnessChange = false;
+    const ranSyncFns = new Set<(engine: SyncEngine) => Promise<any>>();
+
+    for (const t of tablesToSync) {
+      try {
+        const syncFn = syncTableMap[t];
+        if (syncFn && !ranSyncFns.has(syncFn)) {
+          ranSyncFns.add(syncFn);
+          await syncFn(this);
+        }
+        if (isFinanceRealtimeTable(t)) hasFinanceChange = true;
+        if (isFitnessRealtimeTable(t)) hasFitnessChange = true;
+      } catch (error) {
+        this.log('error', `Realtime sync failed for ${t}`, error);
+      }
+    }
+
+    return { hasFinanceChange, hasFitnessChange };
+  }
+
+  private debouncedSync(table: SyncTableName) {
     this.pendingRealtimeTables.add(table);
 
     if (this.syncDebounceTimer) {
@@ -1038,61 +739,8 @@ export class SyncEngine {
 
       this.log('info', `Realtime change detected in [${tablesToSync.join(', ')}], syncing...`);
 
-      let hasFinanceChange = false;
-      let hasFitnessChange = false;
-
-      const ranSyncFns = new Set<Function>();
-      for (const t of tablesToSync) {
-        try {
-          const syncFn = syncTableMap[t];
-          if (syncFn && !ranSyncFns.has(syncFn)) {
-            ranSyncFns.add(syncFn);
-            await syncFn(this);
-          }
-
-          if (
-            t.startsWith('finance_') ||
-            t === 'monthly_commitments' ||
-            t === 'debt_records' ||
-            t === 'debt_installments' ||
-            t === 'emi_trackers' ||
-            t === 'credit_card_statements'
-          ) {
-            hasFinanceChange = true;
-          }
-
-          if (
-            t.startsWith('fitness_') ||
-            t === 'meal_templates' ||
-            t === 'meal_logs' ||
-            t === 'workout_sessions' ||
-            t === 'supplement_inventory' ||
-            t === 'supplement_logs'
-          ) {
-            hasFitnessChange = true;
-          }
-        } catch (error) {
-          this.log('error', `Realtime sync failed for ${t}`, error);
-        }
-      }
-
-      if (hasFinanceChange) {
-        try {
-          const { useFinanceStore } = await import('@/lib/stores/finance-store');
-          await useFinanceStore.getState().loadFinanceData(this.userId || undefined, true);
-        } catch (e) {
-          this.log('warn', 'Failed to reload finance store after realtime sync', e);
-        }
-      }
-
-      if (hasFitnessChange) {
-        try {
-          const { useFitnessStore } = await import('@/lib/stores/fitness');
-          await useFitnessStore.getState().loadFitnessData(this.userId || undefined, true);
-        } catch (e) {
-          this.log('warn', 'Failed to reload fitness store after realtime sync', e);
-        }
-      }
+      const flags = await this.syncPendingRealtimeTables(tablesToSync);
+      await reloadRealtimeStores(flags, this.userId, this.log.bind(this));
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('habitflow-sync-complete'));
@@ -1103,82 +751,33 @@ export class SyncEngine {
   }
 
   private financeSyncDebounceTimer: NodeJS.Timeout | null = null;
+  private fitnessSyncDebounceTimer: NodeJS.Timeout | null = null;
 
-  public triggerFinanceSync(): void {
-    if (this.financeSyncDebounceTimer) {
-      clearTimeout(this.financeSyncDebounceTimer);
-    }
+  private scheduleDomainSync(
+    timerKey: 'financeSyncDebounceTimer' | 'fitnessSyncDebounceTimer',
+    runner: (userId: string) => Promise<void>
+  ): void {
+    const existing = this[timerKey];
+    if (existing) clearTimeout(existing);
 
-    this.financeSyncDebounceTimer = setTimeout(async () => {
+    this[timerKey] = setTimeout(async () => {
       await this.authReady;
-      if (!this.userId) {
-        try {
-          const { data: { session } } = await this.supabase.auth.getSession();
-          if (session?.user?.id) {
-            this.userId = session.user.id;
-          }
-        } catch {
-          // offline
-        }
-      }
-
+      this.userId = await resolveSessionUserId(this.supabase, this.userId);
       if (!this.userId || !this.isOnline) return;
-
-      try {
-        const syncer = new FinanceSyncEngine();
-        await syncer.migrateOrphanedRecords(this.userId);
-        const result = await syncer.sync(this.userId);
-        if (result.status === 'success') {
-          useSyncStatusStore.getState().setLastSyncTime(new Date());
-          useSyncStatusStore.getState().setSyncError(null);
-        }
-        if (result.pulled > 0) {
-          const { useFinanceStore } = await import('@/lib/stores/finance-store');
-          await useFinanceStore.getState().loadFinanceData(this.userId);
-        }
-      } catch (err) {
-        this.log('warn', 'triggerFinanceSync failed', err);
-      }
+      await runner(this.userId);
     }, 400);
   }
 
-  private fitnessSyncDebounceTimer: NodeJS.Timeout | null = null;
+  public triggerFinanceSync(): void {
+    this.scheduleDomainSync('financeSyncDebounceTimer', (userId) =>
+      runTriggeredFinanceSync(userId, this.log.bind(this))
+    );
+  }
 
   public triggerFitnessSync(): void {
-    if (this.fitnessSyncDebounceTimer) {
-      clearTimeout(this.fitnessSyncDebounceTimer);
-    }
-
-    this.fitnessSyncDebounceTimer = setTimeout(async () => {
-      await this.authReady;
-      if (!this.userId) {
-        try {
-          const { data: { session } } = await this.supabase.auth.getSession();
-          if (session?.user?.id) {
-            this.userId = session.user.id;
-          }
-        } catch {
-          // offline
-        }
-      }
-
-      if (!this.userId || !this.isOnline) return;
-
-      try {
-        const syncer = new FitnessSyncEngine();
-        const report = await syncer.sync(this.userId);
-        if (report.errors.length === 0) {
-          useSyncStatusStore.getState().setLastSyncTime(new Date());
-          useSyncStatusStore.getState().setSyncError(null);
-        }
-        if (report.pulled > 0) {
-          const { useFitnessStore } = await import('@/lib/stores/fitness');
-          await useFitnessStore.getState().loadFitnessData(this.userId);
-        }
-      } catch (err) {
-        this.log('warn', 'triggerFitnessSync failed', err);
-      }
-    }, 400);
+    this.scheduleDomainSync('fitnessSyncDebounceTimer', (userId) =>
+      runTriggeredFitnessSync(userId, this.log.bind(this))
+    );
   }
 
   private cleanupRealtime() {
@@ -1198,7 +797,7 @@ export class SyncEngine {
     return getLocalIsoDate(date);
   }
 
-  public async batchUpsert(table: string, items: any[]) {
+  public async batchUpsert(table: SyncTableName, items: any[]) {
     for (let i = 0; i < items.length; i += BATCH_SIZE) {
       const batch = items.slice(i, i + BATCH_SIZE);
       const { error } = await this.supabase.from(table).upsert(batch as any);
@@ -1214,74 +813,9 @@ export class SyncEngine {
     }
   }
 
-  private async mergeDuplicateHabit(keepHabit: Habit, deleteHabit: Habit) {
-    this.log('info', `Cleaning up duplicate habit: ${deleteHabit.name}`);
-
-    const completions = await db.completions.where('habitId').equals(deleteHabit.id).toArray();
-    for (const c of completions) {
-      const exists = await db.completions
-        .where('[habitId+date]')
-        .equals([keepHabit.id, c.date])
-        .first();
-      if (!exists) {
-        await db.completions.update(c.id, { habitId: keepHabit.id });
-      } else {
-        await db.completions.delete(c.id);
-      }
-    }
-
-    await db.habits.delete(deleteHabit.id);
-  }
-
-  private async cleanupLocalDuplicates() {
-    if (!this.userId) return;
-
-    try {
-      const habits = await db.habits.where('userId').equals(this.userId).toArray();
-      const habitKeys = new Map<string, Habit>();
-
-      for (const habit of habits) {
-        const key = `${habit.name.toLowerCase()}-${habit.category}`;
-        const existing = habitKeys.get(key);
-
-        if (existing) {
-          const keepHabit = new Date(habit.createdAt) < new Date(existing.createdAt) ? habit : existing;
-          const deleteHabit = keepHabit === habit ? existing : habit;
-
-          await this.mergeDuplicateHabit(keepHabit, deleteHabit);
-          habitKeys.set(key, keepHabit);
-        } else {
-          habitKeys.set(key, habit);
-        }
-      }
-
-      await cleanupDuplicateGoals();
-      await cleanupDuplicateCompletions();
-    } catch (error) {
-      this.log('error', 'Cleanup failed', error);
-    }
-  }
-
-
   private async cleanupLocalDuplicatesWithLogging() {
     if (!this.userId) return;
-
-    try {
-      const before = await countAllDuplicates();
-
-      await cleanupDuplicateCompletions();
-      await cleanupDuplicateGoals();
-      await cleanupDuplicateHabits();
-
-      const after = await countAllDuplicates();
-
-      const hasDuplicatesBefore = before.completions > 0 || before.habits > 0 || before.goals > 0;
-      if (hasDuplicatesBefore) {
-        this.log('warn', `🧹 Cleaned duplicates: ${before.completions} completions, ${before.habits} habits, ${before.goals} goals`);
-      }
-    } catch (error) {
-      this.log('error', 'Cleanup with logging failed', error);
-    }
+    await cleanupLocalDuplicatesWithReport(this.log.bind(this));
   }
 
   private async cleanupLocalDuplicatesQuietly() {
