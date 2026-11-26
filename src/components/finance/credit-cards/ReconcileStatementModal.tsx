@@ -33,6 +33,85 @@ interface ReconcileStatementModalProps {
   defaultCycleKey?: string;
 }
 
+function isTrackableCardExpense(tx: ReturnType<typeof useFinanceStore.getState>['transactions'][number], cardId: string): boolean {
+  if (tx.accountId !== cardId || tx.deletedAt) return false;
+  return !tx.isCreditCardPayment && tx.type !== 'transfer';
+}
+
+function computeCycleTrackedSpend(params: {
+  transactions: ReturnType<typeof useFinanceStore.getState>['transactions'];
+  cardId: string;
+  cycleKey: string;
+  billingDay: number;
+  dueDay: number;
+}): number {
+  const { transactions, cardId, cycleKey, billingDay, dueDay } = params;
+  let total = 0;
+  for (const tx of transactions) {
+    if (!isTrackableCardExpense(tx, cardId)) continue;
+    if (resolveTransactionCycle(tx.date, billingDay, dueDay, tx.statementCycleKey) !== cycleKey) continue;
+    total = roundCurrency(tx.type === 'income' ? total - tx.amount : total + tx.amount);
+  }
+  return total;
+}
+
+function ReconcileCycleBanner(props: {
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  calculatedSpend: number;
+}) {
+  return (
+    <div className="rounded-xl bg-muted/50 border border-border/70 p-3.5 space-y-2 text-xs">
+      <div className="flex justify-between items-center text-foreground">
+        <span className="text-muted-foreground">Billing Cycle:</span>
+        <span className="font-semibold text-foreground whitespace-nowrap">
+          {formatShortDate(props.periodStart)} – {formatShortDate(props.periodEnd)}
+        </span>
+      </div>
+      <div className="flex justify-between items-center text-foreground">
+        <span className="text-muted-foreground">Payment Due Date:</span>
+        <span className="font-bold text-warning whitespace-nowrap">{formatShortDate(props.dueDate)}</span>
+      </div>
+      <div className="flex justify-between items-center text-foreground pt-1.5 border-t border-border/60">
+        <span className="text-muted-foreground">Tracked Spends in HabitFlow:</span>
+        <span className="font-semibold text-foreground tabular-nums">{formatINR(props.calculatedSpend)}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatementAdjustmentBanner({ adjustment }: { adjustment: number }) {
+  if (Math.abs(adjustment) < 0.01) {
+    return (
+      <div className="rounded-xl p-3 text-xs bg-muted/40 border border-border/60">
+        <div className="flex items-center gap-1.5 text-success font-medium">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>Exact match! No manual adjustment needed.</span>
+        </div>
+      </div>
+    );
+  }
+  const isPositive = adjustment > 0;
+  return (
+    <div className="rounded-xl p-3 text-xs bg-muted/40 border border-border/60">
+      <div className={`flex items-start gap-2 ${isPositive ? 'text-primary' : 'text-warning'}`}>
+        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+        <div>
+          <span className="font-semibold tabular-nums">
+            Adjustment: {isPositive ? '+' : '-'}{formatINR(Math.abs(adjustment))}
+          </span>
+          <p className="text-muted-foreground text-[11px] mt-0.5">
+            {isPositive
+              ? 'Accounted as untracked historical spend or opening balance.'
+              : 'Accounted as credits, refunds, or cashback discounts.'}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ReconcileStatementModal({
   open,
   onOpenChange,
@@ -45,9 +124,6 @@ export function ReconcileStatementModal({
 
   const billingDay = card.billingDay ?? card.statementDay ?? 1;
   const dueDay = card.dueDay ?? 20;
-  const gracePeriodDays = card.gracePeriodDays;
-
-  // Determine cycleKey to reconcile using local calendar date
   const currentMonthKey = getLocalIsoDate().slice(0, 7);
   const initialCycleKey = statement?.cycleKey || defaultCycleKey || currentMonthKey;
 
@@ -56,46 +132,19 @@ export function ReconcileStatementModal({
   const [note, setNote] = useState(statement?.notes || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Compute cycle window for the selected cycleKey
   const [cYear, cMonth] = (cycleKey || currentMonthKey).split('-').map(Number);
-  const cycleWindow = getCycleWindowForMonth(billingDay, dueDay, cYear, cMonth - 1, gracePeriodDays);
-
-  // Calculate sum of tracked transactions for this cycle
-  const trackedTransactions = transactions.filter(
-    (t) =>
-      t.accountId === card.id &&
-      !t.deletedAt &&
-      !t.isCreditCardPayment &&
-      t.type !== 'transfer'
-  );
-
-  let calculatedSpend = 0;
-  for (const tx of trackedTransactions) {
-    const txCycle = resolveTransactionCycle(tx.date, billingDay, dueDay, tx.statementCycleKey);
-    if (txCycle === cycleKey) {
-      if (tx.type === 'income') {
-        calculatedSpend = roundCurrency(calculatedSpend - tx.amount);
-      } else {
-        calculatedSpend = roundCurrency(calculatedSpend + tx.amount);
-      }
-    }
-  }
+  const cycleWindow = getCycleWindowForMonth(billingDay, dueDay, cYear, cMonth - 1, card.gracePeriodDays);
+  const calculatedSpend = computeCycleTrackedSpend({ transactions, cardId: card.id, cycleKey, billingDay, dueDay });
 
   useEffect(() => {
-    if (open) {
-      const activeKey = statement?.cycleKey || defaultCycleKey || currentMonthKey;
-      setCycleKey(activeKey);
-      const initialTotal = statement
-        ? statement.totalDue
-        : calculatedSpend > 0
-        ? calculatedSpend
-        : Math.abs(card.balance || 0) > 0
-        ? Math.abs(card.balance || 0)
-        : '';
-      setActualAmount(initialTotal ? String(initialTotal) : '');
-      setNote(statement?.notes || '');
-    }
-  }, [open, statement, defaultCycleKey, currentMonthKey, calculatedSpend]);
+    if (!open) return;
+    setCycleKey(statement?.cycleKey || defaultCycleKey || currentMonthKey);
+    const cardBal = Math.abs(card.balance || 0);
+    const fallbackTotal = calculatedSpend > 0 ? calculatedSpend : cardBal > 0 ? cardBal : '';
+    const initialTotal = statement ? statement.totalDue : fallbackTotal;
+    setActualAmount(initialTotal ? String(initialTotal) : '');
+    setNote(statement?.notes || '');
+  }, [open, statement, defaultCycleKey, currentMonthKey, calculatedSpend, card.balance]);
 
   const numActual = parseFloat(actualAmount) || 0;
   const adjustment = roundCurrency(numActual - calculatedSpend);
@@ -106,7 +155,6 @@ export function ReconcileStatementModal({
       toast.error('Statement amount cannot be negative');
       return;
     }
-
     setIsSubmitting(true);
     try {
       await reconcileCreditCardStatement({
@@ -115,7 +163,6 @@ export function ReconcileStatementModal({
         actualStatementAmount: numActual,
         note: note.trim() || undefined,
       });
-
       toast.success(`Statement for ${cycleKey} saved successfully!`);
       onOpenChange(false);
     } catch (err) {
@@ -135,9 +182,7 @@ export function ReconcileStatementModal({
               <Calculator className="w-4 h-4" />
             </div>
             <div>
-              <DialogTitle className="text-base sm:text-lg font-bold text-foreground">
-                Reconcile Statement / Set Opening Bill
-              </DialogTitle>
+              <DialogTitle className="text-base sm:text-lg font-bold text-foreground">Reconcile Statement / Set Opening Bill</DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 Set or adjust the official bank statement amount for {card.name}.
               </DialogDescription>
@@ -146,29 +191,15 @@ export function ReconcileStatementModal({
         </DialogHeader>
 
         <form onSubmit={handleSave} className="space-y-4 pt-2">
-          {/* Cycle Info Banner */}
-          <div className="rounded-xl bg-muted/50 border border-border/70 p-3.5 space-y-2 text-xs">
-            <div className="flex justify-between items-center text-foreground">
-              <span className="text-muted-foreground">Billing Cycle:</span>
-              <span className="font-semibold text-foreground whitespace-nowrap">
-                {formatShortDate(cycleWindow.periodStart)} – {formatShortDate(cycleWindow.periodEnd)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-foreground">
-              <span className="text-muted-foreground">Payment Due Date:</span>
-              <span className="font-bold text-warning whitespace-nowrap">{formatShortDate(cycleWindow.dueDate)}</span>
-            </div>
-            <div className="flex justify-between items-center text-foreground pt-1.5 border-t border-border/60">
-              <span className="text-muted-foreground">Tracked Spends in HabitFlow:</span>
-              <span className="font-semibold text-foreground tabular-nums">{formatINR(calculatedSpend)}</span>
-            </div>
-          </div>
+          <ReconcileCycleBanner
+            periodStart={cycleWindow.periodStart}
+            periodEnd={cycleWindow.periodEnd}
+            dueDate={cycleWindow.dueDate}
+            calculatedSpend={calculatedSpend}
+          />
 
-          {/* Actual Statement Amount Input */}
           <div className="space-y-1.5">
-            <Label htmlFor="actualAmount" className="text-xs font-semibold text-foreground">
-              Official Statement Bill Amount (₹) *
-            </Label>
+            <Label htmlFor="actualAmount" className="text-xs font-semibold text-foreground">Official Statement Bill Amount (₹) *</Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">₹</span>
               <Input
@@ -184,48 +215,13 @@ export function ReconcileStatementModal({
                 autoFocus
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Enter the exact amount generated by the bank (e.g. ₹22,000 for your Slice bill).
-            </p>
+            <p className="text-[11px] text-muted-foreground">Enter the exact amount generated by the bank (e.g. ₹22,000 for your Slice bill).</p>
           </div>
 
-          {/* Live Adjustment Calculation */}
-          {actualAmount !== '' && (
-            <div className="rounded-xl p-3 text-xs bg-muted/40 border border-border/60">
-              {Math.abs(adjustment) < 0.01 ? (
-                <div className="flex items-center gap-1.5 text-success font-medium">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Exact match! No manual adjustment needed.</span>
-                </div>
-              ) : adjustment > 0 ? (
-                <div className="flex items-start gap-2 text-primary">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold tabular-nums">Adjustment: +{formatINR(adjustment)}</span>
-                    <p className="text-muted-foreground text-[11px] mt-0.5">
-                      Accounted as untracked historical spend or opening balance.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2 text-warning">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold tabular-nums">Adjustment: -{formatINR(Math.abs(adjustment))}</span>
-                    <p className="text-muted-foreground text-[11px] mt-0.5">
-                      Accounted as credits, refunds, or cashback discounts.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {actualAmount !== '' && <StatementAdjustmentBanner adjustment={adjustment} />}
 
-          {/* Notes Input */}
           <div className="space-y-1.5">
-            <Label htmlFor="note" className="text-xs font-semibold text-foreground">
-              Note (Optional)
-            </Label>
+            <Label htmlFor="note" className="text-xs font-semibold text-foreground">Note (Optional)</Label>
             <Input
               id="note"
               type="text"
@@ -237,19 +233,8 @@ export function ReconcileStatementModal({
           </div>
 
           <DialogFooter className="pt-2 sm:justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="border-border text-foreground hover:bg-muted text-xs font-medium"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold"
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="border-border text-foreground hover:bg-muted text-xs font-medium">Cancel</Button>
+            <Button type="submit" disabled={isSubmitting} className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-semibold">
               {isSubmitting ? 'Saving...' : 'Save Statement'}
             </Button>
           </DialogFooter>

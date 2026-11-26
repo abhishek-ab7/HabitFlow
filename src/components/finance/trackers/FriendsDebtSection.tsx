@@ -41,6 +41,209 @@ const ShareSettlementDialog = dynamic(
   { ssr: false }
 );
 
+function LedgerSummaryCard(props: {
+  icon: React.ReactNode;
+  title: string;
+  net: number;
+  zeroLabel: string;
+  oweLabel: string;
+  oweAmount: number;
+  lentLabel: string;
+  lentAmount: number;
+}) {
+  const { icon, title, net, zeroLabel, oweLabel, oweAmount, lentLabel, lentAmount } = props;
+  const netTone =
+    net > 0
+      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+      : net < 0
+      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+      : 'bg-muted text-muted-foreground';
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+          {icon}
+          {title}
+        </span>
+        <span className={`text-xs font-bold font-mono tabular-nums px-2 py-0.5 rounded-full ${netTone}`}>
+          Net: {net > 0 ? `+${formatINR(net)}` : net < 0 ? `-${formatINR(Math.abs(net))}` : zeroLabel}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 pt-1">
+        <div>
+          <span className="text-[11px] text-muted-foreground block">{oweLabel}</span>
+          <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-rose-600 dark:text-rose-400">
+            {formatINR(oweAmount)}
+          </span>
+        </div>
+        <div className="text-right">
+          <span className="text-[11px] text-muted-foreground block">{lentLabel}</span>
+          <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+            {formatINR(lentAmount)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LedgerFilterToolbar(props: {
+  bucketFilter: 'all' | DebtBucketType;
+  onBucketChange: (b: 'all' | DebtBucketType) => void;
+  filterDir: 'all' | DebtDirection;
+  onDirChange: (d: 'all' | DebtDirection) => void;
+  onNewEntry: () => void;
+}) {
+  const { bucketFilter, onBucketChange, filterDir, onDirChange, onNewEntry } = props;
+  const bucketOptions = [
+    { id: 'all', label: 'All Buckets' },
+    { id: 'everyday_split', label: 'Everyday Splits' },
+    { id: 'long_term_loan', label: 'Long-Term Loans' },
+  ] as const;
+  const dirOptions = [
+    { id: 'all', label: 'All' },
+    { id: 'borrowed', label: 'I Owe' },
+    { id: 'lent', label: 'Owes Me' },
+  ] as const;
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="tablist" aria-label="Filter ledger buckets" className="inline-flex items-center gap-1 p-1 rounded-xl bg-muted">
+          {bucketOptions.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => onBucketChange(b.id)}
+              className={`min-h-[34px] px-3 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                bucketFilter === b.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+        <div role="tablist" aria-label="Filter direction" className="inline-flex items-center gap-1 p-1 rounded-xl bg-muted/60">
+          {dirOptions.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => onDirChange(d.id)}
+              className={`min-h-[34px] px-3 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                filterDir === d.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Button type="button" size="sm" onClick={onNewEntry} className="min-h-[38px] px-3.5 gap-1.5 text-xs rounded-xl">
+        <Plus className="w-4 h-4" />
+        New Entry
+      </Button>
+    </div>
+  );
+}
+
+function matchesFriendFilters(g: FriendLedgerGroup, bucketFilter: 'all' | DebtBucketType, filterDir: 'all' | DebtDirection): boolean {
+  if (bucketFilter === 'everyday_split' && g.everydayRecords.length === 0) return false;
+  if (bucketFilter === 'long_term_loan' && g.longTermLoans.length === 0) return false;
+  if (filterDir === 'borrowed') return g.everydayNet < 0 || g.longTermBorrowedRemaining > 0;
+  if (filterDir === 'lent') return g.everydayNet > 0 || g.longTermLentRemaining > 0;
+  return true;
+}
+
+function FriendsDebtDialogs(props: {
+  accounts: ReturnType<typeof useFinanceStore.getState>['accounts'];
+  isNewOpen: boolean;
+  onCloseNew: () => void;
+  editingDebt: DebtRecord | null;
+  newDefaultBucket: DebtBucketType;
+  newPrefilledFriend: string;
+  existingFriendNames: string[];
+  onSaveDebt: (data: Parameters<ReturnType<typeof useFinanceStore.getState>['addDebtRecord']>[0]) => Promise<void>;
+  settleFriend: FriendLedgerGroup | null;
+  onCloseSettle: () => void;
+  onConfirmSettle: ReturnType<typeof useFinanceStore.getState>['settleEverydayTab'];
+  offsetFriend: FriendLedgerGroup | null;
+  onCloseOffset: () => void;
+  onConfirmOffset: ReturnType<typeof useFinanceStore.getState>['offsetSplitAgainstLoan'];
+  installmentDebt: DebtRecord | null;
+  editingInstallment: DebtInstallment | null;
+  onCloseInstallment: () => void;
+  onRecordInstallment: ReturnType<typeof useFinanceStore.getState>['recordDebtInstallment'];
+  onUpdateInstallment: ReturnType<typeof useFinanceStore.getState>['updateDebtInstallment'];
+  topUpTarget: DebtRecord | null;
+  onCloseTopUp: () => void;
+  onTopUp: ReturnType<typeof useFinanceStore.getState>['topUpDebt'];
+  shareFriend: FriendLedgerGroup | null;
+  onCloseShare: () => void;
+  debtToDelete: { id: string; title: string } | null;
+  onCloseDeleteDebt: () => void;
+  onConfirmDeleteDebt: () => Promise<void>;
+  installmentToDelete: string | null;
+  onCloseDeleteInstallment: () => void;
+  onConfirmDeleteInstallment: () => Promise<void>;
+}) {
+  return (
+    <>
+      {props.isNewOpen && (
+        <AddDebtModal
+          isOpen={props.isNewOpen}
+          onClose={props.onCloseNew}
+          editingDebt={props.editingDebt}
+          defaultBucket={props.newDefaultBucket}
+          prefilledFriend={props.newPrefilledFriend}
+          existingFriendNames={props.existingFriendNames}
+          onSave={props.onSaveDebt}
+        />
+      )}
+      {Boolean(props.settleFriend) && (
+        <SettleTabDialog group={props.settleFriend!} isOpen onClose={props.onCloseSettle} accounts={props.accounts} onConfirmSettle={props.onConfirmSettle} />
+      )}
+      {Boolean(props.offsetFriend) && (
+        <OffsetLoanDialog group={props.offsetFriend!} isOpen onClose={props.onCloseOffset} onConfirmOffset={props.onConfirmOffset} />
+      )}
+      {(Boolean(props.installmentDebt) || Boolean(props.editingInstallment)) && (
+        <InstallmentDialog
+          debt={props.installmentDebt}
+          editingInstallment={props.editingInstallment}
+          isOpen
+          onClose={props.onCloseInstallment}
+          accounts={props.accounts}
+          onRecordInstallment={props.onRecordInstallment}
+          onUpdateInstallment={props.onUpdateInstallment}
+        />
+      )}
+      {Boolean(props.topUpTarget) && (
+        <TopUpDialog target={props.topUpTarget!} isOpen onClose={props.onCloseTopUp} onTopUp={props.onTopUp} />
+      )}
+      {Boolean(props.shareFriend) && (
+        <ShareSettlementDialog group={props.shareFriend!} isOpen onClose={props.onCloseShare} />
+      )}
+      <ConfirmDialog
+        open={Boolean(props.debtToDelete)}
+        onOpenChange={(open) => !open && props.onCloseDeleteDebt()}
+        title="Delete Debt Entry"
+        description={`Are you sure you want to delete "${props.debtToDelete?.title || 'this debt'}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={props.onConfirmDeleteDebt}
+      />
+      <ConfirmDialog
+        open={Boolean(props.installmentToDelete)}
+        onOpenChange={(open) => !open && props.onCloseDeleteInstallment()}
+        title="Delete Installment Log"
+        description="Are you sure you want to delete this installment payment log? This cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={props.onConfirmDeleteInstallment}
+      />
+    </>
+  );
+}
+
 export function FriendsDebtSection() {
   const accounts = useFinanceStore((s) => s.accounts);
   const debtRecords = useFinanceStore((s) => s.debtRecords);
@@ -58,108 +261,38 @@ export function FriendsDebtSection() {
   const settleEverydayTab = useFinanceStore((s) => s.settleEverydayTab);
   const offsetSplitAgainstLoan = useFinanceStore((s) => s.offsetSplitAgainstLoan);
 
-  // Filters & Accordion State
   const [bucketFilter, setBucketFilter] = useState<'all' | DebtBucketType>('all');
   const [filterDir, setFilterDir] = useState<'all' | DebtDirection>('all');
   const [expandedFriends, setExpandedFriends] = useState<Record<string, boolean>>({});
   const [expandedLoanIds, setExpandedLoanIds] = useState<Record<string, boolean>>({});
-
-  // Unified Add / Edit Dialog state
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [editingDebt, setEditingDebt] = useState<DebtRecord | null>(null);
   const [newDefaultBucket, setNewDefaultBucket] = useState<DebtBucketType>('everyday_split');
   const [newPrefilledFriend, setNewPrefilledFriend] = useState<string>('');
-
-  // Settle Tab Dialog
   const [settleFriend, setSettleFriend] = useState<FriendLedgerGroup | null>(null);
-
-  // Offset Dialog
   const [offsetFriend, setOffsetFriend] = useState<FriendLedgerGroup | null>(null);
-
-  // Installment Dialog (Create or Edit)
   const [installmentDebt, setInstallmentDebt] = useState<DebtRecord | null>(null);
   const [editingInstallment, setEditingInstallment] = useState<DebtInstallment | null>(null);
-
-  // Top-Up Dialog
   const [topUpTarget, setTopUpTarget] = useState<DebtRecord | null>(null);
-
-  // Share Settlement Dialog
   const [shareFriend, setShareFriend] = useState<FriendLedgerGroup | null>(null);
-
-  // Confirm delete states
   const [debtToDelete, setDebtToDelete] = useState<{ id: string; title: string } | null>(null);
   const [installmentToDelete, setInstallmentToDelete] = useState<string | null>(null);
 
-  const summary = useMemo(
-    () => getDebtSummary(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getDebtSummary, debtRecords]
-  );
-  const allFriendGroups = useMemo(
-    () => getFriendLedgerGroups(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [getFriendLedgerGroups, debtRecords, debtInstallments]
-  );
-
-  // Known friend names for autocomplete
-  const existingFriendNames = useMemo(() => {
-    return Array.from(new Set(allFriendGroups.map((g) => g.friendName)));
-  }, [allFriendGroups]);
+  const summary = useMemo(() => getDebtSummary(), [getDebtSummary, debtRecords]);
+  const allFriendGroups = useMemo(() => getFriendLedgerGroups(), [getFriendLedgerGroups, debtRecords, debtInstallments]);
+  const existingFriendNames = useMemo(() => Array.from(new Set(allFriendGroups.map((g) => g.friendName))), [allFriendGroups]);
+  const visibleGroups = useMemo(() => allFriendGroups.filter((g) => matchesFriendFilters(g, bucketFilter, filterDir)), [allFriendGroups, bucketFilter, filterDir]);
 
   const handleToggleBucket = async (debt: DebtRecord) => {
-    const nextBucket: DebtBucketType =
-      debt.bucketType === 'long_term_loan' ? 'everyday_split' : 'long_term_loan';
+    const nextBucket: DebtBucketType = debt.bucketType === 'long_term_loan' ? 'everyday_split' : 'long_term_loan';
     await updateDebtRecord(debt.id, { bucketType: nextBucket });
-    toast.success(
-      nextBucket === 'everyday_split'
-        ? `Moved "${debt.title}" to Everyday Tab`
-        : `Moved "${debt.title}" to Long-Term Loans`
-    );
+    toast.success(nextBucket === 'everyday_split' ? `Moved "${debt.title}" to Everyday Tab` : `Moved "${debt.title}" to Long-Term Loans`);
   };
 
-  // Filtered friend groups
-  const visibleGroups = useMemo(() => {
-    return allFriendGroups.filter((g) => {
-      // Bucket filter
-      if (bucketFilter === 'everyday_split' && g.everydayRecords.length === 0) return false;
-      if (bucketFilter === 'long_term_loan' && g.longTermLoans.length === 0) return false;
-
-      // Direction filter
-      if (filterDir === 'borrowed') {
-        const owesOnEveryday = g.everydayNet < 0;
-        const owesOnLoans = g.longTermBorrowedRemaining > 0;
-        if (!owesOnEveryday && !owesOnLoans) return false;
-      }
-      if (filterDir === 'lent') {
-        const owedOnEveryday = g.everydayNet > 0;
-        const owedOnLoans = g.longTermLentRemaining > 0;
-        if (!owedOnEveryday && !owedOnLoans) return false;
-      }
-
-      return true;
-    });
-  }, [allFriendGroups, bucketFilter, filterDir]);
-
-  const toggleFriendExpand = (friendKey: string) => {
-    setExpandedFriends((prev) => ({ ...prev, [friendKey]: !prev[friendKey] }));
-  };
-
-  const toggleLoanExpand = (loanId: string) => {
-    setExpandedLoanIds((prev) => ({ ...prev, [loanId]: !prev[loanId] }));
-  };
-
-  const openNewEntryDialog = (
-    defaultBucket: DebtBucketType = 'everyday_split',
-    prefilledFriend?: string
-  ) => {
+  const openNewEntryDialog = (defaultBucket: DebtBucketType = 'everyday_split', prefilledFriend?: string) => {
     setEditingDebt(null);
     setNewDefaultBucket(defaultBucket);
     setNewPrefilledFriend(prefilledFriend || '');
-    setIsNewOpen(true);
-  };
-
-  const openEditDebtDialog = (debt: DebtRecord) => {
-    setEditingDebt(debt);
     setIsNewOpen(true);
   };
 
@@ -167,12 +300,10 @@ export function FriendsDebtSection() {
     if (editingDebt) {
       await updateDebtRecord(editingDebt.id, data);
       toast.success(`Updated entry for ${data.personName}`);
-    } else {
-      await addDebtRecord(data);
-      toast.success(
-        `Added ${data.bucketType === 'everyday_split' ? 'everyday split' : 'loan'} for ${data.personName}`
-      );
+      return;
     }
+    await addDebtRecord(data);
+    toast.success(`Added ${data.bucketType === 'everyday_split' ? 'everyday split' : 'loan'} for ${data.personName}`);
   };
 
   const handleCopyReminder = async (debt: DebtRecord) => {
@@ -188,19 +319,11 @@ export function FriendsDebtSection() {
     }
   };
 
-  const handleDeleteDebt = (debtId: string, title: string) => {
-    setDebtToDelete({ id: debtId, title });
-  };
-
   const handleConfirmDeleteDebt = async () => {
     if (!debtToDelete) return;
     await deleteDebtRecord(debtToDelete.id);
     toast.success('Deleted debt entry');
     setDebtToDelete(null);
-  };
-
-  const handleDeleteInstallment = (instId: string) => {
-    setInstallmentToDelete(instId);
   };
 
   const handleConfirmDeleteInstallment = async () => {
@@ -212,163 +335,37 @@ export function FriendsDebtSection() {
 
   return (
     <section className="space-y-4">
-      {/* 1. Isolated Summary Totals (Everyday Tab vs. Long-Term Loans side-by-side) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-        {/* Everyday Tab Summary */}
-        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-              <Receipt className="w-3.5 h-3.5 text-primary" />
-              Everyday Splits Tab
-            </span>
-            <span
-              className={`text-xs font-bold font-mono tabular-nums px-2 py-0.5 rounded-full ${
-                summary.everydayNetPosition > 0
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : summary.everydayNetPosition < 0
-                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                  : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              Net:{' '}
-              {summary.everydayNetPosition > 0
-                ? `+${formatINR(summary.everydayNetPosition)}`
-                : summary.everydayNetPosition < 0
-                ? `-${formatINR(Math.abs(summary.everydayNetPosition))}`
-                : 'Settled'}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <div>
-              <span className="text-[11px] text-muted-foreground block">I Owe (Tabs)</span>
-              <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-rose-600 dark:text-rose-400">
-                {formatINR(summary.everydayBorrowedRemaining)}
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="text-[11px] text-muted-foreground block">Owes Me (Tabs)</span>
-              <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
-                {formatINR(summary.everydayLentRemaining)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Long-Term Loans Summary */}
-        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5 text-blue-500" />
-              Long-Term Loans & EMIs
-            </span>
-            <span
-              className={`text-xs font-bold font-mono tabular-nums px-2 py-0.5 rounded-full ${
-                summary.longTermNetPosition > 0
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : summary.longTermNetPosition < 0
-                  ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                  : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              Net:{' '}
-              {summary.longTermNetPosition > 0
-                ? `+${formatINR(summary.longTermNetPosition)}`
-                : summary.longTermNetPosition < 0
-                ? `-${formatINR(Math.abs(summary.longTermNetPosition))}`
-                : 'Balanced'}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <div>
-              <span className="text-[11px] text-muted-foreground block">I Owe (Loans)</span>
-              <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-rose-600 dark:text-rose-400">
-                {formatINR(summary.longTermBorrowedRemaining)}
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="text-[11px] text-muted-foreground block">Owes Me (Loans)</span>
-              <span className="text-base sm:text-lg font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
-                {formatINR(summary.longTermLentRemaining)}
-              </span>
-            </div>
-          </div>
-        </div>
+        <LedgerSummaryCard
+          icon={<Receipt className="w-3.5 h-3.5 text-primary" />}
+          title="Everyday Splits Tab"
+          net={summary.everydayNetPosition}
+          zeroLabel="Settled"
+          oweLabel="I Owe (Tabs)"
+          oweAmount={summary.everydayBorrowedRemaining}
+          lentLabel="Owes Me (Tabs)"
+          lentAmount={summary.everydayLentRemaining}
+        />
+        <LedgerSummaryCard
+          icon={<Wallet className="w-3.5 h-3.5 text-blue-500" />}
+          title="Long-Term Loans & EMIs"
+          net={summary.longTermNetPosition}
+          zeroLabel="Balanced"
+          oweLabel="I Owe (Loans)"
+          oweAmount={summary.longTermBorrowedRemaining}
+          lentLabel="Owes Me (Loans)"
+          lentAmount={summary.longTermLentRemaining}
+        />
       </div>
 
-      {/* 2. Dual Filtering Controls (Bucket Filter & Direction Toggle) */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Bucket Filter */}
-          <div
-            role="tablist"
-            aria-label="Filter ledger buckets"
-            className="inline-flex items-center gap-1 p-1 rounded-xl bg-muted"
-          >
-            {(
-              [
-                { id: 'all', label: 'All Buckets' },
-                { id: 'everyday_split', label: 'Everyday Splits' },
-                { id: 'long_term_loan', label: 'Long-Term Loans' },
-              ] as const
-            ).map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => setBucketFilter(b.id)}
-                className={`min-h-[34px] px-3 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                  bucketFilter === b.id
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {b.label}
-              </button>
-            ))}
-          </div>
+      <LedgerFilterToolbar
+        bucketFilter={bucketFilter}
+        onBucketChange={setBucketFilter}
+        filterDir={filterDir}
+        onDirChange={setFilterDir}
+        onNewEntry={() => openNewEntryDialog('everyday_split')}
+      />
 
-          {/* Direction Toggle */}
-          <div
-            role="tablist"
-            aria-label="Filter direction"
-            className="inline-flex items-center gap-1 p-1 rounded-xl bg-muted/60"
-          >
-            {(
-              [
-                { id: 'all', label: 'All' },
-                { id: 'borrowed', label: 'I Owe' },
-                { id: 'lent', label: 'Owes Me' },
-              ] as const
-            ).map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => setFilterDir(d.id)}
-                className={`min-h-[34px] px-3 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                  filterDir === d.id
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => openNewEntryDialog('everyday_split')}
-            className="min-h-[38px] px-3.5 gap-1.5 text-xs rounded-xl"
-          >
-            <Plus className="w-4 h-4" />
-            New Entry
-          </Button>
-        </div>
-      </div>
-
-      {/* 3. Per-Friend Grouped Cards */}
       {visibleGroups.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-3">
           <Users className="w-8 h-8 text-muted-foreground mx-auto" />
@@ -376,22 +373,10 @@ export function FriendsDebtSection() {
             No friend balances match the selected filters. Track shared meals, trip splits, and personal loans with isolated accounting.
           </p>
           <div className="flex items-center justify-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => openNewEntryDialog('everyday_split')}
-              className="text-xs rounded-xl"
-            >
+            <Button type="button" size="sm" variant="outline" onClick={() => openNewEntryDialog('everyday_split')} className="text-xs rounded-xl">
               Add Everyday Split
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => openNewEntryDialog('long_term_loan')}
-              className="text-xs rounded-xl"
-            >
+            <Button type="button" size="sm" variant="outline" onClick={() => openNewEntryDialog('long_term_loan')} className="text-xs rounded-xl">
               Add Long-Term Loan
             </Button>
           </div>
@@ -402,16 +387,19 @@ export function FriendsDebtSection() {
             <FriendCard
               key={group.friendKey}
               group={group}
-              isExpanded={!!expandedFriends[group.friendKey]}
-              onToggleExpand={() => toggleFriendExpand(group.friendKey)}
+              isExpanded={Boolean(expandedFriends[group.friendKey])}
+              onToggleExpand={() => setExpandedFriends((prev) => ({ ...prev, [group.friendKey]: !prev[group.friendKey] }))}
               bucketFilter={bucketFilter}
               onOpenNewSplit={(name) => openNewEntryDialog('everyday_split', name)}
               onOpenNewLoan={(name) => openNewEntryDialog('long_term_loan', name)}
               onOpenSettleTab={setSettleFriend}
               onOpenOffset={setOffsetFriend}
               onOpenShare={setShareFriend}
-              onEditDebt={openEditDebtDialog}
-              onDeleteDebt={handleDeleteDebt}
+              onEditDebt={(debt) => {
+                setEditingDebt(debt);
+                setIsNewOpen(true);
+              }}
+              onDeleteDebt={(id, title) => setDebtToDelete({ id, title })}
               onRecordPayment={(debt) => {
                 setInstallmentDebt(debt);
                 setEditingInstallment(null);
@@ -419,104 +407,56 @@ export function FriendsDebtSection() {
               onTopUp={setTopUpTarget}
               onCopyReminder={handleCopyReminder}
               expandedLoanIds={expandedLoanIds}
-              onToggleLoanExpand={toggleLoanExpand}
+              onToggleLoanExpand={(loanId) => setExpandedLoanIds((prev) => ({ ...prev, [loanId]: !prev[loanId] }))}
               getDebtInstallments={getDebtInstallments}
               onEditInstallment={(debt, inst) => {
                 setInstallmentDebt(debt);
                 setEditingInstallment(inst);
               }}
-              onDeleteInstallment={handleDeleteInstallment}
+              onDeleteInstallment={setInstallmentToDelete}
               onToggleBucket={handleToggleBucket}
             />
           ))}
         </div>
       )}
 
-      {/* 4. Sub-Component Modals & Dialogs (lazy-mounted only when open) */}
-      {isNewOpen && (
-        <AddDebtModal
-          isOpen={isNewOpen}
-          onClose={() => {
-            setIsNewOpen(false);
-            setEditingDebt(null);
-          }}
-          editingDebt={editingDebt}
-          defaultBucket={newDefaultBucket}
-          prefilledFriend={newPrefilledFriend}
-          existingFriendNames={existingFriendNames}
-          onSave={handleSaveDebt}
-        />
-      )}
-
-      {!!settleFriend && (
-        <SettleTabDialog
-          group={settleFriend}
-          isOpen={!!settleFriend}
-          onClose={() => setSettleFriend(null)}
-          accounts={accounts}
-          onConfirmSettle={settleEverydayTab}
-        />
-      )}
-
-      {!!offsetFriend && (
-        <OffsetLoanDialog
-          group={offsetFriend}
-          isOpen={!!offsetFriend}
-          onClose={() => setOffsetFriend(null)}
-          onConfirmOffset={offsetSplitAgainstLoan}
-        />
-      )}
-
-      {(!!installmentDebt || !!editingInstallment) && (
-        <InstallmentDialog
-          debt={installmentDebt}
-          editingInstallment={editingInstallment}
-          isOpen={!!installmentDebt || !!editingInstallment}
-          onClose={() => {
-            setInstallmentDebt(null);
-            setEditingInstallment(null);
-          }}
-          accounts={accounts}
-          onRecordInstallment={recordDebtInstallment}
-          onUpdateInstallment={updateDebtInstallment}
-        />
-      )}
-
-      {!!topUpTarget && (
-        <TopUpDialog
-          target={topUpTarget}
-          isOpen={!!topUpTarget}
-          onClose={() => setTopUpTarget(null)}
-          onTopUp={topUpDebt}
-        />
-      )}
-
-      {!!shareFriend && (
-        <ShareSettlementDialog
-          group={shareFriend}
-          isOpen={!!shareFriend}
-          onClose={() => setShareFriend(null)}
-        />
-      )}
-
-      <ConfirmDialog
-        open={!!debtToDelete}
-        onOpenChange={(open) => !open && setDebtToDelete(null)}
-        title="Delete Debt Entry"
-        description={`Are you sure you want to delete "${debtToDelete?.title || 'this debt'}"? This cannot be undone.`}
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleConfirmDeleteDebt}
-      />
-
-      <ConfirmDialog
-        open={!!installmentToDelete}
-        onOpenChange={(open) => !open && setInstallmentToDelete(null)}
-        title="Delete Installment Log"
-        description="Are you sure you want to delete this installment payment log? This cannot be undone."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleConfirmDeleteInstallment}
+      <FriendsDebtDialogs
+        accounts={accounts}
+        isNewOpen={isNewOpen}
+        onCloseNew={() => {
+          setIsNewOpen(false);
+          setEditingDebt(null);
+        }}
+        editingDebt={editingDebt}
+        newDefaultBucket={newDefaultBucket}
+        newPrefilledFriend={newPrefilledFriend}
+        existingFriendNames={existingFriendNames}
+        onSaveDebt={handleSaveDebt}
+        settleFriend={settleFriend}
+        onCloseSettle={() => setSettleFriend(null)}
+        onConfirmSettle={settleEverydayTab}
+        offsetFriend={offsetFriend}
+        onCloseOffset={() => setOffsetFriend(null)}
+        onConfirmOffset={offsetSplitAgainstLoan}
+        installmentDebt={installmentDebt}
+        editingInstallment={editingInstallment}
+        onCloseInstallment={() => {
+          setInstallmentDebt(null);
+          setEditingInstallment(null);
+        }}
+        onRecordInstallment={recordDebtInstallment}
+        onUpdateInstallment={updateDebtInstallment}
+        topUpTarget={topUpTarget}
+        onCloseTopUp={() => setTopUpTarget(null)}
+        onTopUp={topUpDebt}
+        shareFriend={shareFriend}
+        onCloseShare={() => setShareFriend(null)}
+        debtToDelete={debtToDelete}
+        onCloseDeleteDebt={() => setDebtToDelete(null)}
+        onConfirmDeleteDebt={handleConfirmDeleteDebt}
+        installmentToDelete={installmentToDelete}
+        onCloseDeleteInstallment={() => setInstallmentToDelete(null)}
+        onConfirmDeleteInstallment={handleConfirmDeleteInstallment}
       />
     </section>
   );
