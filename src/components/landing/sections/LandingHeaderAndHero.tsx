@@ -80,9 +80,9 @@ function HeroVisualPanels() {
             <div className="p-1.5 bg-orange-500/10 rounded-lg">
               <Flame className="h-5 w-5 text-orange-500" />
             </div>
-            <h3 className="text-base font-bold text-foreground">Active Streak</h3>
+            <p className="text-base font-bold text-foreground">Active Streak</p>
           </div>
-          <span className="text-[10px] font-extrabold tracking-wider px-3 py-1 rounded-full uppercase border bg-primary/10 text-primary border-primary/25 font-mono">DAY 12</span>
+          <span className="text-[10px] font-extrabold tracking-wider px-3 py-1 rounded-full uppercase border bg-primary/10 text-emerald-700 dark:text-emerald-400 border-primary/25 font-mono">DAY 12</span>
         </div>
 
         <div className="text-5xl font-black mb-4 tracking-tight flex items-baseline font-mono tabular-nums text-foreground">
@@ -142,34 +142,25 @@ export function LandingHeroZone() {
   return (
     <section className="w-full max-w-7xl px-6 md:px-12 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative min-h-[80vh]">
       <div className="lg:col-span-7 flex flex-col text-center lg:text-left items-center lg:items-start z-10">
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-wider uppercase mb-6 bg-primary/10 text-primary border border-primary/25"
+        <div
+          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold tracking-wider uppercase mb-6 bg-primary/10 text-emerald-700 dark:text-emerald-400 border border-primary/25"
         >
-          <Sparkles className="h-4 w-4 text-primary" />
+          <Sparkles className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
           Precision Life &amp; Finance OS
-        </motion.div>
+        </div>
 
-        <motion.h1
-          initial={{ opacity: 0, y: 25 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+        <h1
           className="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.08] mb-6 text-foreground"
         >
           Master habits.<br />
           Find your <span className="text-gradient">Flow.</span>
-        </motion.h1>
+        </h1>
 
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="text-lg md:text-xl mb-10 max-w-xl text-muted-foreground"
+        <p
+          className="text-lg md:text-xl mb-10 max-w-xl text-slate-600 dark:text-slate-300"
         >
           Build consistency, conquer deep work, and steer your personal finances in one calm, offline-first Life OS.
-        </motion.p>
+        </p>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}

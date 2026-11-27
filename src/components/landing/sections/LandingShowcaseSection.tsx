@@ -39,7 +39,7 @@ function MockSidebar() {
       </div>
 
       <div className="flex lg:mt-auto items-center gap-3 p-1 rounded-xl">
-        <div className="h-8.5 w-8.5 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-black shadow-xs">JD</div>
+        <div className="h-8.5 w-8.5 rounded-full bg-emerald-700 flex items-center justify-center text-white text-xs font-black shadow-xs">JD</div>
         <div className="hidden lg:block text-left">
           <p className="text-xs font-bold text-foreground">John Doe</p>
           <p className="text-[10px] text-muted-foreground font-mono">Personal Workspace</p>
@@ -61,10 +61,10 @@ function MockHabitsAndRoutines(params: {
       <div className="p-5 rounded-2xl border border-border bg-card flex flex-col gap-4">
         <div className="flex justify-between items-center">
           <div className="text-left">
-            <h4 className="text-sm font-extrabold text-foreground">Interactive Habits Loop</h4>
-            <p className="text-[11px] text-muted-foreground">Click a habit to simulate checking it off</p>
+            <h3 className="text-sm font-extrabold text-foreground">Interactive Habits Loop</h3>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400">Click a habit to simulate checking it off</p>
           </div>
-          <span className="text-[10px] bg-primary/10 text-primary font-bold px-2.5 py-0.5 rounded-md border border-primary/25">Daily Loop</span>
+          <span className="text-[10px] bg-primary/10 text-emerald-700 dark:text-emerald-400 font-bold px-2.5 py-0.5 rounded-md border border-primary/25">Daily Loop</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -78,8 +78,8 @@ function MockHabitsAndRoutines(params: {
             >
               <div className={`p-1.5 rounded-lg ${habit.color} shrink-0`}><Sparkle className="h-4.5 w-4.5" /></div>
               <div className="text-left">
-                <p className={`text-xs font-bold leading-tight ${habit.done ? 'text-primary' : 'text-foreground'}`}>{habit.name}</p>
-                <p className="text-[9px] text-muted-foreground mt-1 font-mono">{habit.done ? 'Completed today ✓' : 'Pending completion'}</p>
+                <p className={`text-xs font-bold leading-tight ${habit.done ? 'text-emerald-700 dark:text-emerald-400' : 'text-foreground'}`}>{habit.name}</p>
+                <p className="text-[9px] text-slate-600 dark:text-slate-400 mt-1 font-mono">{habit.done ? 'Completed today ✓' : 'Pending completion'}</p>
               </div>
               <div className={`w-5 h-5 rounded-full border flex items-center justify-center absolute top-3 right-3 transition-colors ${habit.done ? 'bg-primary border-primary text-primary-foreground' : 'border-border text-transparent'}`}>
                 <Check className="h-3 w-3 stroke-[3]" />
@@ -92,8 +92,8 @@ function MockHabitsAndRoutines(params: {
       <div className="p-5 rounded-2xl border border-border bg-card flex flex-col gap-4">
         <div className="flex justify-between items-center text-left">
           <div>
-            <h4 className="text-sm font-extrabold text-foreground">Routines Checklist</h4>
-            <p className="text-[11px] text-muted-foreground">Complete items below to build routine multipliers</p>
+            <h3 className="text-sm font-extrabold text-foreground">Routines Checklist</h3>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400">Complete items below to build routine multipliers</p>
           </div>
         </div>
         <div className="flex flex-col gap-2.5">
@@ -134,7 +134,7 @@ function MockProductivityGraph({ range, onChangeRange }: { range: 'week' | 'mont
               <button
                 key={r}
                 onClick={() => onChangeRange(r)}
-                className={`text-[9px] font-bold px-2 py-1 rounded-md transition-colors cursor-pointer ${range === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                className={`text-[9px] font-bold px-2 py-1 rounded-md transition-colors cursor-pointer ${range === r ? 'bg-emerald-700 text-white' : 'text-slate-700 dark:text-slate-300 hover:text-foreground'}`}
               >
                 {r === 'week' ? 'Wk' : 'Mo'}
               </button>
@@ -156,9 +156,9 @@ function MockProductivityGraph({ range, onChangeRange }: { range: 'week' | 'mont
           </svg>
         </div>
 
-        <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+        <div className="flex justify-between items-center text-[10px] text-slate-600 dark:text-slate-400">
           <span>Average focus efficiency</span>
-          <span className="text-primary font-bold font-mono tabular-nums">89.2%</span>
+          <span className="text-emerald-700 dark:text-emerald-400 font-bold font-mono tabular-nums">89.2%</span>
         </div>
       </div>
     </div>

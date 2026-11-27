@@ -29,7 +29,7 @@ export function LandingPage() {
 
       <LandingHeader isDark={isDark} onToggleTheme={() => setTheme(isDark ? 'light' : 'dark')} />
 
-      <main className="flex-grow pt-24 flex flex-col items-center">
+      <div className="flex-grow pt-24 flex flex-col items-center">
         <LandingHeroZone />
 
         <LandingAutoPlayBanner
@@ -87,7 +87,7 @@ export function LandingPage() {
 
         <LandingDeepWorkFeatures featuresRef={featuresRef} isDark={isDark} />
         <LandingCtaSection />
-      </main>
+      </div>
 
       <LandingFooter />
     </div>

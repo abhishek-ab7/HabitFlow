@@ -1,0 +1,8 @@
+# HabitFlow
+
+> HabitFlow is an offline-first Precision Life & Finance OS combining habit tracking, deep work Pomodoro timers, Eisenhower task prioritization, 90-day goal milestones, fitness & nutrition logging, and personal finance management.
+
+## Core Pages
+- [Home](https://habitflow.tech/): Interactive product overview, habits loop showcase, daily flow simulator, and deep work focus hub.
+- [Sign In / Sign Up](https://habitflow.tech/login): Access your synced HabitFlow workspace.
+- [Tutorial](https://habitflow.tech/tutorial): Interactive guide to HabitFlow features and workflows.

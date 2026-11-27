@@ -97,17 +97,17 @@ export function LandingFocusHubSection(params: {
 }
 
 const EISENHOWER_QUADS = [
-  { code: 'DO', desc: 'Urgent & Imp.', cls: 'bg-destructive/10 border border-destructive/20 hover:border-destructive/50 text-destructive' },
-  { code: 'DECIDE', desc: 'Not Urg. & Imp.', cls: 'bg-primary/10 border border-primary/20 hover:border-primary/50 text-primary' },
-  { code: 'DELEGATE', desc: 'Urgent & Not Imp.', cls: 'bg-info/10 border border-info/20 hover:border-info/50 text-info' },
-  { code: 'DELETE', desc: 'Not Urg. & Not Imp.', cls: 'surface-subtle border text-muted-foreground' },
+  { code: 'DO', desc: 'Urgent & Imp.', cls: 'bg-destructive/10 border border-destructive/20 hover:border-destructive/50 text-red-700 dark:text-red-400' },
+  { code: 'DECIDE', desc: 'Not Urg. & Imp.', cls: 'bg-primary/10 border border-primary/20 hover:border-primary/50 text-emerald-700 dark:text-emerald-400' },
+  { code: 'DELEGATE', desc: 'Urgent & Not Imp.', cls: 'bg-info/10 border border-info/20 hover:border-info/50 text-sky-700 dark:text-sky-400' },
+  { code: 'DELETE', desc: 'Not Urg. & Not Imp.', cls: 'surface-subtle border text-slate-700 dark:text-slate-300' },
 ];
 
 function RadialGoalsCard() {
   const [hoveredMilestone, setHoveredMilestone] = useState<string | null>(null);
   return (
     <div className="surface-card p-8 hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
-      <div className="text-[9px] font-extrabold tracking-wider text-info bg-info/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-info/20">Track</div>
+      <div className="text-[9px] font-extrabold tracking-wider text-sky-700 dark:text-sky-400 bg-info/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-info/20">Track</div>
       <h3 className="text-xl font-bold mb-3 text-left text-foreground">90-Day Focus Goals</h3>
       <p className="text-sm mb-8 flex-grow text-left text-muted-foreground">Visualize long-term progress with radial rings and interactive milestones.</p>
 
@@ -147,7 +147,7 @@ export function LandingDeepWorkFeatures({ featuresRef, isDark }: { featuresRef: 
       <h2 className="text-3xl md:text-5xl font-black text-center mb-16 tracking-tight text-foreground">Designed for Deep Work</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="surface-card p-8 hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
-          <div className="text-[9px] font-extrabold tracking-wider text-primary bg-primary/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-primary/20">Prioritize</div>
+          <div className="text-[9px] font-extrabold tracking-wider text-emerald-700 dark:text-emerald-400 bg-primary/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-primary/20">Prioritize</div>
           <h3 className="text-xl font-bold mb-3 text-left text-foreground">Eisenhower Matrix</h3>
           <p className="text-sm mb-8 flex-grow text-left text-muted-foreground">Sort tasks by urgency and importance in a sleek, distraction-free grid.</p>
           <div className="grid grid-cols-2 gap-2.5 mt-auto">
@@ -163,7 +163,7 @@ export function LandingDeepWorkFeatures({ featuresRef, isDark }: { featuresRef: 
         <RadialGoalsCard />
 
         <div className="surface-card p-8 hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 flex flex-col h-full relative overflow-hidden">
-          <div className="text-[9px] font-extrabold tracking-wider text-warning bg-warning/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-warning/20">Analyze</div>
+          <div className="text-[9px] font-extrabold tracking-wider text-amber-700 dark:text-amber-400 bg-warning/10 w-fit px-3 py-1.5 rounded-lg uppercase mb-4 border border-warning/20">Analyze</div>
           <h3 className="text-xl font-bold mb-3 text-left text-foreground">Category Balance</h3>
           <p className="text-sm mb-8 flex-grow text-left text-muted-foreground">Identify strengths and weak categories across different habit streams instantly.</p>
           <div className="flex justify-center mt-auto h-[160px] items-center">
@@ -172,12 +172,18 @@ export function LandingDeepWorkFeatures({ featuresRef, isDark }: { featuresRef: 
               <polygon fill="none" points="80,33.3 120.4,56.6 120.4,103.3 80,126.6 39.6,103.3 39.6,56.6" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" />
               <line stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" x1="80" x2="80" y1="80" y2="10" />
               <line stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" x1="80" x2="140.6" y1="80" y2="45" />
-              <motion.polygon
-                fill={isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.14)'}
-                stroke="#10b981" strokeWidth="2" points="80,30 110,60 130,100 80,130 40,90 50,50"
-                animate={{ points: ['80,30 110,60 130,100 80,130 40,90 50,50', '80,26 114,56 126,104 80,134 36,92 46,46', '80,30 110,60 130,100 80,130 40,90 50,50'] }}
+              <motion.g
+                style={{ transformOrigin: '80px 80px' }}
+                animate={{ scale: [1, 1.05, 1] }}
                 transition={{ repeat: Infinity, duration: 4.8, ease: 'easeInOut' }}
-              />
+              >
+                <polygon
+                  fill={isDark ? 'rgba(16, 185, 129, 0.22)' : 'rgba(16, 185, 129, 0.14)'}
+                  stroke="#10b981"
+                  strokeWidth="2"
+                  points="80,30 110,60 130,100 80,130 40,90 50,50"
+                />
+              </motion.g>
             </svg>
           </div>
         </div>

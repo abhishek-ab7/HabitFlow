@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { rateLimit, rateLimitResponse } from '@/lib/security/rate-limit';
 import { isSupabaseConfigured } from '@/lib/supabase/mock-client';
 
-const STATIC_EXACT_PATHS = new Set(['/manifest.json', '/sw.js']);
+const STATIC_EXACT_PATHS = new Set(['/manifest.json', '/sw.js', '/robots.txt', '/llms.txt', '/sitemap.xml']);
 const STATIC_PREFIXES = ['/icons/', '/.well-known/'];
 const STATIC_EXTENSIONS = /\.(?:ico|png|svg|jpg|jpeg|webp)$/i;
 const PUBLIC_ROUTES = ['/auth/callback', '/auth/auth-code-error', '/auth/reset-password', '/auth/signout', '/.well-known'];
@@ -142,6 +142,6 @@ export const config = {
      * - .well-known routes (MCP RFC 9728 and RFC 8414 OAuth discovery)
      * Note: We also check for static files in the middleware function itself
      */
-    '/((?!_next|favicon\\.ico|api|\\.well-known).*)',
+    '/((?!_next|favicon\\.ico|robots\\.txt|llms\\.txt|sitemap\\.xml|api|\\.well-known).*)',
   ],
 };

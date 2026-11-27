@@ -19,7 +19,7 @@ function SimulatorCompanionCard(params: {
   return (
     <div id="companion-widget-box" className="w-full md:w-1/3 flex flex-col items-center p-6 rounded-2xl border border-border bg-muted/35 justify-between relative overflow-hidden">
       <div className="w-full text-center">
-        <span className="text-[9px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20">Interactive Widget</span>
+        <span className="text-[9px] font-bold tracking-wider uppercase px-2.5 py-1 rounded-lg bg-primary/10 text-emerald-700 dark:text-emerald-400 border border-primary/20">Interactive Widget</span>
       </div>
 
       <div className="mt-4 px-3 py-2 rounded-xl text-[11px] font-semibold text-center leading-normal border border-border bg-card text-foreground shadow-xs relative min-h-[3.5rem] flex items-center justify-center w-full">
