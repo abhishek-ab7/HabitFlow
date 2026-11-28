@@ -76,4 +76,60 @@ describe('Outbound Read-Only MCP Client (Phase F3 Security & Timeout)', () => {
     expect(res.snippets).toEqual([]);
     vi.unstubAllGlobals();
   });
+
+  it('calls COMPOSIO_MULTI_EXECUTE_TOOL with sync_response_to_workbench=false and formats Gmail subjects cleanly', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                successful: true,
+                data: {
+                  results: [
+                    {
+                      response: {
+                        data: {
+                          messages: [
+                            {
+                              sender: 'Google Play <googleplay-noreply@google.com>',
+                              subject: 'ChatGPT subscription suspended due to payment issue',
+                              messageTimestamp: '2026-11-25T04:35:25Z',
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await fetchExternalMcpContext([
+      {
+        id: 'src_gmail',
+        label: 'Gmail Bills MCP',
+        providerKind: 'gmail',
+        endpointUrl: 'https://connect.composio.dev/mcp',
+        enabled: true,
+      },
+    ]);
+
+    expect(res.snippets).toHaveLength(1);
+    expect(res.snippets[0].summary).toContain('ChatGPT subscription suspended due to payment issue');
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.params.arguments.sync_response_to_workbench).toBe(false);
+    vi.unstubAllGlobals();
+  });
 });

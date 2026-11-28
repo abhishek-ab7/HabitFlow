@@ -36,7 +36,7 @@ const READ_ONLY_TOOL_PREFIXES = [
   'strava_list_',
 ];
 const MUTATING_TOOL_SEGMENTS = ['send', 'create', 'delete', 'update', 'remove', 'insert', 'patch', 'draft', 'reply', 'modify'];
-const OUTBOUND_TIMEOUT_MS = 3000;
+const OUTBOUND_TIMEOUT_MS = 6000;
 
 const BLOCKED_HOST_PATTERNS = [
   /^localhost$/i,
@@ -232,7 +232,7 @@ function buildComposioReadOnlyCall(providerKind: ExternalMcpProviderKind) {
     return {
       tool_slug: 'GMAIL_FETCH_EMAILS',
       arguments: {
-        query: 'subject:(bill OR invoice OR statement OR due OR subscription) newer_than:14d',
+        query: 'bill OR invoice OR subscription OR statement OR renewal OR autopay',
         max_results: 5,
         verbose: false,
       },
@@ -247,8 +247,44 @@ function buildComposioReadOnlyCall(providerKind: ExternalMcpProviderKind) {
   return null;
 }
 
+function summarizeMcpOutputText(rawText: string): string {
+  try {
+    const parsed = JSON.parse(rawText) as {
+      data?: {
+        results?: Array<{
+          response?: {
+            data?: {
+              messages?: Array<{
+                sender?: string;
+                subject?: string;
+                messageTimestamp?: string;
+              }>;
+            };
+          };
+        }>;
+      };
+    };
+    const messages = parsed?.data?.results?.[0]?.response?.data?.messages;
+    if (Array.isArray(messages) && messages.length > 0) {
+      return messages
+        .slice(0, 5)
+        .map((m) => {
+          const date = String(m.messageTimestamp || '').slice(0, 10);
+          const sender = String(m.sender || '').replace(/<[^>]+>/g, '').trim();
+          const subject = String(m.subject || '').trim();
+          return `${date ? `[${date}] ` : ''}${sender}: ${subject}`;
+        })
+        .join(' | ')
+        .slice(0, 900);
+    }
+  } catch {
+    // Non-JSON or generic MCP text payload
+  }
+  return rawText.slice(0, 900);
+}
+
 /**
- * Fetches read-only context snippets from enabled external MCP sources within a strict 3s timeout.
+ * Fetches read-only context snippets from enabled external MCP sources within a strict timeout.
  * Never throws — degrades cleanly so Coach Swarm latency is never stalled.
  */
 export async function fetchExternalMcpContext(
@@ -263,20 +299,10 @@ export async function fetchExternalMcpContext(
       const check = validateOutboundMcpUrl(src.endpointUrl);
       if (!check.ok) return null;
       const token = src.encryptedToken ? decryptMcpToken(src.encryptedToken) : null;
-      const listRes = (await callMcpJsonRpc({
-        url: check.url,
-        token,
-        method: 'tools/list',
-        timeoutMs,
-      })) as { tools?: Array<{ name?: string }> };
-
-      const toolNames = (listRes?.tools || []).map((t) => String(t?.name || ''));
-      const isComposioRouter =
-        new URL(check.url).hostname.toLowerCase().endsWith('composio.dev') &&
-        toolNames.includes('COMPOSIO_MULTI_EXECUTE_TOOL');
+      const isComposioHost = new URL(check.url).hostname.toLowerCase().endsWith('composio.dev');
 
       let callRes: { content?: Array<{ text?: string }> };
-      if (isComposioRouter) {
+      if (isComposioHost) {
         const composioTask = buildComposioReadOnlyCall(src.providerKind);
         if (!composioTask) return null;
         callRes = (await callMcpJsonRpc({
@@ -285,11 +311,22 @@ export async function fetchExternalMcpContext(
           method: 'tools/call',
           rpcParams: {
             name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
-            arguments: { tools: [composioTask] },
+            arguments: {
+              session_id: 'root',
+              sync_response_to_workbench: false,
+              tools: [composioTask],
+            },
           },
           timeoutMs,
         })) as { content?: Array<{ text?: string }> };
       } else {
+        const listRes = (await callMcpJsonRpc({
+          url: check.url,
+          token,
+          method: 'tools/list',
+          timeoutMs,
+        })) as { tools?: Array<{ name?: string }> };
+        const toolNames = (listRes?.tools || []).map((t) => String(t?.name || ''));
         const readOnlyTool = toolNames.find(
           (name) => isReadOnlyMcpTool(name) && !COMPOSIO_READ_ONLY_META_TOOLS.has(name.toLowerCase())
         );
@@ -303,15 +340,15 @@ export async function fetchExternalMcpContext(
         })) as { content?: Array<{ text?: string }> };
       }
 
-      const rawText = (callRes?.content || [])
+      const joined = (callRes?.content || [])
         .map((c) => c?.text || '')
         .join(' ')
         .replace(/<\/?untrusted_input>/gi, '')
-        .trim()
-        .slice(0, 280);
+        .trim();
 
-      if (!rawText) return null;
-      return { providerKind: src.providerKind, label: src.label, summary: rawText };
+      const summary = summarizeMcpOutputText(joined);
+      if (!summary) return null;
+      return { providerKind: src.providerKind, label: src.label, summary };
     })
   );
 
