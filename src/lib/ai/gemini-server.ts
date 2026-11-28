@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-4-hydrogen';
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 
 const ENV_KEY_CANDIDATES = [
   'GEMINI_KEY_TASKS_1',

@@ -30,6 +30,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   source?: string;
+  fallbackReason?: string;
 }
 
 const STARTER_PROMPTS = [
@@ -77,7 +78,7 @@ async function requestFinanceQAAnswer(params: {
   history: ChatMessage[];
   context: ReturnType<typeof buildFinanceQAContext>;
   signal: AbortSignal;
-}): Promise<{ content: string; source?: string }> {
+}): Promise<{ content: string; source?: string; fallbackReason?: string }> {
   const res = await fetch('/api/ai/finance-qa', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -93,6 +94,7 @@ async function requestFinanceQAAnswer(params: {
   return {
     content: data?.answer || 'I could not compute an answer from your current financial snapshot.',
     source: data?.source,
+    fallbackReason: data?.fallbackReason,
   };
 }
 
@@ -167,7 +169,11 @@ function AskFinancesMessageBubble({ msg }: { msg: ChatMessage }) {
         )}
         {!isUser && msg.source && (
           <div className="mt-2 pt-1.5 border-t border-border/50 text-[10px] text-muted-foreground font-mono">
-            {msg.source === 'gemini' ? 'Answered by Gemini' : 'Answered by Local Ledger Analyzer (AI key not configured)'}
+            {msg.source === 'gemini'
+              ? 'Answered by Gemini'
+              : msg.fallbackReason === 'missing_api_key'
+                ? 'Answered by Local Ledger Analyzer (AI key not configured)'
+                : `Answered by Local Ledger Analyzer${msg.fallbackReason ? ` (${msg.fallbackReason.slice(0, 60)})` : ''}`}
           </div>
         )}
       </div>
