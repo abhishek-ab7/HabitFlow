@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
   Activity,
@@ -11,12 +12,16 @@ import {
   Sparkles,
   Wallet,
 } from 'lucide-react';
-import { YearInReview } from '@/components/analytics/YearInReview';
 import { AnalyticsChartCard } from '@/components/analytics/shared/AnalyticsChartCard';
 import { AnalyticsKpiGrid, type AnalyticsKpiItem } from '@/components/analytics/shared/AnalyticsKpiGrid';
 import { useLifeOsAnalytics } from '@/lib/analytics/use-life-os-analytics';
 import { formatINR } from '@/lib/stores/finance-store';
 import type { AnalyticsTabProps } from './types';
+
+const YearInReview = dynamic(
+  () => import('@/components/analytics/YearInReview').then((m) => ({ default: m.YearInReview })),
+  { ssr: false }
+);
 
 function buildReviewDigestKpis(snapshot: AnalyticsTabProps['snapshot']): AnalyticsKpiItem[] {
   const { habits, finance, fitness, modules } = snapshot;
