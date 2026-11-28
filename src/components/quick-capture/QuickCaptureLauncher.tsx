@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { VoiceOrbButton } from './VoiceOrbButton';
 
 const QuickCaptureModal = dynamic(
   () => import('./QuickCaptureModal').then((m) => ({ default: m.QuickCaptureModal })),
@@ -26,6 +27,7 @@ function isQuickCaptureShortcut(e: KeyboardEvent): boolean {
 
 export function QuickCaptureLauncher() {
   const [activated, setActivated] = useState(false);
+  const [voicePayload, setVoicePayload] = useState<{ text: string; seq: number } | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -49,6 +51,22 @@ export function QuickCaptureLauncher() {
     };
   }, []);
 
-  if (!activated) return null;
-  return <QuickCaptureModal defaultOpen />;
+  const handleVoiceTranscript = useCallback((transcript: string) => {
+    setActivated(true);
+    setVoicePayload((prev) => ({ text: transcript, seq: (prev?.seq ?? 0) + 1 }));
+    window.dispatchEvent(new Event('open-quick-capture'));
+  }, []);
+
+  return (
+    <>
+      <VoiceOrbButton onTranscriptReady={handleVoiceTranscript} />
+      {activated && (
+        <QuickCaptureModal
+          defaultOpen
+          initialVoiceText={voicePayload?.text}
+          initialVoiceSeq={voicePayload?.seq}
+        />
+      )}
+    </>
+  );
 }

@@ -28,6 +28,10 @@ const McpConnectionsCard = dynamic(
   () => import('@/components/settings/McpConnectionsCard').then((m) => ({ default: m.McpConnectionsCard })),
   { ssr: false, loading: () => <div className="h-44 rounded-2xl border border-border bg-card animate-pulse" /> }
 );
+const ExternalMcpSourcesCard = dynamic(
+  () => import('@/components/settings/ExternalMcpSourcesCard').then((m) => ({ default: m.ExternalMcpSourcesCard })),
+  { ssr: false, loading: () => <div className="h-44 rounded-2xl border border-border bg-card animate-pulse" /> }
+);
 
 function SettingsLoadingSkeleton() {
   return (
@@ -136,6 +140,7 @@ function SettingsWorkspaceGrid({
       </div>
 
       <McpConnectionsCard />
+      <ExternalMcpSourcesCard />
 
       <SettingsUtilityRow
         showDevTools={showDevTools}

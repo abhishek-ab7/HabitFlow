@@ -140,8 +140,48 @@ describe('POST /api/ai/universal-capture', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.source).toBe('gemini');
+    expect(json.status).toBe('READY_TO_COMMIT');
     expect(json.actions.some((a: { kind: string; amount?: number }) => a.kind === 'expense' && a.amount === 299)).toBe(true);
     expect(json.actions.some((a: { kind: string; calories?: number }) => a.kind === 'meal' && a.calories === 560)).toBe(true);
     expect(json.actions.some((a: { kind: string }) => a.kind === 'supplement')).toBe(true);
+  });
+
+  it('returns AWAITING_HUMAN with ambiguity & 24h duplicate warnings when account is unspecified or duplicate exists', async () => {
+    mockResolveKeys.mockReturnValue(['fake-key']);
+    mockFailover.mockResolvedValueOnce({
+      expenses: [
+        {
+          title: 'Swiggy Dinner',
+          amount: 450,
+          txType: 'expense',
+          categorySlug: 'food-dining',
+        },
+      ],
+      meals: [],
+    });
+
+    const res = await POST(
+      makeRequest(
+        {
+          text: 'swiggy dinner 450',
+          accounts: [
+            { id: 'acc_slice', name: 'Slice CC', type: 'credit_card' },
+            { id: 'acc_upi', name: 'HDFC UPI', type: 'upi' },
+          ],
+          categories: [{ id: 'cat_food', name: 'Food & Dining', slug: 'food-dining', type: 'expense' }],
+          recentTransactions: [
+            { id: 'tx_prev_1', title: 'Swiggy', amount: 450, date: new Date().toISOString().slice(0, 10) },
+          ],
+        },
+        '10.0.1.6'
+      )
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.status).toBe('AWAITING_HUMAN');
+    expect(json.ambiguities).toHaveLength(1);
+    expect(json.ambiguities[0].options).toHaveLength(2);
+    expect(json.duplicateWarnings).toHaveLength(1);
+    expect(json.duplicateWarnings[0].existingTxId).toBe('tx_prev_1');
   });
 });

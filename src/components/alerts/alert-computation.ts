@@ -4,8 +4,11 @@ import type {
   CreditCardStatement,
   EmiTracker,
   FinanceAccount,
+  FinanceCategory,
   FinanceRecurringBill,
   FinanceTransaction,
+  Habit,
+  HabitCompletion,
   MonthlyCommitment,
   SupplementInventory,
   SupplementLog,
@@ -18,6 +21,10 @@ import {
   collectCreditCardAlerts,
   type AlertDateContext,
 } from './alert-finance-collectors';
+import {
+  collectEnvelope80PctAlerts,
+  collectStreakRecoveryAlerts,
+} from './alert-proactive-collectors';
 
 export type UnifiedAlertKind =
   | 'credit_card'
@@ -25,7 +32,9 @@ export type UnifiedAlertKind =
   | 'commitment'
   | 'bill'
   | 'health_task'
-  | 'supplement_low_stock';
+  | 'supplement_low_stock'
+  | 'envelope_80_pct'
+  | 'streak_recovery';
 
 export interface UnifiedAdvanceAlert {
   id: string;
@@ -50,6 +59,9 @@ export interface UnifiedAlertScanInput {
   tasks?: Task[];
   supplementInventory?: SupplementInventory[];
   supplementLogs?: SupplementLog[];
+  categories?: FinanceCategory[];
+  habits?: Habit[];
+  habitCompletions?: HabitCompletion[];
 }
 
 function isOpenHealthTask(task: Task): boolean {
@@ -126,6 +138,9 @@ function normalizeScanInput(input: UnifiedAlertScanInput): Required<UnifiedAlert
     tasks: input.tasks ?? [],
     supplementInventory: input.supplementInventory ?? [],
     supplementLogs: input.supplementLogs ?? [],
+    categories: input.categories ?? [],
+    habits: input.habits ?? [],
+    habitCompletions: input.habitCompletions ?? [],
   };
 }
 
@@ -140,6 +155,17 @@ export function computeUnified3DayAlerts(input: UnifiedAlertScanInput): UnifiedA
   const bills = n.recurringBills.flatMap((bill) => buildRecurringBillAlerts(ctx, bill));
   const health = n.tasks.map((t) => buildHealthTaskAlert(ctx, t)).filter((a): a is UnifiedAdvanceAlert => a !== null);
   const sups = collectSupplementAlerts({ ctx, inventory: n.supplementInventory, logs: n.supplementLogs });
+  const envelopes = collectEnvelope80PctAlerts({
+    todayIso: n.todayIso,
+    categories: n.categories,
+    accounts: n.accounts,
+    transactions: n.transactions,
+  });
+  const streakRecovery = collectStreakRecoveryAlerts({
+    todayIso: n.todayIso,
+    habits: n.habits,
+    completions: n.habitCompletions,
+  });
 
-  return dedupeAndSortAlerts([...cc, ...emis, ...coms, ...bills, ...health, ...sups]);
+  return dedupeAndSortAlerts([...cc, ...emis, ...coms, ...bills, ...health, ...sups, ...envelopes, ...streakRecovery]);
 }

@@ -116,4 +116,87 @@ describe('QuickCaptureModal (10-Second Universal Capture RTL Smoke)', () => {
       );
     });
   });
+
+  it('renders HITL clarification chips on AWAITING_HUMAN and unlocks submit after resolving', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        source: 'gemini',
+        status: 'AWAITING_HUMAN',
+        detectedDomains: ['finance_food'],
+        overallConfidence: 0.65,
+        actions: [
+          {
+            id: 'ai_exp_0',
+            kind: 'expense',
+            enabled: true,
+            title: 'Whey Protein',
+            amount: 850,
+            txType: 'expense',
+            accountName: 'Select account',
+            categoryId: 'cat_junk',
+            categorySlug: 'junk-food',
+            categoryName: 'Junk Food',
+            date: '2026-11-28',
+            isJunkFood: false,
+          },
+        ],
+        ambiguities: [
+          {
+            id: 'amb_acc_ai_exp_0',
+            actionId: 'ai_exp_0',
+            field: 'accountId',
+            question: 'Which account paid ₹850 for "Whey Protein"?',
+            options: [
+              { label: 'Slice CC', value: 'acc_slice' },
+              { label: 'HDFC UPI', value: 'acc_upi' },
+            ],
+          },
+        ],
+        duplicateWarnings: [],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<QuickCaptureModal defaultOpen />);
+    const input = screen.getByPlaceholderText(/momo 60 slice/i);
+    fireEvent.change(input, { target: { value: 'paid 850 whey protein' } });
+
+    const aiBtn = screen.getByRole('button', { name: /ai/i });
+    await act(async () => {
+      fireEvent.click(aiBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('capture-clarification-banner')).toBeInTheDocument();
+      expect(screen.getByText(/Which account paid ₹850/i)).toBeInTheDocument();
+    });
+
+    // Submit button must be gated while clarification is pending
+    const submitBtn = screen.getByRole('button', { name: /Log Item/i });
+    expect(submitBtn).toBeDisabled();
+
+    // Tap account chip to resolve client-side
+    fireEvent.click(screen.getByRole('button', { name: 'HDFC UPI' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('capture-clarification-banner')).not.toBeInTheDocument();
+      expect(submitBtn).not.toBeDisabled();
+    });
+
+    await act(async () => {
+      fireEvent.click(submitBtn);
+    });
+
+    await waitFor(() => {
+      expect(addTransactionMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 850,
+          accountId: 'acc_upi',
+        })
+      );
+    });
+
+    vi.unstubAllGlobals();
+  });
 });

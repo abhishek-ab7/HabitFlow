@@ -6,12 +6,21 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CaptureActionsList } from './CaptureActionPreview';
+import { CaptureClarificationBanner } from './CaptureClarificationBanner';
 import { CaptureEmptyQuickLog, CaptureInputBar } from './CaptureQuickBar';
 import { useQuickCaptureController } from './useQuickCaptureController';
 
-export function QuickCaptureModal({ defaultOpen = false }: { defaultOpen?: boolean } = {}) {
+export function QuickCaptureModal({
+  defaultOpen = false,
+  initialVoiceText,
+  initialVoiceSeq,
+}: {
+  defaultOpen?: boolean;
+  initialVoiceText?: string;
+  initialVoiceSeq?: number;
+} = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const vm = useQuickCaptureController({ defaultOpen, inputRef });
+  const vm = useQuickCaptureController({ defaultOpen, inputRef, initialVoiceText, initialVoiceSeq });
 
   return (
     <Dialog open={vm.isOpen} onOpenChange={vm.setIsOpen}>
@@ -53,6 +62,13 @@ export function QuickCaptureModal({ defaultOpen = false }: { defaultOpen?: boole
             />
           )}
 
+          <CaptureClarificationBanner
+            ambiguities={vm.ambiguities}
+            duplicateWarnings={vm.duplicateWarnings}
+            onResolveAmbiguity={vm.resolveAmbiguity}
+            onResolveDuplicate={vm.resolveDuplicate}
+          />
+
           <CaptureActionsList
             actions={vm.actions}
             enabledCount={vm.enabledCount}
@@ -62,11 +78,15 @@ export function QuickCaptureModal({ defaultOpen = false }: { defaultOpen?: boole
 
           <div className="flex items-center justify-between pt-2 border-t border-border/60">
             <span className="text-[11px] text-muted-foreground">
-              {vm.isListening ? 'Listening (en-IN)… speak naturally' : 'Offline-first · Auto-syncs across devices'}
+              {vm.hasPendingClarifications
+                ? 'Resolve clarification above to log'
+                : vm.isListening
+                  ? 'Listening (en-IN)… speak naturally'
+                  : 'Offline-first · Auto-syncs across devices'}
             </span>
             <div className="flex items-center gap-2">
               <Button type="button" variant="ghost" size="sm" onClick={() => vm.setIsOpen(false)}>Cancel</Button>
-              <Button type="submit" size="sm" disabled={vm.enabledCount === 0 || vm.isSubmitting} className="gap-1.5">
+              <Button type="submit" size="sm" disabled={vm.enabledCount === 0 || vm.isSubmitting || vm.hasPendingClarifications} className="gap-1.5">
                 {vm.isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Log {vm.enabledCount > 1 ? `All (${vm.enabledCount})` : vm.enabledCount === 1 ? 'Item' : ''}
               </Button>

@@ -32,20 +32,65 @@ function maybeNotifyDailyToast(alerts: UnifiedAdvanceAlert[], todayIso: string) 
   localStorage.setItem(key, '1');
 }
 
+function maybeFireBrowserNudge(alerts: UnifiedAdvanceAlert[], todayIso: string) {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted' || !document.hidden) return;
+  const highSignal = alerts.find(
+    (a) => a.severity === 'critical' || a.kind === 'streak_recovery' || a.kind === 'envelope_80_pct'
+  );
+  if (!highSignal) return;
+  const dedupeKey = `habitflow_push_nudge_${highSignal.id}_${todayIso}`;
+  if (localStorage.getItem(dedupeKey)) return;
+  try {
+    new Notification(highSignal.title, { body: highSignal.subtitle, tag: highSignal.id });
+    localStorage.setItem(dedupeKey, '1');
+  } catch {
+    // Non-blocking in browsers restricting Notification constructor
+  }
+}
+
 async function fetchAlertScanInputs(userId: string, fitnessEnabled: boolean) {
-  const [creditCardStatements, accounts, emiTrackers, commitments, recurringBills, transactions, tasks, supplementInventory, supplementLogs] =
-    await Promise.all([
-      db.creditCardStatements.where('userId').equals(userId).filter((s) => !s.deletedAt).toArray(),
-      db.financeAccounts.where('userId').equals(userId).filter((a) => !a.deletedAt && !a.archived).toArray(),
-      db.emiTrackers.where('userId').equals(userId).filter((e) => !e.deletedAt).toArray(),
-      db.monthlyCommitments.where('userId').equals(userId).filter((c) => !c.deletedAt).toArray(),
-      db.financeRecurringBills.where('userId').equals(userId).filter((b) => !b.deletedAt).toArray(),
-      db.financeTransactions.where('userId').equals(userId).filter((t) => !t.deletedAt).toArray(),
-      db.tasks.where('userId').equals(userId).filter((t) => t.status !== 'done' && t.status !== 'archived').toArray(),
-      fitnessEnabled ? db.supplementInventory.where('userId').equals(userId).filter((s) => !s.deletedAt).toArray() : Promise.resolve([]),
-      fitnessEnabled ? db.supplementLogs.where('userId').equals(userId).filter((l) => !l.deletedAt).toArray() : Promise.resolve([]),
-    ]);
-  return { creditCardStatements, accounts, emiTrackers, commitments, recurringBills, transactions, tasks, supplementInventory, supplementLogs };
+  const [
+    creditCardStatements,
+    accounts,
+    emiTrackers,
+    commitments,
+    recurringBills,
+    transactions,
+    tasks,
+    supplementInventory,
+    supplementLogs,
+    categories,
+    habits,
+    habitCompletions,
+  ] = await Promise.all([
+    db.creditCardStatements.where('userId').equals(userId).filter((s) => !s.deletedAt).toArray(),
+    db.financeAccounts.where('userId').equals(userId).filter((a) => !a.deletedAt && !a.archived).toArray(),
+    db.emiTrackers.where('userId').equals(userId).filter((e) => !e.deletedAt).toArray(),
+    db.monthlyCommitments.where('userId').equals(userId).filter((c) => !c.deletedAt).toArray(),
+    db.financeRecurringBills.where('userId').equals(userId).filter((b) => !b.deletedAt).toArray(),
+    db.financeTransactions.where('userId').equals(userId).filter((t) => !t.deletedAt).toArray(),
+    db.tasks.where('userId').equals(userId).filter((t) => t.status !== 'done' && t.status !== 'archived').toArray(),
+    fitnessEnabled ? db.supplementInventory.where('userId').equals(userId).filter((s) => !s.deletedAt).toArray() : Promise.resolve([]),
+    fitnessEnabled ? db.supplementLogs.where('userId').equals(userId).filter((l) => !l.deletedAt).toArray() : Promise.resolve([]),
+    db.financeCategories.where('userId').equals(userId).filter((c) => !c.deletedAt && !c.archived).toArray(),
+    db.habits.where('userId').equals(userId).filter((h) => !h.archived).toArray(),
+    db.completions.where('userId').equals(userId).toArray(),
+  ]);
+  return {
+    creditCardStatements,
+    accounts,
+    emiTrackers,
+    commitments,
+    recurringBills,
+    transactions,
+    tasks,
+    supplementInventory,
+    supplementLogs,
+    categories,
+    habits,
+    habitCompletions,
+  };
 }
 
 async function runAlertScan(params: {
@@ -67,6 +112,7 @@ async function runAlertScan(params: {
   const alerts = computeUnified3DayAlerts({ todayIso, ...inputs });
   if (!areAlertsEqual(useUnifiedAlertStore.getState().alerts, alerts)) params.setAlerts(alerts);
   maybeNotifyDailyToast(alerts, todayIso);
+  maybeFireBrowserNudge(alerts, todayIso);
 }
 
 function scheduleIdleCallback(fn: () => void) {

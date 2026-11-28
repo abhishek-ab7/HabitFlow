@@ -135,6 +135,10 @@ export function WeeklyReviewWidget() {
           onToggleMit={vm.toggleMitSelection}
           savingMits={vm.savingMits}
           onSaveMits={vm.handleSaveWeeklyMits}
+          aiReview={vm.aiReview}
+          loadingAiReview={vm.loadingAiReview}
+          checkedProposalIds={vm.checkedProposalIds}
+          onToggleProposal={vm.toggleProposal}
         />
       )}
     </>

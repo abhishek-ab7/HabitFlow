@@ -107,6 +107,10 @@ describe('POST /api/ai/coach & POST /api/ai/finance-qa Security & Cross-Domain I
     expect(resAlpha.status).toBe(200);
     const jsonAlpha = await resAlpha.json();
     expect(jsonAlpha.greeting).toBe('Morning Alpha');
+    expect(Array.isArray(jsonAlpha.consultedSpecialists)).toBe(true);
+    expect(jsonAlpha.consultedSpecialists.length).toBeGreaterThan(0);
+    expect(jsonAlpha.guardrail?.readOnlyEnforced).toBe(true);
+    expect(Array.isArray(jsonAlpha.actionProposals)).toBe(true);
 
     // User Beta logs in -> MUST NOT get Alpha's cached briefing even with spoofed userId!
     mockGetUser.mockResolvedValueOnce({ data: { user: { id: 'user-beta' } } });
@@ -122,6 +126,9 @@ describe('POST /api/ai/coach & POST /api/ai/finance-qa Security & Cross-Domain I
     expect(resBeta.status).toBe(200);
     const jsonBeta = await resBeta.json();
     expect(jsonBeta.greeting).toBe('Morning Beta');
+    expect(Array.isArray(jsonBeta.consultedSpecialists)).toBe(true);
+    expect(jsonBeta.guardrail?.readOnlyEnforced).toBe(true);
+    expect(Array.isArray(jsonBeta.actionProposals)).toBe(true);
 
     // Verify Gemini prompt contained telemetry & keys use verified user IDs (never 'anonymous' or spoofed)
     const firstCallPrompt = mockFailover.mock.calls[0][0];

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Award, Smile, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { MoodType, Task } from '@/lib/types';
+import type { WeeklyReviewOutput } from '@/lib/ai/graphs/weekly-review';
 import type { ReviewDayInfo } from './weekly-review-analytics';
 import {
   Truth1FinanceCard,
@@ -13,6 +14,7 @@ import {
   TruthHabitsMoodCard,
 } from './WeeklyReviewTruthCards';
 import { WeeklyReviewMitPicker } from './WeeklyReviewMitPicker';
+import { WeeklyReviewProposalsCard } from './WeeklyReviewProposalsCard';
 
 export function WeeklyReviewModal(params: {
   open: boolean;
@@ -37,6 +39,10 @@ export function WeeklyReviewModal(params: {
   onToggleMit: (taskId: string) => void;
   savingMits: boolean;
   onSaveMits: () => void;
+  aiReview?: WeeklyReviewOutput | null;
+  loadingAiReview?: boolean;
+  checkedProposalIds?: string[];
+  onToggleProposal?: (id: string) => void;
 }) {
   return (
     <AnimatePresence>
@@ -83,6 +89,15 @@ export function WeeklyReviewModal(params: {
                   getMoodForDate={params.getMoodForDate}
                 />
               </div>
+
+              {params.onToggleProposal && (
+                <WeeklyReviewProposalsCard
+                  aiReview={params.aiReview ?? null}
+                  loading={Boolean(params.loadingAiReview)}
+                  checkedIds={params.checkedProposalIds ?? []}
+                  onToggleProposal={params.onToggleProposal}
+                />
+              )}
 
               <WeeklyReviewMitPicker
                 selectedMitIds={params.selectedMitIds}

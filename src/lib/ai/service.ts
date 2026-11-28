@@ -3,6 +3,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { getCachedResponse, setCachedResponse } from './cache';
+import { resolveGeminiModel } from './model-router';
 import { retryWithBackoff } from './retry';
 import type { AIFeature } from './types';
 
@@ -32,7 +33,7 @@ export class HabitFlowAI {
   // Instance configuration
   private module: AIModule;
   private currentKeyIndex: number = 0;
-  private model = 'gemini-2.5-flash-lite';
+  private model = resolveGeminiModel('fast');
 
   constructor(module: AIModule) {
     this.module = module;
@@ -45,8 +46,6 @@ export class HabitFlowAI {
         `Expected GEMINI_KEY_${module.toUpperCase()}_1, _2, _3 in environment.`
       );
     }
-
-    console.log(`[AI Service] Initialized for module: ${module} with ${keys.length} keys`);
   }
 
   private static loadModuleKeys(mod: AIModule, fallbackKey?: string): string[] {
@@ -78,7 +77,6 @@ export class HabitFlowAI {
     if (!health) return false;
     const elapsed = now - health.lastFailureTime;
     if (elapsed < health.cooldownMs) {
-      console.log(`[AI Key Health] Skipping ${healthKey} (cooldown: ${Math.round((health.cooldownMs - elapsed) / 1000)}s remaining)`);
       return true;
     }
     HabitFlowAI.keyHealth.delete(healthKey);
@@ -93,7 +91,6 @@ export class HabitFlowAI {
       const keyIndex = (this.currentKeyIndex + i) % keys.length;
       if (this.isKeyCoolingDown(`${this.module}:${keyIndex}`, now)) continue;
       this.currentKeyIndex = keyIndex;
-      console.log(`[AI Key Rotation] Using ${this.module} key #${keyIndex + 1} (round-robin)`);
       return keys[keyIndex];
     }
     console.error(`[AI Key Health] All keys for ${this.module} are in cooldown!`);
@@ -118,7 +115,6 @@ export class HabitFlowAI {
 
       if (timeSinceLast < this.MIN_REQUEST_INTERVAL) {
         const waitTime = this.MIN_REQUEST_INTERVAL - timeSinceLast;
-        console.log(`[AI Queue] Throttling request by ${waitTime}ms to respect rate limits...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
 
@@ -138,7 +134,6 @@ export class HabitFlowAI {
     if (!cacheKey) return null;
     const cached = await getCachedResponse<T>(cacheKey);
     if (cached) {
-      console.log(`[AI Cache HIT] ${feature} - key: ${cacheKey}`);
       return cached;
     }
     return null;
@@ -206,7 +201,6 @@ export class HabitFlowAI {
         const isRateLimit = error?.message?.includes('429') || error?.status === 429;
         if (!isRateLimit) throw error;
         this.markKeyUnhealthy(currentKeyIndex);
-        console.log(`[AI Retry] 429 error detected, retrying with next key...`);
         return onRetry();
       }
     });
@@ -242,7 +236,6 @@ export class HabitFlowAI {
     const data = this.parseJsonResponse<T>(feature, result);
     if (cacheKey && cacheTTL) {
       await setCachedResponse(cacheKey, data, cacheTTL);
-      console.log(`[AI] Cached ${feature} for ${cacheTTL}s - key: ${cacheKey}`);
     }
     return data;
   }
