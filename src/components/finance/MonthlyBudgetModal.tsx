@@ -89,8 +89,8 @@ export function MonthlyBudgetModal({ open, onOpenChange, focusCategoryId }: Mont
                     isRolloverOn={Boolean(f.categoryRollovers[cat.id])}
                     inputValue={f.categoryInputs[cat.id] ?? ''}
                     budgetMode={f.budgetMode}
-                    onToggleRollover={() => f.setCategoryRollovers((prev) => ({ ...prev, [cat.id]: !prev[cat.id] }))}
-                    onInputChange={(val) => f.setCategoryInputs((prev) => ({ ...prev, [cat.id]: val }))}
+                    onToggleRollover={f.toggleCategoryRollover}
+                    onInputChange={f.setCategoryInput}
                   />
                 ))}
               </div>

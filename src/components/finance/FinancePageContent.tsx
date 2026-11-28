@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Plus,
@@ -361,11 +361,11 @@ function useFinancePageController() {
     setIsAddTxModalOpen(true);
   };
 
-  const handleOpenEditTx = (tx: FinanceTransaction) => {
+  const handleOpenEditTx = useCallback((tx: FinanceTransaction) => {
     setDefaultCommitmentId(null);
     setEditingTx(tx);
     setIsAddTxModalOpen(true);
-  };
+  }, []);
 
   const handleOpenBudgetModal = (categoryId?: string) => {
     setFocusCategoryId(categoryId || null);

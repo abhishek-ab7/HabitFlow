@@ -13,8 +13,8 @@ export const BudgetCategoryRow = React.memo(function BudgetCategoryRow(props: {
   isRolloverOn: boolean;
   inputValue: string;
   budgetMode: FinanceBudgetMode;
-  onToggleRollover: () => void;
-  onInputChange: (val: string) => void;
+  onToggleRollover: (catId: string) => void;
+  onInputChange: (catId: string, val: string) => void;
 }) {
   const { cat, spent, isRolloverOn, inputValue, budgetMode, onToggleRollover, onInputChange } = props;
   return (
@@ -30,7 +30,7 @@ export const BudgetCategoryRow = React.memo(function BudgetCategoryRow(props: {
       </div>
       <button
         type="button"
-        onClick={onToggleRollover}
+        onClick={() => onToggleRollover(cat.id)}
         title="Roll over unused budget from previous month"
         className={`h-8 px-2 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 ${
           isRolloverOn ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'border-border bg-background text-muted-foreground hover:text-foreground'
@@ -47,7 +47,7 @@ export const BudgetCategoryRow = React.memo(function BudgetCategoryRow(props: {
           min="0"
           step="50"
           value={inputValue}
-          onChange={(e) => onInputChange(e.target.value)}
+          onChange={(e) => onInputChange(cat.id, e.target.value)}
           placeholder={budgetMode === 'zero_based' ? '0' : 'No limit'}
           className="h-9 pl-5 pr-2 text-right text-xs sm:text-sm font-mono tabular-nums rounded-xl"
         />

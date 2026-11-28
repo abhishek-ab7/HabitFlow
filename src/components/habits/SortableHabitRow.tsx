@@ -1,6 +1,7 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -9,7 +10,11 @@ import type { HabitDayInfo } from './row/habit-row-helpers';
 import { useHabitRowController } from './row/useHabitRowController';
 import { HabitRowInfoCell } from './row/HabitRowInfoCell';
 import { HabitDayCell } from './row/HabitDayCell';
-import { HabitRowDialogs } from './row/HabitRowDialogs';
+
+const HabitRowDialogs = dynamic(
+  () => import('./row/HabitRowDialogs').then((m) => ({ default: m.HabitRowDialogs })),
+  { ssr: false }
+);
 
 interface SortableHabitRowProps {
   habit: Habit;
@@ -23,10 +28,61 @@ interface SortableHabitRowProps {
   onFreeze?: (habitId: string, date: string) => void;
 }
 
+function SortableHabitRowCells({
+  habit,
+  days,
+  completions,
+  vm,
+  hasOnFreeze,
+}: {
+  habit: Habit;
+  days: HabitDayInfo[];
+  completions: HabitCompletion[];
+  vm: ReturnType<typeof useHabitRowController>;
+  hasOnFreeze: boolean;
+}) {
+  return (
+    <div className="flex gap-0.5">
+      {days.map((dayInfo) => {
+        const isOpen = vm.openPopoverDate === dayInfo.dateStr;
+        return (
+          <HabitDayCell
+            key={dayInfo.day}
+            habit={habit}
+            isQuit={vm.isQuit}
+            dayInfo={dayInfo}
+            completions={completions}
+            comp={vm.completionMap.get(dayInfo.dateStr)}
+            restAllowedCount={vm.weekProgress.restAllowedCount}
+            restRemainingCount={vm.weekProgress.restRemainingCount}
+            isRippling={vm.rippleCell === `${habit.id}-${dayInfo.dateStr}`}
+            isBurst={vm.burstActive === dayInfo.dateStr}
+            isPopoverOpen={isOpen}
+            setOpenPopoverDate={vm.setOpenPopoverDate}
+            tempValue={isOpen ? vm.tempValue : 0}
+            setTempValue={vm.setTempValue}
+            tempNote={isOpen ? vm.tempNote : ''}
+            setTempNote={vm.setTempNote}
+            hasOnFreeze={hasOnFreeze}
+            onCellClick={vm.handleCellClick}
+            onCellRightClick={vm.handleCellRightClick}
+            onToggleRestDay={vm.handleToggleRestDay}
+            onOpenPopover={vm.handleOpenPopover}
+            onSavePopover={vm.handleSavePopover}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export const SortableHabitRow = memo(function SortableHabitRow({
   habit, days, completions, streak, onToggle, onEdit, onDelete, onArchive, onFreeze,
 }: SortableHabitRowProps) {
   const vm = useHabitRowController({ habit, days, completions, streak, onToggle, onFreeze });
+  const anyDialogOpen = vm.showShareModal || vm.showLogModal || vm.showNoShieldsDialog;
+  const [dialogsMounted, setDialogsMounted] = useState(false);
+  if (anyDialogOpen && !dialogsMounted) setDialogsMounted(true);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: habit.id });
 
   const style = {
@@ -58,34 +114,13 @@ export const SortableHabitRow = memo(function SortableHabitRow({
         onDelete={() => onDelete(habit.id)}
       />
 
-      <div className="flex gap-0.5">
-        {days.map((dayInfo) => (
-          <HabitDayCell
-            key={dayInfo.day}
-            habit={habit}
-            isQuit={vm.isQuit}
-            dayInfo={dayInfo}
-            completions={completions}
-            comp={vm.completionMap.get(dayInfo.dateStr)}
-            restAllowedCount={vm.weekProgress.restAllowedCount}
-            restRemainingCount={vm.weekProgress.restRemainingCount}
-            rippleCell={vm.rippleCell}
-            burstActive={vm.burstActive}
-            openPopoverDate={vm.openPopoverDate}
-            setOpenPopoverDate={vm.setOpenPopoverDate}
-            tempValue={vm.tempValue}
-            setTempValue={vm.setTempValue}
-            tempNote={vm.tempNote}
-            setTempNote={vm.setTempNote}
-            hasOnFreeze={Boolean(onFreeze)}
-            onCellClick={vm.handleCellClick}
-            onCellRightClick={vm.handleCellRightClick}
-            onToggleRestDay={vm.handleToggleRestDay}
-            onOpenPopover={vm.handleOpenPopover}
-            onSavePopover={vm.handleSavePopover}
-          />
-        ))}
-      </div>
+      <SortableHabitRowCells
+        habit={habit}
+        days={days}
+        completions={completions}
+        vm={vm}
+        hasOnFreeze={Boolean(onFreeze)}
+      />
 
       <div className="w-16 md:w-24 flex-shrink-0 flex flex-col items-center gap-1 ml-auto">
         <span className="text-sm font-medium tabular-nums">{vm.monthlyCount}/{vm.totalDays}</span>
@@ -94,27 +129,29 @@ export const SortableHabitRow = memo(function SortableHabitRow({
         </div>
       </div>
 
-      <HabitRowDialogs
-        habit={habit}
-        streak={streak}
-        showShareModal={vm.showShareModal}
-        setShowShareModal={vm.setShowShareModal}
-        showLogModal={vm.showLogModal}
-        setShowLogModal={vm.setShowLogModal}
-        logDate={vm.logDate}
-        setLogDate={vm.setLogDate}
-        logValue={vm.logValue}
-        setLogValue={vm.setLogValue}
-        logNote={vm.logNote}
-        setLogNote={vm.setLogNote}
-        onSaveLogModal={vm.handleSaveLogModal}
-        showNoShieldsDialog={vm.showNoShieldsDialog}
-        setShowNoShieldsDialog={vm.setShowNoShieldsDialog}
-        onGoToSettings={() => {
-          vm.setShowNoShieldsDialog(false);
-          vm.router.push('/settings');
-        }}
-      />
+      {dialogsMounted && (
+        <HabitRowDialogs
+          habit={habit}
+          streak={streak}
+          showShareModal={vm.showShareModal}
+          setShowShareModal={vm.setShowShareModal}
+          showLogModal={vm.showLogModal}
+          setShowLogModal={vm.setShowLogModal}
+          logDate={vm.logDate}
+          setLogDate={vm.setLogDate}
+          logValue={vm.logValue}
+          setLogValue={vm.setLogValue}
+          logNote={vm.logNote}
+          setLogNote={vm.setLogNote}
+          onSaveLogModal={vm.handleSaveLogModal}
+          showNoShieldsDialog={vm.showNoShieldsDialog}
+          setShowNoShieldsDialog={vm.setShowNoShieldsDialog}
+          onGoToSettings={() => {
+            vm.setShowNoShieldsDialog(false);
+            vm.router.push('/settings');
+          }}
+        />
+      )}
     </div>
   );
 });

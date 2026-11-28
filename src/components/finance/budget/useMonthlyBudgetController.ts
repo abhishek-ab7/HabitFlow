@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import { normalizePaydayOfMonth } from '@/lib/finance/payday';
 import type { FinanceBudgetMode } from '@/lib/types';
@@ -127,6 +127,16 @@ export function useMonthlyBudgetController(params: {
     setCategoryInputs(cleared);
   };
 
+  const toggleCategoryRollover = useCallback(
+    (id: string) => setCategoryRollovers((prev) => ({ ...prev, [id]: !prev[id] })),
+    []
+  );
+
+  const setCategoryInput = useCallback(
+    (id: string, val: string) => setCategoryInputs((prev) => ({ ...prev, [id]: val })),
+    []
+  );
+
   return {
     selectedMonth,
     budgetMode, setBudgetMode,
@@ -136,6 +146,8 @@ export function useMonthlyBudgetController(params: {
     plannedSipInput, setPlannedSipInput,
     categoryInputs, setCategoryInputs,
     categoryRollovers, setCategoryRollovers,
+    toggleCategoryRollover,
+    setCategoryInput,
     isSaving,
     showLeaveHelper, setShowLeaveHelper,
     baseSalaryInput, setBaseSalaryInput,

@@ -8,6 +8,7 @@ import type { Habit, HabitCompletion } from '@/lib/types';
 import { getHabitWeekProgress } from '@/lib/calculations';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
 import { useFeedback } from '@/hooks/use-feedback';
+import { useStableCallback } from '@/hooks/use-stable-callback';
 import { useHabitStore } from '@/lib/stores/habit-store';
 import { usePomodoroStore } from '@/lib/stores/pomodoro-store';
 import { countMonthlyCompletions, getNextQuantitativeValue, type HabitDayInfo } from './habit-row-helpers';
@@ -53,18 +54,18 @@ function useHabitRowModalState(params: { habit: Habit; completionMap: Map<string
     toast.success('Progress log updated');
   };
 
-  const handleOpenPopover = (dateStr: string) => {
+  const handleOpenPopover = useStableCallback((dateStr: string) => {
     const comp = completionMap.get(dateStr);
     setTempNote(comp?.note || '');
     setTempValue(comp?.value || 0);
     setOpenPopoverDate(dateStr);
-  };
+  });
 
-  const handleSavePopover = async (dateStr: string) => {
+  const handleSavePopover = useStableCallback(async (dateStr: string) => {
     await updateNote(habit.id, dateStr, tempNote);
     if (habit.isQuantitative) await updateValue(habit.id, dateStr, tempValue);
     setOpenPopoverDate(null);
-  };
+  });
 
   return {
     openPopoverDate, setOpenPopoverDate, tempNote, setTempNote, tempValue, setTempValue,
@@ -126,7 +127,7 @@ export function useHabitRowController(params: {
     setTimeout(() => setRippleCell(null), 500);
   };
 
-  const handleToggleRestDay = async (dateStr: string) => {
+  const handleToggleRestDay = useStableCallback(async (dateStr: string) => {
     feedback.tap();
     try {
       await markRestDay(habit.id, dateStr);
@@ -136,7 +137,7 @@ export function useHabitRowController(params: {
     } catch (err) {
       toast.error((err as Error).message);
     }
-  };
+  });
 
   const handleQuantitativeClick = (click: { dateStr: string; isShiftKey: boolean; comp?: HabitCompletion }) => {
     const currentValue = click.comp?.value || 0;
@@ -152,7 +153,7 @@ export function useHabitRowController(params: {
     triggerRipple(click.dateStr);
   };
 
-  const handleCellClick = (click: { dateStr: string; isFutureDate: boolean; isShiftKey: boolean }) => {
+  const handleCellClick = useStableCallback((click: { dateStr: string; isFutureDate: boolean; isShiftKey: boolean }) => {
     if (click.isFutureDate) return;
     const comp = completionMap.get(click.dateStr);
     if (habit.isQuantitative) return handleQuantitativeClick({ dateStr: click.dateStr, isShiftKey: click.isShiftKey, comp });
@@ -167,9 +168,9 @@ export function useHabitRowController(params: {
     }
     onToggle(habit.id, click.dateStr);
     triggerRipple(click.dateStr);
-  };
+  });
 
-  const handleCellRightClick = async (click: { e: React.MouseEvent; dateStr: string; isFutureDate: boolean }) => {
+  const handleCellRightClick = useStableCallback(async (click: { e: React.MouseEvent; dateStr: string; isFutureDate: boolean }) => {
     click.e.preventDefault();
     if (click.isFutureDate || !onFreeze) return;
     const isCurrentlyFrozen = completionMap.get(click.dateStr)?.status === 'frozen';
@@ -184,7 +185,7 @@ export function useHabitRowController(params: {
     } finally {
       triggerRipple(click.dateStr);
     }
-  };
+  });
 
   const monthlyCount = countMonthlyCompletions(completionMap);
   const totalDays = days.filter((d) => !d.isFuture).length;

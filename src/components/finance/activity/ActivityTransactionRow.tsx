@@ -87,7 +87,7 @@ function ActivityRowSelectCheckbox({ isSelected, onToggle }: { isSelected: boole
   );
 }
 
-export function ActivityTransactionRow(params: {
+export const ActivityTransactionRow = React.memo(function ActivityTransactionRow(params: {
   tx: FinanceTransaction;
   cat?: FinanceCategory;
   acc?: FinanceAccount;
@@ -128,4 +128,4 @@ export function ActivityTransactionRow(params: {
       <ActivityRowTrailingActions tx={tx} onEdit={onEdit} onApprove={onApprove} />
     </div>
   );
-}
+});

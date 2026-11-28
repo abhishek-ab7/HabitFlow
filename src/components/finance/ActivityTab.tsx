@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useCallback, useDeferredValue, useState, useMemo, useRef, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useFinanceStore, formatINR } from '@/lib/stores/finance-store';
 import type { FinanceFilterState, FinanceTransaction } from '@/lib/types';
 import { getLocalIsoDate } from '@/lib/finance/credit-card-cycles';
@@ -8,7 +9,11 @@ import { toast } from 'sonner';
 import { ActivityFiltersBar } from './activity/ActivityFiltersBar';
 import { ActivityBulkActionBar } from './activity/ActivityBulkActionBar';
 import { ActivityLedgerList, type DateGroupedTransactions } from './activity/ActivityLedgerList';
-import { ActivityMonthlyReportDialog } from './activity/ActivityMonthlyReportDialog';
+
+const ActivityMonthlyReportDialog = dynamic(
+  () => import('./activity/ActivityMonthlyReportDialog').then((m) => ({ default: m.ActivityMonthlyReportDialog })),
+  { ssr: false }
+);
 
 interface ActivityTabProps {
   onEditTransaction: (tx: FinanceTransaction) => void;
@@ -218,9 +223,23 @@ export function ActivityTab({ onEditTransaction, onOpenAddTransaction, onOpenSms
   const accountsMap = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const commitmentsMap = useMemo(() => new Map(commitments.map((c) => [c.id, c])), [commitments]);
   const groupedByDate = useMemo(() => groupTransactionsByDate(visibleTransactions), [visibleTransactions]);
+  const deferredGroupedByDate = useDeferredValue(groupedByDate);
   const flatOrderedTx = useMemo(() => groupedByDate.flatMap((g) => g.items), [groupedByDate]);
   const flatIndexById = useMemo(() => new Map(flatOrderedTx.map((tx, idx) => [tx.id, idx])), [flatOrderedTx]);
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  const handleToggleSelect = useCallback(
+    (id: string) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])),
+    []
+  );
+
+  const handleApproveTransaction = useCallback(
+    async (txId: string) => {
+      await approveReviewedTransaction(txId);
+      toast.success('Verified');
+    },
+    [approveReviewedTransaction]
+  );
 
   useActivityKeyboardTriage({ flatOrderedTx, focusedIndex, setFocusedIndex, searchInputRef, onEditTransaction });
 
@@ -358,7 +377,7 @@ export function ActivityTab({ onEditTransaction, onOpenAddTransaction, onOpenSms
       />
 
       <ActivityLedgerList
-        groupedByDate={groupedByDate}
+        groupedByDate={deferredGroupedByDate}
         totalCount={transactions.length}
         visibleCount={visibleCount}
         visibleLength={visibleTransactions.length}
@@ -371,12 +390,9 @@ export function ActivityTab({ onEditTransaction, onOpenAddTransaction, onOpenSms
         focusedIndex={focusedIndex}
         onResetFilters={resetFilters}
         onOpenAddTransaction={onOpenAddTransaction}
-        onToggleSelect={(id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))}
+        onToggleSelect={handleToggleSelect}
         onEditTransaction={onEditTransaction}
-        onApproveTransaction={async (txId) => {
-          await approveReviewedTransaction(txId);
-          toast.success('Verified');
-        }}
+        onApproveTransaction={handleApproveTransaction}
         onLoadMore={() => setVisibleCount((c) => c + 25)}
       />
 

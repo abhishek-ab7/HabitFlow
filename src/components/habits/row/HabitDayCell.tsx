@@ -71,7 +71,7 @@ function CellPopoverControl(params: {
   dateStr: string;
   isFutureDate: boolean;
   status: CellStatusInfo;
-  openPopoverDate: string | null;
+  isPopoverOpen: boolean;
   setOpenPopoverDate: React.Dispatch<React.SetStateAction<string | null>>;
   tempValue: number;
   setTempValue: React.Dispatch<React.SetStateAction<number>>;
@@ -85,11 +85,11 @@ function CellPopoverControl(params: {
   onToggleRestDay: () => Promise<void>;
   onCellRightClick: (e: React.MouseEvent) => Promise<void>;
 }) {
-  const { dateStr, isFutureDate, status, openPopoverDate, setOpenPopoverDate } = params;
+  const { dateStr, isFutureDate, status, isPopoverOpen, setOpenPopoverDate } = params;
   if (isFutureDate) return null;
 
   return (
-    <Popover open={openPopoverDate === dateStr} onOpenChange={(open) => (open ? params.onOpenPopover() : setOpenPopoverDate(null))}>
+    <Popover open={isPopoverOpen} onOpenChange={(open) => (open ? params.onOpenPopover() : setOpenPopoverDate(null))}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -103,7 +103,7 @@ function CellPopoverControl(params: {
           <Pencil className="h-2 w-2" />
         </button>
       </PopoverTrigger>
-      {openPopoverDate === dateStr && (
+      {isPopoverOpen && (
         <HabitCellPopover
           habit={params.habit}
           dateStr={dateStr}
@@ -126,7 +126,7 @@ function CellPopoverControl(params: {
   );
 }
 
-export function HabitDayCell(params: {
+export const HabitDayCell = React.memo(function HabitDayCell(params: {
   habit: Habit;
   isQuit: boolean;
   dayInfo: HabitDayInfo;
@@ -134,9 +134,9 @@ export function HabitDayCell(params: {
   comp?: HabitCompletion;
   restAllowedCount: number;
   restRemainingCount: number;
-  rippleCell: string | null;
-  burstActive: string | null;
-  openPopoverDate: string | null;
+  isRippling: boolean;
+  isBurst: boolean;
+  isPopoverOpen: boolean;
   setOpenPopoverDate: React.Dispatch<React.SetStateAction<string | null>>;
   tempValue: number;
   setTempValue: React.Dispatch<React.SetStateAction<number>>;
@@ -153,7 +153,7 @@ export function HabitDayCell(params: {
   const { dateStr, isFuture: isFutureDate, isToday: isTodayDate } = dayInfo;
   const status = getCellStatusInfo({ habit, completions, comp, dateStr });
   const isActiveState = status.isCompleted || status.isFrozen || status.isRest;
-  const showRipple = params.rippleCell === `${habit.id}-${dateStr}` && isActiveState;
+  const showRipple = params.isRippling && isActiveState;
 
   const titleText = isFutureDate
     ? undefined
@@ -183,7 +183,7 @@ export function HabitDayCell(params: {
       className={cn(
         'w-9 h-9 rounded-lg flex items-center justify-center transition-transform transition-colors relative overflow-hidden flex-shrink-0 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
         !isFutureDate && 'hover:scale-105',
-        params.burstActive === dateStr && 'scale-115',
+        params.isBurst && 'scale-115',
         getCellBackgroundClass({ status, isFutureDate, isTodayDate })
       )}
       title={titleText}
@@ -197,13 +197,13 @@ export function HabitDayCell(params: {
   return (
     <div className="relative group/cell">
       <CellButtonWithTooltip button={innerButton} dayInfo={dayInfo} comp={comp} />
-      <CellBurstBadge visible={params.burstActive === dateStr} isFrozen={status.isFrozen} isQuit={isQuit} />
+      <CellBurstBadge visible={params.isBurst} isFrozen={status.isFrozen} isQuit={isQuit} />
       <CellPopoverControl
         habit={habit}
         dateStr={dateStr}
         isFutureDate={isFutureDate}
         status={status}
-        openPopoverDate={params.openPopoverDate}
+        isPopoverOpen={params.isPopoverOpen}
         setOpenPopoverDate={params.setOpenPopoverDate}
         tempValue={params.tempValue}
         setTempValue={params.setTempValue}
@@ -219,4 +219,4 @@ export function HabitDayCell(params: {
       />
     </div>
   );
-}
+});
