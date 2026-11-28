@@ -3,6 +3,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { getCachedResponse, setCachedResponse } from './cache';
+import { resolveGeminiApiKeys } from './gemini-server';
 import { resolveGeminiModel } from './model-router';
 import { retryWithBackoff } from './retry';
 import type { AIFeature } from './types';
@@ -48,26 +49,38 @@ export class HabitFlowAI {
     }
   }
 
-  private static loadModuleKeys(mod: AIModule, fallbackKey?: string): string[] {
+  private static loadModuleKeys(mod: AIModule): string[] {
     const moduleUpper = mod.toUpperCase();
+    const seen = new Set<string>();
     const keys: string[] = [];
+    const addKey = (val?: string) => {
+      const trimmed = val?.trim();
+      if (trimmed && !trimmed.startsWith('your_') && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        keys.push(trimmed);
+      }
+    };
+
+    // Prefer module-specific keys first, then fail over across all configured Gemini keys
     for (let i = 1; i <= 3; i++) {
-      const apiKey = process.env[`GEMINI_KEY_${moduleUpper}_${i}`];
-      if (apiKey) keys.push(apiKey);
+      addKey(process.env[`GEMINI_KEY_${moduleUpper}_${i}`]);
     }
-    if (keys.length > 0) return keys;
-    if (fallbackKey) return [fallbackKey];
-    console.warn(`[AI Service] No keys configured for ${mod} (set GEMINI_API_KEY or GEMINI_KEY_${moduleUpper}_1..3)`);
-    return [];
+    for (const k of resolveGeminiApiKeys()) {
+      addKey(k);
+    }
+
+    if (keys.length === 0) {
+      console.warn(`[AI Service] No keys configured for ${mod} (set GEMINI_KEY_* or GEMINI_API_KEY)`);
+    }
+    return keys;
   }
 
   // Static initializer: Load keys from environment on first import
   private static initializeKeyPools(): Record<AIModule, string[]> {
     const modules: AIModule[] = ['dashboard', 'tasks', 'habits'];
     const pools: Record<AIModule, string[]> = {} as any;
-    const fallbackKey = process.env.GEMINI_API_KEY;
     for (const mod of modules) {
-      pools[mod] = HabitFlowAI.loadModuleKeys(mod, fallbackKey);
+      pools[mod] = HabitFlowAI.loadModuleKeys(mod);
     }
     return pools;
   }
