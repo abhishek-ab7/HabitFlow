@@ -22,7 +22,20 @@ export interface ExternalMcpContextSummary {
   }>;
 }
 
-const READ_ONLY_TOOL_PREFIXES = ['get_', 'list_', 'search_', 'read_', 'fetch_'];
+const READ_ONLY_TOOL_PREFIXES = [
+  'get_',
+  'list_',
+  'search_',
+  'read_',
+  'fetch_',
+  'gmail_fetch_',
+  'gmail_list_',
+  'googlecalendar_list_',
+  'googlecalendar_find_',
+  'strava_get_',
+  'strava_list_',
+];
+const MUTATING_TOOL_SEGMENTS = ['send', 'create', 'delete', 'update', 'remove', 'insert', 'patch', 'draft', 'reply', 'modify'];
 const OUTBOUND_TIMEOUT_MS = 3000;
 
 const BLOCKED_HOST_PATTERNS = [
@@ -67,7 +80,8 @@ export function validateOutboundMcpUrl(rawUrl: string): { ok: true; url: string 
 
 export function isReadOnlyMcpTool(toolName: string): boolean {
   const lower = toolName.trim().toLowerCase();
-  return READ_ONLY_TOOL_PREFIXES.some((prefix) => lower.startsWith(prefix));
+  if (!READ_ONLY_TOOL_PREFIXES.some((prefix) => lower.startsWith(prefix))) return false;
+  return !MUTATING_TOOL_SEGMENTS.some((seg) => lower.includes(seg));
 }
 
 export function maskMcpToken(token: string): string {
@@ -110,6 +124,30 @@ export function decryptMcpToken(payload: string): string | null {
   }
 }
 
+async function parseMcpHttpResponse(res: Response): Promise<{ result?: unknown; error?: { message?: string } }> {
+  const contentType = res.headers.get('content-type')?.toLowerCase() || '';
+  if (!contentType.includes('text/event-stream')) {
+    return (await res.json()) as { result?: unknown; error?: { message?: string } };
+  }
+
+  const rawText = await res.text();
+  const dataLines = rawText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('data:'))
+    .map((l) => l.slice(5).trim())
+    .filter((l) => l && l !== '[DONE]');
+
+  for (let i = dataLines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(dataLines[i]) as { result?: unknown; error?: { message?: string } };
+    } catch {
+      // Continue scanning earlier SSE frames
+    }
+  }
+  throw new Error('Empty or invalid SSE response from MCP server');
+}
+
 async function callMcpJsonRpc(params: {
   url: string;
   token?: string | null;
@@ -122,7 +160,12 @@ async function callMcpJsonRpc(params: {
     Accept: 'application/json, text/event-stream',
   };
   if (params.token) {
-    headers.Authorization = `Bearer ${params.token}`;
+    const host = new URL(params.url).hostname.toLowerCase();
+    if (host.endsWith('composio.dev')) {
+      headers['x-consumer-api-key'] = params.token;
+    } else {
+      headers.Authorization = `Bearer ${params.token}`;
+    }
   }
 
   const res = await fetch(params.url, {
@@ -140,7 +183,7 @@ async function callMcpJsonRpc(params: {
   if (!res.ok) {
     throw new Error(`MCP endpoint returned HTTP ${res.status}`);
   }
-  const json = (await res.json()) as { result?: unknown; error?: { message?: string } };
+  const json = await parseMcpHttpResponse(res);
   if (json.error) {
     throw new Error(json.error.message || 'MCP JSON-RPC error');
   }
