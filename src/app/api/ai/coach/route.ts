@@ -4,7 +4,7 @@ import { runCoachSwarmGraph } from '@/lib/ai/graphs/coach-swarm-graph';
 import type { CoachSwarmOutput } from '@/lib/ai/graphs/coach-swarm-types';
 import type { CoachBriefingInput } from '@/lib/ai/types';
 import { getIstIsoDate } from '@/lib/mcp/config';
-import { fetchExternalMcpContext, type ExternalMcpProviderKind } from '@/lib/mcp/outbound-client';
+import { loadUserExternalMcpSnippets } from '@/lib/mcp/outbound-client';
 import { rateLimit, rateLimitResponse } from '@/lib/security/rate-limit';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -59,46 +59,6 @@ function buildNormalizedCoachInput(params: {
   };
 }
 
-interface ExternalMcpDbRow {
-  id: string;
-  label: string;
-  provider_kind: ExternalMcpProviderKind;
-  endpoint_url: string;
-  encrypted_token?: string | null;
-  enabled: boolean;
-}
-
-async function loadExternalMcpSnippets(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
-  userId: string
-): Promise<string[]> {
-  try {
-    const client = supabase as unknown as { from?: (table: string) => any };
-    if (typeof client?.from !== 'function') return [];
-    const { data, error } = await client
-      .from('user_external_mcp_sources')
-      .select('id, label, provider_kind, endpoint_url, encrypted_token, enabled')
-      .eq('user_id', userId)
-      .eq('enabled', true)
-      .limit(4);
-    const rows = (Array.isArray(data) ? data : []) as ExternalMcpDbRow[];
-    if (error || rows.length === 0) return [];
-    const summary = await fetchExternalMcpContext(
-      rows.map((r) => ({
-        id: String(r.id),
-        label: String(r.label),
-        providerKind: r.provider_kind,
-        endpointUrl: String(r.endpoint_url),
-        encryptedToken: r.encrypted_token ?? null,
-        enabled: Boolean(r.enabled),
-      }))
-    );
-    return summary.snippets.map((s) => `[${s.label}] ${s.summary}`);
-  } catch {
-    return [];
-  }
-}
-
 async function handleCoachBriefing(params: {
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
   userId: string;
@@ -114,7 +74,7 @@ async function handleCoachBriefing(params: {
   }
 
   const normalizedInput = buildNormalizedCoachInput({ userId, todayIst, body });
-  const externalSnippets = await loadExternalMcpSnippets(supabase, userId);
+  const externalSnippets = await loadUserExternalMcpSnippets(supabase, userId);
   if (externalSnippets.length > 0) {
     const existingInsights = normalizedInput.context?.crossDomainInsights;
     normalizedInput.context = {

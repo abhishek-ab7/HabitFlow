@@ -5,6 +5,7 @@ import {
   type FinanceQaHistoryMessage,
 } from '@/lib/ai/tools/finance-qa-loop';
 import { buildDeterministicFinanceAnswer } from '@/lib/finance/qa-analyzer';
+import { loadUserExternalMcpSnippets } from '@/lib/mcp/outbound-client';
 import { rateLimit, rateLimitResponse } from '@/lib/security/rate-limit';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
@@ -39,12 +40,18 @@ export async function POST(req: NextRequest) {
     const { question, context, history } = await parseFinanceQaInput(req);
     if (!question) return NextResponse.json({ error: 'Question is required' }, { status: 400 });
 
+    const externalSnippets = await loadUserExternalMcpSnippets(supabase, user.id);
+    const enrichedContext =
+      externalSnippets.length > 0 && context && typeof context === 'object'
+        ? { ...(context as Record<string, unknown>), externalMcpContext: externalSnippets }
+        : context;
+
     if (resolveGeminiApiKeys().length === 0) {
-      return buildLocalFinanceFallback(question, context, 'missing_api_key');
+      return buildLocalFinanceFallback(question, enrichedContext, 'missing_api_key');
     }
 
     try {
-      const result = await runFinanceQaLoop({ question, context, history });
+      const result = await runFinanceQaLoop({ question, context: enrichedContext, history });
       if (result) {
         return NextResponse.json({
           answer: result.answer,
@@ -54,11 +61,11 @@ export async function POST(req: NextRequest) {
           toolCallsUsed: result.toolCallsUsed,
         });
       }
-      return buildLocalFinanceFallback(question, context, 'empty_response');
+      return buildLocalFinanceFallback(question, enrichedContext, 'empty_response');
     } catch (aiErr) {
       console.warn('[finance-qa] Gemini error, falling back to local analyzer:', aiErr);
       const reason = aiErr instanceof Error ? aiErr.message : 'gemini_error';
-      return buildLocalFinanceFallback(question, context, reason);
+      return buildLocalFinanceFallback(question, enrichedContext, reason);
     }
   } catch (error) {
     console.error('[finance-qa] Error:', error);

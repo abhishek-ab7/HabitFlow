@@ -322,3 +322,48 @@ export async function fetchExternalMcpContext(
 
   return { sourcesChecked: active.length, snippets };
 }
+
+interface ExternalMcpDbRow {
+  id: string;
+  label: string;
+  provider_kind: ExternalMcpProviderKind;
+  endpoint_url: string;
+  encrypted_token?: string | null;
+  enabled: boolean;
+}
+
+/**
+ * Loads enabled external MCP sources for a verified user and fetches read-only context snippets.
+ * Shared by /api/ai/coach and /api/ai/finance-qa; fails silently so AI routes never stall.
+ */
+export async function loadUserExternalMcpSnippets(
+  supabase: unknown,
+  userId: string
+): Promise<string[]> {
+  try {
+    const client = supabase as { from?: (table: string) => any };
+    if (typeof client?.from !== 'function') return [];
+    const { data, error } = await client
+      .from('user_external_mcp_sources')
+      .select('id, label, provider_kind, endpoint_url, encrypted_token, enabled')
+      .eq('user_id', userId)
+      .eq('enabled', true)
+      .limit(4);
+    const rows = (Array.isArray(data) ? data : []) as ExternalMcpDbRow[];
+    if (error || rows.length === 0) return [];
+
+    const summary = await fetchExternalMcpContext(
+      rows.map((r) => ({
+        id: String(r.id),
+        label: String(r.label),
+        providerKind: r.provider_kind,
+        endpointUrl: String(r.endpoint_url),
+        encryptedToken: r.encrypted_token ?? null,
+        enabled: Boolean(r.enabled),
+      }))
+    );
+    return summary.snippets.map((s) => `[${s.label}] ${s.summary}`);
+  } catch {
+    return [];
+  }
+}
