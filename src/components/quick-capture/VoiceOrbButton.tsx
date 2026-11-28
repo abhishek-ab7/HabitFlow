@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { Loader2, Mic } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useHoldToTalkVoice } from './useHoldToTalkVoice';
@@ -10,15 +11,17 @@ interface VoiceOrbButtonProps {
 }
 
 export function VoiceOrbButton({ onTranscriptReady }: VoiceOrbButtonProps) {
+  const pathname = usePathname() ?? '';
   const { status, livePreview, isSupported, startHold, stopHold } = useHoldToTalkVoice(onTranscriptReady);
 
-  if (!isSupported) return null;
+  const isAppRoute = pathname !== '/' && pathname !== '/login' && !pathname.startsWith('/auth');
+  if (!isAppRoute || !isSupported) return null;
 
   const isListening = status === 'listening';
   const isTranscribing = status === 'transcribing';
 
   return (
-    <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 flex flex-col items-end gap-2 pointer-events-none">
+    <div className="fixed bottom-[132px] right-4 md:bottom-20 md:right-6 z-40 flex flex-col items-end gap-2 pointer-events-none">
       {(isListening || isTranscribing) && (
         <div
           data-testid="voice-orb-preview"

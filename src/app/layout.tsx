@@ -7,7 +7,7 @@ import { SyncProvider } from '@/providers/sync-provider';
 import { Header, ShortcutsProvider, MobileNav, AppStartupGate, SensoryFeedbackBootstrap } from '@/components/layout';
 import { ServiceWorkerRegistration, PWAInstallPrompt } from '@/components/pwa';
 import { Toaster } from '@/components/ui/sonner';
-import { PomodoroFloating } from '@/components/dashboard/premium/PomodoroFloating';
+import { AICoachFloating } from '@/components/dashboard/ai-coach/AICoachFloating';
 import { QuickCaptureLauncher } from '@/components/quick-capture/QuickCaptureLauncher';
 import { UnifiedAlertManager } from '@/components/alerts/UnifiedAlertManager';
 import './globals.css';
@@ -92,7 +92,7 @@ export default function RootLayout({
                 <ShortcutsProvider />
                 <UnifiedAlertManager />
                 <Toaster richColors position="bottom-right" />
-                <PomodoroFloating />
+                <AICoachFloating />
                 <QuickCaptureLauncher />
                 <PWAInstallPrompt />
               </AppStartupGate>

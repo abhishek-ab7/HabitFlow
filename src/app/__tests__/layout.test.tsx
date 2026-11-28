@@ -31,8 +31,8 @@ vi.mock('@/components/ui/sonner', () => ({
   Toaster: () => <div data-testid="toaster" />,
 }));
 
-vi.mock('@/components/dashboard/premium/PomodoroFloating', () => ({
-  PomodoroFloating: () => <div data-testid="pomodoro-floating" />,
+vi.mock('@/components/dashboard/ai-coach/AICoachFloating', () => ({
+  AICoachFloating: () => <div data-testid="ai-coach-floating" />,
 }));
 
 vi.mock('next/font/google', () => ({
@@ -71,6 +71,7 @@ test('RootLayout renders children and providers correctly', () => {
   expect(screen.getByTestId('mobile-nav')).toBeInTheDocument();
   expect(screen.getByTestId('app-startup-gate')).toBeInTheDocument();
   expect(screen.getByTestId('pwa-install-prompt')).toBeInTheDocument();
+  expect(screen.getByTestId('ai-coach-floating')).toBeInTheDocument();
   expect(screen.getByTestId('test-child')).toBeInTheDocument();
   expect(screen.getByTestId('test-child').textContent).toBe('Child Content');
 });
