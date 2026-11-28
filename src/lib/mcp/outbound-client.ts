@@ -78,8 +78,15 @@ export function validateOutboundMcpUrl(rawUrl: string): { ok: true; url: string 
   return { ok: true, url: parsed.toString() };
 }
 
+const COMPOSIO_READ_ONLY_META_TOOLS = new Set([
+  'composio_search_tools',
+  'composio_get_tool_schemas',
+  'composio_search_skills',
+]);
+
 export function isReadOnlyMcpTool(toolName: string): boolean {
   const lower = toolName.trim().toLowerCase();
+  if (COMPOSIO_READ_ONLY_META_TOOLS.has(lower)) return true;
   if (!READ_ONLY_TOOL_PREFIXES.some((prefix) => lower.startsWith(prefix))) return false;
   return !MUTATING_TOOL_SEGMENTS.some((seg) => lower.includes(seg));
 }
@@ -220,6 +227,26 @@ export async function testExternalMcpConnection(params: {
   }
 }
 
+function buildComposioReadOnlyCall(providerKind: ExternalMcpProviderKind) {
+  if (providerKind === 'gmail') {
+    return {
+      tool_slug: 'GMAIL_FETCH_EMAILS',
+      arguments: {
+        query: 'subject:(bill OR invoice OR statement OR due OR subscription) newer_than:14d',
+        max_results: 5,
+        verbose: false,
+      },
+    };
+  }
+  if (providerKind === 'google_calendar') {
+    return { tool_slug: 'GOOGLECALENDAR_FIND_EVENT', arguments: { max_results: 5 } };
+  }
+  if (providerKind === 'strava_health') {
+    return { tool_slug: 'STRAVA_GET_LOGGED_IN_ATHLETE_ACTIVITIES', arguments: { per_page: 5 } };
+  }
+  return null;
+}
+
 /**
  * Fetches read-only context snippets from enabled external MCP sources within a strict 3s timeout.
  * Never throws — degrades cleanly so Coach Swarm latency is never stalled.
@@ -243,19 +270,38 @@ export async function fetchExternalMcpContext(
         timeoutMs,
       })) as { tools?: Array<{ name?: string }> };
 
-      const readOnlyTool = (listRes?.tools || [])
-        .map((t) => String(t?.name || ''))
-        .find((name) => isReadOnlyMcpTool(name));
+      const toolNames = (listRes?.tools || []).map((t) => String(t?.name || ''));
+      const isComposioRouter =
+        new URL(check.url).hostname.toLowerCase().endsWith('composio.dev') &&
+        toolNames.includes('COMPOSIO_MULTI_EXECUTE_TOOL');
 
-      if (!readOnlyTool) return null;
-
-      const callRes = (await callMcpJsonRpc({
-        url: check.url,
-        token,
-        method: 'tools/call',
-        rpcParams: { name: readOnlyTool, arguments: {} },
-        timeoutMs,
-      })) as { content?: Array<{ text?: string }> };
+      let callRes: { content?: Array<{ text?: string }> };
+      if (isComposioRouter) {
+        const composioTask = buildComposioReadOnlyCall(src.providerKind);
+        if (!composioTask) return null;
+        callRes = (await callMcpJsonRpc({
+          url: check.url,
+          token,
+          method: 'tools/call',
+          rpcParams: {
+            name: 'COMPOSIO_MULTI_EXECUTE_TOOL',
+            arguments: { tools: [composioTask] },
+          },
+          timeoutMs,
+        })) as { content?: Array<{ text?: string }> };
+      } else {
+        const readOnlyTool = toolNames.find(
+          (name) => isReadOnlyMcpTool(name) && !COMPOSIO_READ_ONLY_META_TOOLS.has(name.toLowerCase())
+        );
+        if (!readOnlyTool) return null;
+        callRes = (await callMcpJsonRpc({
+          url: check.url,
+          token,
+          method: 'tools/call',
+          rpcParams: { name: readOnlyTool, arguments: {} },
+          timeoutMs,
+        })) as { content?: Array<{ text?: string }> };
+      }
 
       const rawText = (callRes?.content || [])
         .map((c) => c?.text || '')

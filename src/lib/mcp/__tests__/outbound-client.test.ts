@@ -25,6 +25,8 @@ describe('Outbound Read-Only MCP Client (Phase F3 Security & Timeout)', () => {
     expect(isReadOnlyMcpTool('search_gmail_bills')).toBe(true);
     expect(isReadOnlyMcpTool('get_strava_activities')).toBe(true);
     expect(isReadOnlyMcpTool('GMAIL_FETCH_EMAILS')).toBe(true);
+    expect(isReadOnlyMcpTool('COMPOSIO_SEARCH_TOOLS')).toBe(true);
+    expect(isReadOnlyMcpTool('COMPOSIO_MULTI_EXECUTE_TOOL')).toBe(false);
     expect(isReadOnlyMcpTool('GMAIL_SEND_EMAIL')).toBe(false);
     expect(isReadOnlyMcpTool('delete_event')).toBe(false);
     expect(isReadOnlyMcpTool('create_transaction')).toBe(false);
