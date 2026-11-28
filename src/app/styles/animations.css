@@ -1,0 +1,75 @@
+/* ============================================
+   ANIMATIONS & MOTION SYSTEM
+   ============================================ */
+
+@layer utilities {
+  /* Subtle float animation */
+  .float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+}
+
+/* ============================================
+   REDUCED MOTION PREFERENCES
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .float {
+    animation: none !important;
+  }
+}
+
+/* ============================================
+   NATIVE-APP STYLE PAGE TRANSITIONS (View Transitions API)
+   ============================================ */
+@keyframes slide-to-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes slide-from-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-to-right {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes slide-from-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+html.swipe-left::view-transition-old(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-to-left;
+}
+html.swipe-left::view-transition-new(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-from-right;
+}
+
+html.swipe-right::view-transition-old(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-to-right;
+}
+html.swipe-right::view-transition-new(root) {
+  animation: 300ms cubic-bezier(0.16, 1, 0.3, 1) both slide-from-left;
+}

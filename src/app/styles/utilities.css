@@ -1,0 +1,139 @@
+/* ============================================
+   UNIFIED ARCHITECTURAL SURFACE SYSTEM
+   ============================================ */
+
+@layer utilities {
+  /* Tier 1 — Primary Hero Cards (Safe-to-Spend, Daily Momentum, Analytics Header) */
+  .surface-hero {
+    @apply rounded-2xl border border-border bg-card shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)];
+  }
+
+  /* Tier 2 — Standard Cards (Habits, Tasks, Budgets, Charts, Goals, Bills) */
+  .surface-card {
+    @apply rounded-2xl border border-border bg-card;
+  }
+
+  /* Tier 3 — Nested / Interactive Rows & Inset Callouts */
+  .surface-subtle {
+    @apply rounded-xl bg-muted/45 hover:bg-muted/75 border border-border/50 transition-colors;
+  }
+
+  /* Chrome — Translucent Navigation Bars & Overlays Only */
+  .surface-chrome {
+    @apply bg-background/85 backdrop-blur-xl border-border/70;
+  }
+
+  /* Scoped Public Landing Page Backdrop — Obsidian Dark + Subtle Mint Atmospheric Mesh */
+  .landing-mesh {
+    background-color: var(--background);
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, oklch(0.73 0.145 163 / 0.11), transparent 70%),
+      radial-gradient(circle at 85% 20%, oklch(0.55 0.06 215 / 0.06), transparent 45%);
+  }
+
+  /* Legacy glass helper mapped to clean chrome surface so third-party wrappers stay quiet */
+  .glass {
+    @apply bg-card border border-border;
+  }
+
+  /* Clean brand gradient text (Mint to Teal, zero electric purple/pink) */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary via-emerald-500 to-teal-500 dark:from-primary dark:via-emerald-300 dark:to-teal-300 bg-clip-text text-transparent;
+  }
+
+  /* Content-visibility helper for below-the-fold repeating items */
+  .cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
+
+  .cv-auto-lg {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+  }
+
+  /* Card hover lift */
+  .hover-lift {
+    @apply transition-[transform,box-shadow] duration-200;
+  }
+
+  .hover-lift:hover {
+    @apply -translate-y-0.5 shadow-md;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ============================================
+   COMPONENT STYLES
+   ============================================ */
+
+@layer components {
+  /* Progress bar with refined primary-to-info gradient */
+  .progress-gradient {
+    background: linear-gradient(
+      90deg,
+      var(--primary),
+      var(--info)
+    );
+  }
+
+  /* Navigation link active state */
+  .nav-link {
+    @apply relative px-4 py-2 rounded-lg font-medium transition-colors;
+  }
+
+  .nav-link-active {
+    /* Active indicator handled cleanly in header.tsx */
+  }
+
+  .nav-link-inactive {
+    @apply text-muted-foreground hover:text-foreground hover:bg-muted;
+  }
+}
+
+/* ============================================
+   GLOBAL SCROLLBAR HIDING & MOBILE OPTIMIZATIONS
+   ============================================ */
+
+html, body {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+@media (max-width: 767px) {
+  * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (hover: none) {
+  .touch-hover-hide {
+    display: none !important;
+  }
+}
+
+.overflow-x-auto, .overflow-x-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.overflow-y-auto, .overflow-y-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
